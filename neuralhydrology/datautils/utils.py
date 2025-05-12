@@ -26,7 +26,7 @@ except ValueError:
     _QE_FREQ = 'Q'
 
 
-def load_scaler(run_dir: Path) -> Dict[str, Union[pd.Series, xarray.Dataset]]:
+def load_scaler(run_dir: Path) -> xarray.Dataset:
     """Load feature scaler from run directory.
 
     Checks run directory for scaler file in yaml format (new) or pickle format (old).
