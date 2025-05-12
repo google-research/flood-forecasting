@@ -88,7 +88,7 @@ def _load_old_yaml_scaler(scaler_file: Path) -> xr.Dataset:
     return scaler
 
 
-def _load_old_pkl_scaler(scaler_file: Path) -> Optional[xr.Dataset]:
+def _load_old_pkl_scaler(scaler_file: Path) -> xr.Dataset:
     """Loads old Pickle scaler files.
     
     Loads scaler file in YAML format.
