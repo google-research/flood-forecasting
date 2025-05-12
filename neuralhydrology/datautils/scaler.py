@@ -35,7 +35,7 @@ def _load_old_scalers(run_dir: Path) -> xr.Dataset:
     elif os.path.exists(pkl_scaler_file):
         scaler = _load_old_pkl_scaler(pkl_scaler_file)
     else:
-        raise FileNotFoundError(f'No scaler file found at {run_dir}')
+        raise FileNotFoundError(f'No scaler file found at {run_dir} or {run_dir / "train_data"}')
 
     # Concatenates into a single xarray dataset.
     scaler["center"] = xr.merge(scaler["center"])
