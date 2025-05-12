@@ -28,8 +28,8 @@ def _load_old_scalers(run_dir: Path) -> xr.Dataset:
     ------
     FileNotFoundError if nether YAML or PKL scaler files are present.
     """    
-    yaml_scaler_file = run_dir / "train_data" / "train_data_scaler.yml"
-    pkl_scaler_file = run_dir / "train_data" / "train_data_scaler.p"
+    yaml_scaler_file = run_dir / 'train_data' / 'train_data_scaler.yml'
+    pkl_scaler_file = run_dir / 'train_data' / 'train_data_scaler.p'
     if os.path.exists(yaml_scaler_file):
         scaler = _load_old_yaml_scaler(yaml_scaler_file)
     elif os.path.exists(pkl_scaler_file):
@@ -38,12 +38,12 @@ def _load_old_scalers(run_dir: Path) -> xr.Dataset:
         raise FileNotFoundError(f'No scaler file found at {run_dir} or {run_dir / "train_data"}')
 
     # Concatenates into a single xarray dataset.
-    scaler["center"] = xr.merge(scaler["center"])
-    scaler["scale"] = xr.merge(scaler["scale"])
+    scaler['center'] = xr.merge(scaler['center'])
+    scaler['scale'] = xr.merge(scaler['scale'])
     parameter_coords = xr.DataArray(
         data=list(scaler.keys()),
-        dims=["parameter"],
-        name="parameter"
+        dims=['parameter'],
+        name='parameter'
     )
     scaler = xr.concat(list(scaler.values()), dim=parameter_coords)
 
@@ -74,16 +74,16 @@ def _load_old_yaml_scaler(scaler_file: Path) -> xr.Dataset:
         scaler_dump = yaml.load(fp)
 
     # Transform into a dict of xarray.Datasets.
-    scaler = {"center": [], "scale": []}
+    scaler = {'center': [], 'scale': []}
     for key, value in scaler_dump.items():
-        if key in ["attribute_means", "camels_attr_means"]:
-            scaler["center"].append(xr.Dataset(value).astype(np.float32))
-        elif key in ["attribute_stds","camels_attr_stds"]:
-            scaler["scale"].append(xr.Dataset(value).astype(np.float32))
-        elif key == "xarray_feature_center":
-            scaler["center"].append(xr.Dataset.from_dict(value).astype(np.float32))
-        elif key == "xarray_feature_scale":
-            scaler["scale"].append(xr.Dataset.from_dict(value).astype(np.float32))
+        if key in ['attribute_means', 'camels_attr_means']:
+            scaler['center'].append(xr.Dataset(value).astype(np.float32))
+        elif key in ['attribute_stds', 'camels_attr_stds']:
+            scaler['scale'].append(xr.Dataset(value).astype(np.float32))
+        elif key == 'xarray_feature_center':
+            scaler['center'].append(xr.Dataset.from_dict(value).astype(np.float32))
+        elif key == 'xarray_feature_scale':
+            scaler['scale'].append(xr.Dataset.from_dict(value).astype(np.float32))
     
     return scaler
 
@@ -108,16 +108,16 @@ def _load_old_pkl_scaler(scaler_file: Path) -> xr.Dataset:
         scaler = pickle.load(fp)
 
     # Transform into a dict of xarray.Datasets.
-    scaler = {"center": [], "scale": []}
+    scaler = {'center': [], 'scale': []}
     for key, value in scaler_dump.items():
-        if key in ["attribute_means", "camels_attr_means"]:
-            scaler["center"].append(xr.Dataset(value).astype(np.float32))
-        elif key in ["attribute_stds","camels_attr_stds"]:
-            scaler["scale"].append(xr.Dataset(value).astype(np.float32))
-        elif key == "xarray_feature_center":
-            scaler["center"].append(value.astype(np.float32))
-        elif key == "xarray_feature_scale":
-            scaler["scale"].append(value.astype(np.float32))
+        if key in ['attribute_means', 'camels_attr_means']:
+            scaler['center'].append(xr.Dataset(value).astype(np.float32))
+        elif key in ['attribute_stds', 'camels_attr_stds']:
+            scaler['scale'].append(xr.Dataset(value).astype(np.float32))
+        elif key == 'xarray_feature_center':
+            scaler['center'].append(value.astype(np.float32))
+        elif key == 'xarray_feature_scale':
+            scaler['scale'].append(value.astype(np.float32))
     
     return scaler
 
