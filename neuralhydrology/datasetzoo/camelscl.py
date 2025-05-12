@@ -1,10 +1,9 @@
 import sys
 from pathlib import Path
-from typing import List, Dict, Union
+from typing import List, Dict
 
 import numpy as np
 import pandas as pd
-import xarray
 from tqdm import tqdm
 
 from neuralhydrology.datasetzoo.basedataset import BaseDataset
@@ -40,9 +39,9 @@ class CamelsCL(BaseDataset):
     id_to_int : Dict[str, int], optional
         If the config argument 'use_basin_id_encoding' is True in the config and period is either 'validation' or 
         'test', this input is required. It is a dictionary, mapping from basin id to an integer (the one-hot encoding).
-    scaler : Dict[str, Union[pd.Series, xarray.DataArray]], optional
-        If period is either 'validation' or 'test', this input is required. It contains the centering and scaling
-        for each feature and is stored to the run directory during training (train_data/train_data_scaler.yml).
+    compute_scaler : bool
+        Forces the dataset to calculate a new scaler instead of loading a precalculated scaler. Used during training, but
+        not finetuning.
 
     References
     ----------
@@ -59,14 +58,14 @@ class CamelsCL(BaseDataset):
                  basin: str = None,
                  additional_features: List[Dict[str, pd.DataFrame]] = [],
                  id_to_int: Dict[str, int] = {},
-                 scaler: Dict[str, Union[pd.Series, xarray.DataArray]] = {}):
+                 compute_scaler: bool = True):
         super(CamelsCL, self).__init__(cfg=cfg,
                                        is_train=is_train,
                                        period=period,
                                        basin=basin,
                                        additional_features=additional_features,
                                        id_to_int=id_to_int,
-                                       scaler=scaler)
+                                       compute_scaler=compute_scaler)
 
     def _load_basin_data(self, basin: str) -> pd.DataFrame:
         """Load input and output data from text files."""
