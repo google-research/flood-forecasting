@@ -6,9 +6,124 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from neuralhydrology.datautils.utils import load_scaler as old_load_scaler
-
 SCALER_FILE_NAME = 'scaler.nc'
+
+
+def _load_old_scalers(run_dir: Path) -> xr.Dataset:
+    """Loads old Pickle scaler files.
+    
+    Loads scaler file in either YAML (old) or pkl (older) formats.
+    Used for backward compatibility.
+
+    Parameters
+    ----------
+    run_dir: Path
+        Path to the run directory where an old scaler file was created.
+
+    Returns
+    -------
+    Xarray Dataset with the scaler parameters.    
+    
+    Raises
+    ------
+    FileNotFoundError if nether YAML or PKL scaler files are present.
+    """    
+    yaml_scaler_file = run_dir / "train_data" / "train_data_scaler.yml"
+    pkl_scaler_file = run_dir / "train_data" / "train_data_scaler.p"
+    if os.path.exists(yaml_scaler_file):
+        scaler = _load_old_yaml_scaler(yaml_scaler_file)
+    elif os.path.exists(pkl_scaler_file):
+        scaler = _load_old_pkl_scaler(pkl_scaler_file)
+    else:
+        raise FileNotFoundError(f'No scaler file found at {run_dir}')
+
+    # Add target scalers for tester. Necessary for fine tuning.
+    obs_scaler = scaler.copy().rename({feature: feature + '_obs' for feature in scaler.data_vars})
+    sim_scaler = scaler.copy().rename({feature: feature + '_sim' for feature in scaler.data_vars})
+    return xr.merge([scaler, obs_scaler, sim_scaler])
+    
+
+def _load_old_yaml_scaler(scaler_file: Path) -> xr.Dataset:
+    """Loads old YAML scaler files.
+    
+    Loads scaler file in YAML format.
+    Used for backward compatibility.
+
+    Parameters
+    ----------
+    scaler_file: Path
+        Path to the old scaler file.
+
+    Returns
+    -------
+    Xarray Dataset with the scaler parameters.    
+    """
+    # read scaler from disk
+    with scaler_file.open("r") as fp:
+        yaml = YAML(typ="safe")
+        scaler_dump = yaml.load(fp)
+
+    # transform into a single xarray.dataset
+    scaler = {"center": [], "scale": []}
+    for key, value in scaler_dump.items():
+        if key in ["attribute_means", "camels_attr_means"]:
+            scaler["center"].append(xr.Dataset(value).astype(np.float32))
+        elif key in ["attribute_stds","camels_attr_stds"]:
+            scaler["scale"].append(xr.Dataset(value).astype(np.float32))
+        elif key == "xarray_feature_center":
+            scaler["center"].append(xr.Dataset.from_dict(value).astype(np.float32))
+        elif key == "xarray_feature_scale":
+            scaler["scale"].append(xr.Dataset.from_dict(value).astype(np.float32))
+
+    scaler["center"] = xr.merge(scaler["center"])
+    scaler["scale"] = xr.merge(scaler["scale"])
+    parameter_coords = xr.DataArray(
+        data=list(scaler.keys()),
+        dims=["parameter"],
+        name="parameter"
+    )
+    return xr.concat(list(scaler.values()), dim=parameter_coords)
+
+
+def _load_old_pkl_scaler(scaler_file: Path) -> Optional[xr.Dataset]:
+    """Loads old Pickle scaler files.
+    
+    Loads scaler file in YAML format.
+    Used for backward compatibility.
+
+    Parameters
+    ----------
+    scaler_file: Path
+        Path to the old scaler file.
+
+    Returns
+    -------
+    Xarray Dataset with the scaler parameters.    
+    """
+    # read scaler from disk
+    with scaler_file.open('rb') as fp:
+        scaler = pickle.load(fp)
+
+    # transform into a single xarray.dataset
+    scaler = {"center": [], "scale": []}
+    for key, value in scaler_dump.items():
+        if key in ["attribute_means", "camels_attr_means"]:
+            scaler["center"].append(xr.Dataset(value).astype(np.float32))
+        elif key in ["attribute_stds","camels_attr_stds"]:
+            scaler["scale"].append(xr.Dataset(value).astype(np.float32))
+        elif key == "xarray_feature_center":
+            scaler["center"].append(value.astype(np.float32))
+        elif key == "xarray_feature_scale":
+            scaler["scale"].append(value.astype(np.float32))
+
+    scaler["center"] = xr.merge(scaler["center"])
+    scaler["scale"] = xr.merge(scaler["scale"])
+    parameter_coords = xr.DataArray(
+        data=list(scaler.keys()),
+        dims=["parameter"],
+        name="parameter"
+    )
+    return xr.concat(list(scaler.values()), dim=parameter_coords)
 
 
 def _get_center(feature_da: xr.DataArray, centering_type: str) -> float:
@@ -83,16 +198,9 @@ class Scaler():
         if os.path.exists(scaler_file):
             with open(scaler_file, 'rb') as f:
                 self.scaler = xr.load_dataset(f)
-            self._check_zero_scale()
-            return
         else:
-            scaler = old_load_scaler(self.scaler_dir)
-            # Add target scalers for tester. Necessary for fine tuning.
-            obs_scaler = scaler.copy().rename({feature: feature + '_obs' for feature in scaler.data_vars})
-            sim_scaler = scaler.copy().rename({feature: feature + '_sim' for feature in scaler.data_vars})
-            self.scaler = xr.merge([scaler, obs_scaler, sim_scaler])
-            self._check_zero_scale()
-            return
+            self.scaler = _load_old_scalers(self.scaler_dir)              
+        self._check_zero_scale()
 
     def save(self):
         if self.scaler is None:
