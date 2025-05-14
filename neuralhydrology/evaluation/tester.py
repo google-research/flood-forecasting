@@ -233,6 +233,9 @@ class BaseTester(object):
                     continue  # this frequency is not being predicted
                 results[basin][freq] = {}
 
+                # Create data_vars dictionary for the xarray.Dataset
+                data_vars = self._create_xarray_data_vars(y_hat[freq], y[freq])
+
                 # freq_range are the steps of the current frequency at each lowest-frequency step
                 frequency_factor = int(get_frequency_factor(lowest_freq, freq))
 
@@ -247,14 +250,14 @@ class BaseTester(object):
                     'time_step': ((dates[freq][0, :] - dates[freq][0, -1]) / pd.Timedelta(freq)).astype(np.int64) +
                                  frequency_factor - 1
                 }
-                data_vars = self._create_xarray_data_vars(y_hat[freq], y[freq])
                 xr = xarray.Dataset(data_vars=data_vars, coords=coords)
                 xr = xr.reindex({
                     'date':
                         pd.DatetimeIndex(pd.date_range(xr["date"].values[0], xr["date"].values[-1], freq=lowest_freq),
                                          name='date')
                 })
-                results[basin][freq]['xr'] = ds.scaler.unscale(xr)
+                xr = ds.scaler.unscale(xr)
+                results[basin][freq]['xr'] = xr
 
                 # create datetime range at the current frequency
                 freq_date_range = pd.date_range(start=dates[lowest_freq][0, -1], end=dates[freq][-1, -1], freq=freq)
