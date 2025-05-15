@@ -22,7 +22,7 @@ class HourlyCamelsUS(camelsus.CamelsUS):
     ----------
     cfg : Config
         The run configuration.
-    is_train : bool 
+    is_train : bool
         Defines if the dataset is used for training or evaluating. If True (training), means/stds for each feature
         are computed and stored to the run directory. If one-hot encoding is used, the mapping for the one-hot encoding 
         is created and also stored to disk. If False, the scaler must be calculated (`compute_scaler` must be True),
@@ -42,7 +42,6 @@ class HourlyCamelsUS(camelsus.CamelsUS):
     compute_scaler : bool
         Forces the dataset to calculate a new scaler instead of loading a precalculated scaler. Used during training, but
         not finetuning.
-
     """
 
     def __init__(self,
