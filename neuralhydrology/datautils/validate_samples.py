@@ -8,11 +8,19 @@ import xarray as xr
 
 def _flatten_feature_groups(groups: List[List[str]])-> List[str]:
     """Conditionally flattens a list of lists."""
+    if not groups:
+        return []
+    
     if not isinstance(groups, list):
         # This catches feature groups used for frequencies, which is not supported.
         raise ValueError('Feature groups must be supplied as a list.')
+    
+    if any(isinstance(g, list) for g in groups) and not all(isinstance(g, list) for g in groups):
+        raise ValueError('A mix of lists and features was supplied as feature groups.')
+
     if isinstance(groups[0], list):
         return list(itertools.chain.from_iterable(groups))
+
     else:
         return groups
 
@@ -40,6 +48,10 @@ def extract_feature_groups(
     ValueError if there are some groups that are fractionally represented in the flattened list.
     ValueError if no groups are found that are comprised of features in the flattened list.
     """
+    
+    # Return no groups for no features.
+    if not features:
+        return []
     
     # Extract groups that contain ALL features from the supplied list.
     extracted_groups = [
@@ -206,17 +218,21 @@ def validate_samples(
             ).rename('targets')
         )
 
+    # Mask any dates that are not valid sample dates.
+    all_dates = dataset.date.values
+    all_basins = dataset.basin.values
+    masks.append(
+        xr.DataArray(
+            [np.in1d(all_dates, sample_dates)]*len(all_basins),
+            coords={'basin': all_basins, 'date': all_dates},
+            dims=['basin', 'date']
+        ).rename('dates')
+    )
+
     # All masks must be valid according to their own checks for the sample to be valid.
     valid_sample_mask = xr.merge(masks).to_array(dim='variable').all(dim='variable')
     
-    # Mask any dates that are not valid sample dates.
-    all_dates = valid_sample_mask.date.values
-    sample_date_mask = xr.DataArray(
-        np.in1d(all_dates, sample_dates),
-        coords={'date': all_dates},
-        dims=['date']
-    )
-    return valid_sample_mask * sample_date_mask, masks
+    return valid_sample_mask, masks
 
 
 def validate_samples_for_nan_handling(
@@ -242,8 +258,12 @@ def validate_samples_for_nan_handling(
     
     Raises
     ------
+    ValueError if NaN-handling method requires groups but none are provided.
     ValueError for un-recognized NaN-handling method.
     """
+    if not feature_groups and nan_handling_method in ['masked_mean', 'attention', 'unioning']:
+        raise ValueError(f'Feature groups is empty for NaN-handling method: {nan_handling_method}.')
+    
     if nan_handling_method is None:
         return validate_samples_all(dataset)
     elif nan_handling_method == 'input_replacing':
@@ -278,7 +298,13 @@ def validate_samples_any_all_group(
     -------
     xarray.DataArray
         Boolean valid sample mask.
+        
+    Raises
+    ------
+    ValueError if groups list is empty.
     """
+    if not feature_groups:
+        raise ValueError('No feature groups provided.')
     group_masks = []
     for idx, group in enumerate(feature_groups):
         group_masks.append(validate_samples_all(dataset[group]).rename(str(idx)))
@@ -306,6 +332,8 @@ def validate_samples_all_any_group(
     xarray.DataArray
         Boolean valid sample mask.
     """
+    if not feature_groups:
+        raise ValueError('No feature groups provided.')
     group_masks = []
     for idx, group in enumerate(feature_groups):
         group_masks.append(validate_samples_any(dataset[group]).rename(str(idx)))
