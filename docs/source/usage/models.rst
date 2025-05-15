@@ -201,20 +201,29 @@ The model requires the following hyperparameters specified in the config file:
 
 Handoff-Forecast-LSTM
 ^^^^^^^^^^^^^^^^^^^^^
-:py:class:`neuralhydrology.modelzoo.handoff_forecast_lstm.HandoffForecastLSTM` is a forecasting model that uses a state-handoff to transition 
-from a hindcast sequence model to a forecast sequence (LSTM) model. The hindcast model is run from the past up to present (the issue time of the forecast) 
-and then passes the cell state and hidden state of the LSTM into a (nonlinear) handoff network, which is then used to initialize the cell state and 
-hidden state of a new LSTM that rolls out over the forecast period. The handoff network is implemented as a custom FC layer, which can have multiple layers.
-The handoff network is implemented using the ``state_handoff_network`` config parameter.
-The hindcast and forecast LSTMs have different weights and biases, different heads, and can have different embedding networks. The hidden size of the 
-hindcast LSTM is set using the ``hindcast_hidden_size`` config parameter and the hidden size of the forecast LSTM is set using the ``forecast_hidden_size`` 
-config parameter, which both default to ``hidden_size`` if not set explicitly.
+:py:class:`neuralhydrology.modelzoo.handoff_forecast_lstm.HandoffForecastLSTM` is a forecasting model
+that uses a state-handoff to transition from a hindcast sequence (LSTM)
+model to a forecast sequence (LSTM) model. The hindcast model is run from the past up to present
+(the issue time of the forecast) and then passes the cell state and hidden state of the LSTM into
+a (nonlinear) handoff network, which is then used to initialize the cell state and hidden state of a
+new LSTM that rolls out over the forecast period. The handoff network is implemented as a custom FC
+network, which can have multiple layers. The handoff network is implemented using the
+``state_handoff_network`` config parameter.
+    
+The hindcast and forecast LSTMs have different weights and biases, different heads, and can have
+different embedding networks, as defined by ``hindcast_embedding`` and ``forecast_embedding`` in the
+config. The hidden size of the hindcast LSTM is set using the ``hindcast_hidden_size`` config parameter
+and the hidden size of the forecast LSTM is set using the ``forecast_hidden_size`` config parameter,
+which both default to ``hidden_size`` if not set explicitly.
 
-The handoff forecast LSTM model can implement a delayed handoff as well, such that the handoff between the hindcast and forecast LSTM occurs prior to the 
-forecast issue time. This is controlled by the ``forecast_overlap`` parameter in the config file, and the forecast and hindcast LSTMs will run concurrently 
-for the number of timesteps indicated by ``forecast_overlap``. We recommend using the ``ForecastOverlapMSERegularization`` regularization option to regularize 
-the loss function by (dis)agreement between the overlapping portion of the hindcast and forecast LSTMs. This regularization term can be requested by setting 
-the ``regularization`` parameter in the config file to include ``forecast_overlap``.
+The handoff forecast LSTM model can implement a delayed handoff, such that the handoff between the
+hindcast and forecast LSTM occurs prior to the forecast issue time. This is controlled by the
+``forecast_overlap`` parameter in the config file. The forecast and hindcast LSTMs run concurrently 
+for the number of timesteps indicated by ``forecast_overlap``. We recommend using the
+``ForecastOverlapMSERegularization`` regularization option to regularize the loss function by
+(dis)agreement between the overlapping portion of the hindcast and forecast LSTMs. This regularization
+term can be requested by setting  the ``regularization`` parameter list in the config file to include
+``forecast_overlap``.
 
 Multihead-Forecast-LSTM
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -225,23 +234,31 @@ layer, which can have multiple layers. Do not use this model with ``forecast_ove
 
 Sequential-Forecast-LSTM
 ^^^^^^^^^^^^^^^^^^^^^^^^
-:py:class:`neuralhydrology.modelzoo.sequential_forecast_lstm.SequentialForecastLSTM` is a forecasting model that uses a single sequential (LSTM) model that rolls 
-out through both the hindcast and forecast sequences. The difference between this and a standard `CudaLSTM`_ is (1) this model uses both hindcast and forecast 
-input features, and (2) it uses a separate embedding network for the hindcast period and the forecast period. Do not use this model with ``forecast_overlap`` > 0.
+:py:class:`neuralhydrology.modelzoo.sequential_forecast_lstm.SequentialForecastLSTM` is a forecasting
+model that uses a single sequential (LSTM) model that rolls 
+out through both the hindcast and forecast sequences. The difference between this
+and a standard ``CudaLSTM`` is (1) this model uses both hindcast and forecast
+input features, and (2) it uses a separate embedding network for the hindcast
+period and the forecast period, as defined by ``hindcast_embedding`` and
+``forecast_embedding`` in the config. Do not use this model with ``forecast_overlap`` > 0.
+
 
 Stacked-Forecast-LSTM
 ^^^^^^^^^^^^^^^^^^^^^
-:py:class:`neuralhydrology.modelzoo.stacked_forecast_lstm.StackedForecastLSTM` is a forecasting model that uses two stacked sequential (LSTM) models to handle hindcast vs. forecast. 
-    
-The total sequence length ``seq_length`` config parameter must be equal to the total hindcast + forecast time ranges. 
-    
-The forecast sequence length ``forecast_seq_length`` config parameter must be equal to the overlapping portion of the hindcast and forecast models plus the forecast time period. 
-    
-The ``forecast_overlap`` config parameter must be set to the correct overlap between these two sequences. 
-
-For example, if we want to use a spinup period of 365 days to make a 7-day forecast, then ``seq_length`` must be set to 372 (=365+7), ``forecast_seq_length`` must be set to 365, and ``forecast_overlap`` must be set to 358 (=365-7). 
-
-Outputs from the hindcast LSTM are concatenated to the input  sequences to the forecast LSTM and shifted in time by the forecast horizon (7 days in the example above. This causes a lag between the latest hindcast data and the newest forecast time point, meaning that forecasts do not get information from the most recent hindcast inputs. To solve this, set the ``bidirectional_stacked_forecast_lstm`` config parameter to True, so that the hindcast LSTM runs bidirectional and therefore all outputs from the hindcast LSTM receive information from the most recent hindcast input data.
+:py:class:`neuralhydrology.modelzoo.stacked_forecast_lstm.StackedForecastLSTM` This is a forecasting
+model that uses two stacked sequential (LSTM) models to handle 
+hindcast vs. forecast. The config parameter ``forecast_overlap`` deterimines the temporal
+overlap of the hindcast and forecast LSTMs.
+        
+Outputs from the hindcast LSTM are concatenated to the input sequences to the forecast
+LSTM and shifted in time by the forecast horizon. This causes a lag between the latest
+hindcast data and the newest forecast time point, meaning that forecasts do not get
+information from the most recent hindcast inputs. To solve this, set the
+``bidirectional_stacked_forecast_lstm`` config parameter to True, so that the
+hindcast LSTM runs bidirectional and therefore all outputs from the hindcast
+LSTM receive information from the most recent hindcast input data. This model supports
+different embedding networks, as defined by ``hindcast_embedding`` and
+``forecast_embedding`` in the config.
 
 
 Implementing a new model

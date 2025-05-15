@@ -3,82 +3,84 @@ from typing import Dict
 import torch
 import torch.nn as nn
 
-from neuralhydrology.modelzoo.inputlayer import InputLayer
-from neuralhydrology.modelzoo.head import get_head
 from neuralhydrology.modelzoo.basemodel import BaseModel
-from neuralhydrology.utils.config import Config
 from neuralhydrology.modelzoo.fc import FC
+from neuralhydrology.modelzoo.head import get_head
+from neuralhydrology.modelzoo.inputlayer import InputLayer
+from neuralhydrology.utils.config import Config
 
 
 class StackedForecastLSTM(BaseModel):
     """A forecasting model using stacked LSTMs for hindcast and forecast.
 
     This is a forecasting model that uses two stacked sequential (LSTM) models to handle 
-    hindcast vs. forecast.
+    hindcast vs. forecast. The config parameter ``forecast_overlap`` deterimines the temporal
+    overlap of the hindcast and forecast LSTMs.
         
-    The total sequence length ``seq_length`` config parameter must be equal to the total
-    hindcast + forecast time ranges. 
-    
-    The forecast sequence length ``forecast_seq_length`` config parameter must be equal
-    to the overlapping portion of the hindcast and forecast models plus the forecast
-    time period. 
-    
-    The ``forecast_overlap`` config parameter must be set to the correct overlap
-    between these two sequences. 
-    
-    For example, if we want to use a spinup period of 365 days to make a 7-day
-    forecast, then ``seq_length`` must be set to 372 (=365+7), ``forecast_seq_length``
-    must be set to 365, and ``forecast_overlap`` must be set to 358 (=365-7). 
-    
-    Outputs from the hindcast LSTM are concatenated to the input 
-    sequences to the forecast LSTM and shifted in time by the forecast horizon (7 days
-    in the example above. This causes a lag between the latest hindcast data and the
-    newest forecast time point, meaning that forecasts do not get information from the
-    most recent hindcast inputs. To solve this, set the
+    Outputs from the hindcast LSTM are concatenated to the input sequences to the forecast
+    LSTM and shifted in time by the forecast horizon. This causes a lag between the latest
+    hindcast data and the newest forecast time point, meaning that forecasts do not get
+    information from the most recent hindcast inputs. To solve this, set the
     ``bidirectional_stacked_forecast_lstm`` config parameter to True, so that the
     hindcast LSTM runs bidirectional and therefore all outputs from the hindcast
-    LSTM receive information from the most recent hindcast input data.
+    LSTM receive information from the most recent hindcast input data. This model supports
+    different embedding networks, as defined by ``hindcast_embedding`` and
+    ``forecast_embedding`` in the config.
 
     Parameters
     ----------
     cfg : Config
         The run configuration.
+        
+    Raises
+    ------
+    ValueError if `predict_last_n` is longer than the total forecast sequence (overlap + lead time).
     """
-    # specify submodules of the model that can later be used for finetuning. Names must match class attributes
+    # Specify submodules of the model that can later be used for finetuning. Names must match class attributes.
     module_parts = ['hindcast_embedding_net', 'forecast_embedding_net', 'forecast_lstm', 'hindcast_lstm', 'head']
 
     def __init__(self, cfg: Config):
         super(StackedForecastLSTM, self).__init__(cfg=cfg)
 
-        self.forecast_embedding_net = InputLayer(cfg, embedding_type='forecast')
-        self.hindcast_embedding_net = InputLayer(cfg, embedding_type='hindcast')
+        # Data sizes for expanding features in the forward pass.
+        self.seq_length = cfg.seq_length
+        self.lead_time = cfg.lead_time
+        self.overlap = cfg.forecast_overlap
+        # TODO (future) :: Models assume that all lead times are present up to the longest `lead_time`.
+        # ForecastBaseDataset does not require this assumption.
+        if cfg.predict_last_n > self.lead_time + self.overlap:
+            raise ValueError('In the Stacked Forecast LSTM, `predict_last_n` must not be larger than the length of the forecast sequence.')
+                
+        # Input embedding layers.
+        self.forecast_embedding_net = InputLayer(cfg=cfg, embedding_type='forecast')
+        self.hindcast_embedding_net = InputLayer(cfg=cfg, embedding_type='hindcast')
 
-        self.hindcast_hidden_size = cfg.hindcast_hidden_size
+        # Time series layers.
         self.hindcast_lstm = nn.LSTM(
             input_size=self.hindcast_embedding_net.output_size,
-            hidden_size=self.hindcast_hidden_size,
-            bidirectional=cfg.bidirectional_stacked_forecast_lstm
+            hidden_size=cfg.hidden_size,
+            bidirectional=cfg.bidirectional_stacked_forecast_lstm,
         )
-        self.forecast_hidden_size = cfg.forecast_hidden_size
-        forecast_input_size = self.forecast_embedding_net.output_size + self.hindcast_hidden_size
-        if cfg.bidirectional_stacked_forecast_lstm:
-            forecast_input_size += self.hindcast_hidden_size
+        
+        forecast_input_size = self.forecast_embedding_net.output_size + self.hindcast_lstm.hidden_size
+        if self.cfg.bidirectional_stacked_forecast_lstm:
+            forecast_input_size += self.hindcast_lstm.hidden_size
         self.forecast_lstm = nn.LSTM(
             input_size=forecast_input_size,
-            hidden_size=self.forecast_hidden_size
+            hidden_size=cfg.hidden_size,
+            batch_first=True
         )
 
         self.dropout = nn.Dropout(p=cfg.output_dropout)
-
-        self.head = get_head(cfg=cfg, n_in=self.forecast_hidden_size, n_out=self.output_size)
+        self.head = get_head(cfg=cfg, n_in=cfg.hidden_size, n_out=self.output_size)
 
         self._reset_parameters()
 
     def _reset_parameters(self):
         """Special initialization of certain model weights."""
         if self.cfg.initial_forget_bias is not None:
-            self.hindcast_lstm.bias_hh_l0.data[self.hindcast_hidden_size:2 * self.hindcast_hidden_size] = self.cfg.initial_forget_bias
-            self.forecast_lstm.bias_hh_l0.data[self.forecast_hidden_size:2 * self.forecast_hidden_size] = self.cfg.initial_forget_bias
+            self.hindcast_lstm.bias_hh_l0.data[self.cfg.hidden_size:2 * self.cfg.hidden_size] = self.cfg.initial_forget_bias
+            self.forecast_lstm.bias_hh_l0.data[self.cfg.hidden_size:2 * self.cfg.hidden_size] = self.cfg.initial_forget_bias
 
     def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on the StackedForecastLSTM model.
@@ -92,43 +94,18 @@ class StackedForecastLSTM(BaseModel):
         -------
         Dict[str, torch.Tensor]
             Model outputs and intermediate states as a dictionary.
-                - lstm_output_hindcast: Output sequence from the hindcast LSTM.
-                - lstm_output_forecast: Output sequence from the forecast LSTM.
                 - y_hat: Predictions over the sequence from the head layer.
-
-        Raises
-        ------
-        ValueError if hindcast and forecast sequences are not equal.
         """
+        # Run the embedding layers.
+        hindcast_embeddings = self.hindcast_embedding_net(data)
+        forecast_embeddings = self.forecast_embedding_net(data)
 
-        # possibly pass dynamic and static inputs through embedding layers, then concatenate them
-        x_h = self.hindcast_embedding_net(data)
-        x_f = self.forecast_embedding_net(data)
+        # Run hindcast LSTM.
+        hindcast, _ = self.hindcast_lstm(input=hindcast_embeddings)
 
-        if x_h.shape[0] != x_f.shape[0]:
-            raise ValueError('Hindcast and forecast sequences must be equal.')
-
-        # run hindcast part of the lstm
-        lstm_output_hindcast, _ = self.hindcast_lstm(input=x_h)
-
-        # LSTM here is NOT batch-first, thus why the transpose is necessary below.
-        # The LSTM output at this point is (seq, batch, dims).
-        forecast_inputs = torch.concat((x_f, lstm_output_hindcast), dim=-1)  # concat along variable dimension
-
-        # run forecast part of the lstm
-        lstm_output_forecast, _ = self.forecast_lstm(forecast_inputs)
+        # Run forecast LSTM.
+        forecast_inputs = torch.cat((forecast_embeddings, hindcast[-self.overlap-self.lead_time:, ...]), dim=-1)
+        forecast, _ = self.forecast_lstm(forecast_inputs)
         
-        lstm_output_hindcast = lstm_output_hindcast.transpose(0, 1)
-        lstm_output_forecast = lstm_output_forecast.transpose(0, 1)
-
-        # run head
-        pred = self.head(self.dropout(lstm_output_forecast))
-
-        pred.update(
-            {
-                'lstm_output_hindcast': lstm_output_hindcast,
-                'lstm_output_forecast': lstm_output_forecast,
-            }
-        )
-
-        return pred
+        # Run head.
+        return self.head(self.dropout(forecast.transpose(0, 1)))

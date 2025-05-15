@@ -228,14 +228,6 @@ class Config(object):
             else:
                 pass
 
-        # Check forecast sequence length.
-        if cfg.get('forecast_seq_length'):
-            if cfg['forecast_seq_length'] >= cfg['seq_length']:
-                raise ValueError('Forecast sequence length must be < sequence length.')
-            if cfg.get('forecast_overlap'):
-                if cfg['forecast_overlap'] > cfg['forecast_seq_length']:
-                    raise ValueError('Forecast overlap must be <= forecast sequence length.')
-
         # Check autoregressive inputs.
         if 'autoregressive_inputs' in cfg:
             if len(cfg['autoregressive_inputs']) > 1:
@@ -244,6 +236,16 @@ class Config(object):
                 raise ValueError('Autoregressive models currently only support a single target variable.')
             if not cfg['autoregressive_inputs'][0].startswith(cfg['target_variables'][0]):
                 raise ValueError('Autoregressive input must be a lagged version of the target variable.')
+
+        # Allow separate data directories to be defined for different types of data.
+        if "data_dir" in cfg and "statics_data_dir" not in cfg:
+            cfg["statics_data_dir"] = cfg["data_dir"]
+        if "data_dir" in cfg and "hindcasts_data_dir" not in cfg:
+            cfg["hindcasts_data_dir"] = cfg["data_dir"]
+        if "data_dir" in cfg and "forecasts_data_dir" not in cfg:
+            cfg["forecasts_data_dir"] = cfg["data_dir"]
+        if "data_dir" in cfg and "targets_data_dir" not in cfg:
+            cfg["targets_data_dir"] = cfg["data_dir"]
 
         # Add more config parsing if necessary
         return cfg
@@ -313,8 +315,8 @@ class Config(object):
         return self._as_default_dict(self._cfg.get("custom_normalization", {}))
 
     @property
-    def data_dir(self) -> Path:
-        return self._get_value_verbose("data_dir")
+    def data_dir(self) -> Optional[Path]:
+        return self._cfg.get("data_dir", None)
 
     @property
     def dataset(self) -> str:
@@ -421,7 +423,7 @@ class Config(object):
         return self._cfg.get("forecast_hidden_size", self.hidden_size)
 
     @property
-    def forecast_inputs(self) -> list[str] | list[list[str]]:
+    def forecast_inputs(self) -> list[str]:
         return self._cfg.get("forecast_inputs", [])
 
     @property
@@ -439,6 +441,10 @@ class Config(object):
     @property
     def forecast_seq_length(self) -> int:
         return self._cfg.get("forecast_seq_length", None)
+
+    @property
+    def forecasts_data_dir(self) -> Path:
+        return self._get_value_verbose("forecasts_data_dir")
 
     @property
     def forcings(self) -> List[str]:
@@ -464,7 +470,7 @@ class Config(object):
             return self._get_value_verbose("head")
 
     @property
-    def hindcast_inputs(self) -> list[str] | list[list[str]]:
+    def hindcast_inputs(self) -> list[str]:
         return self._cfg.get("hindcast_inputs", [])
 
     @property
@@ -474,6 +480,10 @@ class Config(object):
             return list(itertools.chain.from_iterable(hindcast_inputs))
         else:
             return hindcast_inputs
+
+    @property
+    def hindcasts_data_dir(self) -> Path:
+        return self._get_value_verbose("hindcasts_data_dir")
 
     @property
     def hidden_size(self) -> Union[int, Dict[str, int]]:
@@ -518,6 +528,10 @@ class Config(object):
     @property
     def lagged_features(self) -> dict:
         return self._as_default_dict(self._cfg.get("lagged_features", {}))
+
+    @property
+    def lead_time(self) -> int:
+        return self._cfg.get("lead_time", 0)
 
     @property
     def learning_rate(self) -> Dict[int, float]:
@@ -728,6 +742,14 @@ class Config(object):
     @property
     def seed(self) -> int:
         return self._cfg.get("seed", None)
+
+    @property
+    def statics_data_dir(self) -> Path:
+        return self._get_value_verbose("statics_data_dir")
+
+    @property
+    def targets_data_dir(self) -> Path:
+        return self._get_value_verbose("targets_data_dir")
 
     @property
     def transformer_nlayers(self) -> int:

@@ -73,7 +73,7 @@ class InputLayer(nn.Module):
                 if self.embedding_type == 'hindcast':
                     self._dynamic_inputs = [group + ['hindcast_counter'] for group in self._dynamic_inputs]
                 elif self.embedding_type == 'forecast':
-                    self._dynamic_inputs += [group + ['forecast_counter'] for group in self._dynamic_inputs]
+                    self._dynamic_inputs = [group + ['forecast_counter'] for group in self._dynamic_inputs]
             self.nan_handling_method = cfg.nan_handling_method
             self.attention = None
             self._nan_fill_value = 0.0
@@ -125,7 +125,7 @@ class InputLayer(nn.Module):
             dynamics_output_sizes.append(group_output_size)
         self.dynamics_embeddings = nn.ModuleList(dynamics_embeddings)
         if not all(size == dynamics_output_sizes[0] for size in dynamics_output_sizes):
-            raise ValueError('All dynamics embedding output sizes must be equal.')
+            raise ValueError(f'All dynamics embedding output sizes must be equal: {dynamics_output_sizes}.')
         # All output sizes are the same, just use the first one.
         self.dynamics_output_size = dynamics_output_sizes[0]
         if self.nan_handling_method == 'attention':
@@ -147,7 +147,7 @@ class InputLayer(nn.Module):
 
         self.output_size = self.dynamics_output_size + self.statics_output_size + self._num_autoregression_inputs
         self.cfg = cfg
-
+        
     @staticmethod
     def _get_embedding_net(embedding_spec: Optional[dict], input_size: int, purpose: str) -> Tuple[nn.Module, int]:
         """Get an embedding net following the passed specifications.

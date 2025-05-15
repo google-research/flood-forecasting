@@ -301,13 +301,14 @@ Handoff Forecast Model settings
 -  ``state_handoff_network``: Embedding network that defines the handoff of the cell state and hidden state from the 
    hindcast LSTM to the forecast LSTM.
 
--  ``forecast_overlap``: An integer number of timesteps where forecast
-   data overlaps with hindcast data. This does not add to the
-   ``forecast_sequence_length``, and must be no larger than the
-   ``forecast_sequence_length``.
+-  ``forecast_overlap``: An integer number of timesteps where forecast data overlaps with hindcast data.
 
 Multihead Forecast Model settings
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+-  ``forecast_hidden_size``: Integer hidden size for the forecast (decoder) LSTM. This will default to ``hidden_size``.
+
+-  ``hindcast_hidden_size``: Integer hidden size for the hindcast (encoder) LSTM. This will default to ``hidden_size``.
 
 -  ``forecast_network``: Fully coupled network with one or multiple layers (this is an Embedding Network type, see documentation herein)
    that defines the forecast (decoder) portion of the multi-head (non-rollout) forecast model.
@@ -320,6 +321,17 @@ Stacked Forecast Model settings
 -  ``forecast_hidden_size``: Integer hidden size for the forecast (decoder) LSTM. This will default to ``hidden_size``.
 
 -  ``hindcast_hidden_size``: Integer hidden size for the hindcast (encoder) LSTM. This will default to ``hidden_size``.
+
+-  ``forecast_overlap``: An integer number of timesteps where forecast model overlaps with hindcast model.
+
+Sequential Forecast Model settings
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+-  ``forecast_hidden_size``: Integer hidden size for the forecast (decoder) LSTM. This will default to ``hidden_size``.
+
+-  ``hindcast_hidden_size``: Integer hidden size for the hindcast (encoder) LSTM. This will default to ``hidden_size``.
+
+-  ``forecast_overlap``: An integer number of timesteps where forecast model overlaps with hindcast model.
 
 Embedding network settings
 --------------------------
@@ -404,20 +416,16 @@ Training settings
 
 -  ``seq_length``: Length of the input sequence. If ``use_frequencies``
    is used, this needs to be a dictionary mapping each frequency to a
-   sequence length, else an int.
-
--  ``forecast_seq_length``: Length of the forecast sequence. This is the
-   number of timesteps from the total ``seq_length`` that are part of the 
-   forecast rather than the hindcast. Note that this does not add to the
-   total ``seq_length``, and thus, the forecast sequence length must be
-   less than the total sequence length.
+   sequence length, else an int. 
+   
+   When using ``forecast_inputs`` and
+   ``hindcast_inputs`` instead of ``dynamic_inputs``, this is the
+   length of the hindcast sequence. In this case, multiple frequencies
+   is not supported.
 
 -  ``forecast_overlap``: An integer number of timesteps where forecast
-   data overlaps with hindcast data. This does not add to the
-   ``forecast_sequence_length``, and must be no larger than the
-   ``forecast_sequence_length``. This is used for 
-   ``ForecastOverlapMSERegularization`` in the ``handoff_forecast_model``
-   and for the ``stacked_lstm`` model.
+   data overlaps with hindcast data. Used for the stacked LSTM forecast model
+   and optionally for the handoff LSTM forecast model.
 
 -  ``predict_last_n``: Defines which time steps are used to calculate
    the loss, counted backwards. Can't be larger than ``seq_length``.
@@ -488,6 +496,18 @@ Data settings
 
 -  ``data_dir``: Full or relative path to the root directory of the data set.
 
+-  ``statics_data_dir``: Optional full or relative path to directory from which to read static
+    attribute data when using forecast models. If not present or None, this defaults to ``data_dir``.
+
+-  ``hindcasts_data_dir``: Optional full or relative path to directory from which to read hindcast
+    input data when using forecast models. If not present or None, this defaults to ``data_dir``.
+
+-  ``forecasts_data_dir``: Optional full or relative path to directory from which to read forecast
+    input data when using forecast models. If not present or None, this defaults to ``data_dir``.
+
+-  ``targets_data_dir``: Optional full or relative path to directory from which to read target
+    data when using forecast models. If not present or None, this defaults to ``data_dir``.
+
 -  ``train_data_file``: If not empty, uses the pickled file at this path
    as the training data. Can be used to not create the same data set
    multiple times, which saves disk space and time. If empty, creates
@@ -521,24 +541,32 @@ Data settings
    When ``nan_handling_method`` is set, this can also be specified as a list of lists.
    Then, each inner list defines a feature group. Refer to ``nan_handling_method`` for a
    description of how this can be used to handle missing input data.
+   
+   Forecast models do not use ``dynamic_inputs``, and use ``forecast_inputs`` and
+   ``hindcast_inputs`` instead. ``dynamic_inputs`` is not required. ``forecast_inputs``
+   and ``hindcast_inputs`` support lists used for NaN-handling, but do NOT support
+   dictionaries used for multiple frequencies (forecast models do not support multiple
+   frequencies).
+   
+-  ``forecast_inputs``: These are dynamic features (like ``dyncamic_inputs``)
+   that are used as inputs to the forecasting portion of a forecast model. Must be
+   used in conjunction with ``hindcast_inputs``. This allows different features to
+   be used for the forecast and hindcast portions of a model. Along with
+   ``hindcast_inputs``, these are used *instead of* ``dynamic_inputs`` for all
+   forecasting models. Note that forecasting (and ``forecast_inputs``) does not support
+   multiple frequencies, autoregression, or mass-conservation, but does support
+   NaN-handling (``nan_handling_method``). NaN-handling feature groups are defined in
+   ``forecast_inputs`` as a list of lists in the same way as ``dyncamic_inputs``.
 
--  ``forecast_inputs``: These are dynamic features (exactly like ``dyncamic_inputs``)
-   that are used as inputs to the forecasting portion of a forecast model. This allows
-   different features to be used for the forecast and hindcast portions of a model.
-   If ``forecast_inputs`` is present, then all features in this list must also appear
-   in the ``dynamic_inputs`` list, which will contain both forecast and hindcast features.
-
-   Note that this does not currently support a forecast rollout, meaning that because
-   forecast inputs behave the same way as dynamic inputs, the forecast input for two
-   timesteps ahead of time t will be the same as the forecast input for one day ahead
-   of time t+1. 
-
-   Note also that forecasting (and forecast inputs) is not supported for multi-timescale
-   models.
-
--  ``hindcast_inputs``: These are the same as ``forecast_inputs`` except that they are for
-   the hindcast portion of a forecast model. As with ``forecast_inputs`` these dynamic inputs
-   must be included in the ``dynamic_inputs`` list.
+-  ``hindcast_inputs``: These are dynamic features (like ``dyncamic_inputs``) 
+   that are used as inputs to the hindcast portion of a forecast model. Must be
+   used in conjunction with ``forecast_inputs``. This allows different features to
+   be used for the forecast and hindcast portions of a model. Along with
+   ``forecast_inputs``, these are used *instead of* ``dynamic_inputs`` for all
+   forecasting models. Note that forecasting (and ``hindcast_inputs``) does not support
+   multiple frequencies, autoregression, or mass-conservation, but does support
+   NaN-handling (``nan_handling_method``). NaN-handling feature groups are defined in
+   ``hindcast_inputs`` as a list of lists in the same way as ``dyncamic_inputs``.
 
 -  ``target_variables``: List of the target variable(s). Names must match
    the exact names as defined in the data set.
@@ -616,19 +644,32 @@ Data settings
    are any NaN's in the original timeseries. Only works for timeseries features
    (inputs and targets). Leave empty if none should be used. 
 
--  ``custom_normalization``: Has to be a dictionary, mapping from
-   time series feature names to ``centering`` and/or ``scaling``. Using
-   this argument allows to overwrite the default zero mean, unit
-   variance normalization per feature. Supported options for
-   ``centering`` are 'None' or 'none', 'mean', 'median' and min.
-   None/none sets the centering parameter to 0.0, mean to the feature
-   mean, median to the feature median, and min to the feature
-   minimum, respectively. Supported options for `scaling` are
+-  ``custom_normalization``: Dictionary mapping from feature names to one of
+   the allowed scaler types: 
+   - ``normalization`` subtracts the mean and scales by standard deviation.
+   - ``minimax`` maps to the interval [0, 1].
+   - ``identity`` does not transform the feature.
+
+   This config argument also supports backward compatability with different
+   types of normalization scaling. This is done by instead of mapping from
+   feature names to scaling type, it uses normalization-type scaling for
+   all features with different types of centers and scales. Set these choices
+   by using a mapping with the following two keys: ``centering`` and ``scaling``.
+   Supported options for ``centering`` are 'None' or 'none', 'mean',
+   'median' and 'min'. None/none sets the centering parameter to 0.0,
+   mean to the feature mean, median to the feature median, and min to the
+   feature minimum, respectively. Supported options for `scaling` are
    'None' or 'none', 'std', 'minmax'. None/none sets the scaling
    parameter to 1.0, std to the feature standard deviation and
    minmax to the feature max minus the feature min. The combination
    of centering: min and scaling: minmax results in min/max
    feature scaling to the range [0,1].
+   
+   The ``custom_normalization`` config argument support both the per-feature
+   scaler type mapping (``normalization``, ``minimax``, ``identity``) and
+   the ``centering`` and ``scaling`` arguments as keys in the same dictionary.
+   If both are supplied, then all ``normalization`` and unlisted features are
+   scaled using the ``centering`` and ``scaling`` approach.
 
 -  ``additional_feature_files``: Path to a pickle file (or list of paths
    for multiple files), containing a dictionary with each key

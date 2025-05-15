@@ -3,9 +3,10 @@ from typing import Dict
 import torch
 import torch.nn as nn
 
-from neuralhydrology.modelzoo.inputlayer import InputLayer
-from neuralhydrology.modelzoo.head import get_head
 from neuralhydrology.modelzoo.basemodel import BaseModel
+from neuralhydrology.modelzoo.fc import FC
+from neuralhydrology.modelzoo.head import get_head
+from neuralhydrology.modelzoo.inputlayer import InputLayer
 from neuralhydrology.utils.config import Config
 
 
@@ -16,9 +17,8 @@ class SequentialForecastLSTM(BaseModel):
     out through both the hindcast and forecast sequences. The difference between this
     and a standard ``CudaLSTM`` is (1) this model uses both hindcast and forecast
     input features, and (2) it uses a separate embedding network for the hindcast
-    period and the forecast period. 
-    
-    Do not use this model with ``forecast_overlap`` > 0.
+    period and the forecast period, as defined by ``hindcast_embedding`` and
+    ``forecast_embedding`` in the config. Do not use this model with ``forecast_overlap`` > 0.
 
     Parameters
     ----------
@@ -37,22 +37,29 @@ class SequentialForecastLSTM(BaseModel):
         super(SequentialForecastLSTM, self).__init__(cfg=cfg)
 
         if cfg.forecast_overlap:
-            raise ValueError('Forecast overlap cannot be set for a sequential forecasting model. '
-                             'Please set to None or remove from config file.')
+            raise ValueError(
+                'Forecast overlap cannot be set for a sequential LSTM forecast model. '
+                'Please set to None or remove from config file.'
+            )
 
-        self.forecast_embedding_net = InputLayer(cfg, embedding_type='forecast')
-        self.hindcast_embedding_net = InputLayer(cfg, embedding_type='hindcast')
+        # Data sizes for expanding features in the forward pass.
+        self.seq_length = cfg.seq_length
+        # TODO (future) :: Models assume that all lead times are present up to the longest `lead_time`.
+        # ForecastBaseDataset does not require this assumption.
+        
+        # Input embedding layers.
+        self.forecast_embedding_net = InputLayer(cfg=cfg, embedding_type='forecast')
+        self.hindcast_embedding_net = InputLayer(cfg=cfg, embedding_type='hindcast')
 
         if self.forecast_embedding_net.output_size != self.hindcast_embedding_net.output_size:
             raise ValueError('Forecast and hindcast embedding nets must have the same output size when using a sequential forecast LSTM.')
 
         self.lstm = nn.LSTM(
             input_size=self.forecast_embedding_net.output_size,
-            hidden_size=cfg.hidden_size
+            hidden_size=cfg.hidden_size,
         )
 
         self.dropout = nn.Dropout(p=cfg.output_dropout)
-
         self.head = get_head(cfg=cfg, n_in=cfg.hidden_size, n_out=self.output_size)
 
         self._reset_parameters()
@@ -74,47 +81,16 @@ class SequentialForecastLSTM(BaseModel):
         -------
         Dict[str, torch.Tensor]
             Model outputs and intermediate states as a dictionary.
-                - lstm_output_hindcast: Output sequence from the hindcast LSTM.
-                - lstm_output_forecast: Output sequence from the forecast LSTM.
-                - h_n_hindcast: Final hidden state of the hindcast model.
-                - c_n_hindcast: Final cell state of the hindcast model.
-                - h_n_forecast: Finall hidden state of the forecast model.
-                - c_n_forecast: Final cell state of the forecast model.
                 - y_hat: Predictions over the sequence from the head layer.
         """
-        # possibly pass dynamic and static inputs through embedding layers, then concatenate them
-        x_h = self.hindcast_embedding_net(data)
-        x_f = self.forecast_embedding_net(data)
+        # Run the embedding layers.
+        hindcast_embeddings = self.hindcast_embedding_net(data)
+        forecast_embeddings = self.forecast_embedding_net(data)
+        embeddings = torch.cat([hindcast_embeddings, forecast_embeddings], dim=0)
 
-        # run hindcast part of the lstm
-        lstm_output_hindcast, (h_n_hindcast, c_n_hindcast) = self.lstm(input=x_h)
-        lstm_output_hindcast = lstm_output_hindcast.transpose(0, 1)
+        # Run LSTM.
+        lstm_output, _ = self.lstm(input=embeddings)
+        y_hat = self.head(self.dropout(lstm_output.transpose(0, 1)))['y_hat'][: ,-self.seq_length:, ...]
 
-        # run forecast part of the lstm
-        lstm_output_forecast, (h_n_forecast, c_n_forecast) = self.lstm(x_f, (h_n_hindcast, c_n_hindcast))
-        lstm_output_forecast = lstm_output_forecast.transpose(0, 1)
-
-        # run head
-        concatenated_predictions = torch.cat([lstm_output_hindcast, lstm_output_forecast], dim=1)
-        pred = self.head(self.dropout(concatenated_predictions))
-
-        # reshape to [batch_size, seq, n_hiddens]
-        h_n_hindcast = h_n_hindcast.transpose(0, 1)
-        c_n_hindcast = c_n_hindcast.transpose(0, 1)
-        h_n_forecast = h_n_forecast.transpose(0, 1)
-        c_n_forecast = c_n_forecast.transpose(0, 1)
-
-        pred.update(
-            {
-                'lstm_output_hindcast': lstm_output_hindcast,
-                'lstm_output_forecast': lstm_output_forecast,
-
-                'h_n_hindcast': h_n_hindcast,
-                'c_n_hindcast': c_n_hindcast,
-
-                'h_n_forecast': h_n_forecast,
-                'c_n_forecast': c_n_forecast,
-            }
-        )
-
-        return pred
+        # Run head.
+        return {'y_hat': y_hat}
