@@ -17,8 +17,8 @@ class CamelsGB(BaseDataset):
     is_train : bool 
         Defines if the dataset is used for training or evaluating. If True (training), means/stds for each feature
         are computed and stored to the run directory. If one-hot encoding is used, the mapping for the one-hot encoding 
-        is created and also stored to disk. If False, a `scaler` input is expected and similarly the `id_to_int` input
-        if one-hot encoding is used. 
+        is created and also stored to disk. If False, the scaler must be calculated (`compute_scaler` must be True),
+        and similarly the `id_to_int` input is required if one-hot encoding is used. 
     period : {'train', 'validation', 'test'}
         Defines the period for which the data will be loaded
     basin : str, optional
