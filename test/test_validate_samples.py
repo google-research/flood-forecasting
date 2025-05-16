@@ -391,7 +391,6 @@ def test_validate_samples_all_any_group_empty_feature_groups(basins_fixture, sam
         validate_samples_all_any_group(dataset, feature_groups)
 
 # --- Tests for validate_samples_for_nan_handling ---
-
 @patch('neuralhydrology.datautils.validate_samples.validate_samples_all')
 @patch('neuralhydrology.datautils.validate_samples.validate_samples_any')
 @patch('neuralhydrology.datautils.validate_samples.validate_samples_any_all_group')
@@ -543,12 +542,12 @@ def test_validate_sequence_any_shift_right(sample_dates_fixture):
 # --- Tests for validate_samples (main function) ---
 
 # Mock dependencies for validate_samples
+@patch('neuralhydrology.datautils.validate_samples.validate_samples_all')
 @patch('neuralhydrology.datautils.validate_samples.validate_samples_for_nan_handling')
 @patch('neuralhydrology.datautils.validate_samples.validate_sequence_all')
+@patch('neuralhydrology.datautils.validate_samples.validate_sequence_any')
 @patch('neuralhydrology.datautils.validate_samples._flatten_feature_groups')
 @patch('neuralhydrology.datautils.validate_samples.extract_feature_groups')
-@patch('neuralhydrology.datautils.validate_samples.validate_samples_all')
-@patch('neuralhydrology.datautils.validate_samples.validate_samples_any')
 def test_validate_samples_no_features_raises_error(
     mock_extract_feature_groups, mock_flatten_feature_groups,
     mock_validate_sequence_any, mock_validate_sequence_all,
@@ -574,6 +573,7 @@ def test_validate_samples_no_features_raises_error(
     mock_flatten_feature_groups.assert_not_called()
     mock_extract_feature_groups.assert_not_called()
 
+@patch('neuralhydrology.datautils.validate_samples.validate_samples_any')
 @patch('neuralhydrology.datautils.validate_samples.validate_samples_all')
 @patch('neuralhydrology.datautils.validate_samples.validate_samples_for_nan_handling')
 @patch('neuralhydrology.datautils.validate_samples.validate_sequence_all')
@@ -584,7 +584,7 @@ def test_validate_samples_static_features_only(
     mock_extract_feature_groups, mock_flatten_feature_groups,
     mock_validate_sequence_any, mock_validate_sequence_all,
     mock_validate_samples_for_nan_handling, mock_validate_samples_all,
-    basins_fixture, sample_dates_fixture
+    mock_validate_samples_any, basins_fixture, sample_dates_fixture
 ):
     """Test validate_samples with only static features."""
     dummy_dataset = create_test_dataset({'static_var': np.ones((len(basins_fixture), len(sample_dates_fixture)))},
@@ -602,21 +602,23 @@ def test_validate_samples_static_features_only(
     )
 
     mock_validate_samples_all.assert_called_once_with(dataset=dummy_dataset[['static_var']])
+    mock_validate_samples_any.assert_not_called()
+    mock_validate_sequence_any.assert_not_called()
+    mock_validate_sequence_all.assert_not_called()
+    mock_flatten_feature_groups.assert_not_called()
+    mock_extract_feature_groups.assert_not_called()
     assert len(masks) == 2
     assert masks[0].name == 'statics'
     assert masks[1].name == 'dates'
     xr.testing.assert_equal(result_mask, mock_mask)
 
-@patch('neuralhydrology.datautils.validate_samples.validate_samples_all')
 @patch('neuralhydrology.datautils.validate_samples.validate_samples_for_nan_handling')
 @patch('neuralhydrology.datautils.validate_samples.validate_sequence_all')
-@patch('neuralhydrology.datautils.validate_samples.validate_sequence_any')
-@patch('neuralhydrology.datautils.validate_samples._flatten_feature_groups', return_value=['h1', 'h2'])
 @patch('neuralhydrology.datautils.validate_samples.extract_feature_groups', return_value=[['h1', 'h2']])
 def test_validate_samples_hindcast_features(
-    mock_extract_feature_groups, mock_flatten_feature_groups,
-    mock_validate_sequence_any, mock_validate_sequence_all,
-    mock_validate_samples_for_nan_handling, mock_validate_samples_all,
+    mock_extract_feature_groups,
+    mock_validate_sequence_all,
+    mock_validate_samples_for_nan_handling,
     basins_fixture, sample_dates_fixture
 ):
     """Test validate_samples with hindcast features."""
@@ -651,16 +653,11 @@ def test_validate_samples_hindcast_features(
     assert masks[1].name == 'dates'
     xr.testing.assert_equal(result_mask, mock_mask)
 
-@patch('neuralhydrology.datautils.validate_samples.validate_samples_all')
 @patch('neuralhydrology.datautils.validate_samples.validate_samples_for_nan_handling')
-@patch('neuralhydrology.datautils.validate_samples.validate_sequence_all')
-@patch('neuralhydrology.datautils.validate_samples.validate_sequence_any')
-@patch('neuralhydrology.datautils.validate_samples._flatten_feature_groups', return_value=['f1', 'f2'])
 @patch('neuralhydrology.datautils.validate_samples.extract_feature_groups', return_value=[['f1', 'f2']])
 def test_validate_samples_forecast_features(
-    mock_extract_feature_groups, mock_flatten_feature_groups,
-    mock_validate_sequence_any, mock_validate_sequence_all,
-    mock_validate_samples_for_nan_handling, mock_validate_samples_all,
+    mock_extract_feature_groups,
+    mock_validate_samples_for_nan_handling, 
     basins_fixture, sample_dates_fixture
 ):
     """Test validate_samples with forecast features."""
@@ -691,16 +688,13 @@ def test_validate_samples_forecast_features(
     assert masks[1].name == 'dates'
     xr.testing.assert_equal(result_mask, mock_mask)
 
-@patch('neuralhydrology.datautils.validate_samples.validate_samples_all')
 @patch('neuralhydrology.datautils.validate_samples.validate_samples_for_nan_handling')
 @patch('neuralhydrology.datautils.validate_samples.validate_sequence_all')
-@patch('neuralhydrology.datautils.validate_samples.validate_sequence_any')
-@patch('neuralhydrology.datautils.validate_samples._flatten_feature_groups', return_value=['f1', 'f2'])
 @patch('neuralhydrology.datautils.validate_samples.extract_feature_groups', return_value=[['f1', 'f2']])
 def test_validate_samples_forecast_features_with_overlap(
-    mock_extract_feature_groups, mock_flatten_feature_groups,
-    mock_validate_sequence_any, mock_validate_sequence_all,
-    mock_validate_samples_for_nan_handling, mock_validate_samples_all,
+    mock_extract_feature_groups,
+    mock_validate_sequence_all,
+    mock_validate_samples_for_nan_handling,
     basins_fixture, sample_dates_fixture
 ):
     """Test validate_samples with forecast features and overlap."""
@@ -733,16 +727,11 @@ def test_validate_samples_forecast_features_with_overlap(
     xr.testing.assert_equal(result_mask, mock_mask)
 
 @patch('neuralhydrology.datautils.validate_samples.validate_samples_any')
-@patch('neuralhydrology.datautils.validate_samples.validate_samples_for_nan_handling')
-@patch('neuralhydrology.datautils.validate_samples.validate_sequence_all')
 @patch('neuralhydrology.datautils.validate_samples.validate_sequence_any')
-@patch('neuralhydrology.datautils.validate_samples._flatten_feature_groups')
-@patch('neuralhydrology.datautils.validate_samples.extract_feature_groups')
 def test_validate_samples_target_features_train(
-    mock_extract_feature_groups, mock_flatten_feature_groups,
-    mock_validate_sequence_any, mock_validate_sequence_all,
-    mock_validate_samples_for_nan_handling,
-    mock_validate_samples_any, basins_fixture, sample_dates_fixture
+    mock_validate_sequence_any,
+    mock_validate_samples_any, 
+    basins_fixture, sample_dates_fixture
 ):
     """Test validate_samples with target features in training mode."""
     lead_times = [0, 1, 2]
@@ -773,14 +762,10 @@ def test_validate_samples_target_features_train(
     xr.testing.assert_equal(result_mask, mock_mask)
 
 @patch('neuralhydrology.datautils.validate_samples.validate_samples_any')
-@patch('neuralhydrology.datautils.validate_samples.validate_samples_for_nan_handling')
 @patch('neuralhydrology.datautils.validate_samples.validate_sequence_any')
-@patch('neuralhydrology.datautils.validate_samples._flatten_feature_groups')
-@patch('neuralhydrology.datautils.validate_samples.extract_feature_groups')
 def test_validate_samples_target_features_inference(
-    mock_extract_feature_groups, mock_flatten_feature_groups,
     mock_validate_sequence_any,
-    mock_validate_samples_for_nan_handling, mock_validate_samples_any,
+    mock_validate_samples_any,
     basins_fixture, sample_dates_fixture
 ):
     """Test validate_samples with target features in inference mode (should not validate targets)."""
@@ -813,16 +798,7 @@ def test_validate_samples_target_features_inference(
 
 # --- Test ValueError conditions in validate_samples ---
 
-@patch('neuralhydrology.datautils.validate_samples.validate_samples_all')
-@patch('neuralhydrology.datautils.validate_samples.validate_samples_for_nan_handling')
-@patch('neuralhydrology.datautils.validate_samples.validate_sequence_all')
-@patch('neuralhydrology.datautils.validate_samples.validate_sequence_any')
-@patch('neuralhydrology.datautils.validate_samples._flatten_feature_groups')
-@patch('neuralhydrology.datautils.validate_samples.extract_feature_groups')
 def test_validate_samples_hindcast_missing_seq_length_raises_error(
-    mock_extract_feature_groups, mock_flatten_feature_groups,
-    mock_validate_sequence_any, mock_validate_sequence_all,
-    mock_validate_samples_for_nan_handling, mock_validate_samples_all,
     basins_fixture, sample_dates_fixture
 ):
     """Test validate_samples raises ValueError if seq_length is missing for hindcasts."""
@@ -839,16 +815,9 @@ def test_validate_samples_hindcast_missing_seq_length_raises_error(
             seq_length=None # Missing seq_length
         )
 
-@patch('neuralhydrology.datautils.validate_samples.validate_samples_all')
 @patch('neuralhydrology.datautils.validate_samples.validate_samples_for_nan_handling')
-@patch('neuralhydrology.datautils.validate_samples.validate_sequence_all')
-@patch('neuralhydrology.datautils.validate_samples.validate_sequence_any')
-@patch('neuralhydrology.datautils.validate_samples._flatten_feature_groups', return_value=['f1', 'f2'])
-@patch('neuralhydrology.datautils.validate_samples.extract_feature_groups', return_value=[['f1', 'f2']])
 def test_validate_samples_forecast_overlap_missing_min_lead_time_raises_error(
-    mock_extract_feature_groups, mock_flatten_feature_groups,
-    mock_validate_sequence_any, mock_validate_sequence_all,
-    mock_validate_samples_for_nan_handling, mock_validate_samples_all,
+    mock_validate_samples_for_nan_handling,
     basins_fixture, sample_dates_fixture
 ):
     """Test validate_samples raises ValueError if min_lead_time is missing for forecast overlap."""
@@ -870,16 +839,7 @@ def test_validate_samples_forecast_overlap_missing_min_lead_time_raises_error(
             min_lead_time=None # Missing min_lead_time
         )
 
-@patch('neuralhydrology.datautils.validate_samples.validate_samples_all')
-@patch('neuralhydrology.datautils.validate_samples.validate_samples_for_nan_handling')
-@patch('neuralhydrology.datautils.validate_samples.validate_sequence_all')
-@patch('neuralhydrology.datautils.validate_samples.validate_sequence_any')
-@patch('neuralhydrology.datautils.validate_samples._flatten_feature_groups')
-@patch('neuralhydrology.datautils.validate_samples.extract_feature_groups')
 def test_validate_samples_target_missing_predict_last_n_raises_error(
-    mock_extract_feature_groups, mock_flatten_feature_groups,
-    mock_validate_sequence_any, mock_validate_sequence_all,
-    mock_validate_samples_for_nan_handling, mock_validate_samples_all,
     basins_fixture, sample_dates_fixture
 ):
     """Test validate_samples raises ValueError if predict_last_n is missing for targets in training mode."""
