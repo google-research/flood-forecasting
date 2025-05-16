@@ -158,14 +158,6 @@ def test_validate_samples_any_no_lead_time_some_nan(basins_fixture, sample_dates
         coords={'basin': basins_fixture, 'date': sample_dates_fixture},
         dims=['basin', 'date']
     )
-    # A sample is valid if ANY feature is non-NaN for that sample.
-    # This implementation means if any variable for a basin/date has a non-NaN, it's True.
-    # The current logic is: ~mask.to_array(dim='variable').all(dim='variable')
-    # If all variables are null for a basin/date, then mask.all is True, so ~True is False.
-    # basin_A, date=2020-01-03: var1 is NaN, var2 is not. So it should be True.
-    # basin_B, date=2020-01-01: var1 is not NaN, var2 is NaN. So it should be True.
-    # basin_C, date=2020-01-02: var1 is NaN, var2 is not. So it should be True.
-    # All samples should be True based on this logic.
     xr.testing.assert_equal(mask, expected_mask)
 
 
@@ -186,11 +178,6 @@ def test_validate_samples_any_with_lead_time_some_nan(basins_fixture, sample_dat
     }
     dataset = create_test_dataset(data_vars, basins_fixture, sample_dates_fixture, lead_times)
     mask = validate_samples_any(dataset)
-
-    # A sample is valid if ~dataset.isnull().all(dim='lead_time').to_array().all(dim='variable')
-    # For basin_B, date=2020-01-05: var1 and var2 are all NaN across lead_time.
-    # So, dataset.isnull().all(dim='lead_time') will be True for both var1 and var2.
-    # .to_array().all(dim='variable') will be True. So ~True is False.
     expected_mask_data = np.array([
         [True, True, True, True, True],
         [True, True, True, True, False], # basin_B, date=2020-01-05 is False
@@ -228,11 +215,6 @@ def test_validate_samples_all_no_lead_time_some_nan(basins_fixture, sample_dates
     }
     dataset = create_test_dataset(data_vars, basins_fixture, sample_dates_fixture)
     mask = validate_samples_all(dataset)
-    # A sample is valid if ALL features are non-NaN for that sample.
-    # Logic: ~dataset.isnull().any(dim='variable').any(dim='variable')
-    # basin_A, date=2020-01-03: var1 is NaN. So isnull().any() is True. ~True is False.
-    # basin_B, date=2020-01-01: var2 is NaN. So isnull().any() is True. ~True is False.
-    # basin_C, date=2020-01-02: var1 is NaN. So isnull().any() is True. ~True is False.
     expected_mask_data = np.array([
         [True, True, False, True, True],
         [False, True, True, True, True],
@@ -262,12 +244,6 @@ def test_validate_samples_all_with_lead_time_some_nan(basins_fixture, sample_dat
     }
     dataset = create_test_dataset(data_vars, basins_fixture, sample_dates_fixture, lead_times)
     mask = validate_samples_all(dataset)
-
-    # A sample is valid if ~dataset.isnull().any(dim='lead_time').to_array().any(dim='variable')
-    # basin_A, date=2020-01-02: var1 has NaN at lead_time=1. isnull().any(dim='lead_time') is True for var1.
-    # to_array().any(dim='variable') is True. So ~True is False.
-    # basin_B, date=2020-01-05: var1 and var2 are all NaN. isnull().any(dim='lead_time') is True for both.
-    # to_array().any(dim='variable') is True. So ~True is False.
     expected_mask_data = np.array([
         [True, False, True, True, True], # basin_A, date=2020-01-02 is False
         [True, True, True, True, False], # basin_B, date=2020-01-05 is False
@@ -308,9 +284,6 @@ def test_validate_samples_any_all_group_success(basins_fixture, sample_dates_fix
     }
     dataset = create_test_dataset(data_vars, basins_fixture, sample_dates_fixture)
     mask = validate_samples_any_all_group(dataset, feature_groups)
-
-    # Group 0 (f1, f2) is all True.
-    # Group 1 (f3, f4) has NaNs at date=2020-01-04 for all basins. So, Group 1 mask would be False there.
     # Result is ANY group is valid. So, as long as Group 0 is valid, the result is True.
     expected_mask = xr.DataArray(
         True,
