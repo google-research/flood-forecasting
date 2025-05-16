@@ -264,15 +264,15 @@ def validate_samples_for_nan_handling(
     if not feature_groups and nan_handling_method in ['masked_mean', 'attention', 'unioning']:
         raise ValueError(f'Feature groups is empty for NaN-handling method: {nan_handling_method}.')
     
-    if nan_handling_method is None:
+    if nan_handling_method is None or nan_handling_method.lower() == 'none':
         return validate_samples_all(dataset)
-    elif nan_handling_method == 'input_replacing':
+    elif nan_handling_method.lower() == 'input_replacing':
         return validate_samples_any(dataset)
-    elif nan_handling_method == 'masked_mean':
+    elif nan_handling_method.lower() == 'masked_mean':
         return validate_samples_any_all_group(dataset, feature_groups)
-    elif nan_handling_method == 'attention':
+    elif nan_handling_method.lower() == 'attention':
         return validate_samples_any_all_group(dataset, feature_groups)
-    elif nan_handling_method == 'unioning':
+    elif nan_handling_method.lower() == 'unioning':
         return validate_samples_all_any_group(dataset, feature_groups)
     else:
         raise ValueError(f'Unrecognized NaN-handling method: {nan_handling_method}.')

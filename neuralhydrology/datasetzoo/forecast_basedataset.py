@@ -72,15 +72,15 @@ class ForecastDataset(BaseDataset):
         # Feature lists by type.
         self._static_features = cfg.static_attributes
         self._target_features = cfg.target_variables
-        if cfg.hindcast_inputs and cfg.forecast_inputs:
-            self._hindcast_features = cfg.hindcast_inputs
+        self._forecast_features = []
+        if cfg.forecast_inputs:
             self._forecast_features = cfg.forecast_inputs
-        elif not cfg.hindcast_inputs and not cfg.forecast_inputs:
+        if cfg.hindcast_inputs:
+            self._hindcast_features = cfg.hindcast_inputs
+        elif cfg.dynamic_inputs:
             self._hindcast_features = cfg.dynamic_inputs
-            self._forecast_features = []
         else:
-            import pdb; pdb.set_trace()
-            raise ValueError('`forecast_inputs` must be supplied if `hindcast_inputs` are supplied.')
+            raise ValueError('Either `hindcast_inputs` or `dynamic_inputs` must be supplied.')
         
         # Feature data paths by type. This allows the option to load some data from cloud and some locally.
         self._statics_data_path = cfg.statics_data_dir
@@ -207,7 +207,7 @@ class ForecastDataset(BaseDataset):
             dates = self._dataset['date'].isel(date=hindcast_date_indexes).values
             if self._lead_times:
                 forecast_dates = [
-                    hindcast_dates[-1] + np.timedelta64(i, 'D')
+                    dates[-1] + np.timedelta64(i, 'D')
                     for i in self._lead_times
                 ]
                 dates = np.concatenate([dates, forecast_dates])[-self._seq_length:]
@@ -268,6 +268,7 @@ class ForecastDataset(BaseDataset):
         # Rename the hindcast data key if we are not doing forecasting.
         if not self._forecast_features:
             sample['x_d'] = sample.pop('x_d_hindcast')
+            _ = sample.pop('x_d_forecast')
             
         # Return sample with various required formats.
         def _convert_to_tensor(key: str, value: np.ndarray) -> torch.Tensor | np.ndarray:
