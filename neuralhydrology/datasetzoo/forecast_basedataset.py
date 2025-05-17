@@ -92,7 +92,7 @@ class ForecastDataset(BaseDataset):
         self._nan_handling_method = cfg.nan_handling_method
         self._feature_groups = [self._hindcast_features, self._forecast_features]
         if (isinstance(self._hindcast_features[0], str) or isinstance(self._forecast_features[0], str)) \
-            and self._nan_handling_method in ['masked_mean', 'attention', 'unioning']:
+            and self._nan_handling_method in ['masked_mean', 'attention']:
             raise ValueError(f'Feature groups are required for {self._nan_handling_method} NaN-handling.')
         
         # Validating samples depends on whether we are training or testing.

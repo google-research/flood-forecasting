@@ -261,7 +261,7 @@ def validate_samples_for_nan_handling(
     ValueError if NaN-handling method requires groups but none are provided.
     ValueError for un-recognized NaN-handling method.
     """
-    if not feature_groups and nan_handling_method in ['masked_mean', 'attention', 'unioning']:
+    if not feature_groups and nan_handling_method in ['masked_mean', 'attention']:
         raise ValueError(f'Feature groups is empty for NaN-handling method: {nan_handling_method}.')
     
     if nan_handling_method is None or nan_handling_method.lower() == 'none':
@@ -272,8 +272,6 @@ def validate_samples_for_nan_handling(
         return validate_samples_any_all_group(dataset, feature_groups)
     elif nan_handling_method.lower() == 'attention':
         return validate_samples_any_all_group(dataset, feature_groups)
-    elif nan_handling_method.lower() == 'unioning':
-        return validate_samples_all_any_group(dataset, feature_groups)
     else:
         raise ValueError(f'Unrecognized NaN-handling method: {nan_handling_method}.')
 
@@ -318,7 +316,6 @@ def validate_samples_all_any_group(
     """Validates samples using an ALL-valid / ANY-valid criteria over groups.
     
     A sample is valid if ALL groups pass an ANY NaN check. 
-    This is used for feature unioning NaN-handling.
     
     Parameters
     ----------
