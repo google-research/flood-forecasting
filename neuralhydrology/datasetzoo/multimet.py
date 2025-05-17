@@ -166,7 +166,7 @@ class Multimet(ForecastDataset):
         product_dss = []
 
         # Lead time array.
-        lead_times=[pd.Timedelta(days=i) for i in range(MULTIMET_MINIMUM_LEAD_TIME, self._lead_time+1)]
+        lead_times = [pd.Timedelta(days=i) for i in range(MULTIMET_MINIMUM_LEAD_TIME, self.lead_time+1)]
 
         # Load data for the selected products, bands, and basins.
         for product, bands in product_bands.items():

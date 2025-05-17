@@ -1,0 +1,96 @@
+# --- Experiment configurations --------------------------------------------------------------------
+experiment_name: test_run
+
+run_dir:
+
+train_basin_file: ./test/test_data/caravan_3_basins_test_set.txt
+validation_basin_file: ./test/test_data/caravan_3_basins_test_set.txt
+test_basin_file: ./test/test_data/caravan_3_basins_test_set.txt
+
+train_start_date: 01/10/2017
+train_end_date: 31/12/2017
+validation_start_date: 01/10/2017
+validation_end_date: 31/12/2017
+test_start_date: 01/10/2017
+test_end_date: 31/12/2017
+
+seed: 111
+device: cpu
+
+# --- Validation configuration ---------------------------------------------------------------------
+validate_every: 1
+validate_n_random_basins: 4
+cache_validation_data: True
+metrics:
+  - NSE
+  - KGE
+  - Alpha-NSE
+  - Beta-NSE
+
+# --- Model configuration --------------------------------------------------------------------------
+model: # will be filled by conftest
+forecast_overlap: 0 # Only supported by some forecast models. Not tested.
+regularization: # Only supported by some forecast models. Not tested.
+head: regression
+hidden_size: 128
+initial_forget_bias: 3
+output_activation: linear
+output_dropout: 0.4
+timestep_counter: True
+state_handoff_network:
+  activation: tanh
+  dropout: 0.0
+  hiddens:
+    - 4
+statics_embedding:
+  type: fc
+  hiddens:
+    - 3
+  activation: tanh
+  dropout: 0.0
+dynamics_embedding:
+  type: fc
+  hiddens:
+    - 2
+  activation: tanh
+  dropout: 0.0
+forecast_network:
+  activation: tanh
+  dropout: 0.4
+  hiddens:
+  - 10
+
+# --- Training configuration -----------------------------------------------------------------------
+optimizer: Adam
+loss: MSE
+learning_rate:
+  0: 1e-3
+  10: 5e-4
+  20: 1e-4
+batch_size: 256
+epochs: 1
+clip_gradient_norm: 1
+
+predict_last_n: 8
+seq_length: 30
+
+num_workers: 0
+log_interval: 5
+log_tensorboard: True
+log_n_figures: 2
+save_weights_every: 1
+save_validation_results: False
+
+# --- Data configurations --------------------------------------------------------------------------
+dataset: multimet
+data_dir: ./test/test_data/multimet
+lead_time: 7
+target_variables:
+- streamflow
+static_attributes:
+- area
+forecast_inputs:
+- graphcast_total_precipitation
+hindcast_inputs:
+- era5land_total_precipitation
+

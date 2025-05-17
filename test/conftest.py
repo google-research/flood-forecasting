@@ -43,6 +43,27 @@ def get_config(tmpdir: Fixture[str]) -> Fixture[Callable[[str], dict]]:
     return _get_config
 
 
+@pytest.fixture
+def forecast_config_updates() -> Fixture[Callable[[str], dict]]:
+    """Fixture that provides a function to update forecast model configs for model-specific parameters.
+
+    Returns
+    -------
+    Fixture[Callable[[str], dict]]
+        Function that returns an update dict.
+    """
+    def _forecast_config_updates(forecast_model):
+        update_dict = {'model': forecast_model.lower()}
+        if forecast_model.lower() == 'stacked_forecast_lstm':
+            update_dict['forecast_overlap'] = 20
+        if forecast_model.lower() == 'handoff_forecast_lstm':
+            update_dict['forecast_overlap'] = 10
+            update_dict['regularization'] = ['forecast_overlap']
+        return update_dict
+    
+    return _forecast_config_updates
+
+
 @pytest.fixture(params=['customlstm', 'ealstm', 'cudalstm', 'gru'])
 def single_timescale_model(request) -> str:
     """Fixture that provides models that support predicting only a single timescale.
@@ -53,6 +74,21 @@ def single_timescale_model(request) -> str:
         Name of the single-timescale model.
     """
     if request.config.getoption('--smoke-test') and request.param != 'cudalstm':
+        pytest.skip('--smoke-test skips this test.')
+    return request.param
+
+
+@pytest.fixture(params=['handoff_forecast_lstm', 'sequential_forecast_lstm',
+                        'stacked_forecast_lstm', 'multihead_forecast_lstm'])
+def forecast_model(request) -> str:
+    """Fixture that provides models that support predicting only a single timescale.
+
+    Returns
+    -------
+    str
+        Name of the single-timescale model.
+    """
+    if request.config.getoption('--smoke-test') and request.param != 'handoff_forecast_lstm':
         pytest.skip('--smoke-test skips this test.')
     return request.param
 

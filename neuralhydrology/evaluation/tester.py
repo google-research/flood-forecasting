@@ -228,6 +228,7 @@ class BaseTester(object):
             if isinstance(seq_length, int):
                 seq_length = {ds.frequencies[0]: seq_length}
             lowest_freq = sort_frequencies(ds.frequencies)[0]
+            
             for freq in ds.frequencies:
                 if predict_last_n[freq] == 0:
                     continue  # this frequency is not being predicted
@@ -243,12 +244,20 @@ class BaseTester(object):
                 # dictionary. We index the sample by the date of the last timestep of the sequence. The 'time_step'
                 # index that specifies the position in the output sequence (relative to the end) can be inferred by
                 # computing the timedelta of the dates. To account for predict_last_n > 1 and multi-freq stuff, we
-                # need to add the frequency factor and remove 1 (to start at zero).
+                # need to add the frequency factor and remove 1 (to start at zero). If this is a forecast model,
+                # `date` should refer to the issue dates and the `time_step` coordinates should be positive for
+                # positive lead times (negative for any lookback into the hindcast).
+                time_step_coords = ((dates[freq][0, :] - dates[freq][0, -1]) / pd.Timedelta(freq)).astype(
+                    np.int64) + frequency_factor - 1
+                date_coords = dates[lowest_freq][:, -1]
+                # TODO (future) : As in all of the forecast models (but not `ForecastDataset`), this assumes
+                # that all lead times are present from 1 to `ds.lead_time`.
+                if hasattr(ds, 'lead_time') and ds.lead_time:
+                    time_step_coords += ds.lead_time
+                    date_coords = dates[lowest_freq][:, -ds.lead_time-1]
                 coords = {
-                    'date':
-                        dates[lowest_freq][:, -1],
-                    'time_step': ((dates[freq][0, :] - dates[freq][0, -1]) / pd.Timedelta(freq)).astype(np.int64) +
-                                 frequency_factor - 1
+                    'date': date_coords,
+                    'time_step': time_step_coords
                 }
                 xr = xarray.Dataset(data_vars=data_vars, coords=coords)
                 xr = xr.reindex({
@@ -258,7 +267,7 @@ class BaseTester(object):
                 })
                 xr = ds.scaler.unscale(xr)
                 results[basin][freq]['xr'] = xr
-
+                
                 # create datetime range at the current frequency
                 freq_date_range = pd.date_range(start=dates[lowest_freq][0, -1], end=dates[freq][-1, -1], freq=freq)
                 # remove datetime steps that are not being predicted from the datetime range

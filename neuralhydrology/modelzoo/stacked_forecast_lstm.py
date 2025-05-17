@@ -35,6 +35,7 @@ class StackedForecastLSTM(BaseModel):
     Raises
     ------
     ValueError if `predict_last_n` is longer than the total forecast sequence (overlap + lead time).
+    ValueError if `seq_length` is shorter than `forecast_overlap`.
     """
     # Specify submodules of the model that can later be used for finetuning. Names must match class attributes.
     module_parts = ['hindcast_embedding_net', 'forecast_embedding_net', 'forecast_lstm', 'hindcast_lstm', 'head']
@@ -49,7 +50,9 @@ class StackedForecastLSTM(BaseModel):
         # TODO (future) :: Models assume that all lead times are present up to the longest `lead_time`.
         # ForecastBaseDataset does not require this assumption.
         if cfg.predict_last_n > self.lead_time + self.overlap:
-            raise ValueError('In the Stacked Forecast LSTM, `predict_last_n` must not be larger than the length of the forecast sequence.')
+            raise ValueError('`predict_last_n` must not be larger than the length of the forecast sequence.')
+        if cfg.seq_length < self.overlap:
+            raise ValueError('`seq_length` must be larger than `forecast_overlap`.')
                 
         # Input embedding layers.
         self.forecast_embedding_net = InputLayer(cfg=cfg, embedding_type='forecast')

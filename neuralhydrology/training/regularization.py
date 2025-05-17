@@ -150,12 +150,11 @@ class ForecastOverlapMSERegularization(BaseRegularization):
         ValueError if y_hindcast_overlap or y_forecast_overlap is not present in model output.
         """
         loss = 0
-        if 'y_hindcast_overlap' not in other_model_output or not other_model_output['y_hindcast_overlap']:
+        if 'y_hindcast_overlap' not in other_model_output:
             raise ValueError('y_hindcast_overlap is not present in the model output.')
-        if 'y_forecast_overlap' not in other_model_output or not other_model_output['y_forecast_overlap']:
+        if 'y_forecast_overlap' not in other_model_output:
             raise ValueError('y_forecast_overlap is not present in the model output.')
-        for key in other_model_output['y_hindcast_overlap']:
-            hindcast = other_model_output['y_hindcast_overlap'][key]
-            forecast = other_model_output['y_forecast_overlap'][key]
-            loss += torch.mean((hindcast - forecast)**2)
+        hindcast = other_model_output['y_hindcast_overlap']
+        forecast = other_model_output['y_forecast_overlap']
+        loss += torch.mean((hindcast - forecast)**2)
         return loss

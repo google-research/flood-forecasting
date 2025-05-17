@@ -3,12 +3,13 @@ import pickle
 from pathlib import Path
 from typing import Dict, Tuple, Callable
 
+import numpy as np
 import pandas as pd
 from pandas.tseries.frequencies import to_offset
 import pytest
 from pytest import approx
 
-from neuralhydrology.datasetzoo import camelsus, hourlycamelsus
+from neuralhydrology.datasetzoo import camelsus, hourlycamelsus, caravan
 from neuralhydrology.evaluation.evaluate import start_evaluation
 from neuralhydrology.training.train import start_training
 from neuralhydrology.utils.config import Config
@@ -192,6 +193,33 @@ def test_daily_regression_nan_targets(get_config: Fixture[Callable[[str], dict]]
     _check_results(config, '01022500', discharge=discharge)
 
 
+def test_forecast_daily_regression(get_config: Fixture[Callable[[str], dict]],
+                                   forecast_model: Fixture[str],
+                                   forecast_config_updates: Fixture[Callable[[str], dict]]):
+    """Test regression training and evaluation for daily predictions.
+
+    Parameters
+    ----------
+    get_config : Fixture[Callable[[str], dict]
+        Method that returns a run configuration to test.
+    forecast_model : Fixture[str]
+        Model to test.
+    forecast_config : Fixture[str]
+        Updates the config with model-specific parameters.
+    """
+    # Currently only supports testing with Multimet.
+    config = get_config('forecast')
+    config.update_config(forecast_config_updates(forecast_model))
+
+    start_training(config)
+    start_evaluation(cfg=config, run_dir=config.run_dir, epoch=1, period='test')
+
+    nan_discharge = pd.Series(float('nan'), index=pd.date_range(*get_test_start_end_dates(config)))
+    _check_results(config, 'camelsaus_102101A', nan_discharge) # No valid data.
+    _check_results(config, 'lamah_1145')
+    _check_results(config, 'hysets_01075000')
+
+
 def _check_results(config: Config, basin: str, discharge: pd.Series = None):
     """Perform basic sanity checks of model predictions.
 
@@ -210,16 +238,22 @@ def _check_results(config: Config, basin: str, discharge: pd.Series = None):
     """
     test_start_date, test_end_date = get_test_start_end_dates(config)
 
-    results = get_basin_results(config.run_dir, 1)[basin]['1D']['xr'].isel(time_step=-1)
-
+    # TODO (current) :: Remove debugging comments.
+    results = get_basin_results(config.run_dir, 1)[basin]['1D']['xr']
     assert pd.to_datetime(results['date'].values[0]) == test_start_date.floor('D')
     assert pd.to_datetime(results['date'].values[-1]) == test_end_date.floor('D')
 
     if discharge is None:
         discharge = _get_discharge(config, basin)
 
-    assert discharge.loc[test_start_date:test_end_date].values \
-           == approx(results[f'{config.target_variables[0]}_obs'].values.reshape(-1), nan_ok=True)
+    if hasattr(config, 'lead_time'):
+        results = results.isel(time_step=0).squeeze()
+    else:
+        results = results.isel(time_step=-1)
+
+    results_array = results[f'{config.target_variables[0]}_obs'].values
+    discharge_array = np.array([v.item() for v in discharge.loc[test_start_date:test_end_date].values])   
+    assert discharge_array == approx(results_array, nan_ok=True)
 
     # CAMELS forcings have no NaNs, so there should be no NaN predictions
     assert not pd.isna(results[f'{config.target_variables[0]}_sim']).any()
@@ -244,5 +278,7 @@ def _get_discharge(config: Config, basin: str) -> pd.Series:
     if config.dataset == 'camels_us':
         _, area = camelsus.load_camels_us_forcings(config.data_dir, basin, 'daymet')
         return camelsus.load_camels_us_discharge(config.data_dir, basin, area)
+    if config.dataset in ['caravan', 'multimet']:
+        return caravan.load_caravan_timeseries(config.data_dir, basin)[config.target_variables]        
     else:
         raise NotImplementedError

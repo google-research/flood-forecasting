@@ -55,16 +55,16 @@ class ForecastDataset(BaseDataset):
         cfg: Config,
         is_train: bool,
         period: str,
-        # TODO (future) :: Could be a list of basins, and then never load the basin list here.
         basin: str = None,
-        # TODO (future) :: Why is this passed in separately? Suggest remove this functionality altogether.
+        # TODO (future) :: Why is this passed in separately?
+        # Can we remove this functionality altogether or load in BaseDataset?
         additional_features: List[Dict[str, pd.DataFrame]] = [],
         id_to_int: Dict[str, int] = {},
         compute_scaler: bool = True
     ):
         # Sequence length parameters.
         # TODO (future) :: Remove all old forecast functionality from basedataset.
-        self._lead_time = cfg.lead_time
+        self.lead_time = cfg.lead_time
         self._seq_length = cfg.seq_length
         self._predict_last_n = cfg.predict_last_n
         self._forecast_overlap = cfg.forecast_overlap
@@ -124,10 +124,10 @@ class ForecastDataset(BaseDataset):
         # TODO (future) :: Make this work for non-continuous date ranges.
         # TODO (future) :: This only works for daily data.
         self._min_lead_time = 0
-        self._lead_times = []
+        self.lead_times = []
         if self._forecast_features:
             self._min_lead_time = int((self._dataset.lead_time.min() / np.timedelta64(1, 'D')).item())
-            self._lead_times = list(range(self._min_lead_time, self._lead_time+1))
+            self._lead_times = list(range(self._min_lead_time, self.lead_time+1))
         if self._period == 'train':
             self._sample_dates = pd.date_range(cfg.train_start_date, cfg.train_end_date)
         elif self._period == 'test':
@@ -297,7 +297,7 @@ class ForecastDataset(BaseDataset):
             dataset=self._dataset,
             nan_handling_method=self._nan_handling_method,
             sample_dates=self._sample_dates,
-            lead_time=self._lead_time,
+            lead_time=self.lead_time,
             seq_length=self._seq_length,
             predict_last_n=self._predict_last_n,
             forecast_overlap=self._forecast_overlap,

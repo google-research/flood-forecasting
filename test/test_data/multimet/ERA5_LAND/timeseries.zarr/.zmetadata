@@ -1,0 +1,89 @@
+{
+    "metadata": {
+        ".zattrs": {},
+        ".zgroup": {
+            "zarr_format": 2
+        },
+        "basin/.zarray": {
+            "chunks": [
+                2811
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<U22",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                3
+            ],
+            "zarr_format": 2
+        },
+        "basin/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "basin"
+            ]
+        },
+        "date/.zarray": {
+            "chunks": [
+                27333
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<i8",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                722
+            ],
+            "zarr_format": 2
+        },
+        "date/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "date"
+            ],
+            "calendar": "proleptic_gregorian",
+            "units": "days since 1950-01-01"
+        },
+        "era5land_total_precipitation/.zarray": {
+            "chunks": [
+                128,
+                27333
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<f4",
+            "fill_value": "NaN",
+            "filters": null,
+            "order": "C",
+            "shape": [
+                3,
+                722
+            ],
+            "zarr_format": 2
+        },
+        "era5land_total_precipitation/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "basin",
+                "date"
+            ]
+        }
+    },
+    "zarr_consolidated_format": 1
+}
