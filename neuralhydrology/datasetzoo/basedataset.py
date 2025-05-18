@@ -92,18 +92,6 @@ class BaseDataset(Dataset):
         if period in ["validation", "test"] and cfg.use_basin_id_encoding and not id_to_int:
             raise ValueError("For basin id embedding, the id_to_int dictionary has to be passed anything but train.")
 
-        if self.cfg.timestep_counter:
-            if not self.cfg.forecast_inputs_flattened:
-                raise ValueError('Timestep counter only works for forecast data.')
-            if cfg.forecast_overlap:
-                overlap_zeros = torch.zeros((cfg.forecast_overlap, 1))
-                forecast_counter = torch.Tensor(range(1, cfg.forecast_seq_length - cfg.forecast_overlap + 1)).unsqueeze(-1)
-                self.forecast_counter = torch.concatenate([overlap_zeros, forecast_counter], dim=0)
-                self.hindcast_counter = torch.zeros((cfg.seq_length - cfg.forecast_seq_length + cfg.forecast_overlap, 1))
-            else:
-                self.forecast_counter = torch.Tensor(range(1, cfg.forecast_seq_length + 1)).unsqueeze(-1)
-                self.hindcast_counter = torch.zeros((cfg.seq_length - cfg.forecast_seq_length, 1))
-            
         if basin is None:
             self.basins = utils.load_basin_file(getattr(cfg, f"{period}_basin_file"))
         else:
@@ -160,39 +148,16 @@ class BaseDataset(Dataset):
             # if there's just one frequency, don't use suffixes.
             freq_suffix = '' if len(self.frequencies) == 1 else f'_{freq}'
             # slice until idx + 1 because slice-end is excluding
-            hindcast_start_idx = idx + 1 - seq_len
-            global_end_idx = idx + 1
-            if self.cfg.forecast_seq_length:
-                hindcast_end_idx = idx + 1 - self.cfg.forecast_seq_length
-                forecast_start_idx = idx + 1 - self.cfg.forecast_seq_length
-                if self.cfg.forecast_overlap and self.cfg.forecast_overlap > 0:
-                    hindcast_end_idx += self.cfg.forecast_overlap
-            else:
-                hindcast_end_idx = None
-                forecast_start_idx = None
             x_d_key = f'x_d{freq_suffix}'
             sample[x_d_key] = {}
-            sample[f'{x_d_key}_hindcast'] = {}
-            sample[f'{x_d_key}_forecast'] = {}
             for k, v in self._x_d[basin][freq].items():
-                if k in self.cfg.hindcast_inputs_flattened:
-                    sample[f'{x_d_key}_hindcast'][k] = v[hindcast_start_idx:hindcast_end_idx]
-                if k in self.cfg.forecast_inputs_flattened:
-                    sample[f'{x_d_key}_forecast'][k] = v[forecast_start_idx:global_end_idx]
-                if not self.cfg.hindcast_inputs_flattened:
-                    sample[x_d_key][k] = v[hindcast_start_idx:global_end_idx]
+                sample[x_d_key][k] = v[idx+1-seq_len:idx+1]
 
             if self.is_train and (self.cfg.nan_step_probability or self.cfg.nan_sequence_probability):
-                if self.cfg.hindcast_inputs_flattened:
-                    sample[f'{x_d_key}_hindcast'] = self._add_nan_streaks(sample[f'{x_d_key}_hindcast'],
-                                                                          groups=self.cfg.hindcast_inputs)
-                    sample[f'{x_d_key}_forecast'] = self._add_nan_streaks(sample[f'{x_d_key}_forecast'],
-                                                                          groups=self.cfg.forecast_inputs)
-                else:
-                    sample[x_d_key] = self._add_nan_streaks(sample[x_d_key],
+                sample[x_d_key] = self._add_nan_streaks(sample[x_d_key],
                                                             groups=self.cfg.dynamic_inputs)
-            sample[f'y{freq_suffix}'] = self._y[basin][freq][hindcast_start_idx:global_end_idx]
-            sample[f'date{freq_suffix}'] = self._dates[basin][freq][hindcast_start_idx:global_end_idx]
+            sample[f'y{freq_suffix}'] = self._y[basin][freq][idx+1-seq_len:idx+1]
+            sample[f'date{freq_suffix}'] = self._dates[basin][freq][idx+1-seq_len:idx+1]
 
             # check for static inputs
             static_inputs = []
@@ -202,10 +167,6 @@ class BaseDataset(Dataset):
                 static_inputs.append(self._x_s[basin][freq][idx])
             if static_inputs:
                 sample[f'x_s{freq_suffix}'] = torch.cat(static_inputs, dim=-1)
-
-            if self.cfg.timestep_counter:
-                sample[f'x_d{freq_suffix}']['hindcast_counter'] = self.hindcast_counter
-                sample[f'x_d{freq_suffix}']['forecast_counter'] = self.forecast_counter
 
         if self._per_basin_target_stds:
             sample['per_basin_target_stds'] = self._per_basin_target_stds[basin]
@@ -637,8 +598,6 @@ class BaseDataset(Dataset):
 
             # only store data if this basin has at least one valid sample in the given period
             if valid_samples.size > 0:
-                if self.cfg.forecast_inputs_flattened and not self.cfg.hindcast_inputs_flattened:
-                    raise ValueError('Hindcast inputs must be provided if forecast inputs are provided.')
                 self._x_d[basin] = {freq: {k: torch.from_numpy(v.astype(np.float32))
                                            for k, v in _x_d.items()}
                                     for freq, _x_d in x_d.items()}
