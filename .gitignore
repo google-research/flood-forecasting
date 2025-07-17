@@ -12,8 +12,5 @@ dist/*
 neuralhydrology.egg-info/*
 .vscode/*
 .idea/*
-runs/
-configs/*
 .ipynb_checkpoints/
-data/*
 docs/build/*
