@@ -124,7 +124,7 @@ class ForecastDataset(BaseDataset):
         # TODO (future) :: Make this work for non-continuous date ranges.
         # TODO (future) :: This only works for daily data.
         self._min_lead_time = 0
-        self.lead_times = []
+        self._lead_times = []
         if self._forecast_features:
             self._min_lead_time = int((self._dataset.lead_time.min() / np.timedelta64(1, 'D')).item())
             self._lead_times = list(range(self._min_lead_time, self.lead_time+1))
