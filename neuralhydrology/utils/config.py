@@ -104,6 +104,7 @@ class Config(object):
             If the specified folder already contains a file named `filename`.
         """
         yml_path = folder / filename
+        yml_path = yml_path.expanduser()
         if not yml_path.exists():
             with yml_path.open('w') as fp:
                 temp_cfg = {}
@@ -208,10 +209,10 @@ class Config(object):
                     if isinstance(val, list):
                         temp_list = []
                         for element in val:
-                            temp_list.append(Path(element))
+                            temp_list.append(Path(element).expanduser())
                         cfg[key] = temp_list
                     else:
-                        cfg[key] = Path(val)
+                       cfg[key] = Path(val).expanduser()
                 else:
                     cfg[key] = None
 
