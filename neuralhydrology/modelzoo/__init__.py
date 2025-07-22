@@ -14,6 +14,7 @@ from neuralhydrology.modelzoo.gru import GRU
 from neuralhydrology.modelzoo.mclstm import MCLSTM
 from neuralhydrology.modelzoo.mtslstm import MTSLSTM
 from neuralhydrology.modelzoo.multihead_forecast_lstm import MultiHeadForecastLSTM
+from neuralhydrology.modelzoo.mean_embedding_forecast_lstm import MeanEmbeddingForecastLSTM
 from neuralhydrology.modelzoo.odelstm import ODELSTM
 from neuralhydrology.modelzoo.sequential_forecast_lstm import SequentialForecastLSTM
 from neuralhydrology.modelzoo.stacked_forecast_lstm import StackedForecastLSTM
@@ -95,6 +96,8 @@ def get_model(cfg: Config) -> nn.Module:
         model = SequentialForecastLSTM(cfg=cfg)
     elif cfg.model.lower() == "stacked_forecast_lstm":
         model = StackedForecastLSTM(cfg=cfg)
+    elif cfg.model.lower() == "mean_embedding_forecast_lstm":
+        model = MeanEmbeddingForecastLSTM(cfg=cfg)
     elif cfg.model.lower() == "hybrid_model":
         model = HybridModel(cfg=cfg)
     else:
