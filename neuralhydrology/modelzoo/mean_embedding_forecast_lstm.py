@@ -44,7 +44,26 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         super(MeanEmbeddingForecastLSTM, self).__init__(cfg=cfg)
 
         self.static_attributes_fc = FC(
-            input_size=len(cfg.static_attributes),
+            input_size=len([
+                    "area",
+                    "p_mean",
+                    "pet_mean_ERA5_LAND",
+                    "pet_mean_FAO_PM",
+                    "aridity_ERA5_LAND",
+                    "aridity_FAO_PM",
+                    "frac_snow",
+                    "moisture_index_ERA5_LAND",
+                    "moisture_index_FAO_PM",
+                    "seasonality_ERA5_LAND",
+                    "seasonality_FAO_PM",
+                    "high_prec_freq",
+                    "high_prec_dur",
+                    "low_prec_freq",
+                    "low_prec_dur",
+                    "pet_mm_syr",
+                    "ele_mt_smx",
+                    "pre_mm_syr",
+            ]),
             hidden_sizes=[100, 100, 20],
             activation=["tanh", "tanh", "linear"],
             dropout=0,
