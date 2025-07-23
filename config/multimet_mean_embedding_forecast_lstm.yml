@@ -94,11 +94,15 @@ hindcast_inputs:
 static_attributes:
 - area
 - p_mean
-# - pet_mean
-# - aridity
+- pet_mean_ERA5_LAND
+- pet_mean_FAO_PM
+- aridity_ERA5_LAND
+- aridity_FAO_PM
 - frac_snow
-# - moisture_index
-# - seasonality
+- moisture_index_ERA5_LAND
+- moisture_index_FAO_PM
+- seasonality_ERA5_LAND
+- seasonality_FAO_PM
 - high_prec_freq
 - high_prec_dur
 - low_prec_freq
