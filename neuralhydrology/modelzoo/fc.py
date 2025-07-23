@@ -24,7 +24,7 @@ class FC(nn.Module):
         Dropout rate in intermediate layers.
     """
 
-    def __init__(self, input_size: int, hidden_sizes: List[int], activation: str = 'tanh', dropout: float = 0.0):
+    def __init__(self, input_size: int, hidden_sizes: List[int], activation: str | List[str] = 'tanh', dropout: float = 0.0):
         super(FC, self).__init__()
 
         if len(hidden_sizes) == 0:
@@ -33,7 +33,10 @@ class FC(nn.Module):
         self.output_size = hidden_sizes[-1]
         hidden_sizes = hidden_sizes[:-1]
 
-        activation = self._get_activation(activation)
+        if isinstance(activation, str):
+            activations = [self._get_activation(activation)] * len(hidden_sizes)
+        else:
+            activations = [self._get_activation(e) for e in activation]
 
         # create network
         layers = []
@@ -44,7 +47,7 @@ class FC(nn.Module):
                 else:
                     layers.append(nn.Linear(hidden_sizes[i - 1], hidden_size))
 
-                layers.append(activation)
+                layers.append(activations[i])
                 layers.append(nn.Dropout(p=dropout))
 
             layers.append(nn.Linear(hidden_size, self.output_size))
