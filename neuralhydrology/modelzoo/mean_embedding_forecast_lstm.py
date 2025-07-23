@@ -99,6 +99,20 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             Model outputs and intermediate states as a dictionary.
                 - y_hat: Predictions over the sequence from the head layer.
         """
+
+        # TODO(omrishefi)
+        
+        # Static embeddings (attributes)
+        # CPC embeddings (cpc, static)
+        # IMERG embeddings (imerg, static)
+        # HRES embeddings (hres, static)
+        # GraphCast embeddings (graphcast, static)
+        # Masked mean hindcast (cpc, imerg, hres, graphcast)
+        # Masked mean forcast (hres, graphcast)
+        # LSTM hindcast (masked mean hindcast, static)
+        # LSTM forecast (lstm hindcast, masked mean forcast, static)
+        # Head (lstm forecast)
+
         # Run the embedding layers.
         hindcast_embeddings = self.hindcast_embedding_net(data)
         forecast_embeddings = self.forecast_embedding_net(data)
