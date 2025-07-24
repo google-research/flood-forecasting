@@ -8,7 +8,7 @@ from neuralhydrology.modelzoo.fc import FC
 from neuralhydrology.modelzoo.head import get_head
 from neuralhydrology.modelzoo.inputlayer import InputLayer
 from neuralhydrology.utils.config import Config
-from neuralhydrology.datautils import data as datautils
+from neuralhydrology.datautils import datautils
 
 
 class MeanEmbeddingForecastLSTM(BaseModel):
