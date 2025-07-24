@@ -34,9 +34,12 @@ class ConfigData:
     @classmethod
     def from_config(cls, unused_cfg: Config) -> "ConfigData":
         return ConfigData(
-            static_attributes=_STATIC_ATTRIBUTES, cpc_attributes=_CPC_ATTRIBUTES
+            embedding_size=20,
+            static_attributes=_STATIC_ATTRIBUTES,
+            cpc_attributes=_CPC_ATTRIBUTES,
         )
 
+    embedding_size: int
     static_attributes: Tuple[str, ...]
     cpc_attributes: Tuple[str, ...]
 
@@ -47,7 +50,10 @@ class ForwardData:
     def from_forward_data(
         cls, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]
     ) -> "ForwardData":
-        return ForwardData(static_attributes=data['x_s'])
+        return ForwardData(
+            static_attributes=data["x_s"],
+            cpc_data=data["x_d_hindcast"]["cpc_precipitation"],
+        )
 
     static_attributes: torch.Tensor
-    
+    cpc_data: torch.Tensor

@@ -50,14 +50,14 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         self.static_attributes_fc = FC(
             input_size=len(self.config_data.static_attributes),
-            hidden_sizes=[100, 100, 20],
+            hidden_sizes=[100, 100, self.config_data.embedding_size],
             activation=["tanh", "tanh", "linear"],
             dropout=0,
         )
 
         self.cpc_input_fc = FC(
-            input_size=len(self.config_data.cpc_attributes) + 20,
-            hidden_sizes=[100, 20],
+            input_size=len(self.config_data.cpc_attributes) + self.config_data.embedding_size,
+            hidden_sizes=[100, self.config_data.embedding_size],
             activation=["tanh", "linear"],
             dropout=0,
         )
@@ -123,12 +123,12 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         forward_data = (
             mean_embedding_forecast_lstm_datautils.ForwardData.from_forward_data(data)
         )
-        
+        x_s_fc = self.static_attributes_fc(forward_data.static_attributes)
         static_embeddings_repeated = x_s_fc.unsqueeze(1).repeat(1, self.seq_length, 1)
-        cpc_data = data['x_d_hindcast']['cpc_precipitation']
-        cpc_input_concat = torch.cat([cpc_data, static_embeddings_repeated], dim=-1)
-        
+
+        cpc_input_concat = torch.cat([forward_data.cpc_data, static_embeddings_repeated], dim=-1)
         cpc_embeddings = self.cpc_input_fc(cpc_input_concat)
+
         print(cpc_embeddings.shape)
         print(cpc_embeddings)
 
