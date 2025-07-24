@@ -66,6 +66,16 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             dropout=0,
         )
 
+        self.imerg_input_fc = FC(
+            input_size=(
+                len(self.config_data.imerg_attributes_names)
+                + self.config_data.embedding_size
+            ),
+            hidden_sizes=[100, self.config_data.embedding_size],
+            activation=["tanh", "linear"],
+            dropout=0,
+        )
+
         # Data sizes for expanding features in the forward pass.
         self.seq_length = cfg.seq_length
         self.lead_time = cfg.lead_time
@@ -136,7 +146,9 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         cpc_nan_padding = torch.full((cpc_batch_size, self.lead_time, self.config_data.embedding_size), math.nan)
         cpc_embedding_with_nan = torch.cat([cpc_embeddings, cpc_nan_padding], dim=1)
 
-        # IMERG embeddings (imerg, static)
+        imerg_input_concat = torch.cat([forward_data.imerg_data, static_embeddings_repeated], dim=-1)
+        imerg_embeddings = self.imerg_input_fc(imerg_input_concat)
+
         # HRES embeddings (hres, static)
         # GraphCast embeddings (graphcast, static)
         # Masked mean hindcast (cpc, imerg, hres, graphcast)
