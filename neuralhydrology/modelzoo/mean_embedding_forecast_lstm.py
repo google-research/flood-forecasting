@@ -43,6 +43,32 @@ class MeanEmbeddingForecastLSTM(BaseModel):
     def __init__(self, cfg: Config):
         super(MeanEmbeddingForecastLSTM, self).__init__(cfg=cfg)
 
+        self.static_attributes_fc = FC(
+            input_size=len([
+                    "area",
+                    "p_mean",
+                    "pet_mean_ERA5_LAND",
+                    "pet_mean_FAO_PM",
+                    "aridity_ERA5_LAND",
+                    "aridity_FAO_PM",
+                    "frac_snow",
+                    "moisture_index_ERA5_LAND",
+                    "moisture_index_FAO_PM",
+                    "seasonality_ERA5_LAND",
+                    "seasonality_FAO_PM",
+                    "high_prec_freq",
+                    "high_prec_dur",
+                    "low_prec_freq",
+                    "low_prec_dur",
+                    "pet_mm_syr",
+                    "ele_mt_smx",
+                    "pre_mm_syr",
+            ]),
+            hidden_sizes=[100, 100, 20],
+            activation=["tanh", "tanh", "linear"],
+            dropout=0,
+        )
+
         # Data sizes for expanding features in the forward pass.
         self.seq_length = cfg.seq_length
         self.lead_time = cfg.lead_time
@@ -53,7 +79,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             raise ValueError('`predict_last_n` must not be larger than the length of the forecast sequence.')
         if cfg.seq_length < self.overlap:
             raise ValueError('`seq_length` must be larger than `forecast_overlap`.')
-                
+
         # Input embedding layers.
         self.forecast_embedding_net = InputLayer(cfg=cfg, embedding_type='forecast')
         self.hindcast_embedding_net = InputLayer(cfg=cfg, embedding_type='hindcast')
@@ -64,7 +90,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             hidden_size=cfg.hidden_size,
             bidirectional=cfg.bidirectional_stacked_forecast_lstm,
         )
-        
+
         forecast_input_size = self.forecast_embedding_net.output_size + self.hindcast_lstm.hidden_size
         if self.cfg.bidirectional_stacked_forecast_lstm:
             forecast_input_size += self.hindcast_lstm.hidden_size
@@ -99,10 +125,8 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             Model outputs and intermediate states as a dictionary.
                 - y_hat: Predictions over the sequence from the head layer.
         """
+        x_s_fc = self.static_attributes_fc(data['x_s'])
 
-        # TODO(omrishefi)
-        
-        # Static embeddings (attributes)
         # CPC embeddings (cpc, static)
         # IMERG embeddings (imerg, static)
         # HRES embeddings (hres, static)
@@ -123,6 +147,6 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         # Run forecast LSTM.
         forecast_inputs = torch.cat((forecast_embeddings, hindcast[-self.overlap-self.lead_time:, ...]), dim=-1)
         forecast, _ = self.forecast_lstm(forecast_inputs)
-        
+
         # Run head.
         return self.head(self.dropout(forecast.transpose(0, 1)))
