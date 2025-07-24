@@ -69,6 +69,14 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             dropout=0,
         )
 
+        self.cpc_embedding_fc = FC(
+            input_size=len(["cpc_precipitation"])+20,
+            hidden_sizes=[100, 20],
+            activation=["tanh", "linear"],
+            dropout=0,
+        )
+
+
         # Data sizes for expanding features in the forward pass.
         self.seq_length = cfg.seq_length
         self.lead_time = cfg.lead_time
@@ -126,6 +134,14 @@ class MeanEmbeddingForecastLSTM(BaseModel):
                 - y_hat: Predictions over the sequence from the head layer.
         """
         x_s_fc = self.static_attributes_fc(data['x_s'])
+
+        cpc_data = data['x_d_hindcast']['cpc_precipitation']
+        static_duplicated = x_s_fc.unsqueeze(1).repeat(1, cpc_data.shape[1], 1)
+        cpc_input_concat = torch.cat([cpc_data, static_duplicated], dim=-1)
+        
+        cpc_embeddings = self.cpc_embedding_fc(cpc_input_concat)
+        print(cpc_embeddings.shape)
+        print(cpc_embeddings)
 
         # CPC embeddings (cpc, static)
         # IMERG embeddings (imerg, static)
