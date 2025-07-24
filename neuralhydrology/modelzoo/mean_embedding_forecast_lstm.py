@@ -8,6 +8,7 @@ from neuralhydrology.modelzoo.fc import FC
 from neuralhydrology.modelzoo.head import get_head
 from neuralhydrology.modelzoo.inputlayer import InputLayer
 from neuralhydrology.utils.config import Config
+from neuralhydrology.datautils import data
 
 
 class MeanEmbeddingForecastLSTM(BaseModel):
@@ -43,27 +44,10 @@ class MeanEmbeddingForecastLSTM(BaseModel):
     def __init__(self, cfg: Config):
         super(MeanEmbeddingForecastLSTM, self).__init__(cfg=cfg)
 
+        self.config_data = data.ConfigData.from_config(cfg)
+
         self.static_attributes_fc = FC(
-            input_size=len([
-                    "area",
-                    "p_mean",
-                    "pet_mean_ERA5_LAND",
-                    "pet_mean_FAO_PM",
-                    "aridity_ERA5_LAND",
-                    "aridity_FAO_PM",
-                    "frac_snow",
-                    "moisture_index_ERA5_LAND",
-                    "moisture_index_FAO_PM",
-                    "seasonality_ERA5_LAND",
-                    "seasonality_FAO_PM",
-                    "high_prec_freq",
-                    "high_prec_dur",
-                    "low_prec_freq",
-                    "low_prec_dur",
-                    "pet_mm_syr",
-                    "ele_mt_smx",
-                    "pre_mm_syr",
-            ]),
+            input_size=len(self.config_data.static_attributes),
             hidden_sizes=[100, 100, 20],
             activation=["tanh", "tanh", "linear"],
             dropout=0,
