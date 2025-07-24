@@ -1,5 +1,6 @@
 from typing import Dict
 
+import math
 import torch
 import torch.nn as nn
 
@@ -129,7 +130,8 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         cpc_input_concat = torch.cat([forward_data.cpc_data, static_embeddings_repeated], dim=-1)
         cpc_embeddings = self.cpc_input_fc(cpc_input_concat)
         
-        nan_padding = torch.full((cpc_embeddings.shape[0], self.lead_time, cpc_embeddings.shape[2]), float("nan"))
+        batch_size = cpc_embeddings.shape[0]
+        nan_padding = torch.full((batch_size, self.lead_time, self.config_data.embedding_size), math.nan)
         cpc_embedding_with_nan = torch.cat([cpc_embeddings, nan_padding], dim=1)
         
 
