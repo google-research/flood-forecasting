@@ -50,10 +50,18 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         self.static_attributes_fc = FC(
             input_size=len(self.config_data.static_attributes),
-            hidden_sizes=[100, 100, 20],
+            hidden_sizes=[100, 100, self.config_data.embedding_size],
             activation=["tanh", "tanh", "linear"],
             dropout=0,
         )
+
+        self.cpc_input_fc = FC(
+            input_size=len(self.config_data.cpc_attributes) + self.config_data.embedding_size,
+            hidden_sizes=[100, self.config_data.embedding_size],
+            activation=["tanh", "linear"],
+            dropout=0,
+        )
+
 
         # Data sizes for expanding features in the forward pass.
         self.seq_length = cfg.seq_length
@@ -97,6 +105,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             self.hindcast_lstm.bias_hh_l0.data[self.cfg.hidden_size:2 * self.cfg.hidden_size] = self.cfg.initial_forget_bias
             self.forecast_lstm.bias_hh_l0.data[self.cfg.hidden_size:2 * self.cfg.hidden_size] = self.cfg.initial_forget_bias
 
+
     def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on the StackedForecastLSTM model.
 
@@ -114,6 +123,11 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         forward_data = (
             mean_embedding_forecast_lstm_datautils.ForwardData.from_forward_data(data)
         )
+        x_s_fc = self.static_attributes_fc(forward_data.static_attributes)
+        static_embeddings_repeated = x_s_fc.unsqueeze(1).repeat(1, self.seq_length, 1)
+
+        cpc_input_concat = torch.cat([forward_data.cpc_data, static_embeddings_repeated], dim=-1)
+        cpc_embeddings = self.cpc_input_fc(cpc_input_concat)
 
         # CPC embeddings (cpc, static)
         # IMERG embeddings (imerg, static)
