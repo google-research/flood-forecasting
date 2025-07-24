@@ -8,7 +8,7 @@ from neuralhydrology.modelzoo.fc import FC
 from neuralhydrology.modelzoo.head import get_head
 from neuralhydrology.modelzoo.inputlayer import InputLayer
 from neuralhydrology.utils.config import Config
-from neuralhydrology.datautils import data
+from neuralhydrology.datautils import data as datautils
 
 
 class MeanEmbeddingForecastLSTM(BaseModel):
@@ -44,7 +44,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
     def __init__(self, cfg: Config):
         super(MeanEmbeddingForecastLSTM, self).__init__(cfg=cfg)
 
-        self.config_data = data.ConfigData.from_config(cfg)
+        self.config_data = datautils.ConfigData.from_config(cfg)
 
         self.static_attributes_fc = FC(
             input_size=len(self.config_data.static_attributes),
@@ -109,7 +109,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             Model outputs and intermediate states as a dictionary.
                 - y_hat: Predictions over the sequence from the head layer.
         """
-        x_s_fc = self.static_attributes_fc(data['x_s'])
+        forward_data = datautils.ForwardData.from_forward_data(data)
 
         # CPC embeddings (cpc, static)
         # IMERG embeddings (imerg, static)
