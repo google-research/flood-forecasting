@@ -1,6 +1,8 @@
 import dataclasses
 from typing import Tuple
 
+import torch
+
 from neuralhydrology.utils.config import Config
 
 _STATIC_ATTRIBUTES = (
@@ -37,3 +39,15 @@ class ConfigData:
 
     static_attributes: Tuple[str, ...]
     cpc_attributes: Tuple[str, ...]
+
+
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class ForwardData:
+    @classmethod
+    def from_forward_data(
+        cls, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]
+    ) -> "ForwardData":
+        return ForwardData(static_attributes=data['x_s'])
+
+    static_attributes: torch.Tensor
+    
