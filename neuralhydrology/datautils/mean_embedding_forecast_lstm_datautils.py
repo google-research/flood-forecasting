@@ -28,6 +28,8 @@ _STATIC_ATTRIBUTES_NAMES = (
 
 _CPC_ATTRIBUTES_NAMES = ("cpc_precipitation",)
 
+_IMERG_ATTRIBUTES_NAMES = ("imerg_precipitation",)
+
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class ConfigData:
@@ -37,11 +39,13 @@ class ConfigData:
             embedding_size=20,
             static_attributes_names=_STATIC_ATTRIBUTES_NAMES,
             cpc_attributes_names=_CPC_ATTRIBUTES_NAMES,
+            imerg_attributes_names=_IMERG_ATTRIBUTES_NAMES,
         )
 
     embedding_size: int
     static_attributes_names: Tuple[str, ...]
     cpc_attributes_names: Tuple[str, ...]
+    imerg_attributes_names: Tuple[str, ...]
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -53,7 +57,9 @@ class ForwardData:
         return ForwardData(
             static_attributes=data["x_s"],
             cpc_data=data["x_d_hindcast"]["cpc_precipitation"],
+            imerg_data=data["x_d_hindcast"]["imerg_precipitation"],
         )
 
     static_attributes: torch.Tensor
     cpc_data: torch.Tensor
+    imerg_data: torch.Tensor
