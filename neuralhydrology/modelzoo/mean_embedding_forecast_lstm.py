@@ -149,6 +149,11 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         imerg_input_concat = torch.cat([forward_data.imerg_data, static_embeddings_repeated], dim=-1)
         imerg_embeddings = self.imerg_input_fc(imerg_input_concat)
 
+        # Batch size may change during training
+        imerg_batch_size = imerg_embeddings.shape[0]
+        imerg_nan_padding = torch.full((imerg_batch_size, self.lead_time, self.config_data.embedding_size), math.nan)
+        imerg_embedding_with_nan = torch.cat([imerg_embeddings, imerg_nan_padding], dim=1)
+
         # HRES embeddings (hres, static)
         # GraphCast embeddings (graphcast, static)
         # Masked mean hindcast (cpc, imerg, hres, graphcast)
