@@ -24,11 +24,16 @@ _STATIC_ATTRIBUTES = (
     "pre_mm_syr",
 )
 
+_CPC_ATTRIBUTES = ("cpc_precipitation",)
+
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class ConfigData:
     @classmethod
     def from_config(cls, unused_cfg: Config) -> "ConfigData":
-        return ConfigData(static_attributes=_STATIC_ATTRIBUTES)
+        return ConfigData(
+            static_attributes=_STATIC_ATTRIBUTES, cpc_attributes=_CPC_ATTRIBUTES
+        )
 
     static_attributes: Tuple[str, ...]
+    cpc_attributes: Tuple[str, ...]

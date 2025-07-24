@@ -53,8 +53,8 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             dropout=0,
         )
 
-        self.cpc_embedding_fc = FC(
-            input_size=len(["cpc_precipitation"])+20,
+        self.cpc_input_fc = FC(
+            input_size=len(self.config_data.cpc_attributes) + 20,
             hidden_sizes=[100, 20],
             activation=["tanh", "linear"],
             dropout=0,
@@ -103,6 +103,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             self.hindcast_lstm.bias_hh_l0.data[self.cfg.hidden_size:2 * self.cfg.hidden_size] = self.cfg.initial_forget_bias
             self.forecast_lstm.bias_hh_l0.data[self.cfg.hidden_size:2 * self.cfg.hidden_size] = self.cfg.initial_forget_bias
 
+
     def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on the StackedForecastLSTM model.
 
@@ -118,12 +119,12 @@ class MeanEmbeddingForecastLSTM(BaseModel):
                 - y_hat: Predictions over the sequence from the head layer.
         """
         x_s_fc = self.static_attributes_fc(data['x_s'])
-
-        cpc_data = data['x_d_hindcast']['cpc_precipitation']
-        static_duplicated = x_s_fc.unsqueeze(1).repeat(1, cpc_data.shape[1], 1)
-        cpc_input_concat = torch.cat([cpc_data, static_duplicated], dim=-1)
         
-        cpc_embeddings = self.cpc_embedding_fc(cpc_input_concat)
+        static_embeddings_repeated = x_s_fc.unsqueeze(1).repeat(1, self.seq_length, 1)
+        cpc_data = data['x_d_hindcast']['cpc_precipitation']
+        cpc_input_concat = torch.cat([cpc_data, static_embeddings_repeated], dim=-1)
+        
+        cpc_embeddings = self.cpc_input_fc(cpc_input_concat)
         print(cpc_embeddings.shape)
         print(cpc_embeddings)
 
