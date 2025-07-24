@@ -130,9 +130,10 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         cpc_input_concat = torch.cat([forward_data.cpc_data, static_embeddings_repeated], dim=-1)
         cpc_embeddings = self.cpc_input_fc(cpc_input_concat)
         
-        batch_size = cpc_embeddings.shape[0]
-        nan_padding = torch.full((batch_size, self.lead_time, self.config_data.embedding_size), math.nan)
-        cpc_embedding_with_nan = torch.cat([cpc_embeddings, nan_padding], dim=1)
+        # Batch size may change during training
+        cpc_batch_size = cpc_embeddings.shape[0]
+        cpc_nan_padding = torch.full((cpc_batch_size, self.lead_time, self.config_data.embedding_size), math.nan)
+        cpc_embedding_with_nan = torch.cat([cpc_embeddings, cpc_nan_padding], dim=1)
         
 
         # IMERG embeddings (imerg, static)
