@@ -50,19 +50,21 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         )
 
         self.static_attributes_fc = FC(
-            input_size=len(self.config_data.static_attributes),
+            input_size=len(self.config_data.static_attributes_names),
             hidden_sizes=[100, 100, self.config_data.embedding_size],
             activation=["tanh", "tanh", "linear"],
             dropout=0,
         )
 
         self.cpc_input_fc = FC(
-            input_size=len(self.config_data.cpc_attributes) + self.config_data.embedding_size,
+            input_size=(
+                len(self.config_data.cpc_attributes_names)
+                + self.config_data.embedding_size
+            ),
             hidden_sizes=[100, self.config_data.embedding_size],
             activation=["tanh", "linear"],
             dropout=0,
         )
-
 
         # Data sizes for expanding features in the forward pass.
         self.seq_length = cfg.seq_length
@@ -106,7 +108,6 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             self.hindcast_lstm.bias_hh_l0.data[self.cfg.hidden_size:2 * self.cfg.hidden_size] = self.cfg.initial_forget_bias
             self.forecast_lstm.bias_hh_l0.data[self.cfg.hidden_size:2 * self.cfg.hidden_size] = self.cfg.initial_forget_bias
 
-
     def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on the StackedForecastLSTM model.
 
@@ -129,12 +130,11 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         cpc_input_concat = torch.cat([forward_data.cpc_data, static_embeddings_repeated], dim=-1)
         cpc_embeddings = self.cpc_input_fc(cpc_input_concat)
-        
+
         # Batch size may change during training
         cpc_batch_size = cpc_embeddings.shape[0]
         cpc_nan_padding = torch.full((cpc_batch_size, self.lead_time, self.config_data.embedding_size), math.nan)
         cpc_embedding_with_nan = torch.cat([cpc_embeddings, cpc_nan_padding], dim=1)
-        
 
         # IMERG embeddings (imerg, static)
         # HRES embeddings (hres, static)

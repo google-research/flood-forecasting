@@ -5,7 +5,7 @@ import torch
 
 from neuralhydrology.utils.config import Config
 
-_STATIC_ATTRIBUTES = (
+_STATIC_ATTRIBUTES_NAMES = (
     "area",
     "p_mean",
     "pet_mean_ERA5_LAND",
@@ -26,7 +26,7 @@ _STATIC_ATTRIBUTES = (
     "pre_mm_syr",
 )
 
-_CPC_ATTRIBUTES = ("cpc_precipitation",)
+_CPC_ATTRIBUTES_NAMES = ("cpc_precipitation",)
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -35,13 +35,13 @@ class ConfigData:
     def from_config(cls, unused_cfg: Config) -> "ConfigData":
         return ConfigData(
             embedding_size=20,
-            static_attributes=_STATIC_ATTRIBUTES,
-            cpc_attributes=_CPC_ATTRIBUTES,
+            static_attributes_names=_STATIC_ATTRIBUTES_NAMES,
+            cpc_attributes_names=_CPC_ATTRIBUTES_NAMES,
         )
 
     embedding_size: int
-    static_attributes: Tuple[str, ...]
-    cpc_attributes: Tuple[str, ...]
+    static_attributes_names: Tuple[str, ...]
+    cpc_attributes_names: Tuple[str, ...]
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
