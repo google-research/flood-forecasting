@@ -256,10 +256,16 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         )
         forecast, _ = self.forecast_lstm(input=forecast_data_concat)
 
-        head_result = self.head(self.dropout(forecast))  # Uses `sample_umal` via cfg.
+        predictions = self.head(self.dropout(forecast))  # Uses `sample_umal` via cfg.
 
-        return {"y_hat": forecast} | head_result
+        # create deterministic "best guess" prediction:
+        # - weighted avg of location parameters (mu),
+        # - using the model's learnt mixture weights (pi).
+        # Mu's values are the median for each distribution.
+        # Pi's values are likewise for the model's confidence for each dist and should sum to 1.
+        # So, multiply those element-wise to scale each location mu by factor pi.
+        # Sum on the last dim because that's the distribution feature values.
+        # For example, suppose n_distributions=3, mu=[10.0, 15.0, 12.0] and [0.1, 0.7, 0.2]. It means the model is most confident in the second dist (most importance in pi). So 0.1*10.0+0.7*15.0+0.2*12.0=1.0+10.5+2.4=13.9.
+        y_hat = torch.sum(predictions["pi"] * predictions["mu"], dim=-1, keepdim=True)
 
-        # result = (torch.rand(data["x_s"].shape[0], self.overlap + self.lead_time, 128) * 2) - 1
-        # transposed = forecast.transpose(0, 1)
-        # return self.head(self.dropout(result))
+        return {"y_hat": y_hat} | predictions
