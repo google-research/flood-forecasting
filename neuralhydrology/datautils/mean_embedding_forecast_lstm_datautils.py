@@ -30,6 +30,14 @@ _CPC_ATTRIBUTES_NAMES = ("cpc_precipitation",)
 
 _IMERG_ATTRIBUTES_NAMES = ("imerg_precipitation",)
 
+_HRES_ATTRIBUTES_NAMES = (
+    "hres_surface_net_solar_radiation",
+    "hres_surface_net_thermal_radiation",
+    "hres_surface_pressure",
+    "hres_temperature_2m",
+    "hres_total_precipitation",
+)
+
 _GRAPHCAST_ATTRIBUTES_NAMES = (
     "graphcast_temperature_2m",
     "graphcast_total_precipitation",
@@ -47,6 +55,7 @@ class ConfigData:
             static_attributes_names=_STATIC_ATTRIBUTES_NAMES,
             cpc_attributes_names=_CPC_ATTRIBUTES_NAMES,
             imerg_attributes_names=_IMERG_ATTRIBUTES_NAMES,
+            hres_attributes_names=_HRES_ATTRIBUTES_NAMES,
             graphcast_attributes_names=_GRAPHCAST_ATTRIBUTES_NAMES,
         )
 
@@ -54,6 +63,7 @@ class ConfigData:
     static_attributes_names: Tuple[str, ...]
     cpc_attributes_names: Tuple[str, ...]
     imerg_attributes_names: Tuple[str, ...]
+    hres_attributes_names: Tuple[str, ...]
     graphcast_attributes_names: Tuple[str, ...]
 
 
@@ -67,6 +77,9 @@ class ForwardData:
             static_attributes=data["x_s"],
             cpc_data=data["x_d_hindcast"]["cpc_precipitation"],
             imerg_data=data["x_d_hindcast"]["imerg_precipitation"],
+            hres_data=_concat_tensors_from_dict(
+                data["x_d_forecast"], keys=_HRES_ATTRIBUTES_NAMES
+            ),
             graphcast_inputs=_concat_tensors_from_dict(
                 data["x_d_forecast"], keys=_GRAPHCAST_ATTRIBUTES_NAMES
             ),
@@ -75,6 +88,7 @@ class ForwardData:
     static_attributes: torch.Tensor
     cpc_data: torch.Tensor
     imerg_data: torch.Tensor
+    hres_data: torch.Tensor
     graphcast_inputs: torch.Tensor
 
 

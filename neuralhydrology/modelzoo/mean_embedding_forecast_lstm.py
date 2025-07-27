@@ -76,6 +76,16 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             dropout=0,
         )
 
+        self.hres_input_fc = FC(
+            input_size=(
+                len(self.config_data.hres_attributes_names)
+                + self.config_data.embedding_size
+            ),
+            hidden_sizes=[20, 20, 20, self.config_data.embedding_size],
+            activation=["tanh", "tanh", "tanh", "linear"],
+            dropout=0,
+        )
+
         self.graphcast_input_fc = FC(
             input_size=(
                 len(self.config_data.graphcast_attributes_names)
@@ -196,12 +206,16 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         imerg_embeddings = self.imerg_input_fc(imerg_input_concat)
         imerg_embedding_with_nan = self._add_nan_padding(imerg_embeddings)
 
+        hres_input_concat = self._append_static_embeddings(
+            forward_data.hres_data, static_embeddings=static_embeddings
+        )
+        hres_embeddings = self.hres_input_fc(hres_input_concat)
+
         graphcast_input_concat = self._append_static_embeddings(
             forward_data.graphcast_inputs, static_embeddings=static_embeddings
         )
         graphcast_embeddings = self.graphcast_input_fc(graphcast_input_concat)
 
-        # HRES embeddings (hres, static)
         # Masked mean hindcast (cpc, imerg, hres, graphcast)
         # Masked mean forcast (hres, graphcast)
         # LSTM hindcast (masked mean hindcast, static)
