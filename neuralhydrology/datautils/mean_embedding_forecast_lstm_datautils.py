@@ -80,7 +80,7 @@ class ForwardData:
             hres_data=_concat_tensors_from_dict(
                 data["x_d_forecast"], keys=_HRES_ATTRIBUTES_NAMES
             ),
-            graphcast_inputs=_concat_tensors_from_dict(
+            graphcast_data=_concat_tensors_from_dict(
                 data["x_d_forecast"], keys=_GRAPHCAST_ATTRIBUTES_NAMES
             ),
         )
@@ -89,7 +89,7 @@ class ForwardData:
     cpc_data: torch.Tensor
     imerg_data: torch.Tensor
     hres_data: torch.Tensor
-    graphcast_inputs: torch.Tensor
+    graphcast_data: torch.Tensor
 
 
 def _concat_tensors_from_dict(

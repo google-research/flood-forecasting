@@ -212,7 +212,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         hres_embeddings = self.hres_input_fc(hres_input_concat)
 
         graphcast_input_concat = self._append_static_embeddings(
-            forward_data.graphcast_inputs, static_embeddings=static_embeddings
+            forward_data.graphcast_data, static_embeddings=static_embeddings
         )
         graphcast_embeddings = self.graphcast_input_fc(graphcast_input_concat)
 
