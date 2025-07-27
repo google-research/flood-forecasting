@@ -6,7 +6,7 @@ import torch.nn as nn
 
 from neuralhydrology.modelzoo.basemodel import BaseModel
 from neuralhydrology.modelzoo.fc import FC
-from neuralhydrology.modelzoo.head import get_head
+from neuralhydrology.modelzoo.head import CMAL, get_head
 from neuralhydrology.modelzoo.inputlayer import InputLayer
 from neuralhydrology.utils.config import Config
 from neuralhydrology.datautils import mean_embedding_forecast_lstm_datautils
@@ -129,8 +129,8 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         )
 
         # Input embedding layers.
-        self.forecast_embedding_net = InputLayer(cfg=cfg, embedding_type="forecast")
-        self.hindcast_embedding_net = InputLayer(cfg=cfg, embedding_type="hindcast")
+        # self.forecast_embedding_net = InputLayer(cfg=cfg, embedding_type="forecast")
+        # self.hindcast_embedding_net = InputLayer(cfg=cfg, embedding_type="hindcast")
 
         # Time series layers.
         # self.hindcast_lstm = nn.LSTM(
@@ -151,7 +151,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         # )
 
         self.dropout = nn.Dropout(p=cfg.output_dropout)
-        self.head = get_head(cfg=cfg, n_in=cfg.hidden_size, n_out=self.output_size)
+        self.head = CMAL(n_in=512, n_out=3 * 4, n_hidden=100)
 
         self._reset_parameters()
 
@@ -278,6 +278,12 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             static_embeddings=static_embeddings,
         )
         forecast, _ = self.forecast_lstm(input=forecast_data_concat)
+
+        head_result = self.head(self.dropout(forecast))
+
+        # concat = torch.cat(list(result.values()), dim=1)
+        # return result
+        # return {'y_hat': result['mu']}
 
         # LSTM hindcast (masked mean hindcast, static)
         # LSTM forecast (lstm hindcast, masked mean forcast, static)
