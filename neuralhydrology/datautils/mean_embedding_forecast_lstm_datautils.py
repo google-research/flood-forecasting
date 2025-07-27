@@ -1,5 +1,5 @@
 import dataclasses
-from typing import Tuple
+from typing import Tuple, Iterable
 
 import torch
 
@@ -30,6 +30,13 @@ _CPC_ATTRIBUTES_NAMES = ("cpc_precipitation",)
 
 _IMERG_ATTRIBUTES_NAMES = ("imerg_precipitation",)
 
+_FORECAST_INPUTS_NAMES = (
+    "graphcast_temperature_2m",
+    "graphcast_total_precipitation",
+    "graphcast_u_component_of_wind_10m",
+    "graphcast_v_component_of_wind_10m",
+)
+
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class ConfigData:
@@ -58,7 +65,9 @@ class ForwardData:
             static_attributes=data["x_s"],
             cpc_data=data["x_d_hindcast"]["cpc_precipitation"],
             imerg_data=data["x_d_hindcast"]["imerg_precipitation"],
-            forecast_inputs=_gather_forecast_inputs(data),
+            forecast_inputs=_concat_tensors_from_dict(
+                data["x_d_forecast"], keys=_FORECAST_INPUTS_NAMES
+            ),
         )
 
     static_attributes: torch.Tensor
@@ -67,13 +76,7 @@ class ForwardData:
     forecast_inputs: torch.Tensor
 
 
-def _gather_forecast_inputs(
-    data: dict[str, torch.Tensor | dict[str, torch.Tensor]],
+def _concat_tensors_from_dict(
+    data: dict[str, torch.Tensor], *, keys: Iterable[str]
 ) -> torch.Tensor:
-    forecast_input_tensors = [
-        data["x_d_forecast"]["graphcast_temperature_2m"],
-        data["x_d_forecast"]["graphcast_total_precipitation"],
-        data["x_d_forecast"]["graphcast_u_component_of_wind_10m"],
-        data["x_d_forecast"]["graphcast_v_component_of_wind_10m"],
-    ]
-    return torch.cat(forecast_input_tensors, dim=-1)
+    return torch.cat([data[e] for e in keys], dim=-1)
