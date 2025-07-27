@@ -52,6 +52,19 @@ class MeanEmbeddingForecastLSTM(BaseModel):
     def __init__(self, cfg: Config):
         super(MeanEmbeddingForecastLSTM, self).__init__(cfg=cfg)
 
+        # Data sizes for expanding features in the forward pass.
+        self.seq_length = cfg.seq_length
+        self.lead_time = cfg.lead_time
+        self.overlap = cfg.forecast_overlap
+        # TODO (future) :: Models assume that all lead times are present up to the longest `lead_time`.
+        # ForecastBaseDataset does not require this assumption.
+        if cfg.predict_last_n > self.lead_time + self.overlap:
+            raise ValueError(
+                "`predict_last_n` must not be larger than the length of the forecast sequence."
+            )
+        if cfg.seq_length < self.overlap:
+            raise ValueError("`seq_length` must be larger than `forecast_overlap`.")
+
         self.config_data = (
             mean_embedding_forecast_lstm_datautils.ConfigData.from_config(cfg)
         )
@@ -103,40 +116,39 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             dropout=0,
         )
 
-        # Data sizes for expanding features in the forward pass.
-        self.seq_length = cfg.seq_length
-        self.lead_time = cfg.lead_time
-        self.overlap = cfg.forecast_overlap
-        # TODO (future) :: Models assume that all lead times are present up to the longest `lead_time`.
-        # ForecastBaseDataset does not require this assumption.
-        if cfg.predict_last_n > self.lead_time + self.overlap:
-            raise ValueError(
-                "`predict_last_n` must not be larger than the length of the forecast sequence."
-            )
-        if cfg.seq_length < self.overlap:
-            raise ValueError("`seq_length` must be larger than `forecast_overlap`.")
+        self.hindcast_lstm = nn.LSTM(
+            input_size=self.config_data.embedding_size * 2,
+            hidden_size=512,
+            batch_first=True,
+        )
+
+        self.forecast_lstm = nn.LSTM(
+            input_size=self.config_data.embedding_size * 2 + 512,
+            hidden_size=512,
+            batch_first=True,
+        )
 
         # Input embedding layers.
         self.forecast_embedding_net = InputLayer(cfg=cfg, embedding_type="forecast")
         self.hindcast_embedding_net = InputLayer(cfg=cfg, embedding_type="hindcast")
 
         # Time series layers.
-        self.hindcast_lstm = nn.LSTM(
-            input_size=self.hindcast_embedding_net.output_size,
-            hidden_size=cfg.hidden_size,
-            bidirectional=cfg.bidirectional_stacked_forecast_lstm,
-        )
+        # self.hindcast_lstm = nn.LSTM(
+        #     input_size=self.hindcast_embedding_net.output_size,
+        #     hidden_size=cfg.hidden_size,
+        #     bidirectional=cfg.bidirectional_stacked_forecast_lstm,
+        # )
 
-        forecast_input_size = (
-            self.forecast_embedding_net.output_size + self.hindcast_lstm.hidden_size
-        )
-        if self.cfg.bidirectional_stacked_forecast_lstm:
-            forecast_input_size += self.hindcast_lstm.hidden_size
-        self.forecast_lstm = nn.LSTM(
-            input_size=forecast_input_size,
-            hidden_size=cfg.hidden_size,
-            batch_first=True,
-        )
+        # forecast_input_size = (
+        #     self.forecast_embedding_net.output_size + self.hindcast_lstm.hidden_size
+        # )
+        # if self.cfg.bidirectional_stacked_forecast_lstm:
+        #     forecast_input_size += self.hindcast_lstm.hidden_size
+        # self.forecast_lstm = nn.LSTM(
+        #     input_size=forecast_input_size,
+        #     hidden_size=cfg.hidden_size,
+        #     batch_first=True,
+        # )
 
         self.dropout = nn.Dropout(p=cfg.output_dropout)
         self.head = get_head(cfg=cfg, n_in=cfg.hidden_size, n_out=self.output_size)
@@ -253,10 +265,19 @@ class MeanEmbeddingForecastLSTM(BaseModel):
                 graphcast_embeddings,
             ]
         )
+        hindcast_data_concat = self._append_static_embeddings(
+            hindcast_mean_embedding, static_embeddings=static_embeddings
+        )
+        hindcast, _ = self.hindcast_lstm(input=hindcast_data_concat)
 
         forecast_mean_embedding = self._masked_mean_embedding(
             [hres_embeddings, graphcast_embeddings]
         )
+        forecast_data_concat = self._append_static_embeddings(
+            torch.cat([forecast_mean_embedding, hindcast], dim=-1),
+            static_embeddings=static_embeddings,
+        )
+        forecast, _ = self.forecast_lstm(input=forecast_data_concat)
 
         # LSTM hindcast (masked mean hindcast, static)
         # LSTM forecast (lstm hindcast, masked mean forcast, static)
