@@ -267,7 +267,8 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         # Mu's values are the median for each distribution.
         # Pi's values are likewise for the model's confidence for each dist and should sum to 1.
         # So, multiply those element-wise to scale each location mu by factor pi.
-        # Sum on the last dim because that's the distribution feature values.
+        # NOTE: sum on the last dim because that's the distribution feature values.
+        # NOTE: keep the last dim to preserve shape. E.g. if x=[[1,2,3],[4,5,6]] so sum(x, dim=1)=[6,15] but with keepdim=True it's [[6],[15]]. We need to retain (batch_size, sequence_length, n_distributions) resulting in (batch_size, sequence_length, 1) and not (batch_size, sequence_length,).
         # For example, suppose n_distributions=3, mu=[10.0, 15.0, 12.0] and [0.1, 0.7, 0.2]. It means the model is most confident in the second dist (most importance in pi). So 0.1*10.0+0.7*15.0+0.2*12.0=1.0+10.5+2.4=13.9.
         y_hat = torch.sum(predictions["pi"] * predictions["mu"], dim=-1, keepdim=True)
 
