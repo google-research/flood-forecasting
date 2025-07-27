@@ -264,7 +264,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         # create deterministic "best guess" prediction:
         # - weighted avg of location parameters (mu),
         # - using the model's learnt mixture weights (pi).
-        # Mu's values are the median for each distribution.
+        # Mu's values are the mean for each distribution.
         # Pi's values are likewise for the model's confidence for each dist and should sum to 1.
         # So, multiply those element-wise to scale each location mu by factor pi.
         # NOTE: sum on the last dim because that's the distribution feature values.
