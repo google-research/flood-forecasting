@@ -118,6 +118,26 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             self.hindcast_lstm.bias_hh_l0.data[self.cfg.hidden_size:2 * self.cfg.hidden_size] = self.cfg.initial_forget_bias
             self.forecast_lstm.bias_hh_l0.data[self.cfg.hidden_size:2 * self.cfg.hidden_size] = self.cfg.initial_forget_bias
 
+    def _append_static_embeddings(self, embeddings: torch.Tensor, static_embeddings: torch.Tensor) -> torch.Tensor:
+        """Pad the embedding tensor with the embedding of static attributes.
+ 
+        Parameters
+        ----------
+        embeddings : torch.Tensor
+            Embedding tensor to append the static embedding tensor.
+
+        Returns
+        -------
+        torch.Tensor
+            A new tensor which is a concatentation of both tensors.
+
+        """
+        # Duplicate 
+        length = embeddings.shape[1]
+        static_embeddings_repeated = static_embeddings.unsqueeze(1).repeat(1, length, 1)
+        return torch.cat([embeddings, static_embeddings_repeated], dim=-1)
+
+
     def _add_nan_padding(self, embeddings: torch.Tensor) -> torch.Tensor:
         """Pad the embedding tensor with nan value.
  
@@ -159,14 +179,13 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         forward_data = (
             mean_embedding_forecast_lstm_datautils.ForwardData.from_forward_data(data)
         )
-        x_s_fc = self.static_attributes_fc(forward_data.static_attributes)
-        static_embeddings_repeated = x_s_fc.unsqueeze(1).repeat(1, self.seq_length, 1)
+        static_embeddings = self.static_attributes_fc(forward_data.static_attributes)
 
-        cpc_input_concat = torch.cat([forward_data.cpc_data, static_embeddings_repeated], dim=-1)
+        cpc_input_concat = self._append_static_embeddings(forward_data.cpc_data, static_embeddings)
         cpc_embeddings = self.cpc_input_fc(cpc_input_concat)
         cpc_embedding_with_nan = self._add_nan_padding(cpc_embeddings)
 
-        imerg_input_concat = torch.cat([forward_data.imerg_data, static_embeddings_repeated], dim=-1)
+        imerg_input_concat = self._append_static_embeddings(forward_data.imerg_data, static_embeddings)
         imerg_embeddings = self.imerg_input_fc(imerg_input_concat)
         imerg_embedding_with_nan = self._add_nan_padding(imerg_embeddings)
 
