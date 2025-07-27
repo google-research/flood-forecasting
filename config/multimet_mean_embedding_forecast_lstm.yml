@@ -127,8 +127,7 @@ bidirectional_stacked_forecast_lstm: True
 
 head: cmal
 n_distributions: 3
-n_samples: 64
-# n_samples: 7500  # the paper set to this value (https://hess.copernicus.org/articles/26/1673/2022)
+n_samples: 7500
 negative_sample_handling: clip
 # mc_dropout true should result in probabilistic forecasting: range of possible outcomes by running inference multiple times with different neurons "dropped out", instead of a single "best guess".
 mc_dropout: True
