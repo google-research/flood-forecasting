@@ -117,7 +117,7 @@ target_variables:
 
 # --- Model Parameters ----------------------------------------------------------
 model: mean_embedding_forecast_lstm
-forecast_overlap: 100
+forecast_overlap: 365
 bidirectional_stacked_forecast_lstm: True
 head: regression
 hidden_size: 128
