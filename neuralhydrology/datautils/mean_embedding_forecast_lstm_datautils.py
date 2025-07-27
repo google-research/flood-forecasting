@@ -30,7 +30,7 @@ _CPC_ATTRIBUTES_NAMES = ("cpc_precipitation",)
 
 _IMERG_ATTRIBUTES_NAMES = ("imerg_precipitation",)
 
-_FORECAST_INPUTS_NAMES = (
+_GRAPHCAST_ATTRIBUTES_NAMES = (
     "graphcast_temperature_2m",
     "graphcast_total_precipitation",
     "graphcast_u_component_of_wind_10m",
@@ -47,12 +47,14 @@ class ConfigData:
             static_attributes_names=_STATIC_ATTRIBUTES_NAMES,
             cpc_attributes_names=_CPC_ATTRIBUTES_NAMES,
             imerg_attributes_names=_IMERG_ATTRIBUTES_NAMES,
+            graphcast_attributes_names=_GRAPHCAST_ATTRIBUTES_NAMES,
         )
 
     embedding_size: int
     static_attributes_names: Tuple[str, ...]
     cpc_attributes_names: Tuple[str, ...]
     imerg_attributes_names: Tuple[str, ...]
+    graphcast_attributes_names: Tuple[str, ...]
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -65,15 +67,15 @@ class ForwardData:
             static_attributes=data["x_s"],
             cpc_data=data["x_d_hindcast"]["cpc_precipitation"],
             imerg_data=data["x_d_hindcast"]["imerg_precipitation"],
-            forecast_inputs=_concat_tensors_from_dict(
-                data["x_d_forecast"], keys=_FORECAST_INPUTS_NAMES
+            graphcast_inputs=_concat_tensors_from_dict(
+                data["x_d_forecast"], keys=_GRAPHCAST_ATTRIBUTES_NAMES
             ),
         )
 
     static_attributes: torch.Tensor
     cpc_data: torch.Tensor
     imerg_data: torch.Tensor
-    forecast_inputs: torch.Tensor
+    graphcast_inputs: torch.Tensor
 
 
 def _concat_tensors_from_dict(

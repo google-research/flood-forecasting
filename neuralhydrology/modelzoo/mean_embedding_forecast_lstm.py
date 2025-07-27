@@ -76,6 +76,16 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             dropout=0,
         )
 
+        self.graphcast_input_fc = FC(
+            input_size=(
+                len(self.config_data.graphcast_attributes_names)
+                + self.config_data.embedding_size
+            ),
+            hidden_sizes=[20, 20, 20, self.config_data.embedding_size],
+            activation=["tanh", "tanh", "tanh", "linear"],
+            dropout=0,
+        )
+
         # Data sizes for expanding features in the forward pass.
         self.seq_length = cfg.seq_length
         self.lead_time = cfg.lead_time
@@ -136,7 +146,6 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         static_embeddings_repeated = static_embeddings.unsqueeze(1).repeat(1, length, 1)
         return torch.cat([embeddings, static_embeddings_repeated], dim=-1)
 
-
     def _add_nan_padding(self, embeddings: torch.Tensor) -> torch.Tensor:
         """Pad the embedding tensor with nan value.
  
@@ -159,7 +168,6 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         embedding_size = embeddings.shape[2]
         nan_padding = torch.full((batch_size, nan_padding_length, embedding_size), math.nan)
         return torch.cat([embeddings, nan_padding], dim=1)
-
 
     def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on the StackedForecastLSTM model.
@@ -188,8 +196,12 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         imerg_embeddings = self.imerg_input_fc(imerg_input_concat)
         imerg_embedding_with_nan = self._add_nan_padding(imerg_embeddings)
 
+        graphcast_input_concat = self._append_static_embeddings(
+            forward_data.graphcast_inputs, static_embeddings=static_embeddings
+        )
+        graphcast_embeddings = self.graphcast_input_fc(graphcast_input_concat)
+
         # HRES embeddings (hres, static)
-        # GraphCast embeddings (graphcast, static)
         # Masked mean hindcast (cpc, imerg, hres, graphcast)
         # Masked mean forcast (hres, graphcast)
         # LSTM hindcast (masked mean hindcast, static)
@@ -197,18 +209,18 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         # Head (lstm forecast)
 
         # Run the embedding layers.
-        #hindcast_embeddings = self.hindcast_embedding_net(data)
-        #forecast_embeddings = self.forecast_embedding_net(data)
+        # hindcast_embeddings = self.hindcast_embedding_net(data)
+        # forecast_embeddings = self.forecast_embedding_net(data)
 
         # Run hindcast LSTM.
-        #hindcast, _ = self.hindcast_lstm(input=hindcast_embeddings)
+        # hindcast, _ = self.hindcast_lstm(input=hindcast_embeddings)
 
         # Run forecast LSTM.
-        #forecast_inputs = torch.cat((forecast_embeddings, hindcast[-self.overlap-self.lead_time:, ...]), dim=-1)
-        #forecast, _ = self.forecast_lstm(forecast_inputs)
+        # forecast_inputs = torch.cat((forecast_embeddings, hindcast[-self.overlap-self.lead_time:, ...]), dim=-1)
+        # forecast, _ = self.forecast_lstm(forecast_inputs)
 
         # Run head.
         result = (torch.rand(data['x_s'].shape[0], self.overlap + self.lead_time, 128) * 2) - 1
-        #transposed = forecast.transpose(0, 1)
+        # transposed = forecast.transpose(0, 1)
         return self.head(self.dropout(result))
-        #return result
+        # return result
