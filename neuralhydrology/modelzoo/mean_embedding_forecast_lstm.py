@@ -6,8 +6,7 @@ import torch.nn as nn
 
 from neuralhydrology.modelzoo.basemodel import BaseModel
 from neuralhydrology.modelzoo.fc import FC
-from neuralhydrology.modelzoo.head import CMAL, get_head
-from neuralhydrology.modelzoo.inputlayer import InputLayer
+from neuralhydrology.modelzoo.head import CMAL
 from neuralhydrology.utils.config import Config
 from neuralhydrology.datautils import mean_embedding_forecast_lstm_datautils
 
@@ -128,31 +127,8 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             batch_first=True,
         )
 
-        # Input embedding layers.
-        # self.forecast_embedding_net = InputLayer(cfg=cfg, embedding_type="forecast")
-        # self.hindcast_embedding_net = InputLayer(cfg=cfg, embedding_type="hindcast")
-
-        # Time series layers.
-        # self.hindcast_lstm = nn.LSTM(
-        #     input_size=self.hindcast_embedding_net.output_size,
-        #     hidden_size=cfg.hidden_size,
-        #     bidirectional=cfg.bidirectional_stacked_forecast_lstm,
-        # )
-
-        # forecast_input_size = (
-        #     self.forecast_embedding_net.output_size + self.hindcast_lstm.hidden_size
-        # )
-        # if self.cfg.bidirectional_stacked_forecast_lstm:
-        #     forecast_input_size += self.hindcast_lstm.hidden_size
-        # self.forecast_lstm = nn.LSTM(
-        #     input_size=forecast_input_size,
-        #     hidden_size=cfg.hidden_size,
-        #     batch_first=True,
-        # )
-
         self.dropout = nn.Dropout(p=cfg.output_dropout)
-        self.head = get_head(cfg=cfg, n_in=cfg.hidden_size, n_out=self.output_size)
-        # self.head = CMAL(n_in=512, n_out=3 * 4, n_hidden=100)
+        self.head = CMAL(n_in=512, n_out=3 * 4, n_hidden=100)
 
         self._reset_parameters()
 
@@ -280,31 +256,10 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         )
         forecast, _ = self.forecast_lstm(input=forecast_data_concat)
 
-        #head_result = self.head(self.dropout(forecast))
+        head_result = self.head(self.dropout(forecast))  # Uses `sample_umal` via cfg.
 
-        # concat = torch.cat(list(result.values()), dim=1)
-        # return result
-        # return {'y_hat': result['mu']}
+        return {"y_hat": forecast} | head_result
 
-        # LSTM hindcast (masked mean hindcast, static)
-        # LSTM forecast (lstm hindcast, masked mean forcast, static)
-        # Head (lstm forecast)
-
-        # Run the embedding layers.
-        # hindcast_embeddings = self.hindcast_embedding_net(data)
-        # forecast_embeddings = self.forecast_embedding_net(data)
-
-        # Run hindcast LSTM.
-        # hindcast, _ = self.hindcast_lstm(input=hindcast_embeddings)
-
-        # Run forecast LSTM.
-        # forecast_inputs = torch.cat((forecast_embeddings, hindcast[-self.overlap-self.lead_time:, ...]), dim=-1)
-        # forecast, _ = self.forecast_lstm(forecast_inputs)
-
-        # Run head.
-        result = (
-            torch.rand(data["x_s"].shape[0], self.overlap + self.lead_time, 128) * 2
-        ) - 1
+        # result = (torch.rand(data["x_s"].shape[0], self.overlap + self.lead_time, 128) * 2) - 1
         # transposed = forecast.transpose(0, 1)
-        return self.head(self.dropout(result))
-        # return result
+        # return self.head(self.dropout(result))

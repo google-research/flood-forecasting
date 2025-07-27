@@ -124,9 +124,15 @@ target_variables:
 model: mean_embedding_forecast_lstm
 forecast_overlap: 365
 bidirectional_stacked_forecast_lstm: True
-#head: cmal
-#n_distributions: 3
-head: regression
+
+head: cmal
+n_distributions: 3
+n_samples: 64
+# n_samples: 7500  # the paper set to this value (https://hess.copernicus.org/articles/26/1673/2022)
+negative_sample_handling: clip
+# mc_dropout true should result in probabilistic forecasting: range of possible outcomes by running inference multiple times with different neurons "dropped out", instead of a single "best guess".
+mc_dropout: True
+
 hidden_size: 128
 initial_forget_bias: 3
 output_activation: linear
