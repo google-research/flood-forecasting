@@ -179,15 +179,18 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         # Head (lstm forecast)
 
         # Run the embedding layers.
-        hindcast_embeddings = self.hindcast_embedding_net(data)
-        forecast_embeddings = self.forecast_embedding_net(data)
+        #hindcast_embeddings = self.hindcast_embedding_net(data)
+        #forecast_embeddings = self.forecast_embedding_net(data)
 
         # Run hindcast LSTM.
-        hindcast, _ = self.hindcast_lstm(input=hindcast_embeddings)
+        #hindcast, _ = self.hindcast_lstm(input=hindcast_embeddings)
 
         # Run forecast LSTM.
-        forecast_inputs = torch.cat((forecast_embeddings, hindcast[-self.overlap-self.lead_time:, ...]), dim=-1)
-        forecast, _ = self.forecast_lstm(forecast_inputs)
+        #forecast_inputs = torch.cat((forecast_embeddings, hindcast[-self.overlap-self.lead_time:, ...]), dim=-1)
+        #forecast, _ = self.forecast_lstm(forecast_inputs)
 
         # Run head.
-        return self.head(self.dropout(forecast.transpose(0, 1)))
+        result = (torch.rand(data['x_s'].shape[0], self.overlap + self.lead_time, 128) * 2) - 1
+        #transposed = forecast.transpose(0, 1)
+        return self.head(self.dropout(result))
+        #return result
