@@ -118,7 +118,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             self.hindcast_lstm.bias_hh_l0.data[self.cfg.hidden_size:2 * self.cfg.hidden_size] = self.cfg.initial_forget_bias
             self.forecast_lstm.bias_hh_l0.data[self.cfg.hidden_size:2 * self.cfg.hidden_size] = self.cfg.initial_forget_bias
 
-    def _append_static_embeddings(self, embeddings: torch.Tensor, static_embeddings: torch.Tensor) -> torch.Tensor:
+    def _append_static_embeddings(self, embeddings: torch.Tensor, *, static_embeddings: torch.Tensor) -> torch.Tensor:
         """Pad the embedding tensor with the embedding of static attributes.
  
         Parameters
@@ -180,11 +180,11 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         )
         static_embeddings = self.static_attributes_fc(forward_data.static_attributes)
 
-        cpc_input_concat = self._append_static_embeddings(forward_data.cpc_data, static_embeddings)
+        cpc_input_concat = self._append_static_embeddings(forward_data.cpc_data, static_embeddings=static_embeddings)
         cpc_embeddings = self.cpc_input_fc(cpc_input_concat)
         cpc_embedding_with_nan = self._add_nan_padding(cpc_embeddings)
 
-        imerg_input_concat = self._append_static_embeddings(forward_data.imerg_data, static_embeddings)
+        imerg_input_concat = self._append_static_embeddings(forward_data.imerg_data, static_embeddings=static_embeddings)
         imerg_embeddings = self.imerg_input_fc(imerg_input_concat)
         imerg_embedding_with_nan = self._add_nan_padding(imerg_embeddings)
 
