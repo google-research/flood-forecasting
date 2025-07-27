@@ -124,8 +124,9 @@ target_variables:
 model: mean_embedding_forecast_lstm
 forecast_overlap: 365
 bidirectional_stacked_forecast_lstm: True
-head: cmal
-n_distributions: 3
+#head: cmal
+#n_distributions: 3
+head: regression
 hidden_size: 128
 initial_forget_bias: 3
 output_activation: linear

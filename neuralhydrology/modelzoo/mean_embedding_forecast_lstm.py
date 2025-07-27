@@ -151,7 +151,8 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         # )
 
         self.dropout = nn.Dropout(p=cfg.output_dropout)
-        self.head = CMAL(n_in=512, n_out=3 * 4, n_hidden=100)
+        self.head = get_head(cfg=cfg, n_in=cfg.hidden_size, n_out=self.output_size)
+        # self.head = CMAL(n_in=512, n_out=3 * 4, n_hidden=100)
 
         self._reset_parameters()
 
@@ -279,7 +280,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         )
         forecast, _ = self.forecast_lstm(input=forecast_data_concat)
 
-        head_result = self.head(self.dropout(forecast))
+        #head_result = self.head(self.dropout(forecast))
 
         # concat = torch.cat(list(result.values()), dim=1)
         # return result
