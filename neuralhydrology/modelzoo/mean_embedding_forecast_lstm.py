@@ -132,7 +132,6 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             A new tensor which is a concatentation of both tensors.
 
         """
-        # Duplicate 
         length = embeddings.shape[1]
         static_embeddings_repeated = static_embeddings.unsqueeze(1).repeat(1, length, 1)
         return torch.cat([embeddings, static_embeddings_repeated], dim=-1)
