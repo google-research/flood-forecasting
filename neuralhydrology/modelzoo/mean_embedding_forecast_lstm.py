@@ -128,7 +128,10 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         )
 
         self.dropout = nn.Dropout(p=cfg.output_dropout)
-        self.head = CMAL(n_in=512, n_out=3 * 4, n_hidden=100)
+
+        self.head = CMAL(
+            n_in=512, n_out=3 * 4, n_hidden=100
+        )  # Uses `sample_umal` via cfg.
 
         self._reset_parameters()
 
@@ -256,7 +259,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         )
         forecast, _ = self.forecast_lstm(input=forecast_data_concat)
 
-        predictions = self.head(self.dropout(forecast))  # Uses `sample_umal` via cfg.
+        predictions = self.head(self.dropout(forecast))
 
         # create deterministic "best guess" prediction:
         # - weighted avg of location parameters (mu),
