@@ -118,6 +118,30 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             self.hindcast_lstm.bias_hh_l0.data[self.cfg.hidden_size:2 * self.cfg.hidden_size] = self.cfg.initial_forget_bias
             self.forecast_lstm.bias_hh_l0.data[self.cfg.hidden_size:2 * self.cfg.hidden_size] = self.cfg.initial_forget_bias
 
+    def _add_nan_padding(self, embeddings: torch.Tensor) -> torch.Tensor:
+        """Pad the embedding tensor with nan value.
+ 
+        Parameters
+        ----------
+        embeddings : torch.Tensor
+            Embedding tensor of all hindcast calculations.
+
+        Returns
+        -------
+        torch.Tensor
+            A new tensor padded with nan in the end, spanning the full sequence length and the lead time.
+
+        """
+        # Dimension 0 is the batch size. Note the batch size may change during training.
+        batch_size = embeddings.shape[0]
+        # Dimension 1 is the time dimension.
+        nan_padding_length = self.seq_length + self.lead_time - embeddings.shape[1]
+        # Dimension 2 is the length of embedding vector.
+        embedding_size = embeddings.shape[2]
+        nan_padding = torch.full((batch_size, nan_padding_length, embedding_size), math.nan)
+        return torch.cat([embeddings, nan_padding], dim=1)
+
+
     def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on the StackedForecastLSTM model.
 
@@ -140,19 +164,11 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         cpc_input_concat = torch.cat([forward_data.cpc_data, static_embeddings_repeated], dim=-1)
         cpc_embeddings = self.cpc_input_fc(cpc_input_concat)
-
-        # Batch size may change during training
-        cpc_batch_size = cpc_embeddings.shape[0]
-        cpc_nan_padding = torch.full((cpc_batch_size, self.lead_time, self.config_data.embedding_size), math.nan)
-        cpc_embedding_with_nan = torch.cat([cpc_embeddings, cpc_nan_padding], dim=1)
+        cpc_embedding_with_nan = self._add_nan_padding(cpc_embeddings)
 
         imerg_input_concat = torch.cat([forward_data.imerg_data, static_embeddings_repeated], dim=-1)
         imerg_embeddings = self.imerg_input_fc(imerg_input_concat)
-
-        # Batch size may change during training
-        imerg_batch_size = imerg_embeddings.shape[0]
-        imerg_nan_padding = torch.full((imerg_batch_size, self.lead_time, self.config_data.embedding_size), math.nan)
-        imerg_embedding_with_nan = torch.cat([imerg_embeddings, imerg_nan_padding], dim=1)
+        imerg_embedding_with_nan = self._add_nan_padding(imerg_embeddings)
 
         # HRES embeddings (hres, static)
         # GraphCast embeddings (graphcast, static)
