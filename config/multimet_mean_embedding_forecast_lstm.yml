@@ -7,9 +7,7 @@ clip_targets_to_zero:
 - streamflow
 loss: NSE
 learning_rate:
-  0: 0.001
-  10: 0.0005
-  25: 0.0001
+  0: 0.0005
 max_updates_per_epoch:
 metrics:
 - NSE
