@@ -6,7 +6,7 @@ import torch.nn as nn
 
 from neuralhydrology.modelzoo.basemodel import BaseModel
 from neuralhydrology.modelzoo.fc import FC
-from neuralhydrology.modelzoo.head import CMAL
+from neuralhydrology.modelzoo.head import get_head
 from neuralhydrology.utils.config import Config
 from neuralhydrology.datautils import mean_embedding_forecast_lstm_datautils
 
@@ -132,9 +132,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         self.dropout = nn.Dropout(p=cfg.output_dropout)
 
-        self.head = CMAL(
-            n_in=512, n_out=3 * 4, n_hidden=100
-        )  # Uses `sample_umal` via cfg.
+        self.head = get_head(self.cfg, n_in=512, n_out=3 * 4, n_hidden=100)
 
         self._reset_parameters()
 

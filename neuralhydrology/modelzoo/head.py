@@ -9,7 +9,7 @@ from neuralhydrology.utils.config import Config
 LOGGER = logging.getLogger(__name__)
 
 
-def get_head(cfg: Config, n_in: int, n_out: int) -> nn.Module:
+def get_head(cfg: Config, n_in: int, n_out: int, *, n_hidden: int = 100) -> nn.Module:
     """Get specific head module, depending on the run configuration.
 
     Parameters
@@ -20,6 +20,8 @@ def get_head(cfg: Config, n_in: int, n_out: int) -> nn.Module:
         Number of input features.
     n_out : int
         Number of output features.
+    n_hidden : int
+        Size of the hidden layer.
 
     Returns
     -------
@@ -29,11 +31,11 @@ def get_head(cfg: Config, n_in: int, n_out: int) -> nn.Module:
     if cfg.head.lower() == "regression":
         head = Regression(n_in=n_in, n_out=n_out, activation=cfg.output_activation)
     elif cfg.head.lower() == "gmm":
-        head = GMM(n_in=n_in, n_out=n_out)
+        head = GMM(n_in=n_in, n_out=n_out, n_hidden=n_hidden)
     elif cfg.head.lower() == "umal":
-        head = UMAL(n_in=n_in, n_out=n_out)
+        head = UMAL(n_in=n_in, n_out=n_out, n_hidden=n_hidden)
     elif cfg.head.lower() == "cmal":
-        head = CMAL(n_in=n_in, n_out=n_out)
+        head = CMAL(n_in=n_in, n_out=n_out, n_hidden=n_hidden)
     elif cfg.head.lower() == "":
         raise ValueError(f"No 'head' specified in the config but is required for {cfg.model}")
     else:

@@ -19,7 +19,7 @@ metrics:
 - Missed-Peaks
 num_workers: 16
 optimizer: Adam
-validate_every: 3
+validate_every: 2
 validate_n_random_basins: 100
 predict_last_n: 8
 
@@ -126,10 +126,11 @@ model: mean_embedding_forecast_lstm
 forecast_overlap: 365
 bidirectional_stacked_forecast_lstm: True
 
+### head ###
 loss: CMALLoss
-#loss: NSE
 head: cmal
-#head: regression
+# loss: NSE
+# head: regression
 n_distributions: 3
 n_samples: 7500  # https://hess.copernicus.org/articles/26/1673/2022/#App1.Ch1.S2.SS2:~:text=each%20time%20step%20we%20compute%207500%C2%A0samples
 negative_sample_handling: clip  # https://hess.copernicus.org/articles/26/1673/2022/#App1.Ch1.S2.SS2:~:text=The%20%E2%80%9Cclipping%E2%80%9D%20sign%20emphasizes%20our%20choice%20to%20set%20samples%20that%20would%20be%20below%20zero%20back%20to%20the%20zero%2Drunoff%20baseline
