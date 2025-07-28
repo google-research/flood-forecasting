@@ -75,8 +75,12 @@ class ForwardData:
     ) -> "ForwardData":
         return ForwardData(
             static_attributes=data["x_s"],
-            cpc_data=data["x_d_hindcast"]["cpc_precipitation"],
-            imerg_data=data["x_d_hindcast"]["imerg_precipitation"],
+            cpc_data=_concat_tensors_from_dict(
+                data["x_d_hindcast"], keys=_CPC_ATTRIBUTES_NAMES
+            ),
+            imerg_data=_concat_tensors_from_dict(
+                data["x_d_hindcast"], keys=_IMERG_ATTRIBUTES_NAMES
+            ),
             hres_data=_concat_tensors_from_dict(
                 data["x_d_forecast"], keys=_HRES_ATTRIBUTES_NAMES
             ),
