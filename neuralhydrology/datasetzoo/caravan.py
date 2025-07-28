@@ -137,8 +137,9 @@ def load_caravan_attributes(data_dir: Path,
     df = pd.concat(dfs, axis=0)
 
     if basins:
-        if any(b not in df.index for b in basins):
-            raise ValueError('Some basins are missing static attributes.')
+        missing = [e for e in basins if e not in df.index]
+        if missing:
+            raise ValueError(f'{len(missing)} basins are missing static attributes: {", ".join(missing)}')
         # Subset to only the requested basins.
         df = df.loc[basins]
 
