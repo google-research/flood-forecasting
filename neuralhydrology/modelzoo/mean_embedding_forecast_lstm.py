@@ -41,10 +41,13 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
     # Specify submodules of the model that can later be used for finetuning. Names must match class attributes.
     module_parts = [
-        "hindcast_embedding_net",
-        "forecast_embedding_net",
-        "forecast_lstm",
+        "static_attributes_fc",
+        "cpc_input_fc",
+        "imerg_input_fc",
+        "hres_input_fc",
+        "graphcast_input_fc",
         "hindcast_lstm",
+        "forecast_lstm",
         "head",
     ]
 
