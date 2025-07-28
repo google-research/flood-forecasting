@@ -8,6 +8,7 @@ clip_targets_to_zero:
 loss: NSE
 learning_rate:
   0: 0.0005
+  20: 0.0001
 max_updates_per_epoch:
 metrics:
 - NSE
@@ -17,16 +18,19 @@ metrics:
 - Beta-KGE
 - Peak-Timing
 - Missed-Peaks
-num_workers: 2
+num_workers: 16
 optimizer: Adam
-validate_every: 1
-validate_n_random_basins: -1
+validate_every: 3
+validate_n_random_basins: 100
 predict_last_n: 8
 
 # --- Dataset Parameters --------------------------------------------------------
 train_basin_file: ~/neuralhydrology/config/caravan_3_basins.txt
+#train_basin_file: ~/neuralhydrology/config/caravan_gauges.txt
 validation_basin_file: ~/neuralhydrology/config/caravan_3_basins.txt
+#validation_basin_file: ~/neuralhydrology/config/caravan_gauges.txt
 test_basin_file: ~/neuralhydrology/config/caravan_3_basins.txt
+#test_basin_file: ~/neuralhydrology/config/caravan_gauges.txt
 
 train_end_date: 30/09/2017
 train_start_date: 01/10/2012
