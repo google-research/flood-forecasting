@@ -193,8 +193,21 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         )
         return torch.cat([embeddings, nan_padding], dim=1)
 
-    def _masked_mean_embedding(self, data: Iterable[torch.Tensor]) -> torch.Tensor:
-        merged = torch.cat([e.unsqueeze(-1) for e in data], dim=-1)
+    def _masked_mean_embedding(self, tensors: Iterable[torch.Tensor]) -> torch.Tensor:
+        """Calculate mean between list of tensors, skipping nan values.
+
+        Parameters
+        ----------
+        tensors: Iterable[torch.Tensor]
+            Iterable of tensor of embeddings. All tensors have the same dimensions.
+
+        Returns
+        -------
+        torch.Tensor
+            A new tensor with the mean values of all tensors, skipping nan values.
+
+        """
+        merged = torch.cat([e.unsqueeze(-1) for e in tensors], dim=-1)
         return torch.nanmean(merged, dim=-1)
 
     def forward(
