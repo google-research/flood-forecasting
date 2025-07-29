@@ -22,6 +22,7 @@ optimizer: Adam
 validate_every: 1
 validate_n_random_basins: 10
 predict_last_n: 8
+log_n_figures: 3
 
 # --- Dataset Parameters --------------------------------------------------------
 train_basin_file: ~/neuralhydrology/config/caravan_3_basins.txt
