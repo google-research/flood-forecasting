@@ -1,5 +1,6 @@
-from typing import Dict, Iterable
+from typing import Tuple, Dict, Iterable
 
+import dataclasses
 import math
 import torch
 import torch.nn as nn
@@ -8,7 +9,6 @@ from neuralhydrology.modelzoo.basemodel import BaseModel
 from neuralhydrology.modelzoo.fc import FC
 from neuralhydrology.modelzoo.head import get_head
 from neuralhydrology.utils.config import Config
-from neuralhydrology.datautils import mean_embedding_forecast_lstm_datautils
 
 
 class MeanEmbeddingForecastLSTM(BaseModel):
@@ -67,9 +67,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         if cfg.seq_length < self.overlap:
             raise ValueError("`seq_length` must be larger than `forecast_overlap`.")
 
-        self.config_data = (
-            mean_embedding_forecast_lstm_datautils.ConfigData.from_config(cfg)
-        )
+        self.config_data = ConfigData.from_config(cfg)
 
         self.static_attributes_fc = FC(
             input_size=len(self.config_data.static_attributes_names),
@@ -224,9 +222,8 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             Model outputs and intermediate states as a dictionary.
                 - y_hat: Predictions over the sequence from the head layer.
         """
-        forward_data = (
-            mean_embedding_forecast_lstm_datautils.ForwardData.from_forward_data(data)
-        )
+        forward_data = ForwardData.from_forward_data(data)
+
         static_embeddings = self.static_attributes_fc(forward_data.static_attributes)
 
         cpc_input_concat = self._append_static_embeddings(
@@ -276,3 +273,100 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         predictions = self.head(self.dropout(forecast))
 
         return predictions
+
+
+_STATIC_ATTRIBUTES_NAMES = (
+    "area",
+    "p_mean",
+    "pet_mean_ERA5_LAND",
+    "pet_mean_FAO_PM",
+    "aridity_ERA5_LAND",
+    "aridity_FAO_PM",
+    "frac_snow",
+    "moisture_index_ERA5_LAND",
+    "moisture_index_FAO_PM",
+    "seasonality_ERA5_LAND",
+    "seasonality_FAO_PM",
+    "high_prec_freq",
+    "high_prec_dur",
+    "low_prec_freq",
+    "low_prec_dur",
+    "pet_mm_syr",
+    "ele_mt_smx",
+    "pre_mm_syr",
+)
+
+_CPC_ATTRIBUTES_NAMES = ("cpc_precipitation",)
+
+_IMERG_ATTRIBUTES_NAMES = ("imerg_precipitation",)
+
+_HRES_ATTRIBUTES_NAMES = (
+    "hres_surface_net_solar_radiation",
+    "hres_surface_net_thermal_radiation",
+    "hres_surface_pressure",
+    "hres_temperature_2m",
+    "hres_total_precipitation",
+)
+
+_GRAPHCAST_ATTRIBUTES_NAMES = (
+    "graphcast_temperature_2m",
+    "graphcast_total_precipitation",
+    "graphcast_u_component_of_wind_10m",
+    "graphcast_v_component_of_wind_10m",
+)
+
+
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class ConfigData:
+    @classmethod
+    def from_config(cls, unused_cfg: Config) -> "ConfigData":
+        return ConfigData(
+            embedding_size=20,
+            static_attributes_names=_STATIC_ATTRIBUTES_NAMES,
+            cpc_attributes_names=_CPC_ATTRIBUTES_NAMES,
+            imerg_attributes_names=_IMERG_ATTRIBUTES_NAMES,
+            hres_attributes_names=_HRES_ATTRIBUTES_NAMES,
+            graphcast_attributes_names=_GRAPHCAST_ATTRIBUTES_NAMES,
+        )
+
+    embedding_size: int
+    static_attributes_names: Tuple[str, ...]
+    cpc_attributes_names: Tuple[str, ...]
+    imerg_attributes_names: Tuple[str, ...]
+    hres_attributes_names: Tuple[str, ...]
+    graphcast_attributes_names: Tuple[str, ...]
+
+
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class ForwardData:
+    @classmethod
+    def from_forward_data(
+        cls, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]
+    ) -> "ForwardData":
+        return ForwardData(
+            static_attributes=data["x_s"],
+            cpc_data=_concat_tensors_from_dict(
+                data["x_d_hindcast"], keys=_CPC_ATTRIBUTES_NAMES
+            ),
+            imerg_data=_concat_tensors_from_dict(
+                data["x_d_hindcast"], keys=_IMERG_ATTRIBUTES_NAMES
+            ),
+            hres_data=_concat_tensors_from_dict(
+                data["x_d_forecast"], keys=_HRES_ATTRIBUTES_NAMES
+            ),
+            graphcast_data=_concat_tensors_from_dict(
+                data["x_d_forecast"], keys=_GRAPHCAST_ATTRIBUTES_NAMES
+            ),
+        )
+
+    static_attributes: torch.Tensor
+    cpc_data: torch.Tensor
+    imerg_data: torch.Tensor
+    hres_data: torch.Tensor
+    graphcast_data: torch.Tensor
+
+
+def _concat_tensors_from_dict(
+    data: dict[str, torch.Tensor], *, keys: Iterable[str]
+) -> torch.Tensor:
+    return torch.cat([data[e] for e in keys], dim=-1)
