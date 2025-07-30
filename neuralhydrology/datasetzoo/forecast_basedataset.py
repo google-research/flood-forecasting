@@ -204,7 +204,7 @@ class ForecastDataset(BaseDataset):
                 self._sample_index[item]['date']+1-self._seq_length,
                 self._sample_index[item]['date']+1
             )
-            dates = extract_dim_values(self._dataset['date'], {'date': hindcast_date_indexes})
+            dates = extract_values(self._dataset['date'], {'date': hindcast_date_indexes})
             if self._lead_times:
                 forecast_dates = [
                     dates[-1] + np.timedelta64(i, 'D')
@@ -214,23 +214,23 @@ class ForecastDataset(BaseDataset):
             return dates
 
         def _extract_statics(feature: str, item: int) -> np.ndarray:
-            return extract_dim_values(self._dataset[feature], {'basin': self._sample_index[item]['basin']})
+            return extract_values(self._dataset[feature], {'basin': self._sample_index[item]['basin']})
             
         def _extract_hindcasts(feature: str, item: int) -> np.ndarray:
             dim_indexes = {dim: val for dim, val in self._sample_index[item].items()}
             dim_indexes['date'] = range(dim_indexes['date']-self._seq_length+1, dim_indexes['date']+1)
-            return extract_dim_values(self._dataset[feature], dim_indexes)
+            return extract_values(self._dataset[feature], dim_indexes)
         
         def _extract_forecasts(feature: str, item: int) -> np.ndarray:
             dim_indexes = {dim: val for dim, val in self._sample_index[item].items()}
-            forecast_array = extract_dim_values(self._dataset[feature], dim_indexes)
+            forecast_array = extract_values(self._dataset[feature], dim_indexes)
             if self._forecast_overlap is not None and self._forecast_overlap > 0:
                 dim_indexes['date'] = range(
                     dim_indexes['date']+1-self._min_lead_time-self._forecast_overlap,
                     dim_indexes['date']+1-self._min_lead_time
                 )
                 dim_indexes['lead_time'] = 0
-                overlap_array = extract_dim_values(self._dataset[feature], dim_indexes)
+                overlap_array = extract_values(self._dataset[feature], dim_indexes)
                 forecast_array = np.concatenate([overlap_array, forecast_array])
             return forecast_array
         
@@ -238,7 +238,7 @@ class ForecastDataset(BaseDataset):
             dim_indexes = {dim: val for dim, val in self._sample_index[item].items()}
             dim_indexes['date'] = list(range(dim_indexes['date']-self._seq_length+1, dim_indexes['date']+1))
             dim_indexes['date'] += [dim_indexes['date'][-1] + i for i in self._lead_times]
-            return extract_dim_values(self._dataset[feature], dim_indexes)[-self._seq_length:]
+            return extract_values(self._dataset[feature], dim_indexes)[-self._seq_length:]
     
         sample = {'date': _extract_dates(item)}
         # TODO (future) :: Suggest remove outer keys and use only feature names. Major change required.
@@ -249,7 +249,7 @@ class ForecastDataset(BaseDataset):
         if self._per_basin_target_stds is not None:
             sample['per_basin_target_stds'] = np.stack(
                 [
-                    extract_dim_values(self._per_basin_target_stds[feature], {'basin': self._sample_index[item]['basin']})
+                    extract_values(self._per_basin_target_stds[feature], {'basin': self._sample_index[item]['basin']})
                     for feature in self._target_features
                 ], -1
             )
@@ -345,7 +345,7 @@ class ForecastDataset(BaseDataset):
         # not-valid samples) for sequence construction.
         self._sample_index = {
             i: {
-                dim: dimension_index[dim][_safe_coord(extract_dim_values(valid_sample_da[dim], {'sample': i}))]
+                dim: dimension_index[dim][_safe_coord(extract_values(valid_sample_da[dim], {'sample': i}))]
                 for dim in valid_sample_da.coords if dim != 'sample'
             } for i in range(num_samples)
         }
@@ -359,5 +359,10 @@ class ForecastDataset(BaseDataset):
         raise NotImplementedError
 
 
-def extract_dim_values(da: xr.DataArray, dc: dict[Hashable, int|range]) -> np.ndarray | np.float32:
-    return da.values[tuple(dc[dim] if dim in dc else slice(None) for dim in da.dims)]
+def extract_values(data: xr.DataArray, indexers: dict[Hashable, int|range]) -> np.ndarray | np.float32:
+    """Returns the values in array according to dims given by indexers.
+    
+    This function replaces uses of `isel` with data and indexers.
+    """
+    locators = (indexers[dim] if dim in indexers else slice(None) for dim in data.dims)
+    return data.values[tuple(locators)]
