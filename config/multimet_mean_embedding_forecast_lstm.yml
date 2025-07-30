@@ -30,6 +30,11 @@ log_n_figures: 3
 train_basin_file: ~/neuralhydrology/config/caravan_3_basins.txt
 validation_basin_file: ~/neuralhydrology/config/caravan_3_basins.txt
 test_basin_file: ~/neuralhydrology/config/caravan_3_basins.txt
+
+# train_basin_file: ~/neuralhydrology/config/caravan_and_multimet_basins_100.txt
+# validation_basin_file: ~/neuralhydrology/config/caravan_and_multimet_basins_100.txt
+# test_basin_file: ~/neuralhydrology/config/caravan_and_multimet_basins_100.txt
+
 # train_basin_file: ~/neuralhydrology/config/caravan_and_multimet_basins.txt
 # validation_basin_file: ~/neuralhydrology/config/caravan_and_multimet_basins.txt
 # test_basin_file: ~/neuralhydrology/config/caravan_and_multimet_basins.txt
