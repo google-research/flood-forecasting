@@ -183,7 +183,7 @@ class ForecastDataset(BaseDataset):
     def __len__(self) -> int:
         return self._num_samples
 
-    @functools.cache
+    #@functools.cache
     def __getitem__(
         self,
         item: int
