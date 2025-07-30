@@ -252,7 +252,7 @@ class ForecastDataset(BaseDataset):
         if self._per_basin_target_stds is not None:
             sample['per_basin_target_stds'] = np.stack(
                 [
-                    self._extract_dataset(self._per_basin_target_stds, feature, {'basin': self._sample_index[item]['basin']})
+                    _extract_dataarray(self._per_basin_target_stds[feature], {'basin': self._sample_index[item]['basin']})
                     for feature in self._target_features
                 ], -1
             )
@@ -348,7 +348,7 @@ class ForecastDataset(BaseDataset):
         # not-valid samples) for sequence construction.
         self._sample_index = {
             i: {
-                dim: dimension_index[dim][_safe_coord(valid_sample_da[dim].isel(sample=i).item())]
+                dim: dimension_index[dim][_safe_coord(_extract_dataarray(valid_sample_da[dim], {'sample': i}))]
                 for dim in valid_sample_da.coords if dim != 'sample'
             } for i in range(num_samples)
         }
@@ -363,10 +363,14 @@ class ForecastDataset(BaseDataset):
 
 
     def _extract_dataset(self, feature: str, indexers: dict[Hashable, int|range]) -> np.ndarray | np.float32:
-        """Returns the values in array according to dims given by indexers.
-        
-        This function replaces uses of `isel` with data and indexers.
-        """
         data = self._dataset_feature_cache.setdefault(feature, self._dataset[feature])
-        locators = (indexers[dim] if dim in indexers else slice(None) for dim in data.dims)
-        return data.values[tuple(locators)]
+        return _extract_dataarray(data, indexers)
+
+
+def _extract_dataarray(data: xr.DataArray, indexers: dict[Hashable, int|range]) -> np.ndarray | np.float32:
+    """Returns the values in array according to dims given by indexers.
+    
+    This function replaces uses of `isel` with data and indexers.
+    """
+    locators = (indexers[dim] if dim in indexers else slice(None) for dim in data.dims)
+    return data.values[tuple(locators)]
