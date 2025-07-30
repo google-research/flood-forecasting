@@ -17,7 +17,7 @@ metrics:
 - Beta-KGE
 - Peak-Timing
 - Missed-Peaks
-num_workers: 24
+num_workers: 2
 optimizer: Adam
 validate_every: 1
 validate_n_random_basins: 10
