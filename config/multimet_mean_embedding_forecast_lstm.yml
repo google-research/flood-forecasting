@@ -1,13 +1,15 @@
 # --- Training Parameters -------------------------------------------------------
 batch_size: 256
-epochs: 6
+epochs: 125
 experiment_name: mean_embedding_forecast_lstm
 clip_gradient_norm: 1
 clip_targets_to_zero:
 - streamflow
 learning_rate:
-  0: 0.0005
-  20: 0.0001
+  0: 0.001
+  10: 0.0005
+  25: 0.0001
+#max_updates_per_epoch:
 max_updates_per_epoch: 10
 metrics:
 - NSE
@@ -19,8 +21,8 @@ metrics:
 - Missed-Peaks
 num_workers: 2
 optimizer: Adam
-validate_every: 1
-validate_n_random_basins: 10
+validate_every: 10
+validate_n_random_basins: 4
 predict_last_n: 8
 log_n_figures: 3
 
@@ -125,7 +127,6 @@ target_variables:
 # --- Model Parameters ----------------------------------------------------------
 model: mean_embedding_forecast_lstm
 forecast_overlap: 365
-bidirectional_stacked_forecast_lstm: True
 
 ### head ###
 loss: CMALLoss
@@ -139,7 +140,7 @@ negative_sample_handling: clip  # https://hess.copernicus.org/articles/26/1673/2
 mc_dropout: True  # https://hess.copernicus.org/articles/26/1673/2022/#App1.Ch1.S2.SS2:~:text=2.3.2-,Monte%20Carlo%20dropout,-MCD%20provides%20an
 
 hidden_size: 128
-initial_forget_bias: 3
+initial_forget_bias: 0
 output_activation: linear
 output_dropout: 0.4
 timestep_counter: True
