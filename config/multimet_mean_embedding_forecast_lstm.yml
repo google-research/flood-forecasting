@@ -21,7 +21,7 @@ metrics:
 - Missed-Peaks
 num_workers: 2
 optimizer: Adam
-validate_every: 1
+validate_every: 10
 validate_n_random_basins: 4
 predict_last_n: 8
 log_n_figures: 3
