@@ -116,10 +116,10 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         """Special initialization of certain model weights."""
         if self.cfg.initial_forget_bias is not None:
             self.hindcast_lstm.bias_hh_l0.data[
-                self.cfg.hidden_size : 2 * self.cfg.hidden_size
+                self.config_data.hidden_size : 2 * self.config_data.hidden_size
             ] = self.cfg.initial_forget_bias
             self.forecast_lstm.bias_hh_l0.data[
-                self.cfg.hidden_size : 2 * self.cfg.hidden_size
+                self.config_data.hidden_size : 2 * self.config_data.hidden_size
             ] = self.cfg.initial_forget_bias
 
     def _append_static_embeddings(
