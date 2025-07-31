@@ -26,9 +26,9 @@ validate_n_random_basins: -1
 predict_last_n: 8
 
 # --- Dataset Parameters --------------------------------------------------------
-train_basin_file: ~/neuralhydrology/config/caravan_3_basins.txt
-validation_basin_file: ~/neuralhydrology/config/caravan_3_basins.txt
-test_basin_file: ~/neuralhydrology/config/caravan_3_basins.txt
+train_basin_file: ~/neuralhydrology/config/basins/caravan_3_basins.txt
+validation_basin_file: ~/neuralhydrology/config/basins/caravan_3_basins.txt
+test_basin_file: ~/neuralhydrology/config/basins/caravan_3_basins.txt
 
 train_end_date: 30/09/2017
 train_start_date: 01/10/2012
