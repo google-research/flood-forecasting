@@ -95,20 +95,20 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         # Hindcast LSTM
         self.hindcast_lstm = nn.LSTM(
             input_size=self.config_data.embedding_size * 2,
-            hidden_size=512,
+            hidden_size=self.config_data.hidden_size,
             batch_first=True,
         )
 
         # Forecast LSTM
         self.forecast_lstm = nn.LSTM(
-            input_size=self.config_data.embedding_size * 2 + 512,
-            hidden_size=512,
+            input_size=self.config_data.embedding_size * 2 + self.config_data.hidden_size,
+            hidden_size=self.config_data.hidden_size,
             batch_first=True,
         )
 
         # Head
         self.dropout = nn.Dropout(p=cfg.output_dropout)
-        self.head = get_head(self.cfg, n_in=512, n_out=3 * 4, n_hidden=100)
+        self.head = get_head(self.cfg, n_in=self.config_data.hidden_size, n_out=3 * 4, n_hidden=100)
 
         self._reset_parameters()
 
@@ -235,6 +235,7 @@ class ConfigData:
     @classmethod
     def from_config(cls, cfg: Config) -> "ConfigData":
         return ConfigData(
+            hidden_size=cfg.hidden_size,
             embedding_size=20,
             static_attributes_names=tuple(cfg.static_attributes),
             cpc_attributes_names=_filter_by_prefix(cfg.hindcast_inputs, "cpc_"),
@@ -245,6 +246,7 @@ class ConfigData:
             ),
         )
 
+    hidden_size: int
     embedding_size: int
     static_attributes_names: Tuple[str, ...]
     cpc_attributes_names: Tuple[str, ...]
