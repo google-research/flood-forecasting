@@ -140,7 +140,9 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         # Dimension 2 is the length of embedding vector.
         embedding_size = embeddings.shape[2]
         nan_padding = torch.full(
-            (batch_size, nan_padding_length, embedding_size), math.nan
+            (batch_size, nan_padding_length, embedding_size),
+            math.nan,
+            device=embeddings.device,
         )
         return torch.cat([embeddings, nan_padding], dim=1)
 
