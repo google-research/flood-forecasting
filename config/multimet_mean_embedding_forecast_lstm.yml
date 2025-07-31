@@ -9,8 +9,8 @@ learning_rate:
   0: 0.001
   10: 0.0005
   25: 0.0001
-#max_updates_per_epoch:
-max_updates_per_epoch: 10
+max_updates_per_epoch:
+#max_updates_per_epoch: 10
 metrics:
 - NSE
 - KGE
@@ -21,15 +21,15 @@ metrics:
 - Missed-Peaks
 num_workers: 2
 optimizer: Adam
-validate_every: 10
-validate_n_random_basins: 4
+validate_every: 5
+validate_n_random_basins: 5
 predict_last_n: 8
-log_n_figures: 3
+log_n_figures: 5
 
 # --- Dataset Parameters --------------------------------------------------------
-train_basin_file: ~/neuralhydrology/config/caravan_3_basins.txt
-validation_basin_file: ~/neuralhydrology/config/caravan_3_basins.txt
-test_basin_file: ~/neuralhydrology/config/caravan_3_basins.txt
+train_basin_file: ~/neuralhydrology/config/caravan_and_multimet_basins_100.txt
+validation_basin_file: ~/neuralhydrology/config/caravan_and_multimet_basins_100.txt
+test_basin_file: ~/neuralhydrology/config/caravan_and_multimet_basins_100.txt
 # train_basin_file: ~/neuralhydrology/config/caravan_and_multimet_basins.txt
 # validation_basin_file: ~/neuralhydrology/config/caravan_and_multimet_basins.txt
 # test_basin_file: ~/neuralhydrology/config/caravan_and_multimet_basins.txt
