@@ -12,31 +12,12 @@ from neuralhydrology.utils.config import Config
 
 
 class MeanEmbeddingForecastLSTM(BaseModel):
-    """A forecasting model using stacked LSTMs for hindcast and forecast.
-
-    This is a forecasting model that uses two stacked sequential (LSTM) models to handle
-    hindcast vs. forecast. The config parameter ``forecast_overlap`` deterimines the temporal
-    overlap of the hindcast and forecast LSTMs.
-
-    Outputs from the hindcast LSTM are concatenated to the input sequences to the forecast
-    LSTM and shifted in time by the forecast horizon. This causes a lag between the latest
-    hindcast data and the newest forecast time point, meaning that forecasts do not get
-    information from the most recent hindcast inputs. To solve this, set the
-    ``bidirectional_stacked_forecast_lstm`` config parameter to True, so that the
-    hindcast LSTM runs bidirectional and therefore all outputs from the hindcast
-    LSTM receive information from the most recent hindcast input data. This model supports
-    different embedding networks, as defined by ``hindcast_embedding`` and
-    ``forecast_embedding`` in the config.
+    """A forecasting model using mean embedding and LSTMs for hindcast and forecast.
 
     Parameters
     ----------
     cfg : Config
         The run configuration.
-
-    Raises
-    ------
-    ValueError if `predict_last_n` is longer than the total forecast sequence (overlap + lead time).
-    ValueError if `seq_length` is shorter than `forecast_overlap`.
     """
 
     # Specify submodules of the model that can later be used for finetuning. Names must match class attributes.
@@ -54,21 +35,12 @@ class MeanEmbeddingForecastLSTM(BaseModel):
     def __init__(self, cfg: Config):
         super(MeanEmbeddingForecastLSTM, self).__init__(cfg=cfg)
 
-        # Data sizes for expanding features in the forward pass.
         self.seq_length = cfg.seq_length
         self.lead_time = cfg.lead_time
-        self.overlap = cfg.forecast_overlap
-        # TODO (future) :: Models assume that all lead times are present up to the longest `lead_time`.
-        # ForecastBaseDataset does not require this assumption.
-        if cfg.predict_last_n > self.lead_time + self.overlap:
-            raise ValueError(
-                "`predict_last_n` must not be larger than the length of the forecast sequence."
-            )
-        if cfg.seq_length < self.overlap:
-            raise ValueError("`seq_length` must be larger than `forecast_overlap`.")
 
         self.config_data = ConfigData.from_config(cfg)
 
+        # Static attributes
         self.static_attributes_fc = FC(
             input_size=len(self.config_data.static_attributes_names),
             hidden_sizes=[100, 100, self.config_data.embedding_size],
@@ -76,6 +48,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             dropout=0,
         )
 
+        # CPC
         self.cpc_input_fc = FC(
             input_size=(
                 len(self.config_data.cpc_attributes_names)
@@ -86,6 +59,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             dropout=0,
         )
 
+        # IMERG
         self.imerg_input_fc = FC(
             input_size=(
                 len(self.config_data.imerg_attributes_names)
@@ -96,6 +70,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             dropout=0,
         )
 
+        # HRES
         self.hres_input_fc = FC(
             input_size=(
                 len(self.config_data.hres_attributes_names)
@@ -106,6 +81,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             dropout=0,
         )
 
+        # GraphCast
         self.graphcast_input_fc = FC(
             input_size=(
                 len(self.config_data.graphcast_attributes_names)
@@ -116,20 +92,22 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             dropout=0,
         )
 
+        # Hindcast LSTM
         self.hindcast_lstm = nn.LSTM(
             input_size=self.config_data.embedding_size * 2,
             hidden_size=512,
             batch_first=True,
         )
 
+        # Forecast LSTM
         self.forecast_lstm = nn.LSTM(
             input_size=self.config_data.embedding_size * 2 + 512,
             hidden_size=512,
             batch_first=True,
         )
 
+        # Head
         self.dropout = nn.Dropout(p=cfg.output_dropout)
-
         self.head = get_head(self.cfg, n_in=512, n_out=3 * 4, n_hidden=100)
 
         self._reset_parameters()
@@ -147,40 +125,17 @@ class MeanEmbeddingForecastLSTM(BaseModel):
     def _append_static_embeddings(
         self, embeddings: torch.Tensor, *, static_embeddings: torch.Tensor
     ) -> torch.Tensor:
-        """Pad the embedding tensor with the embedding of static attributes.
-
-        Parameters
-        ----------
-        embeddings : torch.Tensor
-            Embedding tensor to append the static embedding tensor.
-
-        Returns
-        -------
-        torch.Tensor
-            A new tensor which is a concatentation of both tensors.
-
-        """
+        """Append static attributes embedding to another embedding tensor."""
+        # Dimension 1 is the time dimension. Duplicate static embeddings in all time series.
         length = embeddings.shape[1]
         static_embeddings_repeated = static_embeddings.unsqueeze(1).repeat(1, length, 1)
         return torch.cat([embeddings, static_embeddings_repeated], dim=-1)
 
     def _add_nan_padding(self, embeddings: torch.Tensor) -> torch.Tensor:
-        """Pad the embedding tensor with nan value.
-
-        Parameters
-        ----------
-        embeddings : torch.Tensor
-            Embedding tensor of all hindcast calculations.
-
-        Returns
-        -------
-        torch.Tensor
-            A new tensor padded with nan in the end, spanning the full sequence length and the lead time.
-
-        """
+        """Pad the embedding tensor with nan value to timespan of hindcast and forecast."""
         # Dimension 0 is the batch size. Note the batch size may change during training.
         batch_size = embeddings.shape[0]
-        # Dimension 1 is the time dimension.
+        # Dimension 1 is the time dimension. Pad nan to the full sequence length plus lead time.
         nan_padding_length = self.seq_length + self.lead_time - embeddings.shape[1]
         # Dimension 2 is the length of embedding vector.
         embedding_size = embeddings.shape[2]
@@ -189,27 +144,18 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         )
         return torch.cat([embeddings, nan_padding], dim=1)
 
-    def _masked_mean_embedding(self, tensors: Iterable[torch.Tensor]) -> torch.Tensor:
-        """Calculate mean between list of tensors, skipping nan values.
-
-        Parameters
-        ----------
-        tensors: Iterable[torch.Tensor]
-            Iterable of tensor of embeddings. All tensors have the same dimensions.
-
-        Returns
-        -------
-        torch.Tensor
-            A new tensor with the mean values of all tensors, skipping nan values.
-
-        """
-        merged = torch.cat([e.unsqueeze(-1) for e in tensors], dim=-1)
+    def _masked_mean_embedding(
+        self, embeddings: Iterable[torch.Tensor]
+    ) -> torch.Tensor:
+        """Calculate mean between list of tensors, skipping nan values. All
+        Tensors are with the same dimensions."""
+        merged = torch.cat([e.unsqueeze(-1) for e in embeddings], dim=-1)
         return torch.nanmean(merged, dim=-1)
 
     def forward(
         self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]
     ) -> Dict[str, torch.Tensor]:
-        """Perform a forward pass on the StackedForecastLSTM model.
+        """Perform a forward pass on the MeanEmbeddingForecastLSTM model.
 
         Parameters
         ----------
@@ -219,35 +165,40 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         Returns
         -------
         Dict[str, torch.Tensor]
-            Model outputs and intermediate states as a dictionary.
-                - y_hat: Predictions over the sequence from the head layer.
+            Model outputs and intermediate states as a dictionary from CMAL head.
         """
         forward_data = ForwardData.from_forward_data(data)
 
+        # Static attributes
         static_embeddings = self.static_attributes_fc(forward_data.static_attributes)
 
+        # CPC
         cpc_input_concat = self._append_static_embeddings(
             forward_data.cpc_data, static_embeddings=static_embeddings
         )
         cpc_embeddings = self.cpc_input_fc(cpc_input_concat)
         cpc_embedding_with_nan = self._add_nan_padding(cpc_embeddings)
 
+        # IMERG
         imerg_input_concat = self._append_static_embeddings(
             forward_data.imerg_data, static_embeddings=static_embeddings
         )
         imerg_embeddings = self.imerg_input_fc(imerg_input_concat)
         imerg_embedding_with_nan = self._add_nan_padding(imerg_embeddings)
 
+        # HRES
         hres_input_concat = self._append_static_embeddings(
             forward_data.hres_data, static_embeddings=static_embeddings
         )
         hres_embeddings = self.hres_input_fc(hres_input_concat)
 
+        # GraphCast
         graphcast_input_concat = self._append_static_embeddings(
             forward_data.graphcast_data, static_embeddings=static_embeddings
         )
         graphcast_embeddings = self.graphcast_input_fc(graphcast_input_concat)
 
+        # Hindcast LSTM
         hindcast_mean_embedding = self._masked_mean_embedding(
             [
                 cpc_embedding_with_nan,
@@ -261,6 +212,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         )
         hindcast, _ = self.hindcast_lstm(input=hindcast_data_concat)
 
+        # Forecast LSTM
         forecast_mean_embedding = self._masked_mean_embedding(
             [hres_embeddings, graphcast_embeddings]
         )
@@ -270,6 +222,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         )
         forecast, _ = self.forecast_lstm(input=forecast_data_concat)
 
+        # Head
         predictions = self.head(self.dropout(forecast))
 
         return predictions
