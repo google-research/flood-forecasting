@@ -68,7 +68,7 @@ class ForecastDataset(BaseDataset):
         self._seq_length = cfg.seq_length
         self._predict_last_n = cfg.predict_last_n
         self._forecast_overlap = cfg.forecast_overlap
-        
+
         # Feature lists by type.
         self._static_features = cfg.static_attributes
         self._target_features = cfg.target_variables
@@ -81,25 +81,25 @@ class ForecastDataset(BaseDataset):
             self._hindcast_features = cfg.dynamic_inputs
         else:
             raise ValueError('Either `hindcast_inputs` or `dynamic_inputs` must be supplied.')
-        
+
         # Feature data paths by type. This allows the option to load some data from cloud and some locally.
         self._statics_data_path = cfg.statics_data_dir
         self._hindcasts_data_path = cfg.hindcasts_data_dir
         self._forecasts_data_path = cfg.forecasts_data_dir
         self._targets_data_path = cfg.targets_data_dir
-        
+
         # NaN-handling options are required to apply the correct sample validation algorithms.
         self._nan_handling_method = cfg.nan_handling_method
         self._feature_groups = [self._hindcast_features, self._forecast_features]
         if (isinstance(self._hindcast_features[0], str) or isinstance(self._forecast_features[0], str)) \
             and self._nan_handling_method in ['masked_mean', 'attention']:
             raise ValueError(f'Feature groups are required for {self._nan_handling_method} NaN-handling.')
-        
+
         # Validating samples depends on whether we are training or testing.
         self.is_train = is_train
         # TODO (future) :: Necessary for tester. Remove dependency if possible.
         self.frequencies = ['1D']
-        
+
         self._period = period
         if period not in ['train', 'validation', 'test']:
             raise ValueError("'period' must be one of 'train', 'validation' or 'test' ")
@@ -116,7 +116,7 @@ class ForecastDataset(BaseDataset):
         self._basins = [basin]
         if basin is None:
             self._basins = load_basin_file(getattr(cfg, f'{period}_basin_file'))
-               
+
         # Load & preprocess the data.
         self._dataset = self._load_data().astype('float32')
 
@@ -134,7 +134,7 @@ class ForecastDataset(BaseDataset):
             self._sample_dates = pd.date_range(cfg.test_start_date, cfg.test_end_date)
         elif self._period == 'validation':
             self._sample_dates = pd.date_range(cfg.validation_start_date, cfg.validation_end_date)
-        # The convention in NH is that the period dates define the SAMPLE dates. 
+        # The convention in NH is that the period dates define the SAMPLE dates.
         # All hindcast (and forecast) seqences are extra. Therefore, when cropping
         # the dataset for sampling, we keep all the hindcast and forecast sequence
         # data on both sides of the period dates. This would be more memory efficient
@@ -143,7 +143,7 @@ class ForecastDataset(BaseDataset):
         data_end_date = self._sample_dates[-1] + pd.Timedelta(days=self._seq_length)
         data_dates = pd.date_range(data_start_date, data_end_date)
         self._dataset = self._dataset.reindex(date=data_dates).sel(date=data_dates)
-        
+
         # Timestep counters indicate the lead time of each forecast timestep.
         self._hindcast_counter = None
         self._forecast_counter = None
@@ -164,7 +164,7 @@ class ForecastDataset(BaseDataset):
         self._dataset = self.scaler.scale(self._dataset)       
         if compute_scaler:
             self.scaler.save()
-        
+
         # Create sample index lookup table for `__getitem__`.
         self._create_sample_index()
 
@@ -180,8 +180,9 @@ class ForecastDataset(BaseDataset):
             )
 
         self._dataset.load()
-        self._dataset_feature_cache: dict[str, xr.DataArray] = {}
-        
+
+        self._dataarrays_cache: dict[str, xr.DataArray] = {}
+
     def __len__(self) -> int:
         return self._num_samples
 
@@ -190,7 +191,7 @@ class ForecastDataset(BaseDataset):
         item: int
     ) -> Dict[str, torch.Tensor | np.ndarray | Dict[str, torch.Tensor]]:
         """Retrieves a sample by integer index."""
-        
+
         # Stop iteration.
         if item >= self._num_samples:
             raise IndexError(f'Requested index {item} > the total number of samples {self._num_samples}.')
@@ -200,14 +201,14 @@ class ForecastDataset(BaseDataset):
             raise ValueError(f'Requested index {item} < 0.')
         if item % 1 != 0:
             raise ValueError(f'Requested index {item} is not an integer.')
-        
+
         # Extract sample from `self._dataset`.
         def _extract_dates(item: int) -> np.ndarray:
             hindcast_date_indexes = range(
                 self._sample_index[item]['date']+1-self._seq_length,
                 self._sample_index[item]['date']+1
             )
-            dates = self._extract_dataset('date', {'date': hindcast_date_indexes})
+            dates = self._extract_dataset(self._dataset, 'dataset', 'date', {'date': hindcast_date_indexes})
             if self._lead_times:
                 forecast_dates = [
                     dates[-1] + np.timedelta64(i, 'D')
@@ -217,32 +218,32 @@ class ForecastDataset(BaseDataset):
             return dates
 
         def _extract_statics(feature: str, item: int) -> np.ndarray:
-            return self._extract_dataset(feature, {'basin': self._sample_index[item]['basin']})
-            
+            return self._extract_dataset(self._dataset, 'dataset', feature, {'basin': self._sample_index[item]['basin']})
+
         def _extract_hindcasts(feature: str, item: int) -> np.ndarray:
             dim_indexes = {dim: val for dim, val in self._sample_index[item].items()}
             dim_indexes['date'] = range(dim_indexes['date']-self._seq_length+1, dim_indexes['date']+1)
-            return self._extract_dataset(feature, dim_indexes)
-        
+            return self._extract_dataset(self._dataset, 'dataset', feature, dim_indexes)
+
         def _extract_forecasts(feature: str, item: int) -> np.ndarray:
             dim_indexes = {dim: val for dim, val in self._sample_index[item].items()}
-            forecast_array = self._extract_dataset(feature, dim_indexes)
+            forecast_array = self._extract_dataset(self._dataset, 'dataset', feature, dim_indexes)
             if self._forecast_overlap is not None and self._forecast_overlap > 0:
                 dim_indexes['date'] = range(
                     dim_indexes['date']+1-self._min_lead_time-self._forecast_overlap,
                     dim_indexes['date']+1-self._min_lead_time
                 )
                 dim_indexes['lead_time'] = 0
-                overlap_array = self._extract_dataset(feature, dim_indexes)
+                overlap_array = self._extract_dataset(self._dataset, 'dataset', feature, dim_indexes)
                 forecast_array = np.concatenate([overlap_array, forecast_array])
             return forecast_array
-        
+
         def _extract_targets(feature: str, item: int) -> np.ndarray:
             dim_indexes = {dim: val for dim, val in self._sample_index[item].items()}
             dim_indexes['date'] = list(range(dim_indexes['date']-self._seq_length+1, dim_indexes['date']+1))
             dim_indexes['date'] += [dim_indexes['date'][-1] + i for i in self._lead_times]
-            return self._extract_dataset(feature, dim_indexes)[-self._seq_length:]
-    
+            return self._extract_dataset(self._dataset, 'dataset', feature, dim_indexes)[-self._seq_length:]
+
         sample = {'date': _extract_dates(item)}
         # TODO (future) :: Suggest remove outer keys and use only feature names. Major change required.
         sample['x_s'] = np.stack([_extract_statics(feature, item) for feature in self._static_features], -1)
@@ -252,14 +253,14 @@ class ForecastDataset(BaseDataset):
         if self._per_basin_target_stds is not None:
             sample['per_basin_target_stds'] = np.stack(
                 [
-                    _extract_dataarray(self._per_basin_target_stds[feature], {'basin': self._sample_index[item]['basin']})
+                    self._extract_dataset(self._per_basin_target_stds, 'per_basin_target_stds', feature, {'basin': self._sample_index[item]['basin']})
                     for feature in self._target_features
                 ], -1
             )
         if self._hindcast_counter is not None:
             sample['x_d_hindcast']['hindcast_counter'] = self._hindcast_counter
             sample['x_d_forecast']['forecast_counter'] = self._forecast_counter            
-        
+
         # TODO (future) :: This adds a dimension to many features, as required by some models.
         # There is no need for this except that it is how basedataset works, and everything else expects
         # the trailing dim. Remove this dependency in the future.
@@ -267,12 +268,12 @@ class ForecastDataset(BaseDataset):
         sample['x_d_forecast'] = {feature: np.expand_dims(value, -1) for feature, value in sample['x_d_forecast'].items()}
         if self._per_basin_target_stds is not None:
             sample['per_basin_target_stds'] = np.expand_dims(sample['per_basin_target_stds'], 0)
-        
+
         # Rename the hindcast data key if we are not doing forecasting.
         if not self._forecast_features:
             sample['x_d'] = sample.pop('x_d_hindcast')
             _ = sample.pop('x_d_forecast')
-            
+
         # Return sample with various required formats.
         def _convert_to_tensor(key: str, value: np.ndarray) -> torch.Tensor | np.ndarray:
             if key in NUMPY_VARS:
@@ -286,9 +287,10 @@ class ForecastDataset(BaseDataset):
                     raise ValueError(f'Unrecognized data type: {type(value)}')
             else:
                 raise ValueError(f'Unrecognized data key: {key}')
-             
+
         return {key: _convert_to_tensor(key, value) for key, value in sample.items()}
 
+    # This is run by the base class.
     def _create_sample_index(self):
         """Creates a map from integer sample indexes to the integer positions into the xr.Dataset.
         
@@ -311,12 +313,12 @@ class ForecastDataset(BaseDataset):
             target_features=self._target_features,
             feature_groups=self._feature_groups,
         )
-        
+
         # Convert boolean valid sample mask into indexes of all samples. This retains
         # only the portion of the valid sample mask with True values.
         stacked_mask = valid_sample_mask.stack(sample=valid_sample_mask.dims)
         valid_sample_da = stacked_mask[stacked_mask]
-    
+
         # Count the number of valid samples.
         num_samples = valid_sample_da.size
         if num_samples == 0:
@@ -333,14 +335,14 @@ class ForecastDataset(BaseDataset):
                 coord = pd.Timestamp(coord)
             # elif ...
             return coord
-        
+
         # Map of integer indexes into each coordinate dimension of the original dataset.
         dimension_index = {
             dim: {
                 _safe_coord(coord): i for i, coord in enumerate(self._dataset[dim].values)
             } for dim in valid_sample_da.coords if dim != 'sample'
         }
-        
+
         # Map of integer sample indexes into maps from dimension name to integer indexes into
         # the coordinates of that dimension. Sample indexes come from the valid sample mask.
         # This allows integer indexing into each coordinate dimension of the original dataset,
@@ -361,9 +363,8 @@ class ForecastDataset(BaseDataset):
         """
         raise NotImplementedError
 
-
-    def _extract_dataset(self, feature: str, indexers: dict[Hashable, int|range]) -> np.ndarray | np.float32:
-        data = self._dataset_feature_cache.setdefault(feature, self._dataset[feature])
+    def _extract_dataset(self, dataset: xr.Dataset, cache_key: str, feature: str, indexers: dict[Hashable, int|range]) -> np.ndarray | np.float32:
+        data = self._dataarrays_cache.setdefault(f'{cache_key}-{feature}', dataset[feature])
         return _extract_dataarray(data, indexers)
 
 
