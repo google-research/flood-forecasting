@@ -830,6 +830,10 @@ class Config(object):
             return self._cfg["target_variable"]
         else:
             raise ValueError("No target variables ('target_variables') defined in the config.")
+    
+    @property
+    def union_mapping(self) -> Dict[str, str]:
+        return self._get_value_verbose("union_mapping")
 
     @property
     def tau_down(self) -> float:
