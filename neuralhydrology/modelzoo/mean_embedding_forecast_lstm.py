@@ -125,36 +125,34 @@ class MeanEmbeddingForecastLSTM(BaseModel):
                 self.config_data.hidden_size : 2 * self.config_data.hidden_size
             ] = self.cfg.initial_forget_bias
 
-    def _append_static_embeddings(
-        self, embeddings: torch.Tensor, *, static_embeddings: torch.Tensor
+    def _append_static_embedding(
+        self, embedding: torch.Tensor, *, static_embedding: torch.Tensor
     ) -> torch.Tensor:
         """Append static attributes embedding to another embedding tensor."""
-        # Dimension 1 is the time dimension. Duplicate static embeddings in all time series.
-        length = embeddings.shape[1]
-        static_embeddings_repeated = static_embeddings.unsqueeze(1).repeat(1, length, 1)
-        return torch.cat([embeddings, static_embeddings_repeated], dim=-1)
+        # Dimension 1 is the time dimension. Duplicate static embedding in all time series.
+        length = embedding.shape[1]
+        static_embedding_repeated = static_embedding.unsqueeze(1).repeat(1, length, 1)
+        return torch.cat([embedding, static_embedding_repeated], dim=-1)
 
-    def _add_nan_padding(self, embeddings: torch.Tensor) -> torch.Tensor:
+    def _add_nan_padding(self, embedding: torch.Tensor) -> torch.Tensor:
         """Pad the embedding tensor with nan value to timespan of hindcast and forecast."""
         # Dimension 0 is the batch size. Note the batch size may change during training.
-        batch_size = embeddings.shape[0]
+        batch_size = embedding.shape[0]
         # Dimension 1 is the time dimension. Pad nan to the full sequence length plus lead time.
-        nan_padding_length = self.seq_length + self.lead_time - embeddings.shape[1]
+        nan_padding_length = self.seq_length + self.lead_time - embedding.shape[1]
         # Dimension 2 is the length of embedding vector.
-        embedding_size = embeddings.shape[2]
+        embedding_size = embedding.shape[2]
         nan_padding = torch.full(
             (batch_size, nan_padding_length, embedding_size),
             np.nan,
-            device=embeddings.device,
+            device=embedding.device,
         )
-        return torch.cat([embeddings, nan_padding], dim=1)
+        return torch.cat([embedding, nan_padding], dim=1)
 
-    def _masked_mean_embedding(
-        self, embeddings: Iterable[torch.Tensor]
-    ) -> torch.Tensor:
-        """Calculate mean between list of tensors, skipping nan values. All
-        Tensors are with the same dimensions."""
-        merged = torch.cat([e.unsqueeze(-1) for e in embeddings], dim=-1)
+    def _masked_mean_embedding(self, tensors: Iterable[torch.Tensor]) -> torch.Tensor:
+        """Calculate mean between list of tensors, skipping nan values. Calculates mean of the last dimension.
+        All tensors have same dimensions."""
+        merged = torch.cat([e.unsqueeze(-1) for e in tensors], dim=-1)
         return torch.nanmean(merged, dim=-1)
 
     def forward(
@@ -175,55 +173,55 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         forward_data = ForwardData.from_forward_data(data, self.config_data)
 
         # Static attributes
-        static_embeddings = self.static_attributes_fc(forward_data.static_attributes)
+        static_embedding = self.static_attributes_fc(forward_data.static_attributes)
 
         # CPC
-        cpc_input_concat = self._append_static_embeddings(
-            forward_data.cpc_data, static_embeddings=static_embeddings
+        cpc_input_concat = self._append_static_embedding(
+            forward_data.cpc_data, static_embedding=static_embedding
         )
-        cpc_embeddings = self.cpc_input_fc(cpc_input_concat)
-        cpc_embedding_with_nan = self._add_nan_padding(cpc_embeddings)
+        cpc_embedding = self.cpc_input_fc(cpc_input_concat)
+        cpc_embedding_with_nan = self._add_nan_padding(cpc_embedding)
 
         # IMERG
-        imerg_input_concat = self._append_static_embeddings(
-            forward_data.imerg_data, static_embeddings=static_embeddings
+        imerg_input_concat = self._append_static_embedding(
+            forward_data.imerg_data, static_embedding=static_embedding
         )
-        imerg_embeddings = self.imerg_input_fc(imerg_input_concat)
-        imerg_embedding_with_nan = self._add_nan_padding(imerg_embeddings)
+        imerg_embedding = self.imerg_input_fc(imerg_input_concat)
+        imerg_embedding_with_nan = self._add_nan_padding(imerg_embedding)
 
         # HRES
-        hres_input_concat = self._append_static_embeddings(
-            forward_data.hres_data, static_embeddings=static_embeddings
+        hres_input_concat = self._append_static_embedding(
+            forward_data.hres_data, static_embedding=static_embedding
         )
-        hres_embeddings = self.hres_input_fc(hres_input_concat)
+        hres_embedding = self.hres_input_fc(hres_input_concat)
 
         # GraphCast
-        graphcast_input_concat = self._append_static_embeddings(
-            forward_data.graphcast_data, static_embeddings=static_embeddings
+        graphcast_input_concat = self._append_static_embedding(
+            forward_data.graphcast_data, static_embedding=static_embedding
         )
-        graphcast_embeddings = self.graphcast_input_fc(graphcast_input_concat)
+        graphcast_embedding = self.graphcast_input_fc(graphcast_input_concat)
 
         # Hindcast LSTM
         hindcast_mean_embedding = self._masked_mean_embedding(
             [
                 cpc_embedding_with_nan,
                 imerg_embedding_with_nan,
-                hres_embeddings,
-                graphcast_embeddings,
+                hres_embedding,
+                graphcast_embedding,
             ]
         )
-        hindcast_data_concat = self._append_static_embeddings(
-            hindcast_mean_embedding, static_embeddings=static_embeddings
+        hindcast_data_concat = self._append_static_embedding(
+            hindcast_mean_embedding, static_embedding=static_embedding
         )
         hindcast, _ = self.hindcast_lstm(input=hindcast_data_concat)
 
         # Forecast LSTM
         forecast_mean_embedding = self._masked_mean_embedding(
-            [hres_embeddings, graphcast_embeddings]
+            [hres_embedding, graphcast_embedding]
         )
-        forecast_data_concat = self._append_static_embeddings(
+        forecast_data_concat = self._append_static_embedding(
             torch.cat([forecast_mean_embedding, hindcast], dim=-1),
-            static_embeddings=static_embeddings,
+            static_embedding=static_embedding,
         )
         forecast, _ = self.forecast_lstm(input=forecast_data_concat)
 
