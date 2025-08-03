@@ -1,7 +1,7 @@
 from typing import Tuple, Dict, Iterable
 
 import dataclasses
-import math
+import numpy as np
 import torch
 import torch.nn as nn
 
@@ -101,14 +101,17 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         # Forecast LSTM
         self.forecast_lstm = nn.LSTM(
-            input_size=self.config_data.embedding_size * 2 + self.config_data.hidden_size,
+            input_size=self.config_data.embedding_size * 2
+            + self.config_data.hidden_size,
             hidden_size=self.config_data.hidden_size,
             batch_first=True,
         )
 
         # Head
         self.dropout = nn.Dropout(p=cfg.output_dropout)
-        self.head = get_head(self.cfg, n_in=self.config_data.hidden_size, n_out=3 * 4, n_hidden=100)
+        self.head = get_head(
+            self.cfg, n_in=self.config_data.hidden_size, n_out=3 * 4, n_hidden=100
+        )
 
         self._reset_parameters()
 
@@ -141,7 +144,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         embedding_size = embeddings.shape[2]
         nan_padding = torch.full(
             (batch_size, nan_padding_length, embedding_size),
-            math.nan,
+            np.nan,
             device=embeddings.device,
         )
         return torch.cat([embeddings, nan_padding], dim=1)
