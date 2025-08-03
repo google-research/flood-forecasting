@@ -1,6 +1,6 @@
 # --- Training Parameters -------------------------------------------------------
 batch_size: 256
-epochs: 125
+epochs: 20
 experiment_name: mean_embedding_forecast_lstm
 clip_gradient_norm: 1
 clip_targets_to_zero:
@@ -21,19 +21,19 @@ metrics:
 - Missed-Peaks
 num_workers: 2
 optimizer: Adam
-validate_every: 10
+validate_every: 5
 validate_n_random_basins: 4
 predict_last_n: 8
 log_n_figures: 3
 
 # --- Dataset Parameters --------------------------------------------------------
-train_basin_file: ~/neuralhydrology/config/basins/caravan_3_basins.txt
-validation_basin_file: ~/neuralhydrology/config/basins/caravan_3_basins.txt
-test_basin_file: ~/neuralhydrology/config/basins/caravan_3_basins.txt
+# train_basin_file: ~/neuralhydrology/config/basins/caravan_3_basins.txt
+# validation_basin_file: ~/neuralhydrology/config/basins/caravan_3_basins.txt
+# test_basin_file: ~/neuralhydrology/config/basins/caravan_3_basins.txt
 
-# train_basin_file: ~/neuralhydrology/config/basins/caravan_and_multimet_basins_100.txt
-# validation_basin_file: ~/neuralhydrology/config/basins/caravan_and_multimet_basins_100.txt
-# test_basin_file: ~/neuralhydrology/config/basins/caravan_and_multimet_basins_100.txt
+train_basin_file: ~/neuralhydrology/config/basins/caravan_and_multimet_basins_50.txt
+validation_basin_file: ~/neuralhydrology/config/basins/caravan_and_multimet_basins_50.txt
+test_basin_file: ~/neuralhydrology/config/basins/caravan_and_multimet_basins_50.txt
 
 # train_basin_file: ~/neuralhydrology/config/basins/caravan_and_multimet_basins.txt
 # validation_basin_file: ~/neuralhydrology/config/basins/caravan_and_multimet_basins.txt
