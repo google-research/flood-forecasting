@@ -186,8 +186,6 @@ class ForecastDataset(BaseDataset):
                 skipna=True
             )
 
-        self._dataset.load()
-
         self._dataarrays_cache: dict[str, xr.DataArray] = {}
 
     def __len__(self) -> int:
