@@ -11,9 +11,10 @@ from ruamel.yaml import YAML
 from collections import defaultdict
 
 from neuralhydrology.datasetzoo.basedataset import BaseDataset
-from neuralhydrology.datautils.validate_samples import validate_samples, extract_feature_groups
-from neuralhydrology.datautils.utils import load_basin_file
 from neuralhydrology.datautils.scaler import Scaler
+from neuralhydrology.datautils.union_features import union_features
+from neuralhydrology.datautils.utils import load_basin_file
+from neuralhydrology.datautils.validate_samples import validate_samples, extract_feature_groups
 from neuralhydrology.utils.config import Config
 from neuralhydrology.utils.errors import NoTrainDataError, NoEvaluationDataError
 
@@ -21,6 +22,29 @@ from neuralhydrology.utils.errors import NoTrainDataError, NoEvaluationDataError
 NUMPY_VARS = ['date']
 TENSOR_VARS = ['x_s', 'x_d', 'x_d_hindcast', 'x_d_forecast', 'y', 'per_basin_target_stds']
 
+# TODO (current) :: Move this to a config argument.
+MULTIMET_UNION_FEATURE_MAPPING = {
+    # Precipitation nowcast features.
+    'cpc_precipitation': 'era5land_total_precipitation',
+    'imerg_precipitation': 'era5land_total_precipitation',
+    'chirps_precipitation': 'era5land_total_precipitation',
+
+    # CHIRPS GEFS forecast features.
+    'chirpsgefs_precipitation': 'era5land_total_precipitation',
+
+    # Graphcast forecast features.
+    'graphcast_temperature_2m': 'era5land_temperature_2m',
+    'graphcast_total_precipitation': 'era5land_total_precipitation',
+    'graphcast_u_component_of_wind_10m': 'era5land_u_component_of_wind_10m',
+    'graphcast_v_component_of_wind_10m': 'era5land_v_component_of_wind_10m',
+
+    # IFS forecast features.
+    'hres_surface_net_solar_radiation': 'era5land_surface_net_solar_radiation',
+    'hres_surface_net_thermal_radiation': 'era5land_surface_net_thermal_radiation',
+    'hres_surface_pressure': 'era5land_surface_pressure',
+    'hres_temperature_2m': 'era5land_temperature_2m',
+    'hres_total_precipitation': 'era5land_total_precipitation',
+}
 
 class ForecastDataset(BaseDataset):
     """Base data set class for forecast models.
@@ -153,6 +177,12 @@ class ForecastDataset(BaseDataset):
             if self._forecast_overlap:
                 overlap_counter = np.full((self._forecast_overlap,), self._min_lead_time)
                 self._forecast_counter = np.concatenate([overlap_counter, self._forecast_counter], 0)
+
+        # Union features to extend certain data records.
+        # TODO (current) :: Move this to a config argument.
+        # Martin suggests doing this step prior to training models and then saving the unioned dataset locally.
+        # If you do that, then remove this line.
+        self._dataset = union_features(self._dataset, MULTIMET_UNION_FEATURE_MAPPING)
 
         # Scale the dataset AFTER cropping dates so that we do not calcualte scalers using test or eval data.
         self.scaler = Scaler(
