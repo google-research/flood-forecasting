@@ -31,13 +31,13 @@ log_n_figures: 5
 # validation_basin_file: ~/neuralhydrology/config/basins/caravan_3_basins.txt
 # test_basin_file: ~/neuralhydrology/config/basins/caravan_3_basins.txt
 
-train_basin_file: ~/neuralhydrology/config/basins/caravan_and_multimet_basins_50.txt
-validation_basin_file: ~/neuralhydrology/config/basins/caravan_and_multimet_basins_50.txt
-test_basin_file: ~/neuralhydrology/config/basins/caravan_and_multimet_basins_50.txt
+train_basin_file: ~/neuralhydrology/config/basins/intersections/50_0.txt
+validation_basin_file: ~/neuralhydrology/config/basins/intersections/50_0.txt
+test_basin_file: ~/neuralhydrology/config/basins/intersections/50_0.txt
 
-# train_basin_file: ~/neuralhydrology/config/basins/caravan_and_multimet_basins.txt
-# validation_basin_file: ~/neuralhydrology/config/basins/caravan_and_multimet_basins.txt
-# test_basin_file: ~/neuralhydrology/config/basins/caravan_and_multimet_basins.txt
+# train_basin_file: ~/neuralhydrology/config/basins/intersections/0_0.txt
+# validation_basin_file: ~/neuralhydrology/config/basins/intersections/0_0.txt
+# test_basin_file: ~/neuralhydrology/config/basins/intersections/0_0.txt
 
 train_end_date: 30/09/2020
 train_start_date: 01/10/2010
