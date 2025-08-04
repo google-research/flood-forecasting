@@ -26,8 +26,6 @@ validate_n_random_basins: 10
 predict_last_n: 8
 log_n_figures: 5
 
-seed: 315808
-
 # --- Dataset Parameters --------------------------------------------------------
 # train_basin_file: ~/neuralhydrology/config/basins/caravan_3_basins.txt
 # validation_basin_file: ~/neuralhydrology/config/basins/caravan_3_basins.txt
