@@ -47,12 +47,13 @@ def main(unused_argv):
     datasets = {k: tuple(v) for k, v in itertools.groupby(all, key=extract_dataset)}
 
     for num_basins in NUM_BASINS.value:
-        if not num_basins:
-            num_basins = len(datasets)
         with open(PATH / "intersections" / f"{num_basins}_{BATCH.value}.txt", "w") as f:
             for basins in datasets.values():
-                results = random.sample(basins, k=math.ceil(num_basins / len(datasets)))
-                f.writelines(f"{e}\n" for e in results)
+                res = (
+                    random.sample(basins, k=math.ceil(num_basins / len(datasets)))
+                    or basins
+                )
+                f.writelines(f"{e}\n" for e in res)
 
 
 def read_gauges(file: Path) -> set[str]:
