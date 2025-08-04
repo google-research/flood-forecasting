@@ -49,11 +49,8 @@ def main(unused_argv):
     for num_basins in NUM_BASINS.value:
         with open(PATH / "intersections" / f"{num_basins}_{BATCH.value}.txt", "w") as f:
             for basins in datasets.values():
-                res = (
-                    random.sample(basins, k=math.ceil(num_basins / len(datasets)))
-                    or basins
-                )
-                f.writelines(f"{e}\n" for e in res)
+                res = random.sample(basins, k=math.ceil(num_basins / len(datasets)))
+                f.writelines(f"{e}\n" for e in res or basins)
 
 
 def read_gauges(file: Path) -> set[str]:
