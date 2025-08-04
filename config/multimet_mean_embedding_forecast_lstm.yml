@@ -46,11 +46,11 @@ validation_start_date: 01/10/2015
 test_end_date: 30/09/2022
 test_start_date: 01/10/2017
 
-# data_dir: ~/neuralhydrology/data/Caravan-multimet
-targets_data_dir: ~/neuralhydrology/data/Caravan-nc
-statics_data_dir: ~/neuralhydrology/data/Caravan-nc
-forecasts_data_dir: ~/neuralhydrology/data/Caravan-multimet
-hindcasts_data_dir: ~/neuralhydrology/data/Caravan-multimet
+# data_dir: ~/nh-data/data/Caravan-multimet
+targets_data_dir: ~/nh-data/data/Caravan-nc
+statics_data_dir: ~/nh-data/data/Caravan-nc
+forecasts_data_dir: ~/nh-data/data/Caravan-multimet
+hindcasts_data_dir: ~/nh-data/data/Caravan-multimet
 
 dataset: multimet
 seq_length: 365
@@ -168,7 +168,7 @@ initial_forget_bias: 0
 output_activation: linear
 output_dropout: 0.4
 timestep_counter: True
-run_dir: ~/neuralhydrology/runs
+run_dir: ~/nh-data/runs
 dynamics_embedding:
   activation: tanh
   dropout: 0.0
