@@ -10,7 +10,7 @@ learning_rate:
   10: 0.0005
   25: 0.0001
 # max_updates_per_epoch:
-max_updates_per_epoch: 50
+max_updates_per_epoch: 10
 metrics:
 - NSE
 - KGE
@@ -39,10 +39,10 @@ test_basin_file: ~/neuralhydrology/config/basins/caravan_and_multimet_basins_50.
 # validation_basin_file: ~/neuralhydrology/config/basins/caravan_and_multimet_basins.txt
 # test_basin_file: ~/neuralhydrology/config/basins/caravan_and_multimet_basins.txt
 
-train_end_date: 30/09/2015
-train_start_date: 01/10/2005
-validation_end_date: 30/09/2020
-validation_start_date: 01/10/2015
+train_end_date: 30/09/2020
+train_start_date: 01/10/2010
+validation_end_date: 30/09/2022
+validation_start_date: 01/10/2020
 test_end_date: 30/09/2022
 test_start_date: 01/10/2017
 
@@ -55,28 +55,6 @@ hindcasts_data_dir: ~/nh-data/data/Caravan-multimet
 dataset: multimet
 seq_length: 365
 lead_time: 7
-dynamic_inputs:
-- - graphcast_temperature_2m
-  - graphcast_total_precipitation
-  - graphcast_u_component_of_wind_10m
-  - graphcast_v_component_of_wind_10m
-- - era5land_dewpoint_temperature_2m
-  - era5land_potential_evaporation_FAO_PENMAN_MONTEITH
-  - era5land_snow_depth_water_equivalent
-  - era5land_surface_net_solar_radiation
-  - era5land_surface_net_thermal_radiation
-  - era5land_surface_pressure
-  - era5land_temperature_2m
-  - era5land_total_precipitation
-  - era5land_u_component_of_wind_10m
-  - era5land_v_component_of_wind_10m
-  - era5land_volumetric_soil_water_layer_1
-  - era5land_volumetric_soil_water_layer_2
-  - era5land_volumetric_soil_water_layer_3
-  - era5land_volumetric_soil_water_layer_4
-- - chirps_precipitation
-- - imerg_precipitation
-- - cpc_precipitation
 forecast_inputs:
 - hres_surface_net_solar_radiation
 - hres_surface_net_thermal_radiation
@@ -88,9 +66,6 @@ forecast_inputs:
 - graphcast_u_component_of_wind_10m
 - graphcast_v_component_of_wind_10m
 hindcast_inputs:
-- era5land_dewpoint_temperature_2m
-- era5land_potential_evaporation_FAO_PENMAN_MONTEITH
-- era5land_snow_depth_water_equivalent
 - era5land_surface_net_solar_radiation
 - era5land_surface_net_thermal_radiation
 - era5land_surface_pressure
@@ -98,11 +73,6 @@ hindcast_inputs:
 - era5land_total_precipitation
 - era5land_u_component_of_wind_10m
 - era5land_v_component_of_wind_10m
-- era5land_volumetric_soil_water_layer_1
-- era5land_volumetric_soil_water_layer_2
-- era5land_volumetric_soil_water_layer_3
-- era5land_volumetric_soil_water_layer_4
-- chirps_precipitation
 - imerg_precipitation
 - cpc_precipitation
 static_attributes:
@@ -132,9 +102,6 @@ union_mapping:
   # Precipitation nowcast features.
   cpc_precipitation: era5land_total_precipitation
   imerg_precipitation: era5land_total_precipitation
-  chirps_precipitation: era5land_total_precipitation
-   # CHIRPS GEFS forecast features.
-  chirpsgefs_precipitation: era5land_total_precipitation
   # Graphcast forecast features.
   graphcast_temperature_2m: era5land_temperature_2m
   graphcast_total_precipitation: era5land_total_precipitation
@@ -161,10 +128,10 @@ n_distributions: 3
 #n_samples: 7500  # https://hess.copernicus.org/articles/26/1673/2022/#App1.Ch1.S2.SS2:~:text=each%20time%20step%20we%20compute%207500%C2%A0samples
 n_samples: 100  # https://hess.copernicus.org/articles/26/1673/2022/#App1.Ch1.S2.SS2:~:text=each%20time%20step%20we%20compute%207500%C2%A0samples
 negative_sample_handling: clip  # https://hess.copernicus.org/articles/26/1673/2022/#App1.Ch1.S2.SS2:~:text=The%20%E2%80%9Cclipping%E2%80%9D%20sign%20emphasizes%20our%20choice%20to%20set%20samples%20that%20would%20be%20below%20zero%20back%20to%20the%20zero%2Drunoff%20baseline
-mc_dropout: True  # https://hess.copernicus.org/articles/26/1673/2022/#App1.Ch1.S2.SS2:~:text=2.3.2-,Monte%20Carlo%20dropout,-MCD%20provides%20an
+# mc_dropout: True  # https://hess.copernicus.org/articles/26/1673/2022/#App1.Ch1.S2.SS2:~:text=2.3.2-,Monte%20Carlo%20dropout,-MCD%20provides%20an
 
 hidden_size: 512
-initial_forget_bias: 0
+initial_forget_bias: 3
 output_activation: linear
 output_dropout: 0.4
 timestep_counter: True
