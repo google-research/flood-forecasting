@@ -1,6 +1,6 @@
 # --- Training Parameters -------------------------------------------------------
 batch_size: 256
-epochs: 60
+epochs: 20
 experiment_name: mean_embedding_forecast_lstm
 clip_gradient_norm: 1
 clip_targets_to_zero:
@@ -10,7 +10,7 @@ learning_rate:
   10: 0.0005
   25: 0.0001
 # max_updates_per_epoch:
-max_updates_per_epoch: 500
+max_updates_per_epoch: 10
 metrics:
 - NSE
 - KGE
@@ -19,9 +19,9 @@ metrics:
 - Beta-KGE
 - Peak-Timing
 - Missed-Peaks
-num_workers: 4
+num_workers: 2
 optimizer: Adam
-validate_every: 3
+validate_every: 5
 validate_n_random_basins: 10
 predict_last_n: 8
 log_n_figures: 5
@@ -31,9 +31,9 @@ log_n_figures: 5
 # validation_basin_file: ~/neuralhydrology/config/basins/caravan_3_basins.txt
 # test_basin_file: ~/neuralhydrology/config/basins/caravan_3_basins.txt
 
-train_basin_file: ~/neuralhydrology/config/basins/intersections/500_0.txt
-validation_basin_file: ~/neuralhydrology/config/basins/intersections/500_0.txt
-test_basin_file: ~/neuralhydrology/config/basins/intersections/500_0.txt
+train_basin_file: ~/neuralhydrology/config/basins/intersections/50_0.txt
+validation_basin_file: ~/neuralhydrology/config/basins/intersections/50_0.txt
+test_basin_file: ~/neuralhydrology/config/basins/intersections/50_0.txt
 
 # train_basin_file: ~/neuralhydrology/config/basins/intersections/0_0.txt
 # validation_basin_file: ~/neuralhydrology/config/basins/intersections/0_0.txt
