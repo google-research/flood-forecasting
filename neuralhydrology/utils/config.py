@@ -833,7 +833,7 @@ class Config(object):
     
     @property
     def union_mapping(self) -> Dict[str, str]:
-        return self._get_value_verbose("union_mapping")
+        return self._cfg.get("union_mapping", None)
 
     @property
     def tau_down(self) -> float:

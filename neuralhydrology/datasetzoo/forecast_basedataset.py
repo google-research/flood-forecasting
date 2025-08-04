@@ -156,10 +156,10 @@ class ForecastDataset(BaseDataset):
                 self._forecast_counter = np.concatenate([overlap_counter, self._forecast_counter], 0)
 
         # Union features to extend certain data records.
-        # TODO (current) :: Move this to a config argument.
         # Martin suggests doing this step prior to training models and then saving the unioned dataset locally.
         # If you do that, then remove this line.
-        self._dataset = union_features(self._dataset, cfg.union_mapping)
+        if cfg.union_mapping:
+            self._dataset = union_features(self._dataset, cfg.union_mapping)
 
         # Scale the dataset AFTER cropping dates so that we do not calcualte scalers using test or eval data.
         self.scaler = Scaler(
