@@ -18,6 +18,7 @@
 # NOTE: to simplify, output may not be exactly the num of basins specified.
 
 import itertools
+import math
 import os
 from pathlib import Path
 import random
@@ -50,7 +51,7 @@ def main(unused_argv):
             num_basins = len(datasets)
         with open(PATH / "intersections" / f"{num_basins}_{BATCH.value}.txt", "w") as f:
             for basins in datasets.values():
-                results = random.sample(basins, k=round(num_basins / len(datasets)))
+                results = random.sample(basins, k=math.ceil(num_basins / len(datasets)))
                 f.writelines(f"{e}\n" for e in results)
 
 
