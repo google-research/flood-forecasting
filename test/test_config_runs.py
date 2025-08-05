@@ -279,6 +279,6 @@ def _get_discharge(config: Config, basin: str) -> pd.Series:
         _, area = camelsus.load_camels_us_forcings(config.data_dir, basin, 'daymet')
         return camelsus.load_camels_us_discharge(config.data_dir, basin, area)
     if config.dataset in ['caravan', 'multimet']:
-        return caravan.load_caravan_timeseries(config.data_dir, basin)[config.target_variables]        
+        return caravan.load_caravan_timeseries(config.data_dir, basin).to_dataframe()[config.target_variables]        
     else:
         raise NotImplementedError
