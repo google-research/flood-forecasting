@@ -263,7 +263,7 @@ def validate_samples_for_nan_handling(
     """
     if not feature_groups and nan_handling_method in ['masked_mean', 'attention']:
         raise ValueError(f'Feature groups is empty for NaN-handling method: {nan_handling_method}.')
-    
+
     if nan_handling_method is None or nan_handling_method.lower() == 'none':
         return validate_samples_all(dataset)
     elif nan_handling_method.lower() == 'input_replacing':
@@ -275,7 +275,7 @@ def validate_samples_for_nan_handling(
     else:
         raise ValueError(f'Unrecognized NaN-handling method: {nan_handling_method}.')
 
-    
+
 def validate_samples_any_all_group(
     dataset: xr.Dataset,
     feature_groups: List[List[str]]
@@ -406,11 +406,44 @@ def validate_sequence_all(
     xarray.DataArray
         Boolean valid sample mask.
     """
-    # Check count of invalid items (False) is zero.
-    return ((~mask).rolling(
-        date=seq_length,
-        min_periods=seq_length
-    ).sum() == 0).shift(date=-shift_right).fillna(False).astype(bool)
+    # Invert the boolean mask:
+    # `False` or `nan` become 1 (invalid) and `True` becomes 0 (valid).
+    invalid_indicator = ~mask
+
+    # Calculate the rolling sum which represents the count of invalid
+    # (False) timesteps in each window. `min_periods` ensures that
+    # incomplete windows at the start result in nan.
+    # The sum() method treats True as 1 and False as 0.
+    invalid_count = invalid_indicator.rolling(
+        date=seq_length, min_periods=seq_length
+    ).sum()
+    # Note: sum() is a specific optimized function for this task while
+    # a reduce() is generic and too slow here as it can get any function
+    # while sum is exactly the function required.
+    # Reduce() makes xarray do a step-by-step calculation for each window
+    # in separate (create window, run e.g. np.all, ...). Python is an
+    # interpretted language. sum() is implemented natively in C and so
+    # also possibly uses vector instructions as well.
+
+    # A window is valid if the count of True values is greater than 0.
+    # The comparison also handles nan values with resulting in `False`.
+    valid_windows = invalid_count == 0
+
+    # Move the valid windows data along the date dim, to align the validity
+    # info of windows with the timestamp of the value to predict.
+    # This may create nan values at the end, e.g. [False, True, True]
+    # shifted by -1 becomes [True, True, nan].
+    # Noting nans are of type float so this casts the type to float.
+    shifted_windows = valid_windows.shift(date=-shift_right)
+
+    # Fill the missing values from the shift with `False` so it's equiv
+    # to the nan value, so it's considered as an invalid (shifted) window.
+    filled_windows = shifted_windows.fillna(False)
+
+    # Ensure the data type is all bool, and this saves memory.
+    final_mask = filled_windows.astype(bool)
+
+    return final_mask
 
 
 def validate_sequence_any(
@@ -434,8 +467,35 @@ def validate_sequence_any(
     xarray.DataArray
         Boolean valid sample mask.
     """
-    # Check count of valid (True) items is greater than zero.
-    return (mask.rolling(
-        date=seq_length,
-        min_periods=seq_length
-    ).sum() > 0).shift(date=-shift_right).fillna(False).astype(bool)
+    # Calculate the rolling sum which represents the count of valid
+    # (True) timesteps in each window. `min_periods` ensures that
+    # incomplete windows at the start result in nan.
+    # The sum() method treats True as 1 and False as 0.
+    true_count = mask.rolling(date=seq_length, min_periods=seq_length).sum()
+    # Note: sum() is a specific optimized function for this task while
+    # a reduce() is generic and too slow here as it can get any function
+    # while sum is exactly the function required.
+    # Reduce() makes xarray do a step-by-step calculation for each window
+    # in separate (create window, run e.g. np.all, ...). Python is an
+    # interpretted language. sum() is implemented natively in C and so
+    # also possibly uses vector instructions as well.
+
+    # A window is valid if the count of True values is greater than 0.
+    # The comparison also handles nan values by resulting in `False`.
+    valid_windows = true_count > 0
+
+    # Move the valid windows data along the date dim, to align the validity
+    # info of windows with the timestamp of the value to predict.
+    # This may create nan values at the end, e.g. [False, True, True]
+    # shifted by -1 becomes [True, True, nan].
+    # Noting nans are of type float so this casts the type to float.
+    shifted_windows = valid_windows.shift(date=-shift_right)
+
+    # Fill the missing values from the shift with `False` so it's equiv
+    # to the nan value, so it's considered as an invalid (shifted) window.
+    filled_windows = shifted_windows.fillna(False)
+
+    # Ensure the data type is all bool, and this saves memory.
+    final_mask = filled_windows.astype(bool)
+
+    return final_mask
