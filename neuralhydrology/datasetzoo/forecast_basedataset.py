@@ -355,13 +355,13 @@ class ForecastDataset(BaseDataset):
         # while ONLY selecting valid samples. The full original dataset is retained (including
         # not-valid samples) for sequence construction.
         class SampleIndexer:
-            def __init__(self, sample: int) -> None:
-                self.sample = sample
+            def __init__(self, sample_index: int) -> None:
+                self.i = sample_index
 
             # @functools.lru_cache(maxsize=1000)  # Limit max entries
             @functools.cache
             def __getitem__(self, dim: str):
-                coord = _extract_dataarray(valid_sample_da[dim], {"sample": self.sample})
+                coord = _extract_dataarray(valid_sample_da[dim], {"sample": self.i})
                 return dimension_index[dim][_safe_coord(coord)]
 
             def items(self):
@@ -369,7 +369,7 @@ class ForecastDataset(BaseDataset):
                     if dim != "sample":
                         yield dim, self.__getitem__(dim)
 
-        self._sample_index = {sample: SampleIndexer(sample) for sample in range(num_samples)}
+        self._sample_index = {i: SampleIndexer(i) for i in range(num_samples)}
         self._num_samples = num_samples
 
     def _load_data(self) -> xr.Dataset:
