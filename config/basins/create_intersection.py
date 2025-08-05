@@ -49,7 +49,13 @@ def main(unused_argv):
     for num_basins in NUM_BASINS.value:
         with open(PATH / "intersections" / f"{num_basins}_{BATCH.value}.txt", "w") as f:
             for basins in datasets.values():
-                res = random.sample(basins, k=math.ceil(num_basins / len(datasets)))
+                # TODO: Divide dataset sizes correctly for the case requesting
+                #       a larger total than some datasets' size. Because then
+                #       the division needs not be equal, needs to take more
+                #       basins from the larger datasets accordingly.
+                #       For example, to generate 5000, need to input 12000.
+                k = min(len(basins), math.ceil(num_basins / len(datasets)))
+                res = random.sample(basins, k=k)
                 f.writelines(f"{e}\n" for e in res or basins)
 
 
