@@ -406,10 +406,11 @@ def validate_sequence_all(
     xarray.DataArray
         Boolean valid sample mask.
     """
-    return mask.rolling(
+    # Check count of invalid items (False) is zero.
+    return ((~mask).rolling(
         date=seq_length,
         min_periods=seq_length
-    ).reduce(np.all).shift(date=-shift_right).fillna(False).astype(bool)
+    ).sum() == 0).shift(date=-shift_right).fillna(False).astype(bool)
 
 
 def validate_sequence_any(
@@ -433,7 +434,8 @@ def validate_sequence_any(
     xarray.DataArray
         Boolean valid sample mask.
     """
-    return mask.rolling(
+    # Check count of valid (True) items is greater than zero.
+    return (mask.rolling(
         date=seq_length,
         min_periods=seq_length
-    ).reduce(np.any).shift(date=-shift_right).fillna(False).astype(bool)
+    ).sum() > 0).shift(date=-shift_right).fillna(False).astype(bool)
