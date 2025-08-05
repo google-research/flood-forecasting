@@ -1,6 +1,6 @@
 # --- Training Parameters -------------------------------------------------------
 batch_size: 256
-epochs: 20
+epochs: 2
 experiment_name: mean_embedding_forecast_lstm
 clip_gradient_norm: 1
 clip_targets_to_zero:
@@ -19,7 +19,7 @@ metrics:
 - Beta-KGE
 - Peak-Timing
 - Missed-Peaks
-num_workers: 2
+num_workers: 0
 optimizer: Adam
 validate_every: 5
 validate_n_random_basins: 10
