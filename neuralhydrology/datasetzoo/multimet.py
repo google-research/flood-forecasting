@@ -204,10 +204,7 @@ class Multimet(ForecastDataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (basin).
         """
-        # TODO (future) :: Remove the conversion from xr -> pd -> xr.       
-        df = load_caravan_attributes(
+        return load_caravan_attributes(
             data_dir=self._statics_data_path,
             basins=self._basins
         )[self._static_features]
-        df.index.name = 'basin'
-        return df.to_xarray()

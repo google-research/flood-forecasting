@@ -68,12 +68,13 @@ class Caravan(BaseDataset):
 
     def _load_attributes(self) -> pd.DataFrame:
         """Load input and output data from text files."""
-        return load_caravan_attributes(data_dir=self.cfg.data_dir, basins=self.basins)
+        # TODO: avoid converting to pd.DataFrame
+        return load_caravan_attributes(data_dir=self.cfg.data_dir, basins=self.basins).to_dataframe()
 
 
 def load_caravan_attributes(data_dir: Path,
                             basins: Optional[List[str]] = None,
-                            subdataset: Optional[str] = None) -> pd.DataFrame:
+                            subdataset: Optional[str] = None) -> xarray.Dataset:
     """Load the attributes of the Caravan dataset.
 
     Parameters
@@ -98,8 +99,8 @@ def load_caravan_attributes(data_dir: Path,
 
     Returns
     -------
-    pd.DataFrame
-        A basin indexed DataFrame with all attributes as columns.
+    xarray.Dataset
+        A basin indexed Dataset with all attributes as coordinates.
     """
     if subdataset:
         subdataset_dir = data_dir / "attributes" / subdataset
@@ -130,21 +131,25 @@ def load_caravan_attributes(data_dir: Path,
         subdataset_dirs = [s for s in subdataset_dirs if s.name in subdataset_names]
 
     # Load all required attribute files.
-    dfs = []
+    dss = []
     for subdataset_dir in subdataset_dirs:
-        dfs.append(_load_attribute_files_of_subdataset(subdataset_dir))
+        dss.extend(_load_attribute_files_of_subdataset(subdataset_dir))
 
-    # Merge all DataFrames along the basin index.
-    df = pd.concat(dfs, axis=0)
+    # Merge all Datasets along the basin index.
+    ds = xarray.merge(dss)
 
+    # If a specific list of basins is requested, subset the Dataset.
     if basins:
-        missing = [e for e in basins if e not in df.index]
+        # Check for any requested basins that are missing from the loaded data.
+        # TODO: this may be optimized via array ops instead of individual item tests.
+        missing = [e for e in basins if e not in ds.coords["basin"]]
         if missing:
             raise ValueError(f'{len(missing)} basins are missing static attributes: {", ".join(missing)}')
-        # Subset to only the requested basins.
-        df = df.loc[basins]
 
-    return df
+        # Subset to only the requested basins.
+        ds = ds.sel(basin=basins)
+
+    return ds
 
 
 def load_caravan_timeseries(data_dir: Path, basin: str, filetype: str = "netcdf") -> pd.DataFrame|xarray.Dataset:
@@ -190,9 +195,15 @@ def load_caravan_timeseries(data_dir: Path, basin: str, filetype: str = "netcdf"
     return df
 
 
-def _load_attribute_files_of_subdataset(subdataset_dir: Path) -> pd.DataFrame:
-    """Loads all attribute files for one subdataset and merges them into one DataFrame."""
-    dfs = []
-    for csv_file in subdataset_dir.glob("*.csv"):
-        dfs.append(pd.read_csv(csv_file, index_col="gauge_id"))
-    return pd.concat(dfs, axis=1)
+def _load_attribute_files_of_subdataset(subdataset_dir: Path) -> list[xarray.Dataset]:
+    """Loads all attribute CSV files for one subdataset.
+
+    NOTE: we change the index column from gauge_id to basin.
+    
+    One may merge them, which is equivalent to a side-by-side concat (aligned along
+    the shared, now called, "basin" coordinate).
+    """
+    return [
+        xarray.Dataset.from_dataframe(pd.read_csv(csv_file, index_col="gauge_id").rename_axis('basin'))
+        for csv_file in subdataset_dir.glob("*.csv")
+    ]
