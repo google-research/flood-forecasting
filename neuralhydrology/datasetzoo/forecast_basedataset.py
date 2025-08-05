@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional, Hashable
 
+import functools
 import datetime
 from pathlib import Path
 import numpy as np
@@ -353,13 +354,23 @@ class ForecastDataset(BaseDataset):
         # This allows integer indexing into each coordinate dimension of the original dataset,
         # while ONLY selecting valid samples. The full original dataset is retained (including
         # not-valid samples) for sequence construction.
-        self._sample_index = {
-            i: {
-                dim: dimension_index[dim][_safe_coord(_extract_dataarray(valid_sample_da[dim], {'sample': i}))]
-                for dim in valid_sample_da.coords if dim != 'sample'
-            } for i in range(num_samples)
-        }
-        self._num_samples = len(self._sample_index)
+        class SampleIndexer:
+            def __init__(self, sample_index: int) -> None:
+                self.i = sample_index
+
+            # @functools.lru_cache(maxsize=1000)  # Limit max entries
+            @functools.cache
+            def __getitem__(self, dim: str):
+                coord = _extract_dataarray(valid_sample_da[dim], {"sample": self.i})
+                return dimension_index[dim][_safe_coord(coord)]
+
+            def items(self):
+                for dim in valid_sample_da.coords:
+                    if dim != "sample":
+                        yield dim, self.__getitem__(dim)
+
+        self._sample_index = {i: SampleIndexer(i) for i in range(num_samples)}
+        self._num_samples = num_samples
 
     def _load_data(self) -> xr.Dataset:
         """Returns an xr dataset of features with the following dimensions: (basin, date, lead_time).
