@@ -1,6 +1,6 @@
 # --- Training Parameters -------------------------------------------------------
 batch_size: 256
-epochs: 2
+epochs: 20
 experiment_name: mean_embedding_forecast_lstm
 clip_gradient_norm: 1
 clip_targets_to_zero:
