@@ -53,6 +53,7 @@ def main(unused_argv):
                 #       a larger total than some datasets' size. Because then
                 #       the division needs not be equal, needs to take more
                 #       basins from the larger datasets accordingly.
+                #       For example, to generate 5000, need to input 12000.
                 k = min(len(basins), math.ceil(num_basins / len(datasets)))
                 res = random.sample(basins, k=k)
                 f.writelines(f"{e}\n" for e in res or basins)
