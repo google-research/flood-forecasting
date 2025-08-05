@@ -194,16 +194,11 @@ class Multimet(ForecastDataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, basin).
         """
-        # TODO (future) :: Remove the conversion from xr -> pd -> xr.       
-        basin_dfs = {
-            basin: load_caravan_timeseries(data_dir=self._targets_data_path, basin=basin)[self._target_features]
+        basins = (
+            load_caravan_timeseries(data_dir=self._targets_data_path, basin=basin)[self._target_features]
             for basin in self._basins
-        }
-        basin_dss = {basin: df.to_xarray() for basin, df in basin_dfs.items()}
-        return xr.concat(
-            [ds for ds in basin_dss.values()],
-            dim=pd.Index(basin_dss.keys(), name='basin')
         )
+        return xr.concat(basins, dim=pd.Index(self._basins, name='basin'))
     
     def _load_attributes(self) -> xr.Dataset:
         """Load Caravan attributes.

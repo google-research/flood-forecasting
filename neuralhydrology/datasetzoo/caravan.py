@@ -63,7 +63,8 @@ class Caravan(BaseDataset):
 
     def _load_basin_data(self, basin: str) -> pd.DataFrame:
         """Load timeseries data from netcdf files."""
-        return load_caravan_timeseries(data_dir=self.cfg.data_dir, basin=basin)
+        # TODO: avoid converting to pd.DataFrame
+        return load_caravan_timeseries(data_dir=self.cfg.data_dir, basin=basin).to_dataframe()
 
     def _load_attributes(self) -> pd.DataFrame:
         """Load input and output data from text files."""
@@ -146,7 +147,7 @@ def load_caravan_attributes(data_dir: Path,
     return df
 
 
-def load_caravan_timeseries(data_dir: Path, basin: str, filetype: str = "netcdf") -> pd.DataFrame:
+def load_caravan_timeseries(data_dir: Path, basin: str, filetype: str = "netcdf") -> pd.DataFrame|xarray.Dataset:
     """Loads the timeseries data of one basin from the Caravan dataset.
     
     Parameters
@@ -159,7 +160,7 @@ def load_caravan_timeseries(data_dir: Path, basin: str, filetype: str = "netcdf"
         The Caravan gauge id string in the form of {subdataset_name}_{gauge_id}.
     filetype : str, optional
         Can be either 'csv' or 'netcdf'. Depending on this value, this function will load the timeseries data from the
-        netcdf files (default) or csv files.
+        netcdf files (default) (xarray.Dataset) or csv files (pd.DataFrame).
 
     Raises
     ------
@@ -183,11 +184,9 @@ def load_caravan_timeseries(data_dir: Path, basin: str, filetype: str = "netcdf"
 
     # Load timeseries data.
     if filetype == "netcdf":
-        df = xarray.open_dataset(filepath).to_dataframe()
-    else:
-        df = pd.read_csv(filepath, parse_dates=['date'])
-        df = df.set_index('date')
-
+        return xarray.open_dataset(filepath)
+    df = pd.read_csv(filepath, parse_dates=['date'])
+    df = df.set_index('date')
     return df
 
 
