@@ -410,9 +410,10 @@ def validate_sequence_all(
     # `False` or `nan` become 1 (invalid) and `True` becomes 0 (valid).
     invalid_indicator = ~mask
 
-    # Calculate the rolling sum which represents the count of invalid
-    # (False) timesteps in each window. `min_periods` ensures that
-    # incomplete windows at the start result in nan.
+    # Calculate the rolling (sliding window) sum which represents the
+    # count of invalid (False) timesteps in each window.
+    # `min_periods` ensures that incomplete windows at the start
+    # result in nan.
     # The sum() method treats True as 1 and False as 0.
     invalid_count = invalid_indicator.rolling(
         date=seq_length, min_periods=seq_length
@@ -467,8 +468,8 @@ def validate_sequence_any(
     xarray.DataArray
         Boolean valid sample mask.
     """
-    # Calculate the rolling sum which represents the count of valid
-    # (True) timesteps in each window. `min_periods` ensures that
+    # Calculate the rolling (sliding window) sum which represents the count
+    # of valid (True) timesteps in each window. `min_periods` ensures that
     # incomplete windows at the start result in nan.
     # The sum() method treats True as 1 and False as 0.
     true_count = mask.rolling(date=seq_length, min_periods=seq_length).sum()
