@@ -111,16 +111,16 @@ class Multimet(ForecastDataset):
         if self._static_features is not None:
             datasets.append(self._load_attributes())
         if self._hindcast_features is not None:
-            datasets.append(self._load_hindcast_features())
+            datasets.extend(self._load_hindcast_features())
         if self._forecast_features is not None:
-            datasets.append(self._load_forecast_features())
+            datasets.extend(self._load_forecast_features())
         if self._target_features is not None:
             datasets.append(self._load_target_features())
         if not datasets:
             raise ValueError('At least one type of data must be loaded.')
         return xr.merge(datasets)
-    
-    def _load_hindcast_features(self) -> xr.Dataset:
+
+    def _load_hindcast_features(self) -> list[xr.Dataset]:
         """Load Caravan-Multimet data for hindcast features.
 
         Returns
@@ -147,11 +147,9 @@ class Multimet(ForecastDataset):
 
             product_dss.append(product_ds.sel(basin=self._basins)[bands])
 
-        # Concatenate all products and bands into a single dataframe.
-        return xr.merge(product_dss)
-        
+        return product_dss
 
-    def _load_forecast_features(self) -> xr.Dataset:
+    def _load_forecast_features(self) -> list[xr.Dataset]:
         """Load Caravan-Multimet data for forecast features.
 
         Returns
@@ -182,9 +180,7 @@ class Multimet(ForecastDataset):
                 product_ds = product_ds.sel(lead_time=lead_times)            
             product_dss.append(product_ds)
 
-        # Concatenate all products and bands into a single dataset.
-        return xr.merge(product_dss)
-
+        return product_dss
 
     def _load_target_features(self) -> xr.Dataset:
         """Load Caravan streamflow data.
@@ -198,8 +194,8 @@ class Multimet(ForecastDataset):
             load_caravan_timeseries(data_dir=self._targets_data_path, basin=basin)[self._target_features]
             for basin in self._basins
         )
-        return xr.concat(basins, dim=pd.Index(self._basins, name='basin'))
-    
+        return xr.concat(basins, dim=pd.Index(self._basins, name='basin'))       
+
     def _load_attributes(self) -> xr.Dataset:
         """Load Caravan attributes.
 
