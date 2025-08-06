@@ -356,7 +356,7 @@ class ForecastDataset(BaseDataset):
             return coord
 
         # Map of integer indexes into each coordinate dimension of the original dataset.
-        LOGGER.debug('create sample index:dimension_index')
+        LOGGER.debug('dimension_index')
         dimension_index = {
             dim: {
                 _safe_coord(coord): i for i, coord in enumerate(self._dataset[dim].values)
@@ -383,7 +383,7 @@ class ForecastDataset(BaseDataset):
                     if dim != "sample":
                         yield dim, self.__getitem__(dim)
 
-        LOGGER.debug('create sample index:sample_index')
+        LOGGER.debug('sample_index')
         self._sample_index = {i: SampleIndexer(i) for i in range(num_samples)}
         self._num_samples = num_samples
 

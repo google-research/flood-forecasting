@@ -112,20 +112,20 @@ class Multimet(ForecastDataset):
         """
         datasets = []
         if self._static_features is not None:
-            LOGGER.debug('load data:load attributes')
+            LOGGER.debug('load attributes')
             datasets.append(self._load_attributes())
         if self._hindcast_features is not None:
-            LOGGER.debug('load data:load hindcast features')
+            LOGGER.debug('load hindcast features')
             datasets.extend(self._load_hindcast_features())
         if self._forecast_features is not None:
-            LOGGER.debug('load data:load forecast features')
+            LOGGER.debug('load forecast features')
             datasets.extend(self._load_forecast_features())
         if self._target_features is not None:
-            LOGGER.debug('load data:load target features')
+            LOGGER.debug('load target features')
             datasets.append(self._load_target_features())
         if not datasets:
             raise ValueError('At least one type of data must be loaded.')
-        LOGGER.debug('load data:merge')
+        LOGGER.debug('merge')
         return xr.merge(datasets)
 
     def _load_hindcast_features(self) -> list[xr.Dataset]:
@@ -198,12 +198,12 @@ class Multimet(ForecastDataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, basin).
         """
-        LOGGER.debug('load target features:basins')
+        LOGGER.debug('basins')
         basins = [
             load_caravan_timeseries(data_dir=self._targets_data_path, basin=basin)[self._target_features]
             for basin in self._basins
         ]
-        LOGGER.debug('load target features:concat')
+        LOGGER.debug('concat')
         return xr.concat(basins, dim=pd.Index(self._basins, name='basin'))       
 
     def _load_attributes(self) -> xr.Dataset:

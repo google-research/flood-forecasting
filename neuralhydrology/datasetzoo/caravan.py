@@ -105,7 +105,7 @@ def load_caravan_attributes(data_dir: Path,
     xarray.Dataset
         A basin indexed Dataset with all attributes as coordinates.
     """
-    LOGGER.debug('load_caravan_attributes')
+    LOGGER.debug('')
     if subdataset:
         subdataset_dir = data_dir / "attributes" / subdataset
         if not subdataset_dir.is_dir():
@@ -140,12 +140,12 @@ def load_caravan_attributes(data_dir: Path,
         dss.extend(_load_attribute_files_of_subdataset(subdataset_dir))
 
     # Merge all Datasets along the basin index.
-    LOGGER.debug('load_caravan_attributes:merge')
+    LOGGER.debug('merge')
     ds = xarray.merge(dss)
 
     # If a specific list of basins is requested, subset the Dataset.
     if basins:
-        LOGGER.debug('load_caravan_attributes:missing')
+        LOGGER.debug('missing')
         # Check for any requested basins that are missing from the loaded data.
         # TODO: this may be optimized via array ops instead of individual item tests.
         missing = [e for e in basins if e not in ds.coords["basin"]]
