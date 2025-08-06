@@ -7,18 +7,26 @@ from typing import Optional
 LOGGER = logging.getLogger(__name__)
 
 
-def setup_logging(log_file: str):
+def setup_logging(log_file: str, level: int):
     """Initialize logging to `log_file` and stdout.
 
     Parameters
     ----------
     log_file : str
         Name of the file that will be logged to.
+    level : int
+        Py logging level to print from from.
     """
     file_handler = logging.FileHandler(filename=log_file)
     stdout_handler = logging.StreamHandler(sys.stdout)
 
-    logging.basicConfig(handlers=[file_handler, stdout_handler], level=logging.INFO, format="%(asctime)s: %(message)s")
+    logging.basicConfig(
+        handlers=[file_handler, stdout_handler],
+        level=level,
+        style="{",
+        datefmt="%H:%M:%S",
+        format="[{levelname}] {asctime}.{msecs:0<3.0f} ({filename}:{funcName}): {message}",
+    )
 
     # Make sure we log uncaught exceptions
     def exception_logging(type, value, tb):

@@ -37,11 +37,13 @@ def _get_args() -> dict:
 
 def _main():
     args = _get_args()
+    config = Config(Path(args["config_file"]))
+
     if (args["run_dir"] is not None) and (args["mode"] == "evaluate"):
-        setup_logging(str(Path(args["run_dir"]) / "output.log"))
+        setup_logging(str(Path(args["run_dir"]) / "output.log"), config.logging_level)
 
     if args["mode"] == "train":
-        start_run(config_file=Path(args["config_file"]), gpu=args["gpu"])
+        start_run(config=config, gpu=args["gpu"])
     elif args["mode"] == "continue_training":
         continue_run(run_dir=Path(args["run_dir"]),
                      config_file=Path(args["config_file"]) if args["config_file"] is not None else None,
@@ -54,23 +56,18 @@ def _main():
         raise RuntimeError(f"Unknown mode {args['mode']}")
 
 
-def start_run(config_file: Path, gpu: int = None):
+def start_run(config: Config, gpu: int = None):
     """Start training a model.
     
     Parameters
     ----------
-    config_file : Path
-        Path to a configuration file (.yml), defining the settings for the specific run.
+    config: Config
+        Config object from a config file (.yml), defining the settings for the specific run.
     gpu : int, optional
         GPU id to use. Will override config argument 'device'. A value smaller than zero indicates CPU.
         Don't use this argument if you want to use the device as specified in the config file e.g. MPS.
 
     """
-
-    config = Config(config_file)
-
-    logging.basicConfig(level=config.logging_level)
-
     # check if a GPU has been specified as command line argument. If yes, overwrite config
     if gpu is not None and gpu >= 0:
         config.device = f"cuda:{gpu}"

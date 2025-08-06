@@ -1,9 +1,12 @@
+import logging
 import itertools
 from typing import List, Optional
 
 import numpy as np
 import pandas as pd
 import xarray as xr
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _flatten_feature_groups(groups: List[List[str]])-> List[str]:
@@ -154,10 +157,12 @@ def validate_samples(
         
     # Statics must pass an ALL-valid check.
     if static_features:
+        LOGGER.debug('static_features')
         masks.append(validate_samples_all(dataset=dataset[static_features]).rename('statics'))
         
     # Hindcasts must pass a check that depends on the NaN-handling.
     if hindcast_features:
+        LOGGER.debug('hindcast features')
         if seq_length is None:
             raise ValueError('Sequence length is required when validating hindcast data.')
 
@@ -178,6 +183,7 @@ def validate_samples(
         
     # Forecasts must pass a check that depends on the NaN-handling.
     if forecast_features:
+        LOGGER.debug('forecast features')
         forecast_groups = extract_feature_groups(feature_groups, forecast_features)
         masks.append(
             validate_samples_for_nan_handling(
@@ -188,6 +194,7 @@ def validate_samples(
         )
         
         if forecast_overlap is not None and forecast_overlap > 0:
+            LOGGER.debug('forecast features:overlap')
             if min_lead_time is None:
                 raise ValueError('`min_lead_time`is required when validating a forecast overlap sequence.')
             
@@ -207,6 +214,7 @@ def validate_samples(
             
     # Targets must pass and ANY-valid check.
     if target_features and is_train:
+        LOGGER.debug('target features')
         if predict_last_n is None:
             raise ValueError('Target sequence length is required when validating target data.')
         mask = validate_samples_any(dataset=dataset[target_features])
@@ -219,6 +227,7 @@ def validate_samples(
         )
 
     # Mask any dates that are not valid sample dates.
+    LOGGER.debug('invalid sample dates')
     all_dates = dataset.date.values
     all_basins = dataset.basin.values
     masks.append(
@@ -230,7 +239,12 @@ def validate_samples(
     )
 
     # All masks must be valid according to their own checks for the sample to be valid.
-    valid_sample_mask = xr.merge(masks).to_array(dim='variable').all(dim='variable')
+    LOGGER.debug('masks merge')
+    valid_sample_mask = xr.merge(masks)
+    LOGGER.debug('masks to_array')
+    valid_sample_mask = valid_sample_mask.to_array(dim='variable')
+    LOGGER.debug('masks all')
+    valid_sample_mask = valid_sample_mask.all(dim='variable')
     
     return valid_sample_mask, masks
 

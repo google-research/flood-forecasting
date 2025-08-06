@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional, Union
 
+import logging
 from pathlib import Path
 import glob
 
@@ -10,6 +11,8 @@ import xarray as xr
 from neuralhydrology.datasetzoo.caravan import load_caravan_attributes, load_caravan_timeseries
 from neuralhydrology.datasetzoo.forecast_basedataset import ForecastDataset
 from neuralhydrology.utils.config import Config
+
+LOGGER = logging.getLogger(__name__)
 
 MULTIMET_MINIMUM_LEAD_TIME = 1
 
@@ -109,15 +112,20 @@ class Multimet(ForecastDataset):
         """
         datasets = []
         if self._static_features is not None:
+            LOGGER.debug('load attributes')
             datasets.append(self._load_attributes())
         if self._hindcast_features is not None:
+            LOGGER.debug('load hindcast features')
             datasets.extend(self._load_hindcast_features())
         if self._forecast_features is not None:
+            LOGGER.debug('load forecast features')
             datasets.extend(self._load_forecast_features())
         if self._target_features is not None:
+            LOGGER.debug('load target features')
             datasets.append(self._load_target_features())
         if not datasets:
             raise ValueError('At least one type of data must be loaded.')
+        LOGGER.debug('merge')
         return xr.merge(datasets)
 
     def _load_hindcast_features(self) -> list[xr.Dataset]:
@@ -190,10 +198,12 @@ class Multimet(ForecastDataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, basin).
         """
-        basins = (
+        LOGGER.debug('basins')
+        basins = [
             load_caravan_timeseries(data_dir=self._targets_data_path, basin=basin)[self._target_features]
             for basin in self._basins
-        )
+        ]
+        LOGGER.debug('concat')
         return xr.concat(basins, dim=pd.Index(self._basins, name='basin'))       
 
     def _load_attributes(self) -> xr.Dataset:
