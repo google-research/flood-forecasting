@@ -303,7 +303,7 @@ class ForecastDataset(BaseDataset):
         This allows index-based sample retrieval, which is faster than coordinate-based sample retrieval.
         """
         # Create a boolean mask for the original dataset noting valid (True) vs. invalid (False) samples.
-        valid_sample_mask, masks = validate_samples(
+        valid_sample_mask = validate_samples(
             is_train=self.is_train,
             dataset=self._dataset,
             nan_handling_method=self._nan_handling_method,
@@ -318,7 +318,7 @@ class ForecastDataset(BaseDataset):
             hindcast_features=self._hindcast_features,
             target_features=self._target_features,
             feature_groups=self._feature_groups,
-        )
+        )[0]
 
         # Convert boolean valid sample mask into indexes of all samples. This retains
         # only the portion of the valid sample mask with True values.
