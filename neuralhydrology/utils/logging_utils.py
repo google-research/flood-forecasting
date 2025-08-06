@@ -25,7 +25,7 @@ def setup_logging(log_file: str, level: int):
         level=level,
         style="{",
         datefmt="%H:%M:%S",
-        format="[{levelname}] {asctime}.{msecs:0<3.0f} ({funcName}): {message}",
+        format="[{levelname}] {asctime}.{msecs:0<3.0f} ({filename}:{funcName}): {message}",
     )
 
     # Make sure we log uncaught exceptions
