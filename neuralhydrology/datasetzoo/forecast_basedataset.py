@@ -390,4 +390,4 @@ def _extract_dataarray(data: xr.DataArray, indexers: dict[Hashable, int|range]) 
     This function replaces uses of `isel` with data and indexers.
     """
     locators = (indexers[dim] if dim in indexers else slice(None) for dim in data.dims)
-    return data.data[tuple(locators)]
+    return data.values[tuple(locators)]
