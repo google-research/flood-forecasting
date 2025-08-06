@@ -359,7 +359,9 @@ class ForecastDataset(BaseDataset):
         # while ONLY selecting valid samples. The full original dataset is retained (including
         # not-valid samples) for sequence construction.
         LOGGER.debug("sample_index")
-        vectorized_indices = {"basin": indexer("basin"), "date": indexer("date")}
+        vectorized_indices = {
+            dim: indexer(dim) for dim in valid_sample_da.coords if dim != "sample"
+        }
         self._sample_index = _SampleIndexerWrapper(vectorized_indices)
 
         self._num_samples = num_samples
