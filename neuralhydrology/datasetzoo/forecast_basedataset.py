@@ -351,7 +351,7 @@ class ForecastDataset(BaseDataset):
         # each element i corresponds to date i and its value is its position in dataset.
         def indexer(dim: Hashable):
             indices = self._dataset.indexes[dim].get_indexer(valid_sample_da[dim])
-            assert (indices != -1).all()
+            assert (indices != -1).all(), f"{dim} mustn't have invalid indexes"
             return indices
 
         # Maps dims to their respective index arrays where an index i in each corresponds
