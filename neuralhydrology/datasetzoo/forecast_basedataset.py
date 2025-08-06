@@ -362,7 +362,10 @@ class ForecastDataset(BaseDataset):
         vectorized_indices = {
             dim: indexer(dim) for dim in valid_sample_da.coords if dim != "sample"
         }
-        self._sample_index = _SampleIndexerWrapper(vectorized_indices)
+        self._sample_index = {
+            i: {dim: indexes[i] for dim, indexes in vectorized_indices.items()}
+            for i in range(num_samples)
+        }
 
         self._num_samples = num_samples
 
@@ -376,23 +379,6 @@ class ForecastDataset(BaseDataset):
     def _extract_dataset(self, dataset: xr.Dataset, cache_key: str, feature: str, indexers: dict[Hashable, int|range]) -> np.ndarray | np.float32:
         data = self._dataarrays_cache.setdefault(f'{cache_key}-{feature}', dataset[feature])
         return _extract_dataarray(data, indexers)
-
-
-class _SampleIndexerWrapper:
-    """Convenience access to dim vectorized indices to dataset.
-
-    Index access builds a small dict with dims as keys. It's uncached to avoid
-    doubling data storage in memory.
-    """
-
-    def __init__(
-        self,
-        vectorized_indices: dict[str, xr.DataArray],
-    ) -> None:
-        self._vi = vectorized_indices
-
-    def __getitem__(self, sample_index: int):
-        return {dim: indexes[sample_index] for dim, indexes in self._vi.items()}
 
 
 def _extract_dataarray(data: xr.DataArray, indexers: dict[Hashable, int|range]) -> np.ndarray | np.float32:
