@@ -1,3 +1,4 @@
+import logging
 import itertools
 import random
 import re
@@ -262,6 +263,18 @@ class Config(object):
         cfg = Config._parse_config(cfg)
 
         return cfg
+
+    @property
+    def logging_level(self) -> int:
+        level = self._cfg.get("logging_level", "INFO").upper()
+        match level:
+            case "DEBUG": return logging.DEBUG
+            case "INFO": return logging.INFO
+            case "WARN": return logging.WARN
+            case "WARNING": return logging.WARNING
+            case "ERROR": return logging.ERROR
+            case "CRITICAL": return logging.CRITICAL
+            case _: raise ValueError(f'Invalid logging_level: {level}')
 
     @property
     def additional_feature_files(self) -> List[Path]:

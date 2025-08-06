@@ -1,3 +1,4 @@
+logging_level: DEBUG
 # --- Training Parameters -------------------------------------------------------
 batch_size: 256
 epochs: 20
