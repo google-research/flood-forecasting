@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional, Hashable
 
+import logging
 import functools
 import datetime
 from pathlib import Path
@@ -18,6 +19,8 @@ from neuralhydrology.datautils.utils import load_basin_file
 from neuralhydrology.datautils.validate_samples import validate_samples, extract_feature_groups
 from neuralhydrology.utils.config import Config
 from neuralhydrology.utils.errors import NoTrainDataError, NoEvaluationDataError
+
+LOGGER = logging.getLogger(__name__)
 
 # Data types for all keys in the sample dictionary.
 NUMPY_VARS = ['date']
@@ -120,7 +123,10 @@ class ForecastDataset(BaseDataset):
             self._basins = load_basin_file(getattr(cfg, f'{period}_basin_file'))
 
         # Load & preprocess the data.
-        self._dataset = self._load_data().astype('float32')
+        LOGGER.debug('load data')
+        self._dataset = self._load_data()
+        LOGGER.debug('retype data')
+        self._dataset = self._dataset.astype('float32')
 
         # Extract date ranges.
         # TODO (future) :: Make this work for non-continuous date ranges.
@@ -144,6 +150,7 @@ class ForecastDataset(BaseDataset):
         data_start_date = self._sample_dates[0] - pd.Timedelta(days=self._seq_length)
         data_end_date = self._sample_dates[-1] + pd.Timedelta(days=self._seq_length)
         data_dates = pd.date_range(data_start_date, data_end_date)
+        LOGGER.debug('reindex data')
         self._dataset = self._dataset.reindex(date=data_dates).sel(date=data_dates)
 
         # Timestep counters indicate the lead time of each forecast timestep.
@@ -160,20 +167,25 @@ class ForecastDataset(BaseDataset):
         # Martin suggests doing this step prior to training models and then saving the unioned dataset locally.
         # If you do that, then remove this line.
         if cfg.union_mapping:
+            LOGGER.debug('union features')
             self._dataset = union_features(self._dataset, cfg.union_mapping)
 
         # Scale the dataset AFTER cropping dates so that we do not calcualte scalers using test or eval data.
+        LOGGER.debug('init scaler')
         self.scaler = Scaler(
             scaler_dir=(cfg.base_run_dir if cfg.is_finetuning else cfg.run_dir),
             calculate_scaler=compute_scaler,
             custom_normalization=cfg.custom_normalization,
             dataset=(self._dataset if compute_scaler else None)
         )
+        LOGGER.debug('scale data')
         self._dataset = self.scaler.scale(self._dataset)       
         if compute_scaler:
+            LOGGER.debug('save scaler')
             self.scaler.save()
 
         # Create sample index lookup table for `__getitem__`.
+        LOGGER.debug('create sample index')
         self._create_sample_index()
 
         # Compute stats for NSE-based loss functions.
@@ -181,6 +193,7 @@ class ForecastDataset(BaseDataset):
         # losses that require them somewhere like `training.__init__.py`. Perhaps simply always calculate.
         self._per_basin_target_stds = None
         if cfg.loss.lower() in ['nse', 'weightednse']:
+            LOGGER.debug('create per_basin_target_stds')
             self._per_basin_target_stds = self._dataset[
                 self._target_features].std(
                     dim=[d for d in self._dataset[self._target_features].dims if d != 'basin'],
@@ -343,6 +356,7 @@ class ForecastDataset(BaseDataset):
             return coord
 
         # Map of integer indexes into each coordinate dimension of the original dataset.
+        LOGGER.debug('create sample index:dimension_index')
         dimension_index = {
             dim: {
                 _safe_coord(coord): i for i, coord in enumerate(self._dataset[dim].values)
@@ -369,6 +383,7 @@ class ForecastDataset(BaseDataset):
                     if dim != "sample":
                         yield dim, self.__getitem__(dim)
 
+        LOGGER.debug('create sample index:sample_index')
         self._sample_index = {i: SampleIndexer(i) for i in range(num_samples)}
         self._num_samples = num_samples
 
