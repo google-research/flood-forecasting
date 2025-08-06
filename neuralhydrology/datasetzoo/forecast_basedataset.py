@@ -346,45 +346,22 @@ class ForecastDataset(BaseDataset):
             else:
                 raise NoEvaluationDataError       
 
-        # This is a place where you can add checks on the types, formats, etc. of dataset coordinates.
-        # TODO (future) :: Is there a way to enforce this that isn't manual?
-        def _safe_coord(coord):
-            """Can add any coordinate assurances here that might be needed."""
-            if isinstance(coord, np.datetime64) or isinstance(coord, int):
-                coord = pd.Timestamp(coord)
-            # elif ...
-            return coord
+        # dataset.indexes has the labels and their order for the dimensions akin to pd.Index.
+        # get_indexer returns indices of the dim's labels in the dataset for that dim, so
+        # each element i corresponds to date i and its value is its position in dataset.
+        def indexer(dim: Hashable):
+            return self._dataset.indexes[dim].get_indexer(valid_sample_da[dim])
 
-        # Map of integer indexes into each coordinate dimension of the original dataset.
-        LOGGER.debug('dimension_index')
-        dimension_index = {
-            dim: {
-                _safe_coord(coord): i for i, coord in enumerate(self._dataset[dim].values)
-            } for dim in valid_sample_da.coords if dim != 'sample'
-        }
-
-        # Map of integer sample indexes into maps from dimension name to integer indexes into
-        # the coordinates of that dimension. Sample indexes come from the valid sample mask.
+        # Maps dims to their respective index arrays where an index i in each corresponds
+        # with the sample index in the dataset w.r.t the valid sample mask (valid_sample_da).
+        #
         # This allows integer indexing into each coordinate dimension of the original dataset,
         # while ONLY selecting valid samples. The full original dataset is retained (including
         # not-valid samples) for sequence construction.
-        class SampleIndexer:
-            def __init__(self, sample_index: int) -> None:
-                self.i = sample_index
+        LOGGER.debug("sample_index")
+        vectorized_indices = {"basin": indexer("basin"), "date": indexer("date")}
+        self._sample_index = _SampleIndexerWrapper(vectorized_indices)
 
-            # @functools.lru_cache(maxsize=1000)  # Limit max entries
-            @functools.cache
-            def __getitem__(self, dim: str):
-                coord = _extract_dataarray(valid_sample_da[dim], {"sample": self.i})
-                return dimension_index[dim][_safe_coord(coord)]
-
-            def items(self):
-                for dim in valid_sample_da.coords:
-                    if dim != "sample":
-                        yield dim, self.__getitem__(dim)
-
-        LOGGER.debug('sample_index')
-        self._sample_index = {i: SampleIndexer(i) for i in range(num_samples)}
         self._num_samples = num_samples
 
     def _load_data(self) -> xr.Dataset:
@@ -397,6 +374,23 @@ class ForecastDataset(BaseDataset):
     def _extract_dataset(self, dataset: xr.Dataset, cache_key: str, feature: str, indexers: dict[Hashable, int|range]) -> np.ndarray | np.float32:
         data = self._dataarrays_cache.setdefault(f'{cache_key}-{feature}', dataset[feature])
         return _extract_dataarray(data, indexers)
+
+
+class _SampleIndexerWrapper:
+    """Convenience access to dim vectorized indices to dataset.
+
+    Index access builds a small dict with dims as keys. It's uncached to avoid
+    doubling data storage in memory.
+    """
+
+    def __init__(
+        self,
+        vectorized_indices: dict[str, xr.DataArray],
+    ) -> None:
+        self._vi = vectorized_indices
+
+    def __getitem__(self, sample_index: int):
+        return {dim: indexes[sample_index] for dim, indexes in self._vi.items()}
 
 
 def _extract_dataarray(data: xr.DataArray, indexers: dict[Hashable, int|range]) -> np.ndarray | np.float32:
