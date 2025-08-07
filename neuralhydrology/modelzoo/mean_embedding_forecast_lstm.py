@@ -1,6 +1,7 @@
 from typing import Tuple, Dict, Iterable
 
 import dataclasses
+import functools
 import numpy as np
 import torch
 import torch.nn as nn
@@ -125,13 +126,19 @@ class MeanEmbeddingForecastLSTM(BaseModel):
                 self.config_data.hidden_size : 2 * self.config_data.hidden_size
             ] = self.cfg.initial_forget_bias
 
+    @functools.cache
+    def _make_static_repeated_cached(
+        self, time_length: int, static: torch.Tensor
+    ) -> torch.Tensor:
+        return static.unsqueeze(1).repeat(1, time_length, 1)
+
     def _append_static(
         self, embedding: torch.Tensor, *, static: torch.Tensor
     ) -> torch.Tensor:
         """Append static attributes embedding to another embedding tensor."""
         # Dimension 1 is the time dimension. Duplicate static embedding in all time series.
-        length = embedding.shape[1]
-        static_repeated = static.unsqueeze(1).repeat(1, length, 1)
+        time_length = embedding.shape[1]
+        static_repeated = self._make_static_repeated_cached(time_length, static)
         return torch.cat([embedding, static_repeated], dim=-1)
 
     def _add_nan_padding(self, embedding: torch.Tensor) -> torch.Tensor:
@@ -181,7 +188,10 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         hindcast = self._calc_hindcast(static, cpc, imerg, hres, graphcast)
         forecast = self._calc_forecast(hindcast, static, hres, graphcast)
 
-        return self._calc_head(forecast)
+        head = self._calc_head(forecast)
+
+        self._make_static_repeated_cached.cache_clear()
+        return head
 
     def _calc_static(self, forward_data: "ForwardData") -> torch.Tensor:
         return self.static_attributes_fc(forward_data.static_attributes)
