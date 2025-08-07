@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Hashable
 
 import logging
+import itertools
 import functools
 import datetime
 from pathlib import Path
@@ -125,6 +126,8 @@ class ForecastDataset(BaseDataset):
         # Load & preprocess the data.
         LOGGER.debug('load data')
         self._dataset = self._load_data()
+        LOGGER.debug("validate all floats are float32")
+        _assert_floats_are_float32(self._dataset)
 
         # Extract date ranges.
         # TODO (future) :: Make this work for non-continuous date ranges.
@@ -388,3 +391,13 @@ def _extract_dataarray(data: xr.DataArray, indexers: dict[Hashable, int|range]) 
     """
     locators = (indexers[dim] if dim in indexers else slice(None) for dim in data.dims)
     return data.values[tuple(locators)]
+
+
+def _assert_floats_are_float32(dataset: xr.Dataset):
+    items = itertools.chain(dataset.data_vars.items(), dataset.coords.items())
+    for name, data_array_or_coord in items:
+        if np.issubdtype(data_array_or_coord.dtype, np.floating):
+            assert data_array_or_coord.dtype == np.float32, (
+                f"Data variable or coord '{name}' is a float but not float32. "
+                f"Actual dtype: {data_array_or_coord.dtype}"
+            )
