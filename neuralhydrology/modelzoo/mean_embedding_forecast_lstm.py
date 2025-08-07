@@ -1,5 +1,4 @@
 from typing import Tuple, Dict, Iterable
-from concurrent.futures import ThreadPoolExecutor
 
 import dataclasses
 import numpy as np
