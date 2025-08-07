@@ -125,8 +125,6 @@ class ForecastDataset(BaseDataset):
         # Load & preprocess the data.
         LOGGER.debug('load data')
         self._dataset = self._load_data()
-        LOGGER.debug('retype data')
-        self._dataset = self._dataset.astype('float32')
 
         # Extract date ranges.
         # TODO (future) :: Make this work for non-continuous date ranges.

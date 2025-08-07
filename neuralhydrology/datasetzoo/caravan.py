@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Optional
 
+import numpy as np
 import pandas as pd
 import xarray
 
@@ -205,11 +206,22 @@ def _load_attribute_files_of_subdataset(subdataset_dir: Path) -> list[xarray.Dat
     """Loads all attribute CSV files for one subdataset.
 
     NOTE: we change the index column from gauge_id to basin.
-    
+    NOTE: we convert float64 to float32 on data decoding.
+
     One may merge them, which is equivalent to a side-by-side concat (aligned along
     the shared, now called, "basin" coordinate).
     """
     return [
-        xarray.Dataset.from_dataframe(pd.read_csv(csv_file, index_col="gauge_id").rename_axis('basin'))
+        xarray.Dataset.from_dataframe(
+            read_csv_float32(csv_file, index_col="gauge_id").rename_axis("basin")
+        )
         for csv_file in subdataset_dir.glob("*.csv")
     ]
+
+
+def read_csv_float32(csv_file: Path, index_col: str) -> pd.DataFrame:
+    df_peek = pd.read_csv(csv_file, index_col=index_col, nrows=100)
+    dtype_map = {
+        col: np.float32 for col, dtype in df_peek.dtypes.items() if dtype == "float64"
+    }
+    return pd.read_csv(csv_file, index_col=index_col, dtype=dtype_map)
