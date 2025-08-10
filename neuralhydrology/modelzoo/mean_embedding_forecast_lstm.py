@@ -125,6 +125,34 @@ class MeanEmbeddingForecastLSTM(BaseModel):
                 self.config_data.hidden_size : 2 * self.config_data.hidden_size
             ] = self.cfg.initial_forget_bias
 
+    def forward(
+        self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]
+    ) -> Dict[str, torch.Tensor]:
+        """Perform a forward pass on the MeanEmbeddingForecastLSTM model.
+
+        Parameters
+        ----------
+        data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
+            Dictionary, containing input features as key-value pairs.
+
+        Returns
+        -------
+        Dict[str, torch.Tensor]
+            Model outputs and intermediate states as a dictionary from CMAL head.
+        """
+        forward_data = ForwardData.from_forward_data(data, self.config_data)
+
+        static_attributes = self._calc_static_attributes(forward_data)
+        cpc = self._calc_cpc(forward_data, static_attributes)
+        imerg = self._calc_imerg(forward_data, static_attributes)
+        hres = self._calc_hres(forward_data, static_attributes)
+        graphcast = self._calc_graphcast(forward_data, static_attributes)
+
+        hindcast = self._calc_hindcast(static_attributes, cpc, imerg, hres, graphcast)
+        forecast = self._calc_forecast(hindcast, static_attributes, hres, graphcast)
+
+        return self._calc_head(forecast)
+
     def _append_static_attributes(
         self, embedding: torch.Tensor, static_attributes: torch.Tensor
     ) -> torch.Tensor:
@@ -154,35 +182,6 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         All tensors have same dimensions."""
         merged = torch.cat([e.unsqueeze(-1) for e in tensors], dim=-1)
         return torch.nanmean(merged, dim=-1)
-
-    def forward(
-        self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]
-    ) -> Dict[str, torch.Tensor]:
-        """Perform a forward pass on the MeanEmbeddingForecastLSTM model.
-
-        Parameters
-        ----------
-        data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
-            Dictionary, containing input features as key-value pairs.
-
-        Returns
-        -------
-        Dict[str, torch.Tensor]
-            Model outputs and intermediate states as a dictionary from CMAL head.
-        """
-        forward_data = ForwardData.from_forward_data(data, self.config_data)
-
-        static_attributes = self._calc_static_attributes(forward_data)
-        cpc = self._calc_cpc(forward_data, static_attributes)
-        imerg = self._calc_imerg(forward_data, static_attributes)
-        hres = self._calc_hres(forward_data, static_attributes)
-        graphcast = self._calc_graphcast(forward_data, static_attributes)
-
-        hindcast = self._calc_hindcast(static_attributes, cpc, imerg, hres, graphcast)
-        forecast = self._calc_forecast(hindcast, static_attributes, hres, graphcast)
-
-        return self._calc_head(forecast)
-
     def _calc_static_attributes(self, forward_data: "ForwardData") -> torch.Tensor:
         return self.static_attributes_fc(forward_data.static_attributes)
 
