@@ -434,63 +434,100 @@ def sample_cmal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: in
     if setup.mc_dropout:
         model.train()
 
-    # make predictions:
+    # Make predictions (forward pass). For CMAL head those are dist params and
+    # not point predictions.
     pred = model(data)
 
-    # sample for different frequencies:
+    # Map output frequencies to final sample tensors:
     samples = {}
+
+    # Loop over all model output frequencies (e.g., 'daily', 'hourly').
     for freq_suffix in setup.freq_suffixes:
-        # get predict_last_n for the given the mode:
+        # Get the number of time steps to predict for the current frequency
         frequency_last_n = _get_frequency_last_n(setup.cfg.predict_last_n, freq_suffix, setup.cfg.use_frequencies)
 
-        # CMAL has 4 parts: means (m/mu), scales (b), asymmetries (t/) and weights (p/pi):
-        m = pred[f'mu{freq_suffix}']
-        b = pred[f'b{freq_suffix}']
-        t = pred[f'tau{freq_suffix}']
-        p = pred[f'pi{freq_suffix}']
+        # Extract the four parameters of the CMAL distributions.
+        m = pred[f"mu{freq_suffix}"]  # location means
+        b = pred[f"b{freq_suffix}"]  # scales
+        t = pred[f"tau{freq_suffix}"]  # asymmetries
+        p = pred[f"pi{freq_suffix}"]  # mixture weights
 
-        sample_points = []
-        for nth_target in range(setup.number_of_targets):
-            # sampling presets:
+        sample_points = []  # (for each target parameter)
+        for nth_target in range(setup.number_of_targets):  # e.g. streamflow, temp
+            # Slice each full param tensor from the model's concat'd params to get
+            # only the portion relevant to the current target.
             m_target = _subset_target(m[:, -frequency_last_n:, :], nth_target, setup.cfg.n_distributions)
             b_target = _subset_target(b[:, -frequency_last_n:, :], nth_target, setup.cfg.n_distributions)
             t_target = _subset_target(t[:, -frequency_last_n:, :], nth_target, setup.cfg.n_distributions)
             p_target = _subset_target(p[:, -frequency_last_n:, :], nth_target, setup.cfg.n_distributions)
 
-            m_target = torch.repeat_interleave(m_target, n_samples, dim=0)
-            b_target = torch.repeat_interleave(b_target, n_samples, dim=0)
-            t_target = torch.repeat_interleave(t_target, n_samples, dim=0)
-            p_target = torch.repeat_interleave(p_target, n_samples, dim=0)
+            assert m_target.shape == b_target.shape == t_target.shape == p_target.shape
+            batch_size, time_steps, n_dist = m_target.shape  # WLOG
 
-            # sampling procedure:
-            values = torch.zeros((setup.batch_size_data * n_samples, frequency_last_n)).to(setup.device)
-            values *= torch.tensor(float('nan'))  # set target sample_points to nan
-            for nth_timestep in range(frequency_last_n):
+            # Make [batch, sample, time, dist] (expanded) tensor views of the targets.
+            # Unsqueeze to add a dim for samples: [batch, rime, dist] -> [batch, 1, time, dist].
+            # Expand to repeat the new dim without allocating new memory for it. So:
+            #     [batch, 1, time, dist] -> [batch, sample, time, dist].
+            m_exp = m_target.unsqueeze(1).expand(-1, n_samples, -1, -1)
+            b_exp = b_target.unsqueeze(1).expand(-1, n_samples, -1, -1)
+            t_exp = t_target.unsqueeze(1).expand(-1, n_samples, -1, -1)
+            p_exp = p_target.unsqueeze(1).expand(-1, n_samples, -1, -1)
 
-                mask_nan = ~torch.isnan(p_target[:, nth_timestep, 0])
-                if any(mask_nan):  # skip if the complete mini-batch is invalid
-                    sub_choices = torch.multinomial(p_target[mask_nan, nth_timestep, :], num_samples=1)
-                    t_sub = t_target[mask_nan, nth_timestep, :].gather(1, sub_choices)
-                    m_sub = m_target[mask_nan, nth_timestep, :].gather(1, sub_choices)
-                    b_sub = b_target[mask_nan, nth_timestep, :].gather(1, sub_choices)
+            # Distribute:
 
-                    ids = torch.ones(b_sub.shape, dtype=bool)
-                    values_unbound = _sample_asymmetric_laplacians(ids, m_sub, b_sub, t_sub)
-                    values[mask_nan, nth_timestep] = _handle_negative_values(
-                        setup.cfg,
-                        values_unbound,
-                        sample_values=lambda ids: _sample_asymmetric_laplacians(ids, m_sub, b_sub, t_sub),
-                        scaler=scaler,
-                        nth_target=nth_target)
+            # Prepare data for the Categorical dist.
+            # Categorical dist descrbies a random event with a fixed number of results
+            # where each one has a probability. Number of outcomes here is from 0 to
+            # n_dist-1, and probabilities are given by pi.
+            # Replace nan with uniform probability. Later those nans will be restored.
+            p_invalid = torch.isnan(p_exp)
+            p_safe = torch.where(p_invalid, torch.ones_like(p_exp) / n_dist, p_exp)
 
-            # add the values to the sample_points:
-            values = values.permute(1, 0).reshape(frequency_last_n, -1, n_samples).permute(1, 0, 2)
-            values = values.detach().cpu()
+            dist = torch.distributions.Categorical(probs=p_safe)
+
+            # Sample:
+
+            # Draw dist index for each sample and time step from the dist dim, to get
+            # [batch, sample, time].
+            # And add a dim to match the shape of the expanded params for gathering,
+            # for selecting which dist it is gathered from.
+            choices = dist.sample().unsqueeze(-1)
+            # For each param point, select from [batch, sample, time, dist] using
+            # choices index which is [batch, sample, time, 1] to find which dist
+            # to use, gathering that param using the index for it.
+            # Then squeeze out the dist dim.
+            m_sub = torch.gather(m_exp, dim=3, index=choices).squeeze(-1)
+            b_sub = torch.gather(b_exp, dim=3, index=choices).squeeze(-1)
+            t_sub = torch.gather(t_exp, dim=3, index=choices).squeeze(-1)
+
+            def sample_values(ids: torch.Tensor) -> torch.Tensor:
+                return _sample_asymmetric_laplacians(ids, m_sub, b_sub, t_sub)
+
+            # Generate an initial value for every single pos via a mask of all `True`s,
+            # with the _sample_asymmetric_laplacians helper.
+            values_unbound = sample_values(ids=torch.ones_like(m_sub, dtype=torch.bool))
+            # Reshape it back since the helper has flattened dims.
+            values_unbound = values_unbound.reshape(batch_size, n_samples, time_steps)
+            # Restore nans (squeezing out the dist dim from which it was gathered)
+            was_nan_mask = torch.gather(p_invalid, dim=3, index=choices).squeeze(-1)
+            values_unbound[was_nan_mask] = torch.nan
+
+            values = _handle_negative_values(  # Resample as needed
+                setup.cfg,
+                values_unbound,
+                sample_values=sample_values,
+                scaler=scaler,
+                nth_target=nth_target,
+            )
+            # Swap [batch, sample, time] to [batch, time, sample]
+            values = values.permute(0, 2, 1).detach().cpu()
             sample_points.append(values)
 
-        # add sample_points to dictionary of samples:
-        freq_key = f'y_hat{freq_suffix}'
-        samples.update({freq_key: torch.stack(sample_points, 2)})
+        # torch.stack results for all targets into a single tensor for this freq.
+        # It stacks into a new dim for the targets at dim 2, so shape should be
+        # [batch, time, sample] -> [batch, time, target, sample].
+        samples.update({f"y_hat{freq_suffix}": torch.stack(sample_points, dim=2)})
+
     return samples
 
 
