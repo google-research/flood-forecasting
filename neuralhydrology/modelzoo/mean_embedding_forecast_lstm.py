@@ -159,9 +159,9 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
     @functools.cache
     def _make_static_attributes_repeated_cached(
-        self, time_length: int, static: torch.Tensor
+        self, time_length: int, static_attributes: torch.Tensor
     ) -> torch.Tensor:
-        return static.unsqueeze(1).repeat(1, time_length, 1)
+        return static_attributes.unsqueeze(1).repeat(1, time_length, 1)
 
     @functools.cache
     def _make_nan_padding_cached(
