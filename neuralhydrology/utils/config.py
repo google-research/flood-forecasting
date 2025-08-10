@@ -213,7 +213,7 @@ class Config(object):
                             temp_list.append(Path(element).expanduser())
                         cfg[key] = temp_list
                     else:
-                       cfg[key] = Path(val).expanduser()
+                        cfg[key] = Path(val).expanduser()
                 else:
                     cfg[key] = None
 
@@ -265,10 +265,15 @@ class Config(object):
         return cfg
 
     @property
+    def detect_anomaly(self) -> bool:
+        return self._cfg.get("detect_anomaly", False)
+
+    @property
     def logging_level(self) -> int:
         level = self._cfg.get("logging_level", "INFO").upper()
         match level:
-            case "DEBUG": return logging.DEBUG
+            case "DEBUG":
+                return logging.DEBUG
             case "INFO": return logging.INFO
             case "WARN": return logging.WARN
             case "WARNING": return logging.WARNING
@@ -843,7 +848,7 @@ class Config(object):
             return self._cfg["target_variable"]
         else:
             raise ValueError("No target variables ('target_variables') defined in the config.")
-    
+
     @property
     def union_mapping(self) -> Dict[str, str] | None:
         return self._cfg.get("union_mapping", None)
