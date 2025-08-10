@@ -554,7 +554,6 @@ class UncertaintyTester(BaseTester):
         LOGGER.debug('getting model predictions (sample)')
         predictions = model.sample(data, self.cfg.n_samples)
         LOGGER.debug('getting model eval')
-        model.eval()
         return predictions, {k: v.item() for k, v in all_losses.items()}
 
     def _subset_targets(self,
