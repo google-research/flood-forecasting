@@ -161,6 +161,11 @@ class MeanEmbeddingForecastLSTM(BaseModel):
     def _make_static_attributes_repeated_cached(
         self, time_length: int, static_attributes: torch.Tensor
     ) -> torch.Tensor:
+        """Returns the attributes repeated w.r.t the time length.
+
+        This cache must be cleared on each forward. The attributes are not
+        constant, and thus memory use would become like a memory leak.
+        """
         return static_attributes.unsqueeze(1).repeat(1, time_length, 1)
 
     @functools.cache
@@ -171,6 +176,13 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         embedding_size: int,
         device: str,
     ) -> torch.Tensor:
+        """Returns a nan-padding tensor.
+
+        Given the args that are constant and lightweight and so that it's always
+        constant, this cache shouldn't be cleared, to save memory.
+        When those tensors are created and used once, they're thrown away to GC,
+        and this saves their repeated recreation, and hence increased memory use.
+        """
         return torch.full(
             (batch_size, nan_padding_length, embedding_size), np.nan, device=device
         )
