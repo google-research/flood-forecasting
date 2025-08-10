@@ -154,7 +154,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         head = self._calc_head(forecast)
 
-        self._make_static_attributes_repeated_cached.cache_clear()
+        self._clear_forward_caches()
         return head
 
     @functools.cache
@@ -162,6 +162,9 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         self, time_length: int, static: torch.Tensor
     ) -> torch.Tensor:
         return static.unsqueeze(1).repeat(1, time_length, 1)
+
+    def _clear_forward_caches(self):
+        self._make_static_attributes_repeated_cached.cache_clear()
 
     def _append_static_attributes(
         self, embedding: torch.Tensor, static_attributes: torch.Tensor
