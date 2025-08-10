@@ -195,7 +195,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         merged = torch.cat([e.unsqueeze(-1) for e in tensors], dim=-1)
         return torch.nanmean(merged, dim=-1)
 
-    def _calc_static(self, forward_data: "ForwardData") -> torch.Tensor:
+    def _calc_static_attributes(self, forward_data: "ForwardData") -> torch.Tensor:
         return self.static_attributes_fc(forward_data.static_attributes)
 
     def _calc_cpc(
