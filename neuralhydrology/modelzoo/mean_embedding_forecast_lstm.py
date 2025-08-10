@@ -293,7 +293,7 @@ class ForwardData:
         config_data: ConfigData,
     ) -> "ForwardData":
         return ForwardData(
-            data["x_s"],
+            static_attributes=data["x_s"],
             cpc_data=_concat_tensors_from_dict(
                 data["x_d_hindcast"], keys=config_data.cpc_attributes_names
             ),
