@@ -169,7 +169,9 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         """Append static attributes embedding to another embedding tensor."""
         # Dimension 1 is the time dimension. Duplicate static embedding in all time series.
         time_length = embedding.shape[1]
-        static_attributes_repeated = self._make_static_attributes_repeated_cached(time_length, static_attributes)
+        static_attributes_repeated = self._make_static_attributes_repeated_cached(
+            time_length, static_attributes
+        )
         return torch.cat([embedding, static_attributes_repeated], dim=-1)
 
     def _add_nan_padding(self, embedding: torch.Tensor) -> torch.Tensor:
