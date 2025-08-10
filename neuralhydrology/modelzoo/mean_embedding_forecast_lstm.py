@@ -125,7 +125,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
                 self.config_data.hidden_size : 2 * self.config_data.hidden_size
             ] = self.cfg.initial_forget_bias
 
-    def _append_static(
+    def _append_static_attributes(
         self, embedding: torch.Tensor, *, static: torch.Tensor
     ) -> torch.Tensor:
         """Append static attributes embedding to another embedding tensor."""
@@ -172,7 +172,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         """
         forward_data = ForwardData.from_forward_data(data, self.config_data)
 
-        static = self._calc_static(forward_data)
+        static = self._calc_static_attributes(forward_data)
         cpc = self._calc_cpc(forward_data, static)
         imerg = self._calc_imerg(forward_data, static)
         hres = self._calc_hres(forward_data, static)
@@ -183,13 +183,15 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         return self._calc_head(forecast)
 
-    def _calc_static(self, forward_data: "ForwardData") -> torch.Tensor:
+    def _calc_static_attributes(self, forward_data: "ForwardData") -> torch.Tensor:
         return self.static_attributes_fc(forward_data.static_attributes)
 
     def _calc_cpc(
         self, forward_data: "ForwardData", static: torch.Tensor
     ) -> torch.Tensor:
-        cpc_input_concat = self._append_static(forward_data.cpc_data, static=static)
+        cpc_input_concat = self._append_static_attributes(
+            forward_data.cpc_data, static=static
+        )
         cpc = self.cpc_input_fc(cpc_input_concat)
         cpc_with_nan = self._add_nan_padding(cpc)
         return cpc_with_nan
@@ -197,7 +199,9 @@ class MeanEmbeddingForecastLSTM(BaseModel):
     def _calc_imerg(
         self, forward_data: "ForwardData", static: torch.Tensor
     ) -> torch.Tensor:
-        imerg_input_concat = self._append_static(forward_data.imerg_data, static=static)
+        imerg_input_concat = self._append_static_attributes(
+            forward_data.imerg_data, static=static
+        )
         imerg = self.imerg_input_fc(imerg_input_concat)
         imerg_with_nan = self._add_nan_padding(imerg)
         return imerg_with_nan
@@ -205,13 +209,15 @@ class MeanEmbeddingForecastLSTM(BaseModel):
     def _calc_hres(
         self, forward_data: "ForwardData", static: torch.Tensor
     ) -> torch.Tensor:
-        hres_input_concat = self._append_static(forward_data.hres_data, static=static)
+        hres_input_concat = self._append_static_attributes(
+            forward_data.hres_data, static=static
+        )
         return self.hres_input_fc(hres_input_concat)
 
     def _calc_graphcast(
         self, forward_data: "ForwardData", static: torch.Tensor
     ) -> torch.Tensor:
-        graphcast_input_concat = self._append_static(
+        graphcast_input_concat = self._append_static_attributes(
             forward_data.graphcast_data, static=static
         )
         return self.graphcast_input_fc(graphcast_input_concat)
@@ -227,7 +233,9 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         hindcast_mean = self._masked_mean(
             [cpc_with_nan, imerg_with_nan, hres, graphcast]
         )
-        hindcast_data_concat = self._append_static(hindcast_mean, static=static)
+        hindcast_data_concat = self._append_static_attributes(
+            hindcast_mean, static=static
+        )
         hindcast, _ = self.hindcast_lstm(input=hindcast_data_concat)
         return hindcast
 
@@ -239,7 +247,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         graphcast: torch.Tensor,
     ) -> torch.Tensor:
         forecast_mean = self._masked_mean([hres, graphcast])
-        forecast_data_concat = self._append_static(
+        forecast_data_concat = self._append_static_attributes(
             torch.cat([forecast_mean, hindcast], dim=-1),
             static=static,
         )
