@@ -1,6 +1,7 @@
 from typing import Tuple, Dict, Iterable
 
 import dataclasses
+import functools
 import numpy as np
 import torch
 import torch.nn as nn
@@ -151,15 +152,26 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         hindcast = self._calc_hindcast(static_attributes, cpc, imerg, hres, graphcast)
         forecast = self._calc_forecast(hindcast, static_attributes, hres, graphcast)
 
-        return self._calc_head(forecast)
+        head = self._calc_head(forecast)
+
+        self._make_static_attributes_repeated_cached.cache_clear()
+        return head
+
+    @functools.cache
+    def _make_static_attributes_repeated_cached(
+        self, time_length: int, static: torch.Tensor
+    ) -> torch.Tensor:
+        return static.unsqueeze(1).repeat(1, time_length, 1)
 
     def _append_static_attributes(
         self, embedding: torch.Tensor, static_attributes: torch.Tensor
     ) -> torch.Tensor:
         """Append static attributes embedding to another embedding tensor."""
         # Dimension 1 is the time dimension. Duplicate static embedding in all time series.
-        length = embedding.shape[1]
-        static_attributes_repeated = static_attributes.unsqueeze(1).repeat(1, length, 1)
+        time_length = embedding.shape[1]
+        static_attributes_repeated = self._make_static_attributes_repeated_cached(
+            time_length, static_attributes
+        )
         return torch.cat([embedding, static_attributes_repeated], dim=-1)
 
     def _add_nan_padding(self, embedding: torch.Tensor) -> torch.Tensor:
@@ -182,6 +194,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         All tensors have same dimensions."""
         merged = torch.cat([e.unsqueeze(-1) for e in tensors], dim=-1)
         return torch.nanmean(merged, dim=-1)
+
     def _calc_static_attributes(self, forward_data: "ForwardData") -> torch.Tensor:
         return self.static_attributes_fc(forward_data.static_attributes)
 
