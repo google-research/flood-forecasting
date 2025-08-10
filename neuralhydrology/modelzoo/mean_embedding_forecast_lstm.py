@@ -225,14 +225,12 @@ class MeanEmbeddingForecastLSTM(BaseModel):
     def _calc_hindcast(
         self,
         static_attributes: torch.Tensor,
-        cpc_with_nan: torch.Tensor,
-        imerg_with_nan: torch.Tensor,
+        cpc: torch.Tensor,
+        imerg: torch.Tensor,
         hres: torch.Tensor,
         graphcast: torch.Tensor,
     ) -> torch.Tensor:
-        hindcast_mean = self._masked_mean(
-            [cpc_with_nan, imerg_with_nan, hres, graphcast]
-        )
+        hindcast_mean = self._masked_mean([cpc, imerg, hres, graphcast])
         hindcast_data_concat = self._append_static_attributes(
             hindcast_mean, static_attributes
         )
