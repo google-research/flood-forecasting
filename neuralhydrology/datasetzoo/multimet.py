@@ -19,7 +19,7 @@ MULTIMET_MINIMUM_LEAD_TIME = 1
 
 def _open_zarr(path: Path) -> xr.Dataset:
     path = str(path).replace('gs:/', 'gs://')
-    return xr.open_zarr(store=path, chunks=None, decode_timedelta=True)
+    return xr.open_zarr(store=path, chunks='auto', decode_timedelta=True)
 
 
 def _get_products_and_bands_from_feature_strings(
