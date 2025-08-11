@@ -1,5 +1,5 @@
 logging_level: INFO
-detect_anomaly: false
+detect_anomaly: False
 
 # --- Training Parameters -------------------------------------------------------
 batch_size: 256

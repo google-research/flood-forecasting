@@ -272,8 +272,7 @@ class Config(object):
     def logging_level(self) -> int:
         level = self._cfg.get("logging_level", "INFO").upper()
         match level:
-            case "DEBUG":
-                return logging.DEBUG
+            case "DEBUG": return logging.DEBUG
             case "INFO": return logging.INFO
             case "WARN": return logging.WARN
             case "WARNING": return logging.WARNING
