@@ -4,6 +4,8 @@ import argparse
 import sys
 from pathlib import Path
 
+import torch
+
 # make sure code directory is in path, even if the package is not installed using the setup.py
 sys.path.append(str(Path(__file__).parent.parent))
 from neuralhydrology.evaluation.evaluate import start_evaluation
@@ -41,6 +43,8 @@ def _main():
 
     if (args["run_dir"] is not None) and (args["mode"] == "evaluate"):
         setup_logging(str(Path(args["run_dir"]) / "output.log"), config.logging_level)
+
+    torch.autograd.set_detect_anomaly(config.detect_anomaly)
 
     if args["mode"] == "train":
         start_run(config=config, gpu=args["gpu"])
