@@ -23,7 +23,7 @@ from neuralhydrology.evaluation.utils import load_basin_id_encoding, metrics_to_
 from neuralhydrology.modelzoo import get_model
 from neuralhydrology.modelzoo.basemodel import BaseModel
 from neuralhydrology.training import get_loss_obj, get_regularization_obj
-from neuralhydrology.training.logger import Logger
+from neuralhydrology.training.logger import Logger, do_log_figures
 from neuralhydrology.utils.config import Config
 from neuralhydrology.utils.errors import AllNaNError, NoEvaluationDataError
 
@@ -329,9 +329,8 @@ class BaseTester(object):
         # a non-existing basin
         results = dict(results)
 
-        if (self.period == "validation") and (self.cfg.log_n_figures > 0) and (experiment_logger
-                                                                               is not None) and results:
-            self._create_and_log_figures(results, experiment_logger, epoch)
+        if (self.cfg.log_n_figures > 0) and results:
+            self._create_and_log_figures(results, experiment_logger, epoch or -1)
 
         # save model output to file, if requested
         results_to_save = None
@@ -345,11 +344,14 @@ class BaseTester(object):
 
         return results
 
-    def _create_and_log_figures(self, results: dict, experiment_logger: Logger, epoch: int):
+    def _create_and_log_figures(self, results: dict, experiment_logger: Logger|None, epoch: int):
         basins = list(results.keys())
         random.shuffle(basins)
         for target_var in self.cfg.target_variables:
-            max_figures = min(self.cfg.validate_n_random_basins, self.cfg.log_n_figures, len(basins))
+            if self.period == 'test':
+                max_figures = len(basins)
+            else:
+                max_figures = min(self.cfg.validate_n_random_basins, self.cfg.log_n_figures, len(basins))
             for freq in results[basins[0]].keys():
                 figures = []
                 for i in range(max_figures):
@@ -363,7 +365,11 @@ class BaseTester(object):
                         self._get_plots(
                             obs, sim, title=f"{target_var} - Basin {basins[i]} - Epoch {epoch} - Frequency {freq}")[0])
                 # make sure the preamble is a valid file name
-                experiment_logger.log_figures(figures, freq, preamble=re.sub(r"[^A-Za-z0-9\._\-]+", "", target_var))
+                preamble = re.sub(r"[^A-Za-z0-9\._\-]+", "", target_var)
+                if experiment_logger:
+                    experiment_logger.log_figures(figures, freq, preamble, self.period)
+                else:
+                    do_log_figures(None, self.cfg.img_log_dir, epoch, figures, freq, preamble, self.period)
 
     def _save_results(self, results: Optional[dict], states: Optional[dict] = None, epoch: int = None):
         """Store results in various formats to disk.
