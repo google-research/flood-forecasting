@@ -39,7 +39,7 @@ def _get_args() -> dict:
 
 def _main():
     args = _get_args()
-    config = Config(Path(args["config_file"]))
+    config = Config(Path(args["config_file"] or Path(args["run_dir"]) / "config.yml"))
 
     if (args["run_dir"] is not None) and (args["mode"] == "evaluate"):
         setup_logging(str(Path(args["run_dir"]) / "output.log"), config.logging_level)
