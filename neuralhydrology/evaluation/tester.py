@@ -348,10 +348,7 @@ class BaseTester(object):
         basins = list(results.keys())
         random.shuffle(basins)
         for target_var in self.cfg.target_variables:
-            if self.period == 'test':
-                max_figures = len(basins)
-            else:
-                max_figures = min(self.cfg.validate_n_random_basins, self.cfg.log_n_figures, len(basins))
+            max_figures = min(self.cfg.validate_n_random_basins, self.cfg.log_n_figures, len(basins))
             for freq in results[basins[0]].keys():
                 figures = []
                 for i in range(max_figures):
