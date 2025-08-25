@@ -1,93 +1,11 @@
 import os
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Iterator, Hashable
 
-import numpy as np
 import pandas as pd
 import xarray as xr
 
 SCALER_FILE_NAME = 'scaler.nc'
-
-
-def _load_old_scaler(scaler_file: Path) -> xr.Dataset:
-    """Loads old YAML scaler files.
-    
-    Loads scaler file in YAML format.
-    Used for backward compatibility.
-
-    Parameters
-    ----------
-    scaler_file: Path
-        Path to the old scaler file.
-
-    Returns
-    -------
-    Xarray Dataset with the scaler parameters.    
-
-    Raises
-    ------
-    FileNotFoundError if the YAML file is not present.
-    """
-    yaml_scaler_file = run_dir / 'train_data' / 'train_data_scaler.yml'
-    if not os.path.exists(yaml_scaler_file):
-        raise FileNotFoundError(f'No scaler file found {yaml_scaler_file}')
-
-    with scaler_file.open("r") as fp:
-        yaml = YAML(typ="safe")
-        scaler_dump = yaml.load(fp)
-
-    # Transform into a dict of xarray.Datasets.
-    scaler_dict = {'center': [], 'scale': []}
-    for key, value in scaler_dump.items():
-        if key in ['attribute_means', 'camels_attr_means']:
-            scaler_dict['center'].append(xr.Dataset(value).astype(np.float32))
-        elif key in ['attribute_stds', 'camels_attr_stds']:
-            scaler_dict['scale'].append(xr.Dataset(value).astype(np.float32))
-        elif key == 'xarray_feature_center':
-            scaler_dict['center'].append(xr.Dataset.from_dict(value).astype(np.float32))
-        elif key == 'xarray_feature_scale':
-            scaler_dict['scale'].append(xr.Dataset.from_dict(value).astype(np.float32))
-    
-    # Concatenates into a single xarray.Dataset.
-    scaler_dict['center'] = xr.merge(scaler['center'])
-    scaler_dict['scale'] = xr.merge(scaler['scale'])
-    parameter_coords = xr.DataArray(
-        data=list(scaler_dict.keys()),
-        dims=['parameter'],
-        name='parameter'
-    )
-    scaler = xr.concat(list(scaler_dict.values()), dim=parameter_coords)
-
-    # Add target scalers for tester. Necessary for fine tuning.
-    obs_scaler = scaler.copy().rename({feature: feature + '_obs' for feature in scaler.data_vars})
-    sim_scaler = scaler.copy().rename({feature: feature + '_sim' for feature in scaler.data_vars})
-    return xr.merge([scaler, obs_scaler, sim_scaler])
-
-
-def _get_center(feature_da: xr.DataArray, centering_type: str) -> float:
-    """Canonical selector for currently-supported center types."""
-    if (centering_type is None) or (centering_type.lower() == 'none'):
-        return np.float32(0.0)
-    elif centering_type.lower() == 'median':
-        return feature_da.median(skipna=True)
-    elif centering_type.lower() == 'min':
-        return feature_da.min(skipna=True)
-    elif centering_type.lower() == 'mean':
-        return feature_da.mean(skipna=True)
-    else:
-        raise ValueError(f'Unknown centering method {centering_type}')
-
-        
-def _get_scale(feature_da: xr.DataArray, scaling_type: str) -> float:
-    """Canonical selector for currently-supported scale types."""
-    if (scaling_type is None) or (scaling_type.lower() == 'none'):
-        return np.float32(1.0)
-    elif scaling_type.lower() == 'minmax':
-        return feature_da.max(skipna=True) - feature_da.min(skipna=True)
-    elif scaling_type.lower() == 'std':
-        return feature_da.std(skipna=True)
-    else:
-        raise ValueError(f'Unknown scaling method {scaling_type}')
 
 
 class Scaler():
@@ -109,7 +27,7 @@ class Scaler():
     -------
     ValueError for incompatible loading/calculating instructions.
     """
-    
+
     def __init__(
         self,
         scaler_dir: Path,
@@ -130,14 +48,14 @@ class Scaler():
             self._custom_normalization = custom_normalization
             if dataset is not None:
                 self.calculate(dataset)
-   
+
     def load(self):
         scaler_file = self.scaler_dir / SCALER_FILE_NAME
         if os.path.exists(scaler_file):
             with open(scaler_file, 'rb') as f:
                 self.scaler = xr.load_dataset(f)
         else:
-            self.scaler = _load_old_scaler(self.scaler_dir)              
+            raise ValueError("Old scaler files are unsupported")
         self._check_zero_scale()
 
     def save(self):
@@ -147,50 +65,62 @@ class Scaler():
         scaler_file = self.scaler_dir / SCALER_FILE_NAME
         with open(scaler_file, 'wb') as f:
             self.scaler.to_netcdf(f)
-        
+
     def calculate(
         self,
         dataset: xr.Dataset,
     ):
-        
         # Option for custom scaling for each feature.
         centering_types = {feature: 'mean' for feature in dataset.data_vars}
         scaling_types = {feature: 'std' for feature in dataset.data_vars}
-        for feature in self._custom_normalization:
-            if 'centering' in self._custom_normalization[feature]:
-                centering_types[feature] = self._custom_normalization[feature]['centering']
-            if 'scaling' in self._custom_normalization[feature]:
-                scaling_types[feature] = self._custom_normalization[feature]['scaling']
+        for feature, norm in self._custom_normalization.items():
+            if "centering" in norm:
+                centering_types[feature] = norm["centering"]
+            if "scaling" in norm:
+                scaling_types[feature] = norm["scaling"]
 
-        # Target noise distrbutions (in BaseTrainer) require means and standard deviations.
-        # Force these parameters to be avaiable, even if the targets use a different center
-        # and scale type. Could restrict these extra calculations to only when necessary 
-        # (i.e., targets only, and only when using other scaling types), but this adds
-        # complication and these extra mean and std calcs & storage are cheap.
-        parameters = {
-            feature: (('parameter',), [
-                _get_center(dataset[feature], centering_types[feature]),
-                _get_scale(dataset[feature], scaling_types[feature]),
-                _get_center(dataset[feature], 'mean'),
-                _get_scale(dataset[feature], 'std')
-            ]) for feature in dataset.data_vars
+        # Calculate all statistics
+        stats = {
+            "mean": dataset.mean(skipna=True),
+            "std": dataset.std(skipna=True),
+            "median": dataset.quantile(q=0.5, skipna=True),
+            "min": dataset.min(skipna=True),
+            "max": dataset.max(skipna=True),
         }
-        
+        stats["minmax"] = stats["max"] - stats["min"]
+
+        # Select the appropriate center and scale statistic for each feature.
+        def calc_types(
+            types: dict[Hashable, str], fallback_stat: str, none_value: float
+        ) -> Iterator[xr.DataArray]:
+            for feature in dataset.data_vars:
+                a_type = types.get(feature, fallback_stat).lower()
+                if a_type == "none":
+                    yield xr.DataArray(none_value, name=feature)
+                else:
+                    yield stats[a_type][feature]
+
+        center = xr.merge(calc_types(centering_types, "mean", 0.0))
+        scale = xr.merge(calc_types(scaling_types, "std", 1.0))
+
+        # Combine parameters into a single xarray.Dataset with a 'parameter' coordinate.
+        scaler = xr.concat(
+            [center, scale, stats["mean"], stats["std"]],
+            dim=pd.Index(["center", "scale", "mean", "std"], name="parameter"),
+        )
+
         # Expand the scaler dataset to include 'obs' and 'sim' versions of all variables.
-        # As above, this is only necessary for target variables, but a check here adds
-        # complexity for little benefit.
-        parameters.update({f'{feature}_obs': parameters[feature] for feature in parameters})
-        parameters.update({f'{feature}_sim': parameters[feature] for feature in parameters})      
-        
-        # Put the calculated parameters into an xarray dataset.
-        coords = {'parameter': ['center', 'scale', 'mean', 'std']}
-        scaler = xr.Dataset(parameters, coords=coords).astype('float32')
+        obs_scaler = scaler.rename({var: f"{var}_obs" for var in scaler.data_vars})
+        sim_scaler = scaler.rename({var: f"{var}_sim" for var in scaler.data_vars})
+        scaler = xr.merge([scaler, obs_scaler, sim_scaler])
 
         # Handle cases where part of the scaler is already calculated. Simply add new features.
         if self.scaler is not None:
             self.scaler = xr.merge([self.scaler, scaler])
         else:
             self.scaler = scaler
+
+        self.scaler = self.scaler.compute() # Compute prior to the checks.
 
         # Ensure that there are no zero-valued scale parameters, as this will cause NaN's.
         self._check_zero_scale()

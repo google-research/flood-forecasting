@@ -164,11 +164,10 @@ class ForecastDataset(BaseDataset):
                 overlap_counter = np.full((self._forecast_overlap,), self._min_lead_time)
                 self._forecast_counter = np.concatenate([overlap_counter, self._forecast_counter], 0)
 
-        # TODO: To defer compute() further and eventually avoid it, need to first:
-        # * optimize union_features() for vectoric calcs - takes tenths of gb memory transiently
-        # * optimize Scaler's scale data for vectoric calcs - takes tenths of gb memory transiently
-        # * optimize Scaler's compute() for vectoric calcs - "stuck" in calc runtime
-        # * make create_sample_index dask compatible (vectoric calcs) (`stacked_mask[stacked_mask]`)
+        # TODO: To defer compute() further and eventually avoid it:
+        # * optimize union_features() for vectoric calcs - takes tenths of gb memory transiently.
+        # * scaler is now optimized for dask so it doesn't need this compute.
+        # * make create_sample_index dask compatible (vectoric calcs) (`stacked_mask[stacked_mask]`).
         LOGGER.debug("materialize data (compute)")
         self._dataset = self._dataset.compute()
 
