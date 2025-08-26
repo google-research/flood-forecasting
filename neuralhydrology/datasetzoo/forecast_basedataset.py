@@ -5,6 +5,8 @@ import itertools
 import functools
 import datetime
 from pathlib import Path
+
+import dask
 import numpy as np
 import pandas as pd
 import torch
@@ -164,13 +166,6 @@ class ForecastDataset(BaseDataset):
                 overlap_counter = np.full((self._forecast_overlap,), self._min_lead_time)
                 self._forecast_counter = np.concatenate([overlap_counter, self._forecast_counter], 0)
 
-        # TODO: To defer compute() further and eventually avoid it:
-        # * optimize union_features() for vectoric calcs - takes tenths of gb memory transiently.
-        # * scaler is now optimized for dask so it doesn't need this compute.
-        # * make create_sample_index dask compatible (vectoric calcs) (`stacked_mask[stacked_mask]`).
-        LOGGER.debug("materialize data (compute)")
-        self._dataset = self._dataset.compute()
-
         # Union features to extend certain data records.
         # Martin suggests doing this step prior to training models and then saving the unioned dataset locally.
         # If you do that, then remove this line.
@@ -191,6 +186,12 @@ class ForecastDataset(BaseDataset):
         if compute_scaler:
             LOGGER.debug('save scaler')
             self.scaler.save()
+
+        # TODO: To defer compute() further and/or eventually avoid it:
+        # * optimize union_features() for vectoric calcs
+        # * make create_sample_index dask compatible (vectoric calcs) (`stacked_mask[stacked_mask]`).
+        LOGGER.debug("materialize data (compute) and check_zero_scale")
+        self._dataset, _ = dask.compute(self._dataset, self.scaler.check_zero_scale)
 
         # Create sample index lookup table for `__getitem__`.
         LOGGER.debug('create sample index')

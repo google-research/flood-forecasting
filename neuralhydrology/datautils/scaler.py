@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from typing import Dict, Optional, Iterator, Hashable
 
+import dask
 import pandas as pd
 import xarray as xr
 
@@ -56,7 +57,6 @@ class Scaler():
                 self.scaler = xr.load_dataset(f)
         else:
             raise ValueError("Old scaler files are unsupported")
-        self._check_zero_scale()
 
     def save(self):
         if self.scaler is None:
@@ -120,20 +120,24 @@ class Scaler():
         else:
             self.scaler = scaler
 
-        self.scaler = self.scaler.compute() # Compute prior to the checks.
+        self._create_zero_scale_checker()
 
-        # Ensure that there are no zero-valued scale parameters, as this will cause NaN's.
-        self._check_zero_scale()
+    def _create_zero_scale_checker(self):
+        """Creates self.check_zero_scale that throws if scale is zero for any feature.
 
-    def _check_zero_scale(self):
-        """Raises an error if the scale is zero for any feature."""
-        zero_scale_features = [
-            feature for feature, da in self.scaler.sel(parameter=['scale', 'std']).data_vars.items()
-            if (da == 0).any()
-        ]
-        if any(zero_scale_features):
-             raise ValueError(f'Zero scale values found for features: {zero_scale_features}.')
-        
+        Zero-valued scale parameters cause NaNs.
+        """
+        scales_to_check = self.scaler.sel(parameter=["scale", "std"])
+        is_zero_ds = (scales_to_check == 0).any("parameter")
+
+        @dask.delayed
+        def get_zero_feature_names(computed_zero: xr.Dataset) -> None:
+            res = [name for name, has_zero in computed_zero.items() if has_zero.item()]
+            if any(res):
+                raise ValueError(f"Zero scale values found for features: {res}.")
+
+        self.check_zero_scale = get_zero_feature_names(is_zero_ds)
+
     def scale(
         self,
         dataset: xr.Dataset,
