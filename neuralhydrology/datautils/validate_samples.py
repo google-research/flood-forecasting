@@ -228,15 +228,13 @@ def validate_samples(
 
     # Mask any dates that are not valid sample dates.
     LOGGER.debug('invalid sample dates')
-    all_dates = dataset.date.values
-    all_basins = dataset.basin.values
-    masks.append(
-        xr.DataArray(
-            [np.in1d(all_dates, sample_dates)]*len(all_basins),
-            coords={'basin': all_basins, 'date': all_dates},
-            dims=['basin', 'date']
-        ).rename('dates')
-    )
+    # 1D `True` mask for basin dim with same dims, coords, chunking, as dataset.basin.
+    all_basins = xr.ones_like(dataset.basin, dtype=bool)
+    # 1D bool mask for date. It's a single dim and coord 'date'.
+    is_date_valid = dataset.date.isin(sample_dates)
+    # Combine both masks into 2D. The & broadcasts the (date,) with (basin, date,).
+    # It's equiv to taking all basins, copying and stacking them, then ANDing them.
+    masks.append((all_basins & is_date_valid).rename('dates'))
 
     # All masks must be valid according to their own checks for the sample to be valid.
     LOGGER.debug('masks merge')
@@ -482,6 +480,9 @@ def validate_sequence_any(
     xarray.DataArray
         Boolean valid sample mask.
     """
+    # Prevent nans from propagating through the rolling sum.
+    mask = mask.fillna(False)
+
     # Calculate the rolling (sliding window) sum which represents the count
     # of valid (True) timesteps in each window. `min_periods` ensures that
     # incomplete windows at the start result in nan.
