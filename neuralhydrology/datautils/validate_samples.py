@@ -249,7 +249,7 @@ def validate_samples(
         # when mask is 2d: element-wise &
         # when mask is 1d (the dim "basin" statics feature): it's exapnded across date
         #                                                    then element-wise &.
-        valid_sample_mask &= mask
+        valid_sample_mask = valid_sample_mask & mask
     
     return valid_sample_mask, masks
 
