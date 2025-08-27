@@ -425,30 +425,12 @@ def validate_sequence_all(
     xarray.DataArray
         Boolean valid sample mask.
     """
-    # Invert the boolean mask:
-    # `False` or `nan` become 1 (invalid) and `True` becomes 0 (valid).
-    invalid_indicator = ~mask
+    mask = mask.fillna(False)
 
-    # Calculate the rolling (sliding window) sum which represents the
-    # count of invalid (False) timesteps in each window.
-    # `min_periods` ensures that incomplete windows at the start
-    # result in nan.
-    # The sum() method treats True as 1 and False as 0.
-    invalid_count = invalid_indicator.rolling(
-        date=seq_length, min_periods=seq_length
-    ).sum()
-    # Note: sum() is a specific optimized function for this task while
-    # a reduce() is generic and too slow here as it can get any function
-    # while sum is exactly the function required.
-    # Reduce() makes xarray do a step-by-step calculation for each window
-    # in separate (create window, run e.g. np.all, ...). Python is an
-    # interpretted language. sum() is implemented natively in C and so
-    # also possibly uses vector instructions as well.
-
-    # A window is valid if the count of True values is greater than 0.
-    # The comparison also handles nan values with resulting in `False`.
-    valid_windows = invalid_count == 0
-
+    # The sliding window is valid if ALL timestemps are True which is what
+    # min represents in the window being True (1).
+    valid_windows = mask.rolling(date=seq_length, min_periods=seq_length).min()
+    
     # Move the valid windows data along the date dim, to align the validity
     # info of windows with the timestamp of the value to predict.
     # This may create nan values at the end, e.g. [False, True, True]
@@ -487,25 +469,11 @@ def validate_sequence_any(
     xarray.DataArray
         Boolean valid sample mask.
     """
-    # Prevent nans from propagating through the rolling sum.
     mask = mask.fillna(False)
 
-    # Calculate the rolling (sliding window) sum which represents the count
-    # of valid (True) timesteps in each window. `min_periods` ensures that
-    # incomplete windows at the start result in nan.
-    # The sum() method treats True as 1 and False as 0.
-    true_count = mask.rolling(date=seq_length, min_periods=seq_length).sum()
-    # Note: sum() is a specific optimized function for this task while
-    # a reduce() is generic and too slow here as it can get any function
-    # while sum is exactly the function required.
-    # Reduce() makes xarray do a step-by-step calculation for each window
-    # in separate (create window, run e.g. np.all, ...). Python is an
-    # interpretted language. sum() is implemented natively in C and so
-    # also possibly uses vector instructions as well.
-
-    # A window is valid if the count of True values is greater than 0.
-    # The comparison also handles nan values by resulting in `False`.
-    valid_windows = true_count > 0
+    # The sliding window is valid if ANY timestemp is True which is what
+    # max represents in the window being True (1).
+    valid_windows = mask.rolling(date=seq_length, min_periods=seq_length).max()
 
     # Move the valid windows data along the date dim, to align the validity
     # info of windows with the timestamp of the value to predict.
