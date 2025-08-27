@@ -361,7 +361,7 @@ class ForecastDataset(BaseDataset):
         # Maps dim name to its respective list of int indices (index arrays) i.e. columns
         # of all basins, all dates, etc.
         vectorized_indices = {
-            dim: indices[i] for i, dim in enumerate(valid_sample_mask.dims)
+            dim: indices[i] for i, dim in enumerate(valid_sample_mask.dims) if dim != "sample"
         }
 
         LOGGER.debug("sample_index")
