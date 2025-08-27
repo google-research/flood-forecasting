@@ -40,6 +40,8 @@ class Scaler():
         if not calculate_scaler and dataset is not None:
             raise ValueError('Do not pass a dataset if you are loading a pre-calculated scaler.')
 
+        self.check_zero_scale = None
+
         # Load or calculate scaling parameters.
         self.scaler = None
         self.scaler_dir = scaler_dir
