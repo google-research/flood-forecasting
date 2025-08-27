@@ -187,9 +187,8 @@ class ForecastDataset(BaseDataset):
             LOGGER.debug('save scaler')
             self.scaler.save()
 
-        # TODO: To defer compute() further and/or eventually avoid it:
-        # * optimize union_features() for vectoric calcs
-        # * make create_sample_index dask compatible (vectoric calcs) (`stacked_mask[stacked_mask]`).
+        # TODO: Optimize all steps for dask, then this compute() may be moved to the bottom of the function.
+        #       Optionally, optimize the data loader and trainer modules to work with chunked lazy data.
         LOGGER.debug("materialize data (compute) and check_zero_scale")
         self._dataset, _ = dask.compute(self._dataset, self.scaler.check_zero_scale)
 
