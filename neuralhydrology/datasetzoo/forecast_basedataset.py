@@ -344,6 +344,7 @@ class ForecastDataset(BaseDataset):
             feature_groups=self._feature_groups,
         )[0]
 
+        LOGGER.debug('valid_sample_mask compute')
         # Convert boolean valid sample mask into indexes of all samples. This retains
         # only the portion of the valid sample mask with True values.
         # Each element is a list of valid integer positions (indexers) for which
