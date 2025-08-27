@@ -228,21 +228,28 @@ def validate_samples(
 
     # Mask any dates that are not valid sample dates.
     LOGGER.debug('invalid sample dates')
-    # 1D `True` mask for basin dim with same dims, coords, chunking, as dataset.basin.
+    # 1d `True` mask for basin dim with same dims, coords, chunking, as dataset.basin.
     all_basins = xr.ones_like(dataset.basin, dtype=bool)
-    # 1D bool mask for date. It's a single dim and coord 'date'.
+    # 1d bool mask for date. It's a single dim and coord 'date'.
     is_date_valid = dataset.date.isin(sample_dates)
-    # Combine both masks into 2D. The & broadcasts the (date,) with (basin, date,).
+    # Combine both masks into 2d. The & broadcasts the (date,) with (basin, date,).
     # It's equiv to taking all basins, copying and stacking them, then ANDing them.
     masks.append((all_basins & is_date_valid).rename('dates'))
 
+    LOGGER.debug('valid_sample_mask')
+    # masks is a mix of 1d (static) and 2d features' bool masks.
+    # we merge them by lazily apply (&) each mask so objects stay small.
     # All masks must be valid according to their own checks for the sample to be valid.
-    LOGGER.debug('masks merge')
-    valid_sample_mask = xr.merge(masks)
-    LOGGER.debug('masks to_array')
-    valid_sample_mask = valid_sample_mask.to_array(dim='variable')
-    LOGGER.debug('masks all')
-    valid_sample_mask = valid_sample_mask.all(dim='variable')
+    # 1d `True` mask for date dim with same dims, coords, chunking, as dataset.date.
+    all_dates = xr.ones_like(dataset.date, dtype=bool)
+    # Create the init valid sample temple. xarray broadcasts 1d with 2d arrays into 2d
+    # like basin and date.
+    valid_sample_mask = all_basins & all_dates
+    for mask in masks:
+        # when mask is 2d: element-wise &
+        # when mask is 1d (the dim "basin" statics feature): it's exapnded across date
+        #                                                    then element-wise &.
+        valid_sample_mask &= mask
     
     return valid_sample_mask, masks
 
