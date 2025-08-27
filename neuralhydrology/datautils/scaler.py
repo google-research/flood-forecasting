@@ -81,15 +81,16 @@ class Scaler():
             if "scaling" in norm:
                 scaling_types[feature] = norm["scaling"]
 
-        # Calculate all statistics
+        needed = set(centering_types.values()) | set(scaling_types.values())
         stats = {
             "mean": dataset.mean(skipna=True),
             "std": dataset.std(skipna=True),
-            "median": dataset.quantile(q=0.5, skipna=True),
-            "min": dataset.min(skipna=True),
-            "max": dataset.max(skipna=True),
+            "median": dataset.quantile(q=0.5, skipna=True) if "median" in needed else None,
+            "min": dataset.min(skipna=True) if "min" in needed or "minmax" in needed else None,
+            "max": dataset.max(skipna=True) if "max" in needed or "minmax" in needed else None,
         }
-        stats["minmax"] = stats["max"] - stats["min"]
+        stats = dask.compute(stats)[0]
+        stats["minmax"] = (stats["max"] - stats["min"]) if "minmax" in needed else None
 
         # Select the appropriate center and scale statistic for each feature.
         def calc_types(
