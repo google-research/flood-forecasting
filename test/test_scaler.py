@@ -9,7 +9,7 @@ import pytest
 import xarray as xr
 
 from neuralhydrology.datautils import utils
-from neuralhydrology.datautils.scaler import Scaler, SCALER_FILE_NAME, _get_center, _get_scale
+from neuralhydrology.datautils.scaler import Scaler, SCALER_FILE_NAME, _calc_stats, _calc_types
 
 # Set a fixed seed for reproducible tests
 np.random.seed(42)
@@ -55,6 +55,19 @@ def scaler_instance_calculated(tmp_scaler_dir, sample_dataset_basic):
 
 # --- Test Helper Functions (_get_center, _get_scale) ---
 
+def _calc_types_wrapper(da: xr.DataArray, a_type: str, none_value: float) -> float:
+    dataset = da.rename("da").to_dataset()
+    stats = _calc_stats(dataset, {a_type})
+    types = {feature: a_type for feature in dataset.data_vars}
+    calc = xr.merge(_calc_types(dataset, types, none_value, stats))
+    return calc.da.item()
+
+def _get_center(da: xr.DataArray, a_type: str) -> float:
+    return _calc_types_wrapper(da, a_type, 0.0)
+
+def _get_scale(da: xr.DataArray, a_type: str) -> float:
+    return _calc_types_wrapper(da, a_type, 1.0)
+
 def test_get_center_none():
     da = xr.DataArray(np.array([1, 2, 3]))
     assert _get_center(da, 'none') == 0.0
@@ -73,7 +86,7 @@ def test_get_center_min():
 
 def test_get_center_unknown_type():
     da = xr.DataArray(np.array([1, 2, 3]))
-    with pytest.raises(ValueError, match="Unknown centering method"):
+    with pytest.raises(ValueError, match="Unknown method"):
         _get_center(da, 'invalid_type')
 
 def test_get_scale_none():
@@ -90,7 +103,7 @@ def test_get_scale_minmax():
 
 def test_get_scale_unknown_type():
     da = xr.DataArray(np.array([1, 2, 3]))
-    with pytest.raises(ValueError, match="Unknown scaling method"):
+    with pytest.raises(ValueError, match="Unknown method"):
         _get_scale(da, 'invalid_type')
 
 # --- Test Scaler.__init__ ---
@@ -170,6 +183,7 @@ def test_scaler_calculate_raises_error_for_zero_scale(tmp_scaler_dir, sample_dat
     scaler = Scaler(scaler_dir=tmp_scaler_dir, calculate_scaler=True, dataset=None)
     with pytest.raises(ValueError, match="Zero scale values found for features:"):
         scaler.calculate(sample_dataset_with_constant_var)
+        scaler.check_zero_scale.compute()
 
 # --- NEW TEST: Direct test of _check_zero_scale ---
 def test_check_zero_scale_method_raises_error(tmp_scaler_dir):
@@ -183,7 +197,7 @@ def test_check_zero_scale_method_raises_error(tmp_scaler_dir):
         coords={'parameter': ['center', 'scale', 'mean', 'std']}
     )
     with pytest.raises(ValueError, match="Zero scale values found for features:"):
-        scaler._check_zero_scale()
+        scaler._create_zero_scale_checker().compute()
 
 def test_check_zero_scale_method_no_error_for_nonzero(tmp_scaler_dir):
     scaler = Scaler(scaler_dir=tmp_scaler_dir, calculate_scaler=True, dataset=None)
@@ -197,7 +211,7 @@ def test_check_zero_scale_method_no_error_for_nonzero(tmp_scaler_dir):
     )
     # Should not raise an error
     try:
-        scaler._check_zero_scale()
+        scaler._create_zero_scale_checker().compute()
     except ValueError:
         pytest.fail("`_check_zero_scale` raised ValueError unexpectedly for non-zero scale values.")
 
