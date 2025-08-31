@@ -5,6 +5,8 @@ import xarray as xr
 
 
 def _expand_lead_times(da: xr.DataArray, lead_times: np.ndarray) -> xr.DataArray:
+    if 'lead_time' in da.dims:
+        raise ValueError('Trying to expand a dataarray that already has a lead time.')
     # TODO (future) :: This assumes daily data.
     lt_das = (da.shift(date=-int(lt / np.timedelta64(1, "D"))) for lt in lead_times)
     lt_da = xr.concat(lt_das, dim="lead_time")
@@ -35,7 +37,7 @@ def _union_non_lead_time_feature_with_lead_time_feature(
 ) -> xr.DataArray:
     """Mask a non-lead-time feature with the earliest forecast from a lead-time feature."""
     min_lead_time = mask_feature_da["lead_time"].min().item()
-    min_lead_time_mask_feature = mask_feature_da.sel(lead_time=min_lead_time)
+    min_lead_time_mask_feature = mask_feature_da.sel(lead_time=min_lead_time, drop=True)
     shift_days = int(min_lead_time / np.timedelta64(1, "D"))
     # Align mask's issue date with feature's valid date via shift forward by min lead time.
     mask_values = min_lead_time_mask_feature.shift(date=shift_days)
