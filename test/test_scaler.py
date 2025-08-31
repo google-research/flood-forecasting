@@ -312,4 +312,4 @@ def test_scaler_load_from_file_raises_error_for_zero_scale(tmp_scaler_dir):
 
     # Now try to load this scaler and expect a ValueError
     with pytest.raises(ValueError, match="Zero scale values found for features:"):
-        Scaler(scaler_dir=tmp_scaler_dir, calculate_scaler=False, dataset=None)
+        Scaler(scaler_dir=tmp_scaler_dir, calculate_scaler=False, dataset=None, calculate_scaler_to_check_zero_scale=True)

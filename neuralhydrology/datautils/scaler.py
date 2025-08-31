@@ -57,13 +57,13 @@ class Scaler():
         Directory for loading a pre-calculated scaler or saving this scaler if it is calculated.
     calculate_scaler : bool
         Flag to indicate if the scaler should be computed (the alternative is to load an existing scaler file).
-    calculate_scaler_to_check_zero_scale : bool
-        Flag to compute and block to check zero scale when `calculate_scaler` is False.
     custom_normalization : Dict[str, Dict[str, float]]
         Feature-specific scaling instructions as a mapping from feature name to centering and/or scaling type.
         See docs for a list of accepted types and their meaning.
     dataset : Optional[xr.Dataset]
         Dataset to use for calculating a new scaler. Cannot be supplied if `calculate_scaler` is False.
+    calculate_scaler_to_check_zero_scale : bool
+        Flag to compute and block to check zero scale when `calculate_scaler` is False.
 
     Raises
     -------
@@ -76,6 +76,7 @@ class Scaler():
         calculate_scaler,
         custom_normalization: Dict[str, Dict[str, float]] = {},
         dataset: Optional[xr.Dataset] = None,
+        calculate_scaler_to_check_zero_scale: bool = False,
     ):
         # Consistency check.
         if not calculate_scaler and dataset is not None:
@@ -88,7 +89,8 @@ class Scaler():
         self.scaler_dir = scaler_dir
         if not calculate_scaler:
             self.load()
-            self.check_zero_scale = self._create_zero_scale_checker().compute()
+            if calculate_scaler_to_check_zero_scale:
+                self.check_zero_scale = self._create_zero_scale_checker().compute()
         else:
             self._custom_normalization = custom_normalization
             if dataset is not None:
