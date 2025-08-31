@@ -70,31 +70,57 @@ def union_features(
     """
     # Collect new unioned features as overrides to the features from the original dataset
     # that were NOT targets of a union operation as they were.
-    new_das = {}
+    masked_das = []
+
+    # Keep track of features that have been explicitly processed (i.e., were the 'feature' key)
+    processed_feature_names = set()
 
     for feature, mask_feature in union_feature_mapping.items():
+
+        # Don't bother masking a feature with itself.
         if feature == mask_feature:
-            continue
+            masked_das.append(dataset[feature])
+        # We don't care if a feature is not present.
         if feature not in dataset.data_vars:
             continue
+        # We DO care if a masking feature is not present because the user might not notice
+        # and believe it was masked.
         if mask_feature not in dataset.data_vars:
             raise ValueError(f'Masking feature {mask_feature} not in dataset.')
-
+        
         # Mask the feature depending on their dimensions.
         feature_da = dataset[feature]
         mask_feature_da = dataset[mask_feature]
-
+        
         if 'lead_time' in feature_da.dims and 'lead_time' not in mask_feature_da.dims:
-            new_das[feature] = _union_lead_time_feature_with_non_lead_time_feature(
-                feature_da, mask_feature_da
-            )
-        elif 'lead_time' not in feature_da.dims and 'lead_time' in mask_feature_da.dims:
-            new_das[feature] = _union_non_lead_time_feature_with_lead_time_feature(
-                feature_da, mask_feature_da
-            )
-        else:
-            new_das[feature] = _union_features_with_same_dimensions(
-                feature_da, mask_feature_da
+            masked_das.append(
+                _union_lead_time_feature_with_non_lead_time_feature(
+                    feature_da=feature_da,
+                    mask_feature_da=mask_feature_da
+                )
             )
 
-    return dataset.update(new_das)
+        elif 'lead_time' not in feature_da.dims and 'lead_time' in mask_feature_da.dims:
+            masked_das.append(
+                _union_non_lead_time_feature_with_lead_time_feature(
+                    feature_da=feature_da,
+                    mask_feature_da=mask_feature_da
+                )
+            )
+
+        else:
+            masked_das.append(
+                _union_features_with_same_dimensions(
+                    feature_da=feature_da,
+                    mask_feature_da=mask_feature_da
+                )
+            )
+
+    # Collect all features from the original dataset that were NOT targets of a union operation.
+    # These should be included in the final output as they were.
+    for original_feature_name in dataset.data_vars:
+        if original_feature_name not in processed_feature_names:
+            masked_das.append(dataset[original_feature_name])
+
+    # Concatenate everything back into a single dataset.
+    return xr.merge(masked_das)
