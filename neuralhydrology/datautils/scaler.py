@@ -9,6 +9,45 @@ import xarray as xr
 SCALER_FILE_NAME = 'scaler.nc'
 
 
+def _calc_stats(dataset: xr.Dataset, needed: set[str]):
+    stats = {
+        "mean": dataset.mean(skipna=True),
+        "std": dataset.std(skipna=True),
+        "median": dataset.quantile(q=0.5, skipna=True) if "median" in needed else None,
+        "min": dataset.min(skipna=True) if {"min", "minmax"} & needed else None,
+        "max": dataset.max(skipna=True) if {"max", "minmax"} & needed else None,
+        "minmax": (
+            dataset.max(skipna=True) - dataset.min(skipna=True)
+            if "minmax" in needed
+            else None
+        ),
+    }
+    return dask.compute(stats)[0]
+
+
+def _calc_types(
+    dataset: xr.Dataset,
+    types: dict[Hashable, str],
+    none_value: float,
+    stats: dict[str, xr.DataArray],
+) -> Iterator[xr.DataArray]:
+    """Yields pre-calculated statistics for each feature.
+
+    Helper for building final 'center' and 'scale' params for the scaler.
+    Determines needed statistic type ('mean', 'std', 'none', etc) for `types` for each feature.
+    Looks up those in `stats` contains already-computed values for the feature.
+    """
+    for feature in dataset.data_vars:
+        a_type = types[feature].lower()  # Get stat type like 'mean' for feature
+        if a_type == "none":
+            yield xr.DataArray(none_value, name=feature)
+        else:
+            try:
+                yield stats[a_type][feature]
+            except KeyError:
+                raise ValueError(f"Unknown method {a_type}")
+
+
 class Scaler():
     """Scaler for a dataset that contains multiple features.
     
@@ -82,29 +121,11 @@ class Scaler():
                 scaling_types[feature] = norm["scaling"]
 
         needed = set(centering_types.values()) | set(scaling_types.values())
-        stats = {
-            "mean": dataset.mean(skipna=True),
-            "std": dataset.std(skipna=True),
-            "median": dataset.quantile(q=0.5, skipna=True) if "median" in needed else None,
-            "min": dataset.min(skipna=True) if "min" in needed else None,
-            "max": dataset.max(skipna=True) if "max" in needed else None,
-            "minmax": (dataset["max"] - dataset["min"]) if "minmax" in needed else None,
-        }
-        stats = dask.compute(stats)[0]
+        stats = _calc_stats(dataset, needed)
 
         # Select the appropriate center and scale statistic for each feature.
-        def calc_types(
-            types: dict[Hashable, str], fallback_stat: str, none_value: float
-        ) -> Iterator[xr.DataArray]:
-            for feature in dataset.data_vars:
-                a_type = types.get(feature, fallback_stat).lower()
-                if a_type == "none":
-                    yield xr.DataArray(none_value, name=feature)
-                else:
-                    yield stats[a_type][feature]
-
-        center = xr.merge(calc_types(centering_types, "mean", 0.0))
-        scale = xr.merge(calc_types(scaling_types, "std", 1.0))
+        center = xr.merge(_calc_types(dataset, centering_types, 0.0, stats))
+        scale = xr.merge(_calc_types(dataset, scaling_types, 1.0, stats))
 
         # Combine parameters into a single xarray.Dataset with a 'parameter' coordinate.
         scaler = xr.concat(
