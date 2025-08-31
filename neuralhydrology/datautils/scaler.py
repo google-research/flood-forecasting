@@ -50,19 +50,21 @@ def _calc_types(
 
 class Scaler():
     """Scaler for a dataset that contains multiple features.
-    
+
     Parameters
     ----------
     scaler_dir : pathlib.Path
         Directory for loading a pre-calculated scaler or saving this scaler if it is calculated.
     calculate_scaler : bool
         Flag to indicate if the scaler should be computed (the alternative is to load an existing scaler file).
+    calculate_scaler_to_check_zero_scale : bool
+        Flag to compute and block to check zero scale when `calculate_scaler` is False.
     custom_normalization : Dict[str, Dict[str, float]]
         Feature-specific scaling instructions as a mapping from feature name to centering and/or scaling type.
         See docs for a list of accepted types and their meaning.
     dataset : Optional[xr.Dataset]
         Dataset to use for calculating a new scaler. Cannot be supplied if `calculate_scaler` is False.
-        
+
     Raises
     -------
     ValueError for incompatible loading/calculating instructions.
@@ -86,6 +88,7 @@ class Scaler():
         self.scaler_dir = scaler_dir
         if not calculate_scaler:
             self.load()
+            self.check_zero_scale = self._create_zero_scale_checker().compute()
         else:
             self._custom_normalization = custom_normalization
             if dataset is not None:
@@ -144,7 +147,7 @@ class Scaler():
         else:
             self.scaler = scaler
 
-        self._create_zero_scale_checker()
+        self.check_zero_scale = self._create_zero_scale_checker()
 
     def _create_zero_scale_checker(self):
         """Creates self.check_zero_scale that throws if scale is zero for any feature.
@@ -160,7 +163,7 @@ class Scaler():
             if any(res):
                 raise ValueError(f"Zero scale values found for features: {res}.")
 
-        self.check_zero_scale = get_zero_feature_names(is_zero_ds)
+        return get_zero_feature_names(is_zero_ds)
 
     def scale(
         self,
