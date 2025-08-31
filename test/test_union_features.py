@@ -51,7 +51,7 @@ def base_dataset(sample_basins, sample_dates, sample_lead_times):
     ds['feature_3d_forecast'].loc[{'basin': 'basin_B', 'date': '2000-01-03', 'lead_time': np.timedelta64(1, 'D')}] = np.nan
     return ds
 
-def test_expand_lead_times_basic_expansion(sample_basins, sample_dates):
+def test_expand_lead_times_basic_expansion(sample_basins, sample_dates, sample_lead_times):
     """
     Tests basic functionality of _expand_lead_times to add a new 'lead_time' dimension.
     """
@@ -60,9 +60,8 @@ def test_expand_lead_times_basic_expansion(sample_basins, sample_dates):
         coords={'basin': sample_basins, 'date': sample_dates},
         dims=['basin', 'date']
     )
-    lead_time_max = np.timedelta64(2, 'D') # Max lead time to expand to (1, 2)
 
-    expanded_da = _expand_lead_times(original_da, lead_time_max)
+    expanded_da = _expand_lead_times(original_da, sample_lead_times[:2])
 
     # Assertions
     assert 'lead_time' in expanded_da.dims
@@ -99,10 +98,10 @@ def test_expand_lead_times_raises_error_if_lead_time_exists(sample_basins, sampl
     )
     
     with pytest.raises(ValueError, match='Trying to expand a dataarray that already has a lead time.'):
-        _expand_lead_times(da_with_lead_time, np.timedelta64(2, 'D'))
+        _expand_lead_times(da_with_lead_time, sample_lead_times[:2])
 
 
-def test_expand_lead_times_single_date(sample_basins):
+def test_expand_lead_times_single_date(sample_basins, sample_lead_times):
     """Test expansion with a single date, checking NaN propagation."""
     single_date = pd.to_datetime(["2000-01-01"])
     original_da = xr.DataArray(
@@ -110,9 +109,8 @@ def test_expand_lead_times_single_date(sample_basins):
         coords={'basin': sample_basins, 'date': single_date},
         dims=['basin', 'date']
     )
-    lead_time_max = np.timedelta64(2, 'D')
 
-    expanded_da = _expand_lead_times(original_da, lead_time_max)
+    expanded_da = _expand_lead_times(original_da, sample_lead_times[:2])
 
     assert 'lead_time' in expanded_da.dims
     
