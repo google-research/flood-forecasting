@@ -215,7 +215,12 @@ def test_union_non_lead_time_feature_with_lead_time_feature(sample_basins, sampl
         },
         dims=['basin', 'date', 'lead_time']
     )
-    expected_data = [[10, 200, 20]]
+    
+    # Select mask for min lead (1 day) = [100, 200, 300],
+    # shift mask by a day to align issue date with valid date = [nan, 100, 200],
+    # use the shifted mask to fill nan in the original [10, nan, 20] with 100.
+    expected_data = [[10, 100, 20]]
+
     expected = xr.DataArray(
         expected_data,
         coords={
@@ -259,7 +264,8 @@ def test_union_features_mixed_dimensions(base_dataset):
     }
     # Set specific values in masks to fill NaNs
     base_dataset['mask_2d'].loc[{'basin': 'basin_B', 'date': '2000-01-04'}] = 1000.0
-    base_dataset['mask_3d'].loc[{'basin': 'basin_A', 'date': '2000-01-02', 'lead_time': np.timedelta64(1, 'D')}] = 2000.0
+    # Target date is 2000-01-02 so shift by 1 day prior since lead time is 1
+    base_dataset['mask_3d'].loc[{'basin': 'basin_A', 'date': '2000-01-01', 'lead_time': np.timedelta64(1, 'D')}] = 2000.0
 
     result_ds = union_features(base_dataset, union_mapping)
 
