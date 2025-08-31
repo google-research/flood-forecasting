@@ -68,8 +68,6 @@ def union_features(
     ------
     ValueError if a masking feature is not found.
     """
-    # Collect new unioned features as overrides to the features from the original dataset
-    # that were NOT targets of a union operation as they were.
     masked_das = []
 
     # Keep track of features that have been explicitly processed (i.e., were the 'feature' key)
