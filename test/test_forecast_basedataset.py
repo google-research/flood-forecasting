@@ -136,7 +136,7 @@ def mock_load_data_return(get_config, sample_basins, sample_dates):
             data_vars[var] = (('basin', 'date', 'lead_time'), 
                               np.random.rand(len(sample_basins), len(sample_dates), len(coords['lead_time'])))
 
-    return xr.Dataset(data_vars, coords=coords)
+    return xr.Dataset(data_vars, coords=coords).astype('float32')
 
 
 # --- Tests for ForecastDataset ---
@@ -466,7 +466,7 @@ def test_forecast_dataset_no_forecast_features_renames_key(
     for var in cfg_no_forecast.target_variables:
         data_vars[var] = (('basin', 'date'), np.random.rand(len(sample_basins), len(coords['date'])))
     
-    mock_load_data.return_value = xr.Dataset(data_vars, coords=coords)
+    mock_load_data.return_value = xr.Dataset(data_vars, coords=coords).astype('float32')
 
     dataset = ForecastDataset(cfg=cfg_no_forecast, is_train=True, period='train')
     sample = dataset[0]
