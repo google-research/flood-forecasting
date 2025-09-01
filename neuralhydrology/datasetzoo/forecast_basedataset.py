@@ -5,6 +5,8 @@ import itertools
 import functools
 import datetime
 from pathlib import Path
+
+import dask
 import numpy as np
 import pandas as pd
 import torch
@@ -164,14 +166,6 @@ class ForecastDataset(BaseDataset):
                 overlap_counter = np.full((self._forecast_overlap,), self._min_lead_time)
                 self._forecast_counter = np.concatenate([overlap_counter, self._forecast_counter], 0)
 
-        # TODO: To defer compute() further and eventually avoid it, need to first:
-        # * optimize union_features() for vectoric calcs - takes tenths of gb memory transiently
-        # * optimize Scaler's scale data for vectoric calcs - takes tenths of gb memory transiently
-        # * optimize Scaler's compute() for vectoric calcs - "stuck" in calc runtime
-        # * make create_sample_index dask compatible (vectoric calcs) (`stacked_mask[stacked_mask]`)
-        LOGGER.debug("materialize data (compute)")
-        self._dataset = self._dataset.compute()
-
         # Union features to extend certain data records.
         # Martin suggests doing this step prior to training models and then saving the unioned dataset locally.
         # If you do that, then remove this line.
@@ -192,6 +186,11 @@ class ForecastDataset(BaseDataset):
         if compute_scaler:
             LOGGER.debug('save scaler')
             self.scaler.save()
+
+        # TODO: Optimize all steps for dask, then this compute() may be moved to the bottom of the function.
+        #       Optionally, optimize the data loader and trainer modules to work with chunked lazy data.
+        LOGGER.debug("materialize data (compute) and check_zero_scale")
+        self._dataset, _ = dask.compute(self._dataset, self.scaler.check_zero_scale)
 
         # Create sample index lookup table for `__getitem__`.
         LOGGER.debug('create sample index')
@@ -342,37 +341,34 @@ class ForecastDataset(BaseDataset):
             feature_groups=self._feature_groups,
         )[0]
 
+        LOGGER.debug('valid_sample_mask compute')
         # Convert boolean valid sample mask into indexes of all samples. This retains
         # only the portion of the valid sample mask with True values.
-        stacked_mask = valid_sample_mask.stack(sample=valid_sample_mask.dims)
-        valid_sample_da = stacked_mask[stacked_mask]
+        # Each element is a list of valid integer positions (indexers) for which
+        # values are True for a dimension.
+        indices = dask.compute(*dask.array.nonzero(valid_sample_mask.data))
 
         # Count the number of valid samples.
-        num_samples = valid_sample_da.size
+        num_samples = len(indices[0]) if indices else 0
         if num_samples == 0:
             if self._period == 'train':
                 raise NoTrainDataError
             else:
                 raise NoEvaluationDataError       
 
-        # dataset.indexes has the labels and their order for the dimensions akin to pd.Index.
-        # get_indexer returns indices of the dim's labels in the dataset for that dim, so
-        # each element i corresponds to date i and its value is its position in dataset.
-        def indexer(dim: Hashable):
-            indices = self._dataset.indexes[dim].get_indexer(valid_sample_da[dim])
-            assert (indices != -1).all(), f"{dim} mustn't have invalid indexes"
-            return indices
+        # Maps dim name to its respective list of int indices (index arrays) i.e. columns
+        # of all basins, all dates, etc.
+        vectorized_indices = {
+            dim: indices[i] for i, dim in enumerate(valid_sample_mask.dims) if dim != "sample"
+        }
 
-        # Maps dims to their respective index arrays where an index i in each corresponds
-        # with the sample index in the dataset w.r.t the valid sample mask (valid_sample_da).
+        LOGGER.debug("sample_index")
+        # Reorg columns to rows, mapping sample index i [0, num_samples) to a dict that
+        # maps an int position for that sample in each dim. E.g. {1: {'basin': 2, 'date': 3}}
         #
         # This allows integer indexing into each coordinate dimension of the original dataset,
         # while ONLY selecting valid samples. The full original dataset is retained (including
         # not-valid samples) for sequence construction.
-        LOGGER.debug("sample_index")
-        vectorized_indices = {
-            dim: indexer(dim) for dim in valid_sample_da.coords if dim != "sample"
-        }
         self._sample_index = {
             i: {dim: indexes[i] for dim, indexes in vectorized_indices.items()}
             for i in range(num_samples)
