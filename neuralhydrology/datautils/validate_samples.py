@@ -228,23 +228,28 @@ def validate_samples(
 
     # Mask any dates that are not valid sample dates.
     LOGGER.debug('invalid sample dates')
-    all_dates = dataset.date.values
-    all_basins = dataset.basin.values
-    masks.append(
-        xr.DataArray(
-            [np.in1d(all_dates, sample_dates)]*len(all_basins),
-            coords={'basin': all_basins, 'date': all_dates},
-            dims=['basin', 'date']
-        ).rename('dates')
-    )
+    # 1d `True` mask for basin dim with same dims, coords, chunking, as dataset.basin.
+    all_basins = xr.ones_like(dataset.basin, dtype=bool)
+    # 1d bool mask for date. It's a single dim and coord 'date'.
+    is_date_valid = dataset.date.isin(sample_dates)
+    # Combine both masks into 2d. The & broadcasts the (date,) with (basin, date,).
+    # It's equiv to taking all basins, copying and stacking them, then ANDing them.
+    masks.append((all_basins & is_date_valid).rename('dates'))
 
+    LOGGER.debug('valid_sample_mask')
+    # masks is a mix of 1d (static) and 2d features' bool masks.
+    # we merge them by lazily apply (&) each mask so objects stay small.
     # All masks must be valid according to their own checks for the sample to be valid.
-    LOGGER.debug('masks merge')
-    valid_sample_mask = xr.merge(masks)
-    LOGGER.debug('masks to_array')
-    valid_sample_mask = valid_sample_mask.to_array(dim='variable')
-    LOGGER.debug('masks all')
-    valid_sample_mask = valid_sample_mask.all(dim='variable')
+    # 1d `True` mask for date dim with same dims, coords, chunking, as dataset.date.
+    all_dates = xr.ones_like(dataset.date, dtype=bool)
+    # Create the init valid sample temple. xarray broadcasts 1d with 2d arrays into 2d
+    # like basin and date.
+    valid_sample_mask = all_basins & all_dates
+    for mask in masks:
+        # when mask is 2d: element-wise &
+        # when mask is 1d (the dim "basin" statics feature): it's exapnded across date
+        #                                                    then element-wise &.
+        valid_sample_mask = valid_sample_mask & mask
     
     return valid_sample_mask, masks
 
@@ -286,6 +291,8 @@ def validate_samples_for_nan_handling(
         return validate_samples_any_all_group(dataset, feature_groups)
     elif nan_handling_method.lower() == 'attention':
         return validate_samples_any_all_group(dataset, feature_groups)
+    elif nan_handling_method.lower() == 'unioning':
+        return validate_samples_all_any_group(dataset, feature_groups)
     else:
         raise ValueError(f'Unrecognized NaN-handling method: {nan_handling_method}.')
 
@@ -420,30 +427,12 @@ def validate_sequence_all(
     xarray.DataArray
         Boolean valid sample mask.
     """
-    # Invert the boolean mask:
-    # `False` or `nan` become 1 (invalid) and `True` becomes 0 (valid).
-    invalid_indicator = ~mask
+    mask = mask.fillna(False)
 
-    # Calculate the rolling (sliding window) sum which represents the
-    # count of invalid (False) timesteps in each window.
-    # `min_periods` ensures that incomplete windows at the start
-    # result in nan.
-    # The sum() method treats True as 1 and False as 0.
-    invalid_count = invalid_indicator.rolling(
-        date=seq_length, min_periods=seq_length
-    ).sum()
-    # Note: sum() is a specific optimized function for this task while
-    # a reduce() is generic and too slow here as it can get any function
-    # while sum is exactly the function required.
-    # Reduce() makes xarray do a step-by-step calculation for each window
-    # in separate (create window, run e.g. np.all, ...). Python is an
-    # interpretted language. sum() is implemented natively in C and so
-    # also possibly uses vector instructions as well.
-
-    # A window is valid if the count of True values is greater than 0.
-    # The comparison also handles nan values with resulting in `False`.
-    valid_windows = invalid_count == 0
-
+    # The sliding window is valid if ALL timestemps are True which is what
+    # min represents in the window being True (1).
+    valid_windows = mask.rolling(date=seq_length, min_periods=seq_length).min()
+    
     # Move the valid windows data along the date dim, to align the validity
     # info of windows with the timestamp of the value to predict.
     # This may create nan values at the end, e.g. [False, True, True]
@@ -482,22 +471,11 @@ def validate_sequence_any(
     xarray.DataArray
         Boolean valid sample mask.
     """
-    # Calculate the rolling (sliding window) sum which represents the count
-    # of valid (True) timesteps in each window. `min_periods` ensures that
-    # incomplete windows at the start result in nan.
-    # The sum() method treats True as 1 and False as 0.
-    true_count = mask.rolling(date=seq_length, min_periods=seq_length).sum()
-    # Note: sum() is a specific optimized function for this task while
-    # a reduce() is generic and too slow here as it can get any function
-    # while sum is exactly the function required.
-    # Reduce() makes xarray do a step-by-step calculation for each window
-    # in separate (create window, run e.g. np.all, ...). Python is an
-    # interpretted language. sum() is implemented natively in C and so
-    # also possibly uses vector instructions as well.
+    mask = mask.fillna(False)
 
-    # A window is valid if the count of True values is greater than 0.
-    # The comparison also handles nan values by resulting in `False`.
-    valid_windows = true_count > 0
+    # The sliding window is valid if ANY timestemp is True which is what
+    # max represents in the window being True (1).
+    valid_windows = mask.rolling(date=seq_length, min_periods=seq_length).max()
 
     # Move the valid windows data along the date dim, to align the validity
     # info of windows with the timestamp of the value to predict.
