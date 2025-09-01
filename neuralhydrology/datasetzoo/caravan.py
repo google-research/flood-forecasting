@@ -148,8 +148,7 @@ def load_caravan_attributes(data_dir: Path,
     if basins:
         LOGGER.debug('missing')
         # Check for any requested basins that are missing from the loaded data.
-        # TODO: this may be optimized via array ops instead of individual item tests.
-        missing = [e for e in basins if e not in ds.coords["basin"]]
+        missing = set(basins).difference(ds.coords["basin"].data)
         if missing:
             raise ValueError(f'{len(missing)} basins are missing static attributes: {", ".join(missing)}')
 
