@@ -3,6 +3,7 @@ detect_anomaly: False
 
 # --- Training Parameters -------------------------------------------------------
 batch_size: 256
+# batch_size: 512
 epochs: 30
 experiment_name: mean_embedding_forecast_lstm
 clip_gradient_norm: 1

@@ -1,6 +1,9 @@
 from typing import Tuple
 
 import matplotlib as mpl
+# Must set before import pyplot import.
+# Avoid interactive GUI backend (tkinter) which may crash when not running on the main thread due to races.
+mpl.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 

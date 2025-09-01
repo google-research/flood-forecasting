@@ -98,7 +98,7 @@ class ForecastDataset(BaseDataset):
         self._nan_handling_method = cfg.nan_handling_method
         self._feature_groups = [self._hindcast_features, self._forecast_features]
         if (isinstance(self._hindcast_features[0], str) or isinstance(self._forecast_features[0], str)) \
-            and self._nan_handling_method in ['masked_mean', 'attention']:
+            and self._nan_handling_method in ['masked_mean', 'attention', 'unioning']:
             raise ValueError(f'Feature groups are required for {self._nan_handling_method} NaN-handling.')
 
         # Validating samples depends on whether we are training or testing.
@@ -163,6 +163,14 @@ class ForecastDataset(BaseDataset):
             if self._forecast_overlap:
                 overlap_counter = np.full((self._forecast_overlap,), self._min_lead_time)
                 self._forecast_counter = np.concatenate([overlap_counter, self._forecast_counter], 0)
+
+        # TODO: To defer compute() further and eventually avoid it, need to first:
+        # * optimize union_features() for vectoric calcs - takes tenths of gb memory transiently
+        # * optimize Scaler's scale data for vectoric calcs - takes tenths of gb memory transiently
+        # * optimize Scaler's compute() for vectoric calcs - "stuck" in calc runtime
+        # * make create_sample_index dask compatible (vectoric calcs) (`stacked_mask[stacked_mask]`)
+        LOGGER.debug("materialize data (compute)")
+        self._dataset = self._dataset.compute()
 
         # Union features to extend certain data records.
         # Martin suggests doing this step prior to training models and then saving the unioned dataset locally.
