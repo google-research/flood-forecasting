@@ -7,6 +7,7 @@ import datetime
 from pathlib import Path
 
 import dask
+import dask.array
 import numpy as np
 import pandas as pd
 import torch
