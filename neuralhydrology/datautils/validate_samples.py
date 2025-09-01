@@ -291,6 +291,8 @@ def validate_samples_for_nan_handling(
         return validate_samples_any_all_group(dataset, feature_groups)
     elif nan_handling_method.lower() == 'attention':
         return validate_samples_any_all_group(dataset, feature_groups)
+    elif nan_handling_method.lower() == 'unioning':
+        return validate_samples_all_any_group(dataset, feature_groups)
     else:
         raise ValueError(f'Unrecognized NaN-handling method: {nan_handling_method}.')
 
