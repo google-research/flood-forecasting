@@ -166,14 +166,6 @@ class ForecastDataset(BaseDataset):
                 overlap_counter = np.full((self._forecast_overlap,), self._min_lead_time)
                 self._forecast_counter = np.concatenate([overlap_counter, self._forecast_counter], 0)
 
-        # TODO: To defer compute() further and eventually avoid it, need to first:
-        # * optimize union_features() for vectoric calcs - takes tenths of gb memory transiently
-        # * optimize Scaler's scale data for vectoric calcs - takes tenths of gb memory transiently
-        # * optimize Scaler's compute() for vectoric calcs - "stuck" in calc runtime
-        # * make create_sample_index dask compatible (vectoric calcs) (`stacked_mask[stacked_mask]`)
-        LOGGER.debug("materialize data (compute)")
-        self._dataset = self._dataset.compute()
-
         # Union features to extend certain data records.
         # Martin suggests doing this step prior to training models and then saving the unioned dataset locally.
         # If you do that, then remove this line.
@@ -194,6 +186,11 @@ class ForecastDataset(BaseDataset):
         if compute_scaler:
             LOGGER.debug('save scaler')
             self.scaler.save()
+
+        # TODO: Optimize all steps for dask, then this compute() may be moved to the bottom of the function.
+        #       Optionally, optimize the data loader and trainer modules to work with chunked lazy data.
+        LOGGER.debug("materialize data (compute) and check_zero_scale")
+        self._dataset, _ = dask.compute(self._dataset, self.scaler.check_zero_scale)
 
         # Create sample index lookup table for `__getitem__`.
         LOGGER.debug('create sample index')
