@@ -201,6 +201,49 @@ def load_caravan_timeseries(data_dir: Path, basin: str, filetype: str = "netcdf"
     return df
 
 
+def load_caravan_timeseries_together(
+    data_dir: Path, basins: list[str], target_features: list[str]
+) -> xarray.Dataset:
+    """Loads the timeseries data of basins from the Caravan dataset.
+
+    Parameters
+    ----------
+    data_dir : Path
+        Path to the root directory of Caravan that has to include a sub-directory called 'timeseries'. This
+        sub-directory has to contain another sub-directory called either 'csv' or 'netcdf', depending on the choice
+        of the filetype argument. By default, netCDF files are loaded from the 'netcdf' subdirectory.
+    basins : list[str]
+        The Caravan gauge id strings in the form of {subdataset_name}_{gauge_id}.
+    target_features : list[str]
+        The target variables to select.
+
+    Raises
+    ------
+    FileNotFoundError
+        If no timeseries file exists for the basin.
+    """
+
+    def basin_to_file_path(basin: str) -> Path:
+        subdataset_name = basin.split("_")[0]
+        filepath = data_dir / "timeseries" / "netcdf" / subdataset_name / f"{basin}.nc"
+        if not filepath.is_file():
+            raise FileNotFoundError(f"No basin file found at {filepath}.")
+        return filepath
+
+    def preprocess(ds: xarray.Dataset):
+        return ds[target_features]
+
+    ds = xarray.open_mfdataset(
+        [basin_to_file_path(e) for e in basins],
+        preprocess=preprocess,
+        combine="nested",
+        concat_dim="basin",
+        parallel=True,
+        chunks={"date": "auto"},
+    )
+    return ds.assign_coords(basin=basins)
+
+
 def _load_attribute_files_of_subdataset(subdataset_dir: Path) -> list[xarray.Dataset]:
     """Loads all attribute CSV files for one subdataset.
 
