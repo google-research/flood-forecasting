@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from neuralhydrology.datasetzoo.caravan import load_caravan_attributes, load_caravan_timeseries
+from neuralhydrology.datasetzoo.caravan import load_caravan_attributes, load_caravan_timeseries_together
 from neuralhydrology.datasetzoo.forecast_basedataset import ForecastDataset
 from neuralhydrology.utils.config import Config
 
@@ -198,13 +198,7 @@ class Multimet(ForecastDataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, basin).
         """
-        LOGGER.debug('basins')
-        basins = [
-            load_caravan_timeseries(data_dir=self._targets_data_path, basin=basin)[self._target_features]
-            for basin in self._basins
-        ]
-        LOGGER.debug('concat')
-        return xr.concat(basins, dim=pd.Index(self._basins, name='basin'))       
+        return load_caravan_timeseries_together(self._targets_data_path, self._basins, self._target_features)
 
     def _load_attributes(self) -> xr.Dataset:
         """Load Caravan attributes.
