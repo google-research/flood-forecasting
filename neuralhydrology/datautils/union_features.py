@@ -23,7 +23,7 @@ def _union_features_with_same_dimensions(
   feature_da: xr.DataArray,
   mask_feature_da: xr.DataArray,
 ) -> xr.DataArray:
-    """Mask (align and union) da with mask, taking values from da and nans from mask."""
+    """Mask (align and union) da with mask, taking values from da else from mask for nans."""
     return feature_da.combine_first(mask_feature_da)
 
 
