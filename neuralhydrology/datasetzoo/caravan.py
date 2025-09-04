@@ -242,9 +242,7 @@ def load_caravan_timeseries_together(
     return ds.assign_coords(basin=basins)
 
 
-def _load_attribute_files_of_subdatasets(
-    datasets: list[Path],
-) -> xarray.Dataset:
+def _load_attribute_files_of_subdatasets(datasets: list[Path]) -> xarray.Dataset:
     """Loads all attribute CSV files, indexing gauge_id to basin.
 
     Converts float64 to float32.
