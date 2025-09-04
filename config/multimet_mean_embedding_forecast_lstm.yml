@@ -2,8 +2,8 @@ logging_level: INFO
 detect_anomaly: False
 
 # --- Training Parameters -------------------------------------------------------
-batch_size: 256
-# batch_size: 512
+# batch_size: 256
+batch_size: 512
 epochs: 30
 experiment_name: mean_embedding_forecast_lstm
 clip_gradient_norm: 1
@@ -13,7 +13,7 @@ learning_rate:
   0: 0.0005
   7: 0.0001
 # max_updates_per_epoch:
-max_updates_per_epoch: 100
+max_updates_per_epoch: 2000
 metrics:
 - NSE
 - KGE
@@ -24,8 +24,8 @@ metrics:
 - Missed-Peaks
 num_workers: 0  # Scalene profiler works only without multiprocessing (`0`)
 optimizer: Adam
-validate_every: 5
-validate_n_random_basins: 10
+validate_every: 2
+validate_n_random_basins: 12
 predict_last_n: 8
 log_n_figures: 5
 
@@ -46,12 +46,12 @@ test_basin_file: ~/neuralhydrology/config/basins/caravan/camels.txt
 # validation_basin_file: ~/neuralhydrology/config/basins/intersections/0_0.txt
 # test_basin_file: ~/neuralhydrology/config/basins/intersections/0_0.txt
 
-train_end_date: 30/09/2012
-train_start_date: 01/10/2000
-validation_end_date: 30/09/2014
-validation_start_date: 01/10/2012
-test_end_date: 30/09/2022
-test_start_date: 01/10/2017
+train_end_date: 31/12/2014
+train_start_date: 01/01/1980
+validation_end_date: 31/12/2017
+validation_start_date: 01/10/2016
+test_end_date: 31/12/2017
+test_start_date: 01/01/2016
 
 # data_dir: ~/nh-data/data/Caravan-multimet
 targets_data_dir: ~/nh-data/data/Caravan-nc
