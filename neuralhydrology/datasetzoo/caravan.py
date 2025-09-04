@@ -139,6 +139,7 @@ def load_caravan_attributes(data_dir: Path,
         subdataset_dirs = [s for s in subdataset_dirs if s.name in subdataset_names]
 
     # Load all required attribute files.
+    LOGGER.debug('load attribute files')
     ds = _load_attribute_files_of_subdatasets(subdataset_dirs)
 
     # If a specific list of basins is requested, subset the Dataset.
