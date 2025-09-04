@@ -143,6 +143,8 @@ class BaseTrainer(object):
         self.loader = self._get_data_loader(ds=ds)
 
         self.model = self._get_model().to(self.device)
+        LOGGER.debug("optimizing model")
+        self.model = torch.compile(self.model, mode="max-autotune")
         if self.cfg.checkpoint_path is not None:
             LOGGER.info(f"Starting training from Checkpoint {self.cfg.checkpoint_path}")
             self.model.load_state_dict(torch.load(str(self.cfg.checkpoint_path), map_location=self.device))
