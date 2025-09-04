@@ -4,27 +4,16 @@ import numpy as np
 import xarray as xr
 
 
-def _expand_lead_times(da: xr.DataArray, lead_times: xr.DataArray) -> xr.DataArray:
-    """Expands `da to include a `lead_time` dimension via shifting.
+def _expand_lead_times(
+    da: xr.DataArray, lead_times: xr.DataArray | np.ndarray
+) -> xr.DataArray:
+    """Expands `da` with a `lead_time` dimension via shifting days back by lead time.
 
-    Prepare a non-forecast da (e.g. 2d obs with dims basin, date) to be used as a
-    mask for a multi lead time forecast da (e.g. 3d basin, date, lead_time).
-
-    Time-shift (backward) copies of da for each lead time (n days ago) so it's used
-    as if it were the forecast. And thus concat'd along a new lead_time dim.
-
-    Example:
-    -------
-    Input dates [10, 20, 30] and lead_times of [1 day, 2 days]:
-    - For lead_time=1, it shifts by -1: [nan, 10, 20]
-      So the value for the second date is the obs from first date.
-    - For lead_time=2, it shifts by -2: [nan, nan, 10]
-      So the value for the third date is the obs from second date.
+    The shifting generates nans from the end as much as the lead time value is.
     """
     if 'lead_time' in da.dims:
         raise ValueError('Trying to expand a dataarray that already has a lead time.')
     # TODO (future) :: This assumes daily data.
-    # Shift past date to present (negative) e.g. for lead time 1D, Jan 02 -> Jan 01.
     lt_das = (da.shift(date=-int(lt / np.timedelta64(1, "D"))) for lt in lead_times)
     lt_da = xr.concat(lt_das, dim="lead_time")
     return lt_da.assign_coords(lead_time=lead_times)  # Label lead_times as lead_time
@@ -34,7 +23,7 @@ def _union_features_with_same_dimensions(
   feature_da: xr.DataArray,
   mask_feature_da: xr.DataArray,
 ) -> xr.DataArray:
-    """Fills nans in feature da with from the mask when both are the same size."""
+    """Mask (align and union) da with mask, taking values from da and nans from mask."""
     return feature_da.combine_first(mask_feature_da)
 
 
@@ -42,12 +31,9 @@ def _union_lead_time_feature_with_non_lead_time_feature(
   feature_da: xr.DataArray,
   mask_feature_da: xr.DataArray,
 ) -> xr.DataArray:
-    """Fills nans in the 3d target forecast with values from the 2d obs feature.
+    """Mask the lead-time feature with the non-lead-time feature.
 
     Assuming feature da has "lead_time" dim but the masking da doesn't (e.g. obs).
-
-    Expands the 2d mask feature da into a 3d one that matches shape and lead times
-    of the 3d feature_da (time shifted mask copies for each lead time). Then combined.
     """
     lead_times = feature_da.coords["lead_time"]
     lt_mask_da = _expand_lead_times(mask_feature_da, lead_times)
@@ -58,14 +44,13 @@ def _union_non_lead_time_feature_with_lead_time_feature(
   feature_da: xr.DataArray,
   mask_feature_da: xr.DataArray,
 ) -> xr.DataArray:
-    """Fills nans in the 2d feature from the earliest forecast 3d (with lead time) feature.
+    """Mask the non-lead-time feature with the lead-time feature.
 
-    Assuming best available data from the forecast to fill missing obs data is the forecast
-    with min lead time. (e.g. 1 day ahead forecast may be better than 5 days ahead)
+    Fills nans in the 2d feature from the earliest forecast 3d (with lead time) feature
+    via min lead time.
 
-    Aligning forecast times: forecast's "date" is "issue date" when forecast was made, and
-    feature's "date" is "valid date" when it's applied to. Shifting forecast data forward
-    by lead time to match dates.
+    Align forecast's "issue date" (when was made) with feature's "valid date" (when applied).
+    Shift forecast data forward by lead time to match dates.
     """
     min_lead_time = mask_feature_da["lead_time"].min().item()  # Best forecast
     min_lead_time_mask_feature = mask_feature_da.sel(
