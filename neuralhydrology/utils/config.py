@@ -269,6 +269,10 @@ class Config(object):
         return self._cfg.get("detect_anomaly", False)
 
     @property
+    def tester_skip_obs_all_nan(self) -> bool:
+        return self._cfg.get("tester_skip_obs_all_nan", False)
+
+    @property
     def logging_level(self) -> int:
         level = self._cfg.get("logging_level", "INFO").upper()
         match level:
