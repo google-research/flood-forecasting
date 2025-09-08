@@ -217,16 +217,10 @@ class BaseTester(object):
                 diffs = np.diff(basin_ds.streamflow.isnull(), prepend=[0], append=[0])
                 (starts,), (ends,) = np.where(diffs == 1), np.where(diffs == -1)
 
-                # TODO: Assuming one range of test dates.
                 test_start, test_end = self.cfg.test_start_date, self.cfg.test_end_date
-                skip_basin = False
-                for start, end in zip(starts, ends):  # Skip basin if it's all nans
-                    start, end = basin_ds.date[start], basin_ds.date[end - 1]
-                    if start <= test_start and end >= test_end:
-                        skip_basin = True
-                        break
-
-                if skip_basin:
+                nan_date_starts = basin_ds.date.data[starts]
+                nan_date_ends = basin_ds.date.data[ends - 1]
+                if np.any((nan_date_starts <= test_start) & (nan_date_ends >= test_end)):
                     continue
 
             loader = DataLoader(ds, batch_size=self.cfg.batch_size, num_workers=0, collate_fn=ds.collate_fn)
@@ -246,7 +240,7 @@ class BaseTester(object):
             if isinstance(seq_length, int):
                 seq_length = {ds.frequencies[0]: seq_length}
             lowest_freq = sort_frequencies(ds.frequencies)[0]
-            
+
             for freq in ds.frequencies:
                 if predict_last_n[freq] == 0:
                     continue  # this frequency is not being predicted
@@ -285,7 +279,7 @@ class BaseTester(object):
                 })
                 xr = ds.scaler.unscale(xr)
                 results[basin][freq]['xr'] = xr
-                
+
                 # create datetime range at the current frequency
                 freq_date_range = pd.date_range(start=dates[lowest_freq][0, -1], end=dates[freq][-1, -1], freq=freq)
                 # remove datetime steps that are not being predicted from the datetime range
