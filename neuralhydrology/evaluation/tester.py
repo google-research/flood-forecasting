@@ -211,6 +211,24 @@ class BaseTester(object):
                 if self.cfg.cache_validation_data and self.period == "validation":
                     self.cached_datasets[basin] = ds
 
+            if self.cfg.tester_skip_obs_all_nan:
+                basin_ds = ds._dataset.sel(basin=basin)
+                # Calculate all-nan ranges
+                diffs = np.diff(basin_ds.streamflow.isnull(), prepend=[0], append=[0])
+                (starts,), (ends,) = np.where(diffs == 1), np.where(diffs == -1)
+
+                # TODO: Assuming one range of test dates.
+                test_start, test_end = self.cfg.test_start_date, self.cfg.test_end_date
+                skip_basin = False
+                for start, end in zip(starts, ends):  # Skip basin if it's all nans
+                    start, end = basin_ds.date[start], basin_ds.date[end - 1]
+                    if start <= test_start and end >= test_end:
+                        skip_basin = True
+                        break
+
+                if skip_basin:
+                    continue
+
             loader = DataLoader(ds, batch_size=self.cfg.batch_size, num_workers=0, collate_fn=ds.collate_fn)
 
             y_hat, y, dates, all_losses, all_output[basin] = self._evaluate(model, loader, ds.frequencies,
