@@ -200,7 +200,7 @@ class BaseTester(object):
 
         for basin in pbar:
 
-            if self.cfg.cache_validation_data and basin in self.cached_datasets.keys():
+            if self.period != "test" and self.cfg.cache_validation_data and basin in self.cached_datasets:
                 ds = self.cached_datasets[basin]
             else:
                 try:
