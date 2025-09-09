@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 import torch
-from torch.amp import GradScaler, autocast
+from torch.amp import autocast
 import xarray
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -60,7 +60,6 @@ class BaseTester(object):
 
         # determine device
         self._set_device()
-        self.scaler = GradScaler(enabled=(self.device.type == 'cuda'))
 
         if self.init_model:
             self.model = get_model(cfg).to(self.device)
