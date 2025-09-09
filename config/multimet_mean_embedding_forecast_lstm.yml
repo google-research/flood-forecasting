@@ -48,10 +48,13 @@ test_basin_file: ~/neuralhydrology/config/basins/caravan/camels.txt
 
 train_end_date: 31/12/2014
 train_start_date: 01/01/1980
+
 validation_end_date: 31/12/2017
 validation_start_date: 01/10/2016
+
 test_end_date: 31/12/2017
 test_start_date: 01/01/2016
+tester_skip_obs_all_nan: True
 
 # data_dir: ~/nh-data/data/Caravan-multimet
 targets_data_dir: ~/nh-data/data/Caravan-nc
