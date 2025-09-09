@@ -1,7 +1,10 @@
+import itertools
 import logging
 from pathlib import Path
 from typing import List, Dict, Optional
 
+import dask
+import dask.delayed
 import numpy as np
 import pandas as pd
 import xarray
@@ -136,13 +139,8 @@ def load_caravan_attributes(data_dir: Path,
         subdataset_dirs = [s for s in subdataset_dirs if s.name in subdataset_names]
 
     # Load all required attribute files.
-    dss = []
-    for subdataset_dir in subdataset_dirs:
-        dss.extend(_load_attribute_files_of_subdataset(subdataset_dir))
-
-    # Merge all Datasets along the basin index.
-    LOGGER.debug('merge')
-    ds = xarray.merge(dss)
+    LOGGER.debug('load attribute files')
+    ds = _load_attribute_files_of_subdatasets(subdataset_dirs)
 
     # If a specific list of basins is requested, subset the Dataset.
     if basins:
@@ -244,26 +242,22 @@ def load_caravan_timeseries_together(
     return ds.assign_coords(basin=basins)
 
 
-def _load_attribute_files_of_subdataset(subdataset_dir: Path) -> list[xarray.Dataset]:
-    """Loads all attribute CSV files for one subdataset.
+def _load_attribute_files_of_subdatasets(datasets: list[Path]) -> xarray.Dataset:
+    """Loads all attribute CSV files, indexing gauge_id to basin.
 
-    NOTE: we change the index column from gauge_id to basin.
-    NOTE: we convert float64 to float32 on data decoding.
-
-    One may merge them, which is equivalent to a side-by-side concat (aligned along
-    the shared, now called, "basin" coordinate).
+    Converts float64 to float32.
     """
-    return [
-        xarray.Dataset.from_dataframe(
-            read_csv_float32(csv_file, index_col="gauge_id").rename_axis("basin")
+
+    @dask.delayed
+    def process(csv_file: Path) -> xarray.Dataset:
+        df64 = pd.read_csv(csv_file, index_col="gauge_id")
+        df = df64.astype(
+            {col: np.float32 for col in df64.select_dtypes(include=["float64"]).columns}
         )
-        for csv_file in subdataset_dir.glob("*.csv")
-    ]
+        df.rename_axis("basin", inplace=True)
+        return df.to_xarray()  # Uses underlying numpy arrays in df
 
+    dss = map(process, itertools.chain.from_iterable(e.glob("*.csv") for e in datasets))
+    dss = dask.compute(*dss)
 
-def read_csv_float32(csv_file: Path, index_col: str) -> pd.DataFrame:
-    df_peek = pd.read_csv(csv_file, index_col=index_col, nrows=100)
-    dtype_map = {
-        col: np.float32 for col, dtype in df_peek.dtypes.items() if dtype == "float64"
-    }
-    return pd.read_csv(csv_file, index_col=index_col, dtype=dtype_map)
+    return xarray.merge(dss)
