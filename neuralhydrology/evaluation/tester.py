@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 import torch
+from torch.amp import GradScaler, autocast
 import xarray
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -59,6 +60,7 @@ class BaseTester(object):
 
         # determine device
         self._set_device()
+        self.scaler = GradScaler(enabled=(self.device.type == 'cuda'))
 
         if self.init_model:
             self.model = get_model(cfg).to(self.device)
@@ -489,8 +491,9 @@ class BaseTester(object):
         return preds, obs, dates, mean_losses, all_output
 
     def _get_predictions_and_loss(self, model: BaseModel, data: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, float]:
-        predictions = model(data)
-        _, all_losses = self.loss_obj(predictions, data)
+        with autocast(self.device.type, enabled=(self.device.type == 'cuda')):
+            predictions = model(data)
+            _, all_losses = self.loss_obj(predictions, data)
         return predictions, {k: v.item() for k, v in all_losses.items()}
 
     def _subset_targets(self, model: BaseModel, data: Dict[str, torch.Tensor], predictions: np.ndarray,
