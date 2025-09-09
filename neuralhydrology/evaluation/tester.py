@@ -217,10 +217,13 @@ class BaseTester(object):
                 diffs = np.diff(basin_ds.streamflow.isnull(), prepend=[0], append=[0])
                 (starts,), (ends,) = np.where(diffs == 1), np.where(diffs == -1)
 
-                test_start, test_end = self.cfg.test_start_date, self.cfg.test_end_date
+                period_start, period_end = self.cfg.test_start_date, self.cfg.test_end_date
+                if self.period == "validation":
+                    period_start, period_end = self.cfg.validation_start_date, self.cfg.validation_end_date
+
                 nan_date_starts = basin_ds.date.data[starts]
                 nan_date_ends = basin_ds.date.data[ends - 1]
-                if np.any((nan_date_starts <= test_start) & (nan_date_ends >= test_end)):
+                if np.any((nan_date_starts <= period_start) & (nan_date_ends >= period_end)):
                     continue
 
             loader = DataLoader(ds, batch_size=self.cfg.batch_size, num_workers=0, collate_fn=ds.collate_fn)
