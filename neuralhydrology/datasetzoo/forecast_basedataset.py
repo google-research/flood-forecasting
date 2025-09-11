@@ -266,10 +266,11 @@ class ForecastDataset(BaseDataset):
             return forecast_array
 
         def _extract_targets(feature: str, item: int) -> np.ndarray:
-            dim_indexes = {dim: val for dim, val in self._sample_index[item].items()}
-            dim_indexes['date'] = list(range(dim_indexes['date']-self._seq_length+1, dim_indexes['date']+1))
-            dim_indexes['date'] += [dim_indexes['date'][-1] + i for i in self._lead_times]
-            return self._extract_dataset(self._dataset, 'dataset', feature, dim_indexes)[-self._seq_length:]
+            dim_indexes = self._sample_index[item].copy()
+            end = dim_indexes["date"] + self._lead_times[-1]  # e.g. 1000 (date) + 7 (lead time)
+            start = end - self._seq_length + 1  # e.g. 365 window starting on 1007 starts on 643
+            dim_indexes["date"] = range(start, end + 1)  # include the last day
+            return self._extract_dataset(self._dataset, "dataset", feature, dim_indexes)
 
         sample = {'date': _extract_dates(item)}
         # TODO (future) :: Suggest remove outer keys and use only feature names. Major change required.
