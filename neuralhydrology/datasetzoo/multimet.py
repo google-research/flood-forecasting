@@ -136,8 +136,15 @@ class Multimet(ForecastDataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, basin).
         """
+        # Prepare hindcast features to load, including the masks of union_mapping
+        features = []
+        features.extend(self._hindcast_features)
+        if self._union_mapping:
+            features.extend(self._union_mapping.values())
+        features = list(set(features))
+
         # Separate products and bands for each product from feature names.
-        product_bands = _get_products_and_bands_from_feature_strings(features=self._hindcast_features)
+        product_bands = _get_products_and_bands_from_feature_strings(features=features)
 
         # Initialize storage for product/band dataframes that will eventually be concatenated.
         product_dss = []
