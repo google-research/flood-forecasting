@@ -139,7 +139,7 @@ class Multimet(ForecastDataset):
         # Prepare hindcast features to load, including the masks of union_mapping
         features = []
         features.extend(self._hindcast_features)
-        if self._union_mapping is not None:
+        if self._union_mapping:
             features.extend(self._union_mapping.values())
         features = list(set(features))
 

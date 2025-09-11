@@ -171,9 +171,9 @@ class ForecastDataset(BaseDataset):
         # Union features to extend certain data records.
         # Martin suggests doing this step prior to training models and then saving the unioned dataset locally.
         # If you do that, then remove this line.
-        if cfg.union_mapping:
+        if self._union_mapping:
             LOGGER.debug('union features')
-            self._dataset = union_features(self._dataset, cfg.union_mapping)
+            self._dataset = union_features(self._dataset, self._union_mapping)
 
         # Scale the dataset AFTER cropping dates so that we do not calcualte scalers using test or eval data.
         LOGGER.debug('init scaler')
