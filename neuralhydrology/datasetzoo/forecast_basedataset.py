@@ -383,18 +383,18 @@ class ForecastDataset(BaseDataset):
         """
         raise NotImplementedError
 
-    def _extract_dataset(self, dataset: xr.Dataset, cache_key: str, feature: str, indexers: dict[Hashable, int|range]) -> np.ndarray | np.float32:
+    def _extract_dataset(self, dataset: xr.Dataset, cache_key: str, feature: str, indexers: dict[Hashable, int|range]) -> np.ndarray:
         data = self._dataarrays_cache.setdefault(f'{cache_key}-{feature}', dataset[feature])
         return _extract_dataarray(data, indexers)
 
 
-def _extract_dataarray(data: xr.DataArray, indexers: dict[Hashable, int|range]) -> np.ndarray | np.float32:
+def _extract_dataarray(data: xr.DataArray, indexers: dict[Hashable, int|range]) -> np.ndarray:
     """Returns the values in array according to dims given by indexers.
     
     This function replaces uses of `isel` with data and indexers.
     """
     locators = (indexers[dim] if dim in indexers else slice(None) for dim in data.dims)
-    return data.values[tuple(locators)]
+    return data[tuple(locators)].data
 
 
 def _assert_floats_are_float32(dataset: xr.Dataset):
