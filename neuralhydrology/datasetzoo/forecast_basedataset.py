@@ -268,7 +268,7 @@ class ForecastDataset(BaseDataset):
         def _extract_targets(feature: str, item: int) -> np.ndarray:
             dim_indexes = self._sample_index[item].copy()
             end = dim_indexes["date"] + self._lead_times[-1]  # e.g. 1000 (date) + 7 (lead time)
-            start = end - self._seq_length + 1  # e.g. 365 window starting on 1007 starts on 643
+            start = end - (self._seq_length - 1)  # e.g. 365 window starting on 1007 starts on 643
             dim_indexes["date"] = range(start, end + 1)  # include the last day
             return self._extract_dataset(self._dataset, "dataset", feature, dim_indexes)
 
