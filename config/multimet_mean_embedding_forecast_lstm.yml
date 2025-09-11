@@ -138,17 +138,3 @@ output_activation: linear
 output_dropout: 0.4
 timestep_counter: True
 run_dir: ~/nh-data/runs
-dynamics_embedding:
-  activation: tanh
-  dropout: 0.0
-  hiddens:
-  - 32
-  - 16
-  - 8
-statics_embedding:
-  activation: tanh
-  dropout: 0.0
-  hiddens:
-  - 128
-  - 64
-  - 32
