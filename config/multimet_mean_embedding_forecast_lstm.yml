@@ -75,13 +75,6 @@ forecast_inputs:
 - graphcast_u_component_of_wind_10m
 - graphcast_v_component_of_wind_10m
 hindcast_inputs:
-- era5land_surface_net_solar_radiation
-- era5land_surface_net_thermal_radiation
-- era5land_surface_pressure
-- era5land_temperature_2m
-- era5land_total_precipitation
-- era5land_u_component_of_wind_10m
-- era5land_v_component_of_wind_10m
 - imerg_precipitation
 - cpc_precipitation
 static_attributes:

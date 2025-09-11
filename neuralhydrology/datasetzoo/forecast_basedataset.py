@@ -90,6 +90,7 @@ class ForecastDataset(BaseDataset):
             self._hindcast_features = cfg.dynamic_inputs
         else:
             raise ValueError('Either `hindcast_inputs` or `dynamic_inputs` must be supplied.')
+        self._union_mapping = cfg.union_mapping
 
         # Feature data paths by type. This allows the option to load some data from cloud and some locally.
         self._statics_data_path = cfg.statics_data_dir
