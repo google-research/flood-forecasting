@@ -394,7 +394,7 @@ def _extract_dataarray(data: xr.DataArray, indexers: dict[Hashable, int|range]) 
     This function replaces uses of `isel` with data and indexers.
     """
     locators = (indexers[dim] if dim in indexers else slice(None) for dim in data.dims)
-    return data[tuple(locators)].data
+    return data.data[tuple(locators)]
 
 
 def _assert_floats_are_float32(dataset: xr.Dataset):
