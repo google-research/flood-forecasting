@@ -183,9 +183,7 @@ class Multimet(ForecastDataset):
             if 'lead_time' not in product_ds:
                 raise ValueError(f'Lead times do not exist for forecast product ({product}).')
 
-            product_ds = product_ds.sel(basin=self._basins)[bands]
-            if lead_times is not None:
-                product_ds = product_ds.sel(lead_time=lead_times)            
+            product_ds = product_ds.sel(basin=self._basins, lead_time=lead_times)[bands]
             product_dss.append(product_ds)
 
         return product_dss
