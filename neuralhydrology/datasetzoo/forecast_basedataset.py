@@ -87,7 +87,7 @@ class ForecastDataset(BaseDataset):
         if cfg.hindcast_inputs:
             self._hindcast_features = cfg.hindcast_inputs
         elif cfg.dynamic_inputs:
-            self._hindcast_features = cfg.dynamic_inputs
+            self._hindcast_features = cfg.dynamic_inputs_flattened
         else:
             raise ValueError('Either `hindcast_inputs` or `dynamic_inputs` must be supplied.')
         self._union_mapping = cfg.union_mapping
