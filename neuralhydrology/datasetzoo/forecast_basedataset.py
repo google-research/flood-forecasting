@@ -239,7 +239,7 @@ class ForecastDataset(BaseDataset):
             return range(end - duration, end + 1)
 
         # Extract sample from `self._dataset`.
-        def _extract_dates() -> np.ndarray:
+        def _extract_dates(item: int) -> np.ndarray:
             return self._extract_dataset(self._dataset, 'dataset', 'date', {'date': _calc_date_range(item)})
 
         def _extract_statics(feature: str, item: int) -> np.ndarray:
@@ -268,7 +268,7 @@ class ForecastDataset(BaseDataset):
             dim_indexes["date"] = _calc_date_range(item, lead=True)
             return self._extract_dataset(self._dataset, "dataset", feature, dim_indexes)
 
-        sample = {'date': _extract_dates()}
+        sample = {'date': _extract_dates(item)}
         # TODO (future) :: Suggest remove outer keys and use only feature names. Major change required.
         sample['x_s'] = np.stack([_extract_statics(feature, item) for feature in self._static_features], -1)
         sample['x_d_hindcast'] = {feature: _extract_hindcasts(feature, item) for feature in self._hindcast_features}
