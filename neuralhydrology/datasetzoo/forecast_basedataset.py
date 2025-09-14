@@ -386,8 +386,11 @@ class ForecastDataset(BaseDataset):
         raise NotImplementedError
 
     def _extract_dataset(self, dataset: xr.Dataset, cache_key: str, feature: str, indexers: dict[Hashable, int|range]) -> np.ndarray | np.float32:
-        data = self._dataarrays_cache.setdefault(f'{cache_key}-{feature}', dataset[feature])
-        return _extract_dataarray(data, indexers)
+        key = f'{cache_key}-{feature}'
+        if key not in self._dataarrays_cache:
+            self._dataarrays_cache[key] = dataset[feature]
+        dataarray = self._dataarrays_cache[key]
+        return _extract_dataarray(dataarray, indexers)
 
 
 def _extract_dataarray(data: xr.DataArray, indexers: dict[Hashable, int|range]) -> np.ndarray | np.float32:
