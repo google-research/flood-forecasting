@@ -230,10 +230,10 @@ class ForecastDataset(BaseDataset):
         if item % 1 != 0:
             raise ValueError(f'Requested index {item} is not an integer.')
 
-        def _calc_date_range() -> range:
+        def _calc_date_range(*, lead: bool = False) -> range:
             date = self._sample_index[item]["date"]
             duration = self._seq_length - 1
-            if not self._lead_times:
+            if not lead and not self._lead_times:
                 return range(date - duration, date + 1)
             end = date + self._lead_times[-1]
             return range(end - duration, end + 1)
