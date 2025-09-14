@@ -230,7 +230,7 @@ class ForecastDataset(BaseDataset):
         if item % 1 != 0:
             raise ValueError(f'Requested index {item} is not an integer.')
 
-        def _calc_date_range(*, lead: bool = False) -> range:
+        def _calc_date_range(item: int, *, lead: bool = False) -> range:
             date = self._sample_index[item]["date"]
             duration = self._seq_length - 1
             if not lead and not self._lead_times:
@@ -240,7 +240,7 @@ class ForecastDataset(BaseDataset):
 
         # Extract sample from `self._dataset`.
         def _extract_dates() -> np.ndarray:
-            return self._extract_dataset(self._dataset, 'dataset', 'date', {'date': _calc_date_range()})
+            return self._extract_dataset(self._dataset, 'dataset', 'date', {'date': _calc_date_range(item)})
 
         def _extract_statics(feature: str, item: int) -> np.ndarray:
             return self._extract_dataset(self._dataset, 'dataset', feature, {'basin': self._sample_index[item]['basin']})
@@ -265,7 +265,7 @@ class ForecastDataset(BaseDataset):
 
         def _extract_targets(feature: str, item: int) -> np.ndarray:
             dim_indexes = self._sample_index[item].copy()
-            dim_indexes["date"] = _calc_date_range(lead=True)
+            dim_indexes["date"] = _calc_date_range(item, lead=True)
             return self._extract_dataset(self._dataset, "dataset", feature, dim_indexes)
 
         sample = {'date': _extract_dates()}
