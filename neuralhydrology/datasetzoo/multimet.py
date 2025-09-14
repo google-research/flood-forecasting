@@ -113,7 +113,7 @@ class Multimet(ForecastDataset):
         datasets = []
         if self._static_features is not None:
             LOGGER.debug('load attributes')
-            datasets.append(self._load_attributes())
+            datasets.append(self._load_static_features())
         if self._hindcast_features is not None:
             LOGGER.debug('load hindcast features')
             datasets.extend(self._load_hindcast_features())
@@ -205,8 +205,8 @@ class Multimet(ForecastDataset):
         """
         return load_caravan_timeseries_together(self._targets_data_path, self._basins, self._target_features)
 
-    def _load_attributes(self) -> xr.Dataset:
-        """Load Caravan attributes.
+    def _load_static_features(self) -> xr.Dataset:
+        """Load Caravan static attributes.
 
         Returns
         -------
