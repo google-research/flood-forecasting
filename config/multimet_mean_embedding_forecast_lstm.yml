@@ -2,8 +2,8 @@ logging_level: INFO
 detect_anomaly: False
 
 # --- Training Parameters -------------------------------------------------------
-batch_size: 256
-# batch_size: 512
+# batch_size: 256
+batch_size: 512
 epochs: 30
 experiment_name: mean_embedding_forecast_lstm
 clip_gradient_norm: 1
@@ -11,9 +11,8 @@ clip_targets_to_zero:
 - streamflow
 learning_rate:
   0: 0.0005
-  7: 0.0001
 # max_updates_per_epoch:
-max_updates_per_epoch: 100
+max_updates_per_epoch: 2000
 metrics:
 - NSE
 - KGE
@@ -24,8 +23,8 @@ metrics:
 - Missed-Peaks
 num_workers: 0  # Scalene profiler works only without multiprocessing (`0`)
 optimizer: Adam
-validate_every: 5
-validate_n_random_basins: 10
+validate_every: 2
+validate_n_random_basins: 12
 predict_last_n: 8
 log_n_figures: 5
 
@@ -38,20 +37,23 @@ log_n_figures: 5
 # validation_basin_file: ~/neuralhydrology/config/basins/intersections/50_0.txt
 # test_basin_file: ~/neuralhydrology/config/basins/intersections/50_0.txt
 
-train_basin_file: ~/neuralhydrology/config/basins/caravan/camels.txt
-validation_basin_file: ~/neuralhydrology/config/basins/caravan/camels.txt
-test_basin_file: ~/neuralhydrology/config/basins/caravan/camels.txt
+train_basin_file: ~/neuralhydrology/config/basins/caravan/lamah.txt
+validation_basin_file: ~/neuralhydrology/config/basins/caravan/lamah.txt
+test_basin_file: ~/neuralhydrology/config/basins/caravan/lamah.txt
 
 # train_basin_file: ~/neuralhydrology/config/basins/intersections/0_0.txt
 # validation_basin_file: ~/neuralhydrology/config/basins/intersections/0_0.txt
 # test_basin_file: ~/neuralhydrology/config/basins/intersections/0_0.txt
 
-train_end_date: 30/09/2012
-train_start_date: 01/10/2000
-validation_end_date: 30/09/2014
-validation_start_date: 01/10/2012
-test_end_date: 30/09/2022
-test_start_date: 01/10/2017
+train_end_date: 31/12/2020
+train_start_date: 01/01/1980
+
+validation_end_date: 31/12/2023
+validation_start_date: 01/01/2022
+
+test_end_date: 31/12/2023
+test_start_date: 01/01/2022
+tester_skip_obs_all_nan: True
 
 # data_dir: ~/nh-data/data/Caravan-multimet
 targets_data_dir: ~/nh-data/data/Caravan-nc
@@ -73,13 +75,6 @@ forecast_inputs:
 - graphcast_u_component_of_wind_10m
 - graphcast_v_component_of_wind_10m
 hindcast_inputs:
-- era5land_surface_net_solar_radiation
-- era5land_surface_net_thermal_radiation
-- era5land_surface_pressure
-- era5land_temperature_2m
-- era5land_total_precipitation
-- era5land_u_component_of_wind_10m
-- era5land_v_component_of_wind_10m
 - imerg_precipitation
 - cpc_precipitation
 static_attributes:
@@ -143,17 +138,3 @@ output_activation: linear
 output_dropout: 0.4
 timestep_counter: True
 run_dir: ~/nh-data/runs
-dynamics_embedding:
-  activation: tanh
-  dropout: 0.0
-  hiddens:
-  - 32
-  - 16
-  - 8
-statics_embedding:
-  activation: tanh
-  dropout: 0.0
-  hiddens:
-  - 128
-  - 64
-  - 32

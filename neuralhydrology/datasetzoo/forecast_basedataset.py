@@ -90,6 +90,7 @@ class ForecastDataset(BaseDataset):
             self._hindcast_features = cfg.dynamic_inputs
         else:
             raise ValueError('Either `hindcast_inputs` or `dynamic_inputs` must be supplied.')
+        self._union_mapping = cfg.union_mapping
 
         # Feature data paths by type. This allows the option to load some data from cloud and some locally.
         self._statics_data_path = cfg.statics_data_dir
@@ -170,9 +171,9 @@ class ForecastDataset(BaseDataset):
         # Union features to extend certain data records.
         # Martin suggests doing this step prior to training models and then saving the unioned dataset locally.
         # If you do that, then remove this line.
-        if cfg.union_mapping:
+        if self._union_mapping:
             LOGGER.debug('union features')
-            self._dataset = union_features(self._dataset, cfg.union_mapping)
+            self._dataset = union_features(self._dataset, self._union_mapping)
 
         # Scale the dataset AFTER cropping dates so that we do not calcualte scalers using test or eval data.
         LOGGER.debug('init scaler')
@@ -266,10 +267,11 @@ class ForecastDataset(BaseDataset):
             return forecast_array
 
         def _extract_targets(feature: str, item: int) -> np.ndarray:
-            dim_indexes = {dim: val for dim, val in self._sample_index[item].items()}
-            dim_indexes['date'] = list(range(dim_indexes['date']-self._seq_length+1, dim_indexes['date']+1))
-            dim_indexes['date'] += [dim_indexes['date'][-1] + i for i in self._lead_times]
-            return self._extract_dataset(self._dataset, 'dataset', feature, dim_indexes)[-self._seq_length:]
+            dim_indexes = self._sample_index[item].copy()
+            end = dim_indexes["date"] + self._lead_times[-1]  # e.g. 1000 (date) + 7 (lead time)
+            start = end - (self._seq_length - 1)  # e.g. 365 window starting on 1007 starts on 643
+            dim_indexes["date"] = range(start, end + 1)  # include the last day
+            return self._extract_dataset(self._dataset, "dataset", feature, dim_indexes)
 
         sample = {'date': _extract_dates(item)}
         # TODO (future) :: Suggest remove outer keys and use only feature names. Major change required.
@@ -397,7 +399,7 @@ def _extract_dataarray(data: xr.DataArray, indexers: dict[Hashable, int|range]) 
     This function replaces uses of `isel` with data and indexers.
     """
     locators = (indexers[dim] if dim in indexers else slice(None) for dim in data.dims)
-    return data.values[tuple(locators)]
+    return data.data[tuple(locators)]
 
 
 def _assert_floats_are_float32(dataset: xr.Dataset):

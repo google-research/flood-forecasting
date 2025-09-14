@@ -136,8 +136,15 @@ class Multimet(ForecastDataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, basin).
         """
+        # Prepare hindcast features to load, including the masks of union_mapping
+        features = []
+        features.extend(self._hindcast_features)
+        if self._union_mapping:
+            features.extend(self._union_mapping.values())
+        features = list(set(features))
+
         # Separate products and bands for each product from feature names.
-        product_bands = _get_products_and_bands_from_feature_strings(features=self._hindcast_features)
+        product_bands = _get_products_and_bands_from_feature_strings(features=features)
 
         # Initialize storage for product/band dataframes that will eventually be concatenated.
         product_dss = []
@@ -183,9 +190,7 @@ class Multimet(ForecastDataset):
             if 'lead_time' not in product_ds:
                 raise ValueError(f'Lead times do not exist for forecast product ({product}).')
 
-            product_ds = product_ds.sel(basin=self._basins)[bands]
-            if lead_times is not None:
-                product_ds = product_ds.sel(lead_time=lead_times)            
+            product_ds = product_ds.sel(basin=self._basins, lead_time=lead_times)[bands]
             product_dss.append(product_ds)
 
         return product_dss

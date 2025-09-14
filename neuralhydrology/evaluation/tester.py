@@ -200,7 +200,7 @@ class BaseTester(object):
 
         for basin in pbar:
 
-            if self.cfg.cache_validation_data and basin in self.cached_datasets.keys():
+            if self.period != "test" and self.cfg.cache_validation_data and basin in self.cached_datasets:
                 ds = self.cached_datasets[basin]
             else:
                 try:
@@ -210,6 +210,21 @@ class BaseTester(object):
                     continue
                 if self.cfg.cache_validation_data and self.period == "validation":
                     self.cached_datasets[basin] = ds
+
+            if self.cfg.tester_skip_obs_all_nan:
+                basin_ds = ds._dataset.sel(basin=basin)
+                # Calculate all-nan ranges
+                diffs = np.diff(basin_ds.streamflow.isnull(), prepend=[0], append=[0])
+                (starts,), (ends,) = np.where(diffs == 1), np.where(diffs == -1)
+
+                period_start, period_end = self.cfg.test_start_date, self.cfg.test_end_date
+                if self.period == "validation":
+                    period_start, period_end = self.cfg.validation_start_date, self.cfg.validation_end_date
+
+                nan_date_starts = basin_ds.date.data[starts]
+                nan_date_ends = basin_ds.date.data[ends - 1]
+                if np.any((nan_date_starts <= period_start) & (nan_date_ends >= period_end)):
+                    continue
 
             loader = DataLoader(ds, batch_size=self.cfg.batch_size, num_workers=0, collate_fn=ds.collate_fn)
 
@@ -228,7 +243,7 @@ class BaseTester(object):
             if isinstance(seq_length, int):
                 seq_length = {ds.frequencies[0]: seq_length}
             lowest_freq = sort_frequencies(ds.frequencies)[0]
-            
+
             for freq in ds.frequencies:
                 if predict_last_n[freq] == 0:
                     continue  # this frequency is not being predicted
@@ -267,7 +282,7 @@ class BaseTester(object):
                 })
                 xr = ds.scaler.unscale(xr)
                 results[basin][freq]['xr'] = xr
-                
+
                 # create datetime range at the current frequency
                 freq_date_range = pd.date_range(start=dates[lowest_freq][0, -1], end=dates[freq][-1, -1], freq=freq)
                 # remove datetime steps that are not being predicted from the datetime range

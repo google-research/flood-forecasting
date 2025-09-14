@@ -1,4 +1,5 @@
 import logging
+import math
 import random
 import sys
 from datetime import datetime
@@ -220,7 +221,7 @@ class BaseTrainer(object):
                                         model=self.model,
                                         experiment_logger=self.experiment_logger.valid())
 
-                valid_metrics = self.experiment_logger.summarise()
+                valid_metrics = {'avg_total_loss': math.nan} | self.experiment_logger.summarise() 
                 print_msg = f"Epoch {epoch} average validation loss: {valid_metrics['avg_total_loss']:.5f}"
                 if self.cfg.metrics:
                     print_msg += f" -- Median validation metrics: "
