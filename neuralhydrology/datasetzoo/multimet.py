@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Iterable
 
 import logging
 from pathlib import Path
@@ -23,7 +23,7 @@ def _open_zarr(path: Path) -> xr.Dataset:
 
 
 def _get_products_and_bands_from_feature_strings(
-    features: List[str]
+    features: Iterable[str]
 ) -> Dict[str, List[str]]:
     """
     Processes feature strings to create a dictionary of product to band(s).
@@ -137,11 +137,7 @@ class Multimet(ForecastDataset):
             Dataset containing the loaded features with dimensions (date, basin).
         """
         # Prepare hindcast features to load, including the masks of union_mapping
-        features = []
-        features.extend(self._hindcast_features)
-        if self._union_mapping:
-            features.extend(self._union_mapping.values())
-        features = list(set(features))
+        features = set(self._hindcast_features) | set((self._union_mapping or {}).values())
 
         # Separate products and bands for each product from feature names.
         product_bands = _get_products_and_bands_from_feature_strings(features=features)
