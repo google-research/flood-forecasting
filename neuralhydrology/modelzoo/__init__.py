@@ -1,5 +1,6 @@
 import warnings
 
+import torch
 import torch.nn as nn
 
 from neuralhydrology.modelzoo.arlstm import ARLSTM
@@ -39,6 +40,7 @@ SINGLE_FREQ_MODELS = [
 AUTOREGRESSIVE_MODELS = ['arlstm']
 
 
+torch.compile(mode="max-autotune")
 def get_model(cfg: Config) -> nn.Module:
     """Get model object, depending on the run configuration.
     
