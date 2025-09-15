@@ -154,44 +154,21 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         head = self._calc_head(forecast)
 
-        self._clear_forward_caches()
         return head
 
-    @functools.cache
-    def _make_static_attributes_repeated_cached(
+    def _make_static_attributes_repeated(
         self, time_length: int, static_attributes: torch.Tensor
     ) -> torch.Tensor:
-        """Returns the attributes repeated w.r.t the time length.
-
-        This cache must be cleared on each forward. The attributes are not
-        constant, and thus memory use would become like a memory leak.
-        """
+        """Returns the attributes repeated w.r.t the time length."""
         return static_attributes.unsqueeze(1).repeat(1, time_length, 1)
 
-    @functools.cache
-    def _make_nan_padding_cached(
-        self,
-        batch_size: int,
-        nan_padding_length: int,
-        embedding_size: int,
-        device: str,
+    def _make_nan_padding(
+        self, batch_size: int, nan_padding_length: int, embedding_size: int, device: str
     ) -> torch.Tensor:
-        """Returns a nan-padding tensor.
-
-        Given the args that are constant and lightweight and so that it's always
-        constant, this cache shouldn't be cleared, to save memory.
-        When those tensors are created and used once, they're thrown away to GC,
-        and this saves their repeated recreation, and hence increased memory use.
-        """
+        """Returns a nan-padding tensor."""
         return torch.full(
             (batch_size, nan_padding_length, embedding_size), np.nan, device=device
         )
-
-    def _clear_forward_caches(self):
-        # Clear since static attributes change every forward cycle:
-        self._make_static_attributes_repeated_cached.cache_clear()
-
-        # No need to clear self._make_nan_padding_cached, it's always constant.
 
     def _append_static_attributes(
         self, embedding: torch.Tensor, static_attributes: torch.Tensor
@@ -199,7 +176,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         """Append static attributes embedding to another embedding tensor."""
         # Dimension 1 is the time dimension. Duplicate static embedding in all time series.
         time_length = embedding.shape[1]
-        static_attributes_repeated = self._make_static_attributes_repeated_cached(
+        static_attributes_repeated = self._make_static_attributes_repeated(
             time_length, static_attributes
         )
         return torch.cat([embedding, static_attributes_repeated], dim=-1)
@@ -212,7 +189,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         nan_padding_length = self.seq_length + self.lead_time - embedding.shape[1]
         # Dimension 2 is the length of embedding vector.
         embedding_size = embedding.shape[2]
-        nan_padding = self._make_nan_padding_cached(
+        nan_padding = self._make_nan_padding(
             batch_size, nan_padding_length, embedding_size, embedding.device
         )
         return torch.cat([embedding, nan_padding], dim=1)
