@@ -1,6 +1,7 @@
 from typing import Dict
 
 import numpy as np
+import pandas as pd
 import xarray as xr
 
 
@@ -15,9 +16,8 @@ def _expand_lead_times(
         raise ValueError('Trying to expand a dataarray that already has a lead time.')
     # TODO (future) :: This assumes daily data.
     lt_das = (da.shift(date=-int(lt / np.timedelta64(1, "D"))) for lt in lead_times)
-    lt_da = xr.concat(lt_das, dim="lead_time")
-    return lt_da.assign_coords(lead_time=lead_times)  # Label lead_times as lead_time
-
+    lt_da = xr.concat(lt_das, dim=pd.Index(data=lead_times, name="lead_time"))
+    return lt_da
 
 def _union_features_with_same_dimensions(
   feature_da: xr.DataArray,
