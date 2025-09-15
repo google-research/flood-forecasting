@@ -209,7 +209,7 @@ class ForecastDataset(BaseDataset):
                 skipna=True
             )
 
-        self._dataarrays_cache: dict[str, xr.DataArray] = {}
+        self._data_cache: dict[str, xr.DataArray] = {}
 
     def __len__(self) -> int:
         return self._num_samples
@@ -240,58 +240,71 @@ class ForecastDataset(BaseDataset):
 
         # Extract sample from `self._dataset`.
         def _extract_dates(item: int) -> np.ndarray:
-            return self._extract_dataset(self._dataset, 'dataset', 'date', {'date': _calc_date_range(item)})
+            date = _calc_date_range(item)
+            features = self._extract_dataset(self._dataset, ['date'], {'date': date})
+            return features['date']
 
-        def _extract_statics(feature: str, item: int) -> np.ndarray:
-            return self._extract_dataset(self._dataset, 'dataset', feature, {'basin': self._sample_index[item]['basin']})
+        def _extract_statics(item: int) -> np.ndarray:
+            basin = self._sample_index[item]['basin']
+            features = self._extract_dataset(self._dataset, self._static_features, {'basin': basin})
+            return np.stack([features[e] for e in self._static_features], axis=-1)
 
-        def _extract_hindcasts(feature: str, item: int) -> np.ndarray:
-            dim_indexes = {dim: val for dim, val in self._sample_index[item].items()}
+        def _extract_hindcasts(item: int) -> dict[str, np.ndarray]:
+            dim_indexes = self._sample_index[item].copy()
             dim_indexes['date'] = range(dim_indexes['date']-self._seq_length+1, dim_indexes['date']+1)
-            return self._extract_dataset(self._dataset, 'dataset', feature, dim_indexes)
+            features = self._extract_dataset(self._dataset, self._hindcast_features, dim_indexes)
+            return {name: np.expand_dims(feature, -1) for name, feature in features.items()}
+            # TODO (future) :: This adds a dimension to many features, as required by some models.
+            # There is no need for this except that it is how basedataset works, and everything else expects
+            # the trailing dim. Remove this dependency in the future.
 
-        def _extract_forecasts(feature: str, item: int) -> np.ndarray:
-            dim_indexes = {dim: val for dim, val in self._sample_index[item].items()}
-            forecast_array = self._extract_dataset(self._dataset, 'dataset', feature, dim_indexes)
+        def _extract_forecasts(item: int) -> dict[str, np.ndarray]:
+            features = self._extract_dataset(self._dataset, self._forecast_features, self._sample_index[item])
             if self._forecast_overlap is not None and self._forecast_overlap > 0:
+                dim_indexes = self._sample_index[item].copy()
                 dim_indexes['date'] = range(
                     dim_indexes['date']+1-self._min_lead_time-self._forecast_overlap,
                     dim_indexes['date']+1-self._min_lead_time
                 )
                 dim_indexes['lead_time'] = 0
-                overlap_array = self._extract_dataset(self._dataset, 'dataset', feature, dim_indexes)
-                forecast_array = np.concatenate([overlap_array, forecast_array])
-            return forecast_array
+                overlaps = self._extract_dataset(self._dataset, self._forecast_features, dim_indexes)
+                features = {name: np.concatenate([overlaps[name], feature]) for name, feature in features.items()}
+            return {name: np.expand_dims(feature, -1) for name, feature in features.items()}
+            # TODO (future) :: This adds a dimension to many features, as required by some models.
+            # There is no need for this except that it is how basedataset works, and everything else expects
+            # the trailing dim. Remove this dependency in the future.
 
-        def _extract_targets(feature: str, item: int) -> np.ndarray:
+        def _extract_targets(item: int) -> np.ndarray:
             dim_indexes = self._sample_index[item].copy()
             dim_indexes["date"] = _calc_date_range(item, lead=True)
-            return self._extract_dataset(self._dataset, "dataset", feature, dim_indexes)
+            features = self._extract_dataset(self._dataset, self._target_features, dim_indexes)
+            return np.stack([features[e] for e in self._target_features], axis=-1)
 
-        sample = {'date': _extract_dates(item)}
-        # TODO (future) :: Suggest remove outer keys and use only feature names. Major change required.
-        sample['x_s'] = np.stack([_extract_statics(feature, item) for feature in self._static_features], -1)
-        sample['x_d_hindcast'] = {feature: _extract_hindcasts(feature, item) for feature in self._hindcast_features}
-        sample['x_d_forecast'] = {feature: _extract_forecasts(feature, item) for feature in self._forecast_features}
-        sample['y'] = np.stack([_extract_targets(feature, item) for feature in self._target_features], -1)
-        if self._per_basin_target_stds is not None:
-            sample['per_basin_target_stds'] = np.stack(
-                [
-                    self._extract_dataset(self._per_basin_target_stds, 'per_basin_target_stds', feature, {'basin': self._sample_index[item]['basin']})
-                    for feature in self._target_features
-                ], -1
+        def _extract_per_basin_stds(item: int) -> np.ndarray:
+            stds_array = self._extract_dataset(
+                self._per_basin_target_stds, 
+                self._target_features,
+                {'basin': self._sample_index[item]['basin']},
             )
-        if self._hindcast_counter is not None:
-            sample['x_d_hindcast']['hindcast_counter'] = self._hindcast_counter
-            sample['x_d_forecast']['forecast_counter'] = self._forecast_counter            
+            return np.expand_dims(stds_array, axis=0)
+            # TODO (future) :: This adds a dimension to many features, as required by some models.
+            # There is no need for this except that it is how basedataset works, and everything else expects
+            # the trailing dim. Remove this dependency in the future.
 
-        # TODO (future) :: This adds a dimension to many features, as required by some models.
-        # There is no need for this except that it is how basedataset works, and everything else expects
-        # the trailing dim. Remove this dependency in the future.
-        sample['x_d_hindcast'] = {feature: np.expand_dims(value, -1) for feature, value in sample['x_d_hindcast'].items()}
-        sample['x_d_forecast'] = {feature: np.expand_dims(value, -1) for feature, value in sample['x_d_forecast'].items()}
+        # TODO (future) :: Suggest remove outer keys and use only feature names. Major change required.
+        sample = {
+            'date': _extract_dates(item),
+            'x_s': _extract_statics(item),
+            'x_d_hindcast': _extract_hindcasts(item),
+            'x_d_forecast': _extract_forecasts(item),
+            'y': _extract_targets(item),
+        }
         if self._per_basin_target_stds is not None:
-            sample['per_basin_target_stds'] = np.expand_dims(sample['per_basin_target_stds'], 0)
+            sample['per_basin_target_stds'] = _extract_per_basin_stds(item)
+        if self._hindcast_counter is not None:
+            sample['x_d_hindcast']['hindcast_counter'] = np.expand_dims(self._hindcast_counter, -1)
+        if self._forecast_counter is not None:
+            sample['x_d_forecast']['forecast_counter'] = np.expand_dims(self._forecast_counter, -1)
 
         # Rename the hindcast data key if we are not doing forecasting.
         if not self._forecast_features:
@@ -380,12 +393,14 @@ class ForecastDataset(BaseDataset):
         """
         raise NotImplementedError
 
-    def _extract_dataset(self, dataset: xr.Dataset, cache_key: str, feature: str, indexers: dict[Hashable, int|range]) -> np.ndarray | np.float32:
-        key = f'{cache_key}-{feature}'
-        if key not in self._dataarrays_cache:
-            self._dataarrays_cache[key] = dataset[feature]
-        dataarray = self._dataarrays_cache[key]
-        return _extract_dataarray(dataarray, indexers)
+    def _extract_dataset(self, data: xr.Dataset, features: list[str], indexers: dict[Hashable, int|range]) -> dict[str, xr.DataArray]:
+        def extract(feature_name):
+            feature = self._data_cache.get(feature_name)
+            if feature is None:
+                feature = self._data_cache[feature_name] = data[feature_name]
+            return _extract_dataarray(feature, indexers)
+
+        return {feature_name: extract(feature_name) for feature_name in features}
 
 
 def _extract_dataarray(data: xr.DataArray, indexers: dict[Hashable, int|range]) -> np.ndarray | np.float32:
