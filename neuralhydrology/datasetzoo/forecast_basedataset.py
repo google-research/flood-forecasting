@@ -230,20 +230,17 @@ class ForecastDataset(BaseDataset):
         if item % 1 != 0:
             raise ValueError(f'Requested index {item} is not an integer.')
 
+        def _calc_date_range(item: int, *, lead: bool = False) -> range:
+            date = self._sample_index[item]["date"]
+            duration = self._seq_length - 1
+            if not lead and not self._lead_times:
+                return range(date - duration, date + 1)
+            end = date + self._lead_times[-1]
+            return range(end - duration, end + 1)
+
         # Extract sample from `self._dataset`.
         def _extract_dates(item: int) -> np.ndarray:
-            hindcast_date_indexes = range(
-                self._sample_index[item]['date']+1-self._seq_length,
-                self._sample_index[item]['date']+1
-            )
-            dates = self._extract_dataset(self._dataset, 'dataset', 'date', {'date': hindcast_date_indexes})
-            if self._lead_times:
-                forecast_dates = [
-                    dates[-1] + np.timedelta64(i, 'D')
-                    for i in self._lead_times
-                ]
-                dates = np.concatenate([dates, forecast_dates])[-self._seq_length:]
-            return dates
+            return self._extract_dataset(self._dataset, 'dataset', 'date', {'date': _calc_date_range(item)})
 
         def _extract_statics(feature: str, item: int) -> np.ndarray:
             return self._extract_dataset(self._dataset, 'dataset', feature, {'basin': self._sample_index[item]['basin']})
@@ -268,9 +265,7 @@ class ForecastDataset(BaseDataset):
 
         def _extract_targets(feature: str, item: int) -> np.ndarray:
             dim_indexes = self._sample_index[item].copy()
-            end = dim_indexes["date"] + self._lead_times[-1]  # e.g. 1000 (date) + 7 (lead time)
-            start = end - (self._seq_length - 1)  # e.g. 365 window starting on 1007 starts on 643
-            dim_indexes["date"] = range(start, end + 1)  # include the last day
+            dim_indexes["date"] = _calc_date_range(item, lead=True)
             return self._extract_dataset(self._dataset, "dataset", feature, dim_indexes)
 
         sample = {'date': _extract_dates(item)}
