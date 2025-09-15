@@ -441,7 +441,8 @@ class BaseTester(object):
                     elif not key.startswith('date'):
                         data[key] = data[key].to(self.device)
                 data = model.pre_model_hook(data, is_train=False)
-                predictions, loss = self._get_predictions_and_loss(model, data)
+                with autocast(self.device.type, enabled=(self.device.type == 'cuda')):
+                    predictions, loss = self._get_predictions_and_loss(model, data)
 
                 if all_output:
                     for key, value in predictions.items():
@@ -493,9 +494,8 @@ class BaseTester(object):
         return preds, obs, dates, mean_losses, all_output
 
     def _get_predictions_and_loss(self, model: BaseModel, data: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, float]:
-        with autocast(self.device.type, enabled=(self.device.type == 'cuda')):
-            predictions = model(data)
-            _, all_losses = self.loss_obj(predictions, data)
+        predictions = model(data)
+        _, all_losses = self.loss_obj(predictions, data)
         return predictions, {k: v.item() for k, v in all_losses.items()}
 
     def _subset_targets(self, model: BaseModel, data: Dict[str, torch.Tensor], predictions: np.ndarray,
