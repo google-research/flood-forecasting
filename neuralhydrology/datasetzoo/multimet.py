@@ -1,8 +1,8 @@
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Iterable
 
 import logging
 from pathlib import Path
-import glob
+import functools
 
 import numpy as np
 import pandas as pd
@@ -16,14 +16,14 @@ LOGGER = logging.getLogger(__name__)
 
 MULTIMET_MINIMUM_LEAD_TIME = 1
 
-
+@functools.cache
 def _open_zarr(path: Path) -> xr.Dataset:
     path = str(path).replace('gs:/', 'gs://')
     return xr.open_zarr(store=path, chunks='auto', decode_timedelta=True)
 
 
 def _get_products_and_bands_from_feature_strings(
-    features: List[str]
+    features: Iterable[str]
 ) -> Dict[str, List[str]]:
     """
     Processes feature strings to create a dictionary of product to band(s).
@@ -113,7 +113,7 @@ class Multimet(ForecastDataset):
         datasets = []
         if self._static_features is not None:
             LOGGER.debug('load attributes')
-            datasets.append(self._load_attributes())
+            datasets.append(self._load_static_features())
         if self._hindcast_features is not None:
             LOGGER.debug('load hindcast features')
             datasets.extend(self._load_hindcast_features())
@@ -136,8 +136,11 @@ class Multimet(ForecastDataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, basin).
         """
+        # Prepare hindcast features to load, including the masks of union_mapping
+        features = set(self._hindcast_features) | set((self._union_mapping or {}).values())
+
         # Separate products and bands for each product from feature names.
-        product_bands = _get_products_and_bands_from_feature_strings(features=self._hindcast_features)
+        product_bands = _get_products_and_bands_from_feature_strings(features=features)
 
         # Initialize storage for product/band dataframes that will eventually be concatenated.
         product_dss = []
@@ -183,9 +186,7 @@ class Multimet(ForecastDataset):
             if 'lead_time' not in product_ds:
                 raise ValueError(f'Lead times do not exist for forecast product ({product}).')
 
-            product_ds = product_ds.sel(basin=self._basins)[bands]
-            if lead_times is not None:
-                product_ds = product_ds.sel(lead_time=lead_times)            
+            product_ds = product_ds.sel(basin=self._basins, lead_time=lead_times)[bands]
             product_dss.append(product_ds)
 
         return product_dss
@@ -200,8 +201,8 @@ class Multimet(ForecastDataset):
         """
         return load_caravan_timeseries_together(self._targets_data_path, self._basins, self._target_features)
 
-    def _load_attributes(self) -> xr.Dataset:
-        """Load Caravan attributes.
+    def _load_static_features(self) -> xr.Dataset:
+        """Load Caravan static attributes.
 
         Returns
         -------
