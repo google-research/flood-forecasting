@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from torch.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -160,6 +161,7 @@ class BaseTrainer(object):
             self._freeze_model_parts()
 
         self.optimizer = self._get_optimizer()
+        self.scaler = GradScaler(enabled=(self.device.type == 'cuda'))
         self.loss_obj = self._get_loss_obj().to(self.device)
 
         # Add possible regularization terms to the loss function.
@@ -290,16 +292,17 @@ class BaseTrainer(object):
             # apply possible pre-processing to the batch before the forward pass
             data = self.model.pre_model_hook(data, is_train=True)
 
-            # get predictions
-            predictions = self.model(data)
+            with autocast(self.device.type, enabled=(self.device.type == 'cuda')):
+                # get predictions
+                predictions = self.model(data)
 
-            if self.noise_sampler_y is not None:
-                for key in filter(lambda k: 'y' in k, data.keys()):
-                    noise = self.noise_sampler_y.sample(data[key].shape)
-                    # make sure we add near-zero noise to originally near-zero targets
-                    data[key] += (data[key] + self._target_mean / self._target_std) * noise.to(self.device)
+                if self.noise_sampler_y is not None:
+                    for key in filter(lambda k: 'y' in k, data.keys()):
+                        noise = self.noise_sampler_y.sample(data[key].shape)
+                        # make sure we add near-zero noise to originally near-zero targets
+                        data[key] += (data[key] + self._target_mean / self._target_std) * noise.to(self.device)
 
-            loss, all_losses = self.loss_obj(predictions, data)
+                loss, all_losses = self.loss_obj(predictions, data)
 
             # early stop training if loss is NaN
             if torch.isnan(loss):
@@ -314,13 +317,16 @@ class BaseTrainer(object):
                 self.optimizer.zero_grad()
 
                 # get gradients
-                loss.backward()
+                self.scaler.scale(loss).backward()
 
                 if self.cfg.clip_gradient_norm is not None:
+                    self.scaler.unscale_(self.optimizer)
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.clip_gradient_norm)
 
                 # update weights
-                self.optimizer.step()
+                self.scaler.step(self.optimizer)
+
+                self.scaler.update()  # Update scale for the next iteration
 
             pbar.set_postfix_str(f"Loss: {loss.item():.4f}")
 
