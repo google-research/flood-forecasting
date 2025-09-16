@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import itertools
+import math
 import pickle
 from collections import defaultdict
 from pathlib import Path
@@ -21,6 +22,9 @@ from typing import Dict, Iterable
 import numpy as np
 import pandas as pd
 from ruamel.yaml import YAML
+from torch.utils.data import Sampler, BatchSampler
+
+from neuralhydrology.datasetzoo.basedataset import BaseDataset
 
 
 def load_basin_id_encoding(run_dir: Path) -> Dict[str, int]:
@@ -80,3 +84,32 @@ def metrics_to_dataframe(results: dict, metrics: Iterable[str], targets: Iterabl
     df.index.name = "basin"
 
     return df
+
+
+class BasinBatchSampler(BatchSampler):
+    """Groups samples by basin.
+    
+    Maps every basin to samples for it, and on iterations chunks them by batch size.
+    """
+
+    def __init__(self, ds: BaseDataset, sample_index: dict[int, dict[str, int]], batch_size: int):
+        super().__init__(Sampler(ds), batch_size, drop_last=False)
+
+        self._batch_size = batch_size
+        
+        self._basin_indices: dict[int, list[int]] = {}
+        for sample, data in sample_index.items():
+            self._basin_indices.setdefault(data['basin'], []).append(sample)
+
+        self._num_batches = sum(
+            math.ceil(len(indices) / batch_size)
+            for indices in self._basin_indices.values()
+        )
+
+    def __iter__(self):
+        for indices in self._basin_indices.values():  # for every basin
+            for i in range(0, len(indices), self._batch_size):  # chunk into batches
+                yield indices[i:i + self._batch_size]  # batch
+
+    def __len__(self):
+        return self._num_batches
