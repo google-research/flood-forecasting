@@ -230,77 +230,16 @@ class ForecastDataset(BaseDataset):
         if item % 1 != 0:
             raise ValueError(f'Requested index {item} is not an integer.')
 
-        def _calc_date_range(item: int, *, lead: bool = False) -> range:
-            date = self._sample_index[item]["date"]
-            duration = self._seq_length - 1
-            if not lead and not self._lead_times:
-                return range(date - duration, date + 1)
-            end = date + self._lead_times[-1]
-            return range(end - duration, end + 1)
-
-        # Extract sample from `self._dataset`.
-        def _extract_dates(item: int) -> np.ndarray:
-            date = _calc_date_range(item)
-            features = self._extract_dataset(self._dataset, ['date'], {'date': date})
-            return features['date']
-
-        def _extract_statics(item: int) -> np.ndarray:
-            basin = self._sample_index[item]['basin']
-            features = self._extract_dataset(self._dataset, self._static_features, {'basin': basin})
-            return np.stack([features[e] for e in self._static_features], axis=-1)
-
-        def _extract_hindcasts(item: int) -> dict[str, np.ndarray]:
-            dim_indexes = self._sample_index[item].copy()
-            dim_indexes['date'] = range(dim_indexes['date']-self._seq_length+1, dim_indexes['date']+1)
-            features = self._extract_dataset(self._dataset, self._hindcast_features, dim_indexes)
-            return {name: np.expand_dims(feature, -1) for name, feature in features.items()}
-            # TODO (future) :: This adds a dimension to many features, as required by some models.
-            # There is no need for this except that it is how basedataset works, and everything else expects
-            # the trailing dim. Remove this dependency in the future.
-
-        def _extract_forecasts(item: int) -> dict[str, np.ndarray]:
-            features = self._extract_dataset(self._dataset, self._forecast_features, self._sample_index[item])
-            if self._forecast_overlap is not None and self._forecast_overlap > 0:
-                dim_indexes = self._sample_index[item].copy()
-                dim_indexes['date'] = range(
-                    dim_indexes['date']+1-self._min_lead_time-self._forecast_overlap,
-                    dim_indexes['date']+1-self._min_lead_time
-                )
-                dim_indexes['lead_time'] = 0
-                overlaps = self._extract_dataset(self._dataset, self._forecast_features, dim_indexes)
-                features = {name: np.concatenate([overlaps[name], feature]) for name, feature in features.items()}
-            return {name: np.expand_dims(feature, -1) for name, feature in features.items()}
-            # TODO (future) :: This adds a dimension to many features, as required by some models.
-            # There is no need for this except that it is how basedataset works, and everything else expects
-            # the trailing dim. Remove this dependency in the future.
-
-        def _extract_targets(item: int) -> np.ndarray:
-            dim_indexes = self._sample_index[item].copy()
-            dim_indexes["date"] = _calc_date_range(item, lead=True)
-            features = self._extract_dataset(self._dataset, self._target_features, dim_indexes)
-            return np.stack([features[e] for e in self._target_features], axis=-1)
-
-        def _extract_per_basin_stds(item: int) -> np.ndarray:
-            stds_array = self._extract_dataset(
-                self._per_basin_target_stds, 
-                self._target_features,
-                {'basin': self._sample_index[item]['basin']},
-            )
-            return np.expand_dims(stds_array, axis=0)
-            # TODO (future) :: This adds a dimension to many features, as required by some models.
-            # There is no need for this except that it is how basedataset works, and everything else expects
-            # the trailing dim. Remove this dependency in the future.
-
         # TODO (future) :: Suggest remove outer keys and use only feature names. Major change required.
         sample = {
-            'date': _extract_dates(item),
-            'x_s': _extract_statics(item),
-            'x_d_hindcast': _extract_hindcasts(item),
-            'x_d_forecast': _extract_forecasts(item),
-            'y': _extract_targets(item),
+            'date': self._extract_dates(item),
+            'x_s': self._extract_statics(item),
+            'x_d_hindcast': self._extract_hindcasts(item),
+            'x_d_forecast': self._extract_forecasts(item),
+            'y': self._extract_targets(item),
         }
         if self._per_basin_target_stds is not None:
-            sample['per_basin_target_stds'] = _extract_per_basin_stds(item)
+            sample['per_basin_target_stds'] = self._extract_per_basin_stds(item)
         if self._hindcast_counter is not None:
             sample['x_d_hindcast']['hindcast_counter'] = np.expand_dims(self._hindcast_counter, -1)
         if self._forecast_counter is not None:
@@ -312,20 +251,68 @@ class ForecastDataset(BaseDataset):
             _ = sample.pop('x_d_forecast')
 
         # Return sample with various required formats.
-        def _convert_to_tensor(key: str, value: np.ndarray) -> torch.Tensor | np.ndarray:
-            if key in NUMPY_VARS:
-                return value
-            elif key in TENSOR_VARS:
-                if isinstance(value, dict):
-                    return {k: torch.from_numpy(v) for k, v in value.items()}
-                elif isinstance(value, np.ndarray):
-                    return torch.from_numpy(value)
-                else:
-                    raise ValueError(f'Unrecognized data type: {type(value)}')
-            else:
-                raise ValueError(f'Unrecognized data key: {key}')
-
         return {key: _convert_to_tensor(key, value) for key, value in sample.items()}
+
+    def _calc_date_range(self, item: int, *, lead: bool = False) -> range:
+        date = self._sample_index[item]["date"]
+        duration = self._seq_length - 1
+        if not lead and not self._lead_times:
+            return range(date - duration, date + 1)
+        end = date + self._lead_times[-1]
+        return range(end - duration, end + 1)
+
+    def _extract_dates(self, item: int) -> np.ndarray:
+        date = self._calc_date_range(item)
+        features = self._extract_dataset(self._dataset, ['date'], {'date': date})
+        return features['date']
+
+    def _extract_statics(self, item: int) -> np.ndarray:
+        basin = self._sample_index[item]['basin']
+        features = self._extract_dataset(self._dataset, self._static_features, {'basin': basin})
+        return np.stack([features[e] for e in self._static_features], axis=-1)
+
+    def _extract_hindcasts(self, item: int) -> dict[str, np.ndarray]:
+        dim_indexes = self._sample_index[item].copy()
+        dim_indexes['date'] = range(dim_indexes['date']-self._seq_length+1, dim_indexes['date']+1)
+        features = self._extract_dataset(self._dataset, self._hindcast_features, dim_indexes)
+        return {name: np.expand_dims(feature, -1) for name, feature in features.items()}
+        # TODO (future) :: This adds a dimension to many features, as required by some models.
+        # There is no need for this except that it is how basedataset works, and everything else expects
+        # the trailing dim. Remove this dependency in the future.
+
+    def _extract_forecasts(self, item: int) -> dict[str, np.ndarray]:
+        features = self._extract_dataset(self._dataset, self._forecast_features, self._sample_index[item])
+        if self._forecast_overlap is not None and self._forecast_overlap > 0:
+            dim_indexes = self._sample_index[item].copy()
+            dim_indexes['date'] = range(
+                dim_indexes['date']+1-self._min_lead_time-self._forecast_overlap,
+                dim_indexes['date']+1-self._min_lead_time
+            )
+            dim_indexes['lead_time'] = 0
+            overlaps = self._extract_dataset(self._dataset, self._forecast_features, dim_indexes)
+            features = {name: np.concatenate([overlaps[name], feature]) for name, feature in features.items()}
+        return {name: np.expand_dims(feature, -1) for name, feature in features.items()}
+        # TODO (future) :: This adds a dimension to many features, as required by some models.
+        # There is no need for this except that it is how basedataset works, and everything else expects
+        # the trailing dim. Remove this dependency in the future.
+
+    def _extract_targets(self, item: int) -> np.ndarray:
+        dim_indexes = self._sample_index[item].copy()
+        dim_indexes["date"] = self._calc_date_range(item, lead=True)
+        features = self._extract_dataset(self._dataset, self._target_features, dim_indexes)
+        return np.stack([features[e] for e in self._target_features], axis=-1)
+
+    def _extract_per_basin_stds(self, item: int) -> np.ndarray:
+        assert self._per_basin_target_stds is not None
+        stds_array = self._extract_dataset(
+            self._per_basin_target_stds, 
+            self._target_features,
+            {'basin': self._sample_index[item]['basin']},
+        )
+        return np.expand_dims(list(stds_array.values()), axis=0)
+        # TODO (future) :: This adds a dimension to many features, as required by some models.
+        # There is no need for this except that it is how basedataset works, and everything else expects
+        # the trailing dim. Remove this dependency in the future.
 
     # This is run by the base class.
     def _create_sample_index(self):
@@ -393,7 +380,7 @@ class ForecastDataset(BaseDataset):
         """
         raise NotImplementedError
 
-    def _extract_dataset(self, data: xr.Dataset, features: list[str], indexers: dict[Hashable, int|range]) -> dict[str, xr.DataArray]:
+    def _extract_dataset(self, data: xr.Dataset, features: list[str], indexers: dict[Hashable, int|range]) -> dict[str, np.ndarray | np.float32]:
         def extract(feature_name):
             feature = self._data_cache.get(feature_name)
             if feature is None:
@@ -420,3 +407,17 @@ def _assert_floats_are_float32(dataset: xr.Dataset):
                 f"Data variable or coord '{name}' is a float but not float32. "
                 f"Actual dtype: {data_array_or_coord.dtype}"
             )
+
+
+def _convert_to_tensor(key: str, value: np.ndarray) -> torch.Tensor | np.ndarray:
+    if key in NUMPY_VARS:
+        return value
+    elif key in TENSOR_VARS:
+        if isinstance(value, dict):
+            return {k: torch.from_numpy(v) for k, v in value.items()}
+        elif isinstance(value, np.ndarray):
+            return torch.from_numpy(value)
+        else:
+            raise ValueError(f'Unrecognized data type: {type(value)}')
+    else:
+        raise ValueError(f'Unrecognized data key: {key}')
