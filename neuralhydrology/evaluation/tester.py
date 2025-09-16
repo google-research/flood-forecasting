@@ -94,6 +94,10 @@ class BaseTester(object):
 
         self._load_run_data()
 
+        self.dataset = self._get_dataset_all()
+
+        self.exclude_basins = set(self._calc_exclude_basins())
+
     def _set_device(self):
         if self.cfg.device is not None:
             if self.cfg.device.startswith("cuda"):
@@ -146,6 +150,17 @@ class BaseTester(object):
 
         LOGGER.info(f"Using the model weights from {weight_file}")
         self.model.load_state_dict(torch.load(weight_file, map_location=self.device))
+
+    def _get_dataset_all(self) -> BaseDataset:
+        """Get dataset for all basin."""
+        ds = get_dataset(cfg=self.cfg,
+                         is_train=False,
+                         period=self.period,
+                         basin=None,
+                         additional_features=self.additional_features,
+                         id_to_int=self.id_to_int,
+                         compute_scaler=False)
+        return ds
 
     def _get_dataset(self, basin: str) -> BaseDataset:
         """Get dataset for a single basin."""
@@ -214,6 +229,8 @@ class BaseTester(object):
         pbar.set_description('# Validation' if self.period == "validation" else "# Evaluation")
 
         for basin in pbar:
+            if basin in self.exclude_basins:
+                continue
 
             if self.period != "test" and self.cfg.cache_validation_data and basin in self.cached_datasets:
                 ds = self.cached_datasets[basin]
@@ -373,6 +390,23 @@ class BaseTester(object):
             self._save_results(results=results_to_save, states=states_to_save, epoch=epoch)
 
         return results
+
+    def _calc_exclude_basins(self) -> Iterator[str]:
+        if not self.cfg.tester_skip_obs_all_nan:
+            return
+        # TODO(future): this may be optimized to work vectorically via xarray on all
+        # basins at once.
+        for basin in self.basins:
+            basin_ds = self.dataset._dataset.sel(basin=basin)
+            # Calculate all-nan ranges
+            diffs = np.diff(basin_ds.streamflow.isnull(), prepend=[0], append=[0])
+            (starts,), (ends,) = np.where(diffs == 1), np.where(diffs == -1)
+
+            test_start, test_end = self.cfg.test_start_date, self.cfg.test_end_date
+            nan_date_starts = basin_ds.date.data[starts]
+            nan_date_ends = basin_ds.date.data[ends - 1]
+            if np.any((nan_date_starts <= test_start) & (nan_date_ends >= test_end)):
+                yield basin
 
     def _create_and_log_figures(self, results: dict, experiment_logger: Logger|None, epoch: int):
         basins = list(results.keys())
