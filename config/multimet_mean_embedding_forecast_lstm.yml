@@ -45,14 +45,14 @@ test_basin_file: ~/neuralhydrology/config/basins/caravan/lamah.txt
 # validation_basin_file: ~/neuralhydrology/config/basins/intersections/0_0.txt
 # test_basin_file: ~/neuralhydrology/config/basins/intersections/0_0.txt
 
-train_end_date: 31/12/2020
+train_end_date: 31/12/2015
 train_start_date: 01/01/1980
 
-validation_end_date: 31/12/2023
-validation_start_date: 01/01/2022
+validation_end_date: 31/12/2018
+validation_start_date: 01/01/2017
 
-test_end_date: 31/12/2023
-test_start_date: 01/01/2022
+test_end_date: 31/12/2018
+test_start_date: 01/01/2017
 tester_skip_obs_all_nan: True
 
 # data_dir: ~/nh-data/data/Caravan-multimet
