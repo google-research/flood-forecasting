@@ -22,9 +22,7 @@ from typing import Dict, Iterable
 import numpy as np
 import pandas as pd
 from ruamel.yaml import YAML
-from torch.utils.data import Sampler, BatchSampler
-
-from neuralhydrology.datasetzoo.basedataset import BaseDataset
+from torch.utils.data import SequentialSampler, BatchSampler
 
 
 def load_basin_id_encoding(run_dir: Path) -> Dict[str, int]:
@@ -92,8 +90,8 @@ class BasinBatchSampler(BatchSampler):
     Maps every basin to samples for it, and on iterations chunks them by batch size.
     """
 
-    def __init__(self, ds: BaseDataset, sample_index: dict[int, dict[str, int]], batch_size: int):
-        super().__init__(Sampler(ds), batch_size, drop_last=False)
+    def __init__(self, sample_index: dict[int, dict[str, int]], batch_size: int):
+        super().__init__(SequentialSampler(range(len(sample_index))), batch_size, drop_last=False)
 
         self._batch_size = batch_size
         

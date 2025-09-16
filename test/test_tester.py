@@ -46,14 +46,14 @@ def fixure():
 
 def test_init_groups_basins(fixure):
     """Test grouping all sample indices by their basin id."""
-    sampler = BasinBatchSampler(MagicMock(), fixure["sample_index"], BATCH_SIZE)
+    sampler = BasinBatchSampler(fixure["sample_index"], BATCH_SIZE)
 
     assert sampler._basin_indices == fixure["expected_groups"]
 
 
 def test_num_batches(fixure):
     """Test _num_batches is total num batches for an epoc (accounting for partial batch)."""
-    sampler = BasinBatchSampler(MagicMock(), fixure["sample_index"], BATCH_SIZE)
+    sampler = BasinBatchSampler(fixure["sample_index"], BATCH_SIZE)
 
     expected_num_batches = ceil(7 / 3) + ceil(6 / 3) + ceil(2 / 3)
 
@@ -62,7 +62,7 @@ def test_num_batches(fixure):
 
 def test_len_returns_num_batches(fixure):
     """Test __len__ returns total num batches for an epoc (accounting for partial batch)."""
-    sampler = BasinBatchSampler(MagicMock(), fixure["sample_index"], BATCH_SIZE)
+    sampler = BasinBatchSampler(fixure["sample_index"], BATCH_SIZE)
 
     expected_num_batches = ceil(7 / 3) + ceil(6 / 3) + ceil(2 / 3)
 
@@ -71,7 +71,7 @@ def test_len_returns_num_batches(fixure):
 
 def test_iter_yields_all_samples_once(fixure):
     """Test iterating results in all sample indices once per epoc."""
-    sampler = BasinBatchSampler(MagicMock(), fixure["sample_index"], BATCH_SIZE)
+    sampler = BasinBatchSampler(fixure["sample_index"], BATCH_SIZE)
 
     indices = {i for batch in sampler for i in batch}
 
@@ -80,7 +80,7 @@ def test_iter_yields_all_samples_once(fixure):
 
 def test_one_basin_per_batch(fixure):
     """Test every batch contains samples belonging to only one basin."""
-    sampler = BasinBatchSampler(MagicMock(), fixure["sample_index"], BATCH_SIZE)
+    sampler = BasinBatchSampler(fixure["sample_index"], BATCH_SIZE)
 
     basinss = [{fixure["sample_index"][i]["basin"] for i in batch} for batch in sampler]
     assert all(len(basins) == 1 for basins in basinss)
@@ -91,7 +91,7 @@ def test_sampler_with_single_basin(fixure):
     sample_index = {
         k: v for k, v in fixure["sample_index"].items() if v["basin"] == 101
     }
-    sampler = BasinBatchSampler(MagicMock(), sample_index, BATCH_SIZE)
+    sampler = BasinBatchSampler(sample_index, BATCH_SIZE)
 
     indices = {idx for batch in sampler for idx in batch}
 
@@ -102,7 +102,7 @@ def test_sampler_with_single_basin(fixure):
 def test_sampler_with_batch_size_larger_than_samples():
     """Test behavior when a basin has fewer samples than the batch size."""
     sample_index = {0: {"basin": 201}, 1: {"basin": 201}}
-    sampler = BasinBatchSampler(MagicMock(), sample_index, batch_size=5)
+    sampler = BasinBatchSampler(sample_index, batch_size=5)
     batches = list(sampler)
 
     assert len(sampler) == 1
