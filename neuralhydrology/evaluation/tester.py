@@ -152,7 +152,7 @@ class BaseTester(object):
         self.model.load_state_dict(torch.load(weight_file, map_location=self.device))
 
     def _get_dataset_all(self) -> BaseDataset:
-        """Get dataset for a single basin."""
+        """Get dataset for all basin."""
         ds = get_dataset(cfg=self.cfg,
                          is_train=False,
                          period=self.period,
@@ -394,7 +394,7 @@ class BaseTester(object):
     def _calc_exclude_basins(self) -> Iterator[str]:
         if not self.cfg.tester_skip_obs_all_nan:
             return
-        # TODO(amarkel): this may be optimized to work vectorically via xarray on all
+        # TODO(future): this may be optimized to work vectorically via xarray on all
         # basins at once.
         for basin in self.basins:
             basin_ds = self.dataset._dataset.sel(basin=basin)
