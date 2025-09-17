@@ -96,7 +96,7 @@ class BaseTrainer(object):
         return get_model(cfg=self.cfg)
 
     def _get_optimizer(self) -> torch.optim.Optimizer:
-        return get_optimizer(model=self.model, cfg=self.cfg)
+        return get_optimizer(model=self.model, cfg=self.cfg, is_gpu=self.device.type == 'cuda')
 
     def _get_loss_obj(self) -> loss.BaseLoss:
         return get_loss_obj(cfg=self.cfg)
@@ -175,7 +175,7 @@ class BaseTrainer(object):
             self._freeze_model_parts()
 
         self.optimizer = self._get_optimizer()
-        self.scaler = GradScaler(enabled=(self.device.type == 'cuda'))
+        self.scaler = GradScaler(enabled=self.device.type == 'cuda')
         self.loss_obj = self._get_loss_obj().to(self.device)
 
         # Add possible regularization terms to the loss function.
