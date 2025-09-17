@@ -210,11 +210,11 @@ class BaseTester(object):
                 raise RuntimeError("No model was initialized for the evaluation")
 
         # during validation, depending on settings, only evaluate on a random subset of basins
-        basins = self.basins
+        basins = set(self.basins) - self.exclude_basins
         if self.period == "validation":
             if len(basins) > self.cfg.validate_n_random_basins:
-                random.shuffle(basins)
-                basins = basins[:self.cfg.validate_n_random_basins]
+                basins = set(random.sample(list(basins), k=self.cfg.validate_n_random_basins))
+        basins = list(basins)
 
         # force model to train-mode when doing mc-dropout evaluation
         if self.cfg.mc_dropout:
