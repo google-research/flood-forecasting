@@ -51,7 +51,7 @@ def test_model_equality(get_config: Fixture[Callable[[str], dict]], custom_lstm_
     # get model predictions
     optimized_model.eval()
     custom_lstm.eval()
-    with torch.no_grad():
+    with torch.inference_mode():
         pred_custom = custom_lstm(data)
         pred_optimized = optimized_model(data)
 

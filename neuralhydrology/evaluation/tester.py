@@ -463,7 +463,7 @@ class BaseTester(object):
         pbar_basin.set_description('# Validation pre' if self.period == "validation" else "# Evaluation pre")
 
         res = {}
-        with torch.no_grad():
+        with torch.inference_mode():
             for data in loader:
                 basin_index = data['basin_index'][0].item()
                 pbar_basin.update(basin_index - pbar_basin.n)
