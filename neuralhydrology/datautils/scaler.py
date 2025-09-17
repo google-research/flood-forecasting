@@ -76,8 +76,6 @@ class Scaler():
         See docs for a list of accepted types and their meaning.
     dataset : Optional[xr.Dataset]
         Dataset to use for calculating a new scaler. Cannot be supplied if `calculate_scaler` is False.
-    calculate_scaler_to_check_zero_scale : bool
-        Flag to compute and block to check zero scale when `calculate_scaler` is False.
 
     Raises
     -------
@@ -90,21 +88,17 @@ class Scaler():
         calculate_scaler,
         custom_normalization: Dict[str, Dict[str, float]] = {},
         dataset: Optional[xr.Dataset] = None,
-        calculate_scaler_to_check_zero_scale: bool = False,
     ):
         # Consistency check.
         if not calculate_scaler and dataset is not None:
             raise ValueError('Do not pass a dataset if you are loading a pre-calculated scaler.')
-
-        self.check_zero_scale = None
 
         # Load or calculate scaling parameters.
         self.scaler = None
         self.scaler_dir = scaler_dir
         if not calculate_scaler:
             self.load()
-            if calculate_scaler_to_check_zero_scale:
-                self.check_zero_scale = self._create_zero_scale_checker().compute()
+            self._check_zero_scale()
         else:
             self._custom_normalization = custom_normalization
             if dataset is not None:
@@ -163,23 +157,18 @@ class Scaler():
         else:
             self.scaler = scaler
 
-        self.check_zero_scale = self._create_zero_scale_checker()
+        self._check_zero_scale()
 
-    def _create_zero_scale_checker(self):
+    def _check_zero_scale(self):
         """Creates self.check_zero_scale that throws if scale is zero for any feature.
 
         Zero-valued scale parameters cause NaNs.
         """
         scales_to_check = self.scaler.sel(parameter=["scale", "std"])
-        is_zero_ds = (scales_to_check == 0).any("parameter")
-
-        @dask.delayed
-        def get_zero_feature_names(computed_zero: xr.Dataset) -> None:
-            res = [name for name, has_zero in computed_zero.items() if has_zero.item()]
-            if any(res):
-                raise ValueError(f"Zero scale values found for features: {res}.")
-
-        return get_zero_feature_names(is_zero_ds)
+        is_zero_da = (scales_to_check == 0).any("parameter").to_dataarray()
+        zero_features = is_zero_da['variable'][is_zero_da]
+        if any(zero_features):
+            raise ValueError(f"Zero scale values found for features: {zero_features}.")
 
     def scale(
         self,
