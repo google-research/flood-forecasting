@@ -303,10 +303,10 @@ class BaseTrainer(object):
                 elif not key.startswith('date'):
                     data[key] = data[key].to(self.device)
 
-            # apply possible pre-processing to the batch before the forward pass
-            data = self.model.pre_model_hook(data, is_train=True)
-
             with autocast(self.device.type, enabled=(self.device.type == 'cuda')):
+                # apply possible pre-processing to the batch before the forward pass
+                data = self.model.pre_model_hook(data, is_train=True)
+
                 # get predictions
                 predictions = self.model(data)
 
