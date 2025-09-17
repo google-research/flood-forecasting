@@ -108,8 +108,7 @@ class ForecastDataset(BaseDataset):
 
         # Feature data paths by type. This allows the option to load some data from cloud and some locally.
         self._statics_data_path = cfg.statics_data_dir
-        self._hindcasts_data_path = cfg.hindcasts_data_dir
-        self._forecasts_data_path = cfg.forecasts_data_dir
+        self._dynamics_data_path = cfg.dynamics_data_dir
         self._targets_data_path = cfg.targets_data_dir
 
         # NaN-handling options are required to apply the correct sample validation algorithms.

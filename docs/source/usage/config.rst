@@ -499,11 +499,8 @@ Data settings
 -  ``statics_data_dir``: Optional full or relative path to directory from which to read static
     attribute data when using forecast models. If not present or None, this defaults to ``data_dir``.
 
--  ``hindcasts_data_dir``: Optional full or relative path to directory from which to read hindcast
-    input data when using forecast models. If not present or None, this defaults to ``data_dir``.
-
--  ``forecasts_data_dir``: Optional full or relative path to directory from which to read forecast
-    input data when using forecast models. If not present or None, this defaults to ``data_dir``.
+-  ``dynamics_data_dir``: Optional full or relative path to directory from which to read forecast and 
+    hindcast input data when using forecast models. If not present or None, this defaults to ``data_dir``.
 
 -  ``targets_data_dir``: Optional full or relative path to directory from which to read target
     data when using forecast models. If not present or None, this defaults to ``data_dir``.

@@ -54,8 +54,7 @@ test_start_date: 01/10/2017
 # data_dir: ~/nh-data/data/Caravan-multimet
 targets_data_dir: ~/nh-data/data/Caravan-nc
 statics_data_dir: ~/nh-data/data/Caravan-nc
-forecasts_data_dir: ~/nh-data/data/Caravan-multimet
-hindcasts_data_dir: ~/nh-data/data/Caravan-multimet
+dynamics_data_dir: ~/nh-data/data/Caravan-multimet
 
 dataset: multimet
 seq_length: 365

@@ -161,7 +161,7 @@ class Multimet(ForecastDataset):
 
         # Load data for the selected products, bands, and basins.
         for product, bands in product_bands.items():
-            product_path = self._hindcasts_data_path / product / 'timeseries.zarr'
+            product_path = self._dynamics_data_path / product / 'timeseries.zarr'
             product_ds = _open_zarr(product_path)
 
             # If this is a forecast product, extract only shortest leadtime for hindcasts.
@@ -193,7 +193,7 @@ class Multimet(ForecastDataset):
 
         # Load data for the selected products, bands, and basins.
         for product, bands in product_bands.items():
-            product_path = self._forecasts_data_path / product / 'timeseries.zarr'
+            product_path = self._dynamics_data_path / product / 'timeseries.zarr'
             product_ds = _open_zarr(product_path)
 
             # If this is a forecast product, extract only leadtime 0 for hindcasts.

@@ -72,8 +72,7 @@ tester_skip_obs_all_nan: True
 # data_dir: ~/nh-data/data/Caravan-multimet
 targets_data_dir: ~/nh-data/data/Caravan-nc
 statics_data_dir: ~/nh-data/data/Caravan-nc
-forecasts_data_dir: ~/nh-data/data/Caravan-multimet
-hindcasts_data_dir: ~/nh-data/data/Caravan-multimet
+dynamics_data_dir: ~/nh-data/data/Caravan-multimet
 
 dataset: multimet
 seq_length: 365
