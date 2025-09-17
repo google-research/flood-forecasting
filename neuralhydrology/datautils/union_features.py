@@ -1,31 +1,43 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from typing import Dict
 
 import numpy as np
+import pandas as pd
 import xarray as xr
-        
 
-def _expand_lead_times(da: xr.DataArray, lead_time: int) -> xr.DataArray:
+
+def _expand_lead_times(
+    da: xr.DataArray, lead_times: xr.DataArray | np.ndarray
+) -> xr.DataArray:
+    """Expands `da` with a `lead_time` dimension via shifting days back by lead time.
+
+    The shifting generates nans from the end as much as the lead time value is.
+    """
     if 'lead_time' in da.dims:
         raise ValueError('Trying to expand a dataarray that already has a lead time.')
     # TODO (future) :: This assumes daily data.
-    lead_time_int = int(lead_time / np.timedelta64(1, 'D'))
-    lt_das, lead_times = [], []
-    # TODO (future) :: This assumes a minimum lead time of 1.
-    for lt in range(1, lead_time_int+1):
-        # TODO (future) :: This assumes daily data.
-        lead_times.append(np.timedelta64(lt, 'D'))
-        lt_das.append(da.shift(date=-lt))
-    lt_da = xr.concat(lt_das, dim='lead_time')
-    # TODO (future) :: Like many forecast models (unlike ForecastDataset), this assumes that
-    # all lead times are present.
-    return lt_da.assign_coords(lead_time=lead_times)
+    lt_das = (da.shift(date=-int(lt / np.timedelta64(1, "D"))) for lt in lead_times)
+    lt_da = xr.concat(lt_das, dim=pd.Index(data=lead_times, name="lead_time"))
+    return lt_da
 
-    
 def _union_features_with_same_dimensions(
   feature_da: xr.DataArray,
   mask_feature_da: xr.DataArray,
 ) -> xr.DataArray:
-    """Mask one feature with another when both are the same size."""
+    """Mask (align and union) da with mask, taking values from da else from mask for nans."""
     return feature_da.combine_first(mask_feature_da)
 
 
@@ -33,31 +45,36 @@ def _union_lead_time_feature_with_non_lead_time_feature(
   feature_da: xr.DataArray,
   mask_feature_da: xr.DataArray,
 ) -> xr.DataArray:
-    """Mask a lead-time feature with a non-lead-time feature."""
-    target_dates = feature_da['date']
-    all_needed_dates = np.unique(target_dates.values)
-    lead_time = feature_da.lead_time.max().values
-    lt_mask_da = _expand_lead_times(mask_feature_da, lead_time)
-    reindexed_mask_feature = lt_mask_da.reindex(date=all_needed_dates, fill_value=np.nan)
-    mask_values = reindexed_mask_feature.sel(date=target_dates, basin=feature_da['basin'])
-    return _union_features_with_same_dimensions(feature_da, mask_values)
+    """Mask the lead-time feature with the non-lead-time feature.
+
+    Assuming feature da has "lead_time" dim but the masking da doesn't (e.g. obs).
+    """
+    lead_times = feature_da.coords["lead_time"]
+    lt_mask_da = _expand_lead_times(mask_feature_da, lead_times)
+    return _union_features_with_same_dimensions(feature_da, lt_mask_da)
 
 
 def _union_non_lead_time_feature_with_lead_time_feature(
   feature_da: xr.DataArray,
   mask_feature_da: xr.DataArray,
 ) -> xr.DataArray:
-    """Mask a non-lead-time feature with a lead-time feature."""
-    min_lead_time = mask_feature_da['lead_time'].isel(lead_time=0).values
-    target_issue_dates = [d - min_lead_time for d in feature_da['date'].values]
-    all_needed_issue_dates = np.unique(target_issue_dates)
-    reindexed_mask_feature = mask_feature_da.reindex(date=all_needed_issue_dates, fill_value=np.nan)
-    min_lead_time_mask_feature = reindexed_mask_feature.sel(lead_time=min_lead_time)
-    mask_values = min_lead_time_mask_feature.sel(
-        date=target_issue_dates,
-        basin=feature_da['basin'],
-    )
-    return _union_features_with_same_dimensions(feature_da, mask_values).drop('lead_time').sel(date=feature_da['date'])
+    """Mask the non-lead-time feature with the lead-time feature.
+
+    Fills nans in the 2d feature from the earliest forecast 3d (with lead time) feature
+    via min lead time.
+
+    Align forecast's "issue date" (when was made) with feature's "valid date" (when applied).
+    Shift forecast data forward by lead time to match dates.
+    """
+    min_lead_time = mask_feature_da["lead_time"].min().item()  # Best forecast
+    min_lead_time_mask_feature = mask_feature_da.sel(
+        lead_time=min_lead_time, drop=True
+    )  # 2d slice
+    shift_days = int(min_lead_time / np.timedelta64(1, "D"))  # forecast time aligning
+    # Align mask's "issue date" with target feature's "valid date", e.g. forecast issued
+    # on Jan 1 for Jan 2 (lead time 1 day) is shifted forward by 1 day to align with Jan 2.
+    mask_values = min_lead_time_mask_feature.shift(date=shift_days)
+    return _union_features_with_same_dimensions(feature_da, mask_values)
 
 
 def union_features(

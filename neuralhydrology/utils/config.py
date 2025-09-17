@@ -1,3 +1,17 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import logging
 import itertools
 import random
@@ -242,10 +256,8 @@ class Config(object):
         # Allow separate data directories to be defined for different types of data.
         if "data_dir" in cfg and "statics_data_dir" not in cfg:
             cfg["statics_data_dir"] = cfg["data_dir"]
-        if "data_dir" in cfg and "hindcasts_data_dir" not in cfg:
-            cfg["hindcasts_data_dir"] = cfg["data_dir"]
-        if "data_dir" in cfg and "forecasts_data_dir" not in cfg:
-            cfg["forecasts_data_dir"] = cfg["data_dir"]
+        if "data_dir" in cfg and "dynamics_data_dir" not in cfg:
+            cfg["dynamics_data_dir"] = cfg["data_dir"]
         if "data_dir" in cfg and "targets_data_dir" not in cfg:
             cfg["targets_data_dir"] = cfg["data_dir"]
 
@@ -267,6 +279,10 @@ class Config(object):
     @property
     def detect_anomaly(self) -> bool:
         return self._cfg.get("detect_anomaly", False)
+
+    @property
+    def tester_skip_obs_all_nan(self) -> bool:
+        return self._cfg.get("tester_skip_obs_all_nan", False)
 
     @property
     def logging_level(self) -> int:
@@ -461,8 +477,8 @@ class Config(object):
         return self._cfg.get("forecast_seq_length", None)
 
     @property
-    def forecasts_data_dir(self) -> Path:
-        return self._get_value_verbose("forecasts_data_dir")
+    def dynamics_data_dir(self) -> Path:
+        return self._get_value_verbose("dynamics_data_dir")
 
     @property
     def forcings(self) -> List[str]:
@@ -498,10 +514,6 @@ class Config(object):
             return list(itertools.chain.from_iterable(hindcast_inputs))
         else:
             return hindcast_inputs
-
-    @property
-    def hindcasts_data_dir(self) -> Path:
-        return self._get_value_verbose("hindcasts_data_dir")
 
     @property
     def hidden_size(self) -> Union[int, Dict[str, int]]:

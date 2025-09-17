@@ -1,4 +1,19 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import itertools
+import math
 import pickle
 from collections import defaultdict
 from pathlib import Path
@@ -7,6 +22,7 @@ from typing import Dict, Iterable
 import numpy as np
 import pandas as pd
 from ruamel.yaml import YAML
+from torch.utils.data import SequentialSampler, BatchSampler
 
 
 def load_basin_id_encoding(run_dir: Path) -> Dict[str, int]:
@@ -66,3 +82,32 @@ def metrics_to_dataframe(results: dict, metrics: Iterable[str], targets: Iterabl
     df.index.name = "basin"
 
     return df
+
+
+class BasinBatchSampler(BatchSampler):
+    """Groups samples by basin.
+    
+    Maps every basin to samples for it, and on iterations chunks them by batch size.
+    """
+
+    def __init__(self, sample_index: dict[int, dict[str, int]], batch_size: int):
+        super().__init__(SequentialSampler(range(len(sample_index))), batch_size, drop_last=False)
+
+        self._batch_size = batch_size
+        
+        self._basin_indices: dict[int, list[int]] = {}
+        for sample, data in sample_index.items():
+            self._basin_indices.setdefault(data['basin'], []).append(sample)
+
+        self._num_batches = sum(
+            math.ceil(len(indices) / batch_size)
+            for indices in self._basin_indices.values()
+        )
+
+    def __iter__(self):
+        for indices in self._basin_indices.values():  # for every basin
+            for i in range(0, len(indices), self._batch_size):  # chunk into batches
+                yield indices[i:i + self._batch_size]  # batch
+
+    def __len__(self):
+        return self._num_batches

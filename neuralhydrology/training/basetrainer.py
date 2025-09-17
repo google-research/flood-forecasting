@@ -1,4 +1,19 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import logging
+import math
 import random
 import sys
 from datetime import datetime
@@ -6,6 +21,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from torch.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -142,7 +158,9 @@ class BaseTrainer(object):
             raise ValueError("Dataset contains no samples.")
         self.loader = self._get_data_loader(ds=ds)
 
+        LOGGER.debug("init model")
         self.model = self._get_model().to(self.device)
+
         if self.cfg.checkpoint_path is not None:
             LOGGER.info(f"Starting training from Checkpoint {self.cfg.checkpoint_path}")
             self.model.load_state_dict(torch.load(str(self.cfg.checkpoint_path), map_location=self.device))
@@ -157,6 +175,7 @@ class BaseTrainer(object):
             self._freeze_model_parts()
 
         self.optimizer = self._get_optimizer()
+        self.scaler = GradScaler(enabled=(self.device.type == 'cuda'))
         self.loss_obj = self._get_loss_obj().to(self.device)
 
         # Add possible regularization terms to the loss function.
@@ -220,7 +239,7 @@ class BaseTrainer(object):
                                         model=self.model,
                                         experiment_logger=self.experiment_logger.valid())
 
-                valid_metrics = self.experiment_logger.summarise()
+                valid_metrics = {'avg_total_loss': math.nan} | self.experiment_logger.summarise() 
                 print_msg = f"Epoch {epoch} average validation loss: {valid_metrics['avg_total_loss']:.5f}"
                 if self.cfg.metrics:
                     print_msg += f" -- Median validation metrics: "
@@ -287,16 +306,17 @@ class BaseTrainer(object):
             # apply possible pre-processing to the batch before the forward pass
             data = self.model.pre_model_hook(data, is_train=True)
 
-            # get predictions
-            predictions = self.model(data)
+            with autocast(self.device.type, enabled=(self.device.type == 'cuda')):
+                # get predictions
+                predictions = self.model(data)
 
-            if self.noise_sampler_y is not None:
-                for key in filter(lambda k: 'y' in k, data.keys()):
-                    noise = self.noise_sampler_y.sample(data[key].shape)
-                    # make sure we add near-zero noise to originally near-zero targets
-                    data[key] += (data[key] + self._target_mean / self._target_std) * noise.to(self.device)
+                if self.noise_sampler_y is not None:
+                    for key in filter(lambda k: 'y' in k, data.keys()):
+                        noise = self.noise_sampler_y.sample(data[key].shape)
+                        # make sure we add near-zero noise to originally near-zero targets
+                        data[key] += (data[key] + self._target_mean / self._target_std) * noise.to(self.device)
 
-            loss, all_losses = self.loss_obj(predictions, data)
+                loss, all_losses = self.loss_obj(predictions, data)
 
             # early stop training if loss is NaN
             if torch.isnan(loss):
@@ -311,13 +331,16 @@ class BaseTrainer(object):
                 self.optimizer.zero_grad()
 
                 # get gradients
-                loss.backward()
+                self.scaler.scale(loss).backward()
 
                 if self.cfg.clip_gradient_norm is not None:
+                    self.scaler.unscale_(self.optimizer)
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.clip_gradient_norm)
 
                 # update weights
-                self.optimizer.step()
+                self.scaler.step(self.optimizer)
+
+                self.scaler.update()  # Update scale for the next iteration
 
             pbar.set_postfix_str(f"Loss: {loss.item():.4f}")
 

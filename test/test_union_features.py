@@ -1,3 +1,17 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import pytest
 import numpy as np
 import pandas as pd
@@ -51,7 +65,7 @@ def base_dataset(sample_basins, sample_dates, sample_lead_times):
     ds['feature_3d_forecast'].loc[{'basin': 'basin_B', 'date': '2000-01-03', 'lead_time': np.timedelta64(1, 'D')}] = np.nan
     return ds
 
-def test_expand_lead_times_basic_expansion(sample_basins, sample_dates):
+def test_expand_lead_times_basic_expansion(sample_basins, sample_dates, sample_lead_times):
     """
     Tests basic functionality of _expand_lead_times to add a new 'lead_time' dimension.
     """
@@ -60,9 +74,8 @@ def test_expand_lead_times_basic_expansion(sample_basins, sample_dates):
         coords={'basin': sample_basins, 'date': sample_dates},
         dims=['basin', 'date']
     )
-    lead_time_max = np.timedelta64(2, 'D') # Max lead time to expand to (1, 2)
 
-    expanded_da = _expand_lead_times(original_da, lead_time_max)
+    expanded_da = _expand_lead_times(original_da, sample_lead_times[:2])
 
     # Assertions
     assert 'lead_time' in expanded_da.dims
@@ -99,10 +112,10 @@ def test_expand_lead_times_raises_error_if_lead_time_exists(sample_basins, sampl
     )
     
     with pytest.raises(ValueError, match='Trying to expand a dataarray that already has a lead time.'):
-        _expand_lead_times(da_with_lead_time, np.timedelta64(2, 'D'))
+        _expand_lead_times(da_with_lead_time, sample_lead_times[:2])
 
 
-def test_expand_lead_times_single_date(sample_basins):
+def test_expand_lead_times_single_date(sample_basins, sample_lead_times):
     """Test expansion with a single date, checking NaN propagation."""
     single_date = pd.to_datetime(["2000-01-01"])
     original_da = xr.DataArray(
@@ -110,9 +123,8 @@ def test_expand_lead_times_single_date(sample_basins):
         coords={'basin': sample_basins, 'date': single_date},
         dims=['basin', 'date']
     )
-    lead_time_max = np.timedelta64(2, 'D')
 
-    expanded_da = _expand_lead_times(original_da, lead_time_max)
+    expanded_da = _expand_lead_times(original_da, sample_lead_times[:2])
 
     assert 'lead_time' in expanded_da.dims
     
@@ -217,7 +229,12 @@ def test_union_non_lead_time_feature_with_lead_time_feature(sample_basins, sampl
         },
         dims=['basin', 'date', 'lead_time']
     )
-    expected_data = [[10, 200, 20]]
+    
+    # Select mask for min lead (1 day) = [100, 200, 300],
+    # shift mask by a day to align issue date with valid date = [nan, 100, 200],
+    # use the shifted mask to fill nan in the original [10, nan, 20] with 100.
+    expected_data = [[10, 100, 20]]
+
     expected = xr.DataArray(
         expected_data,
         coords={
@@ -261,7 +278,8 @@ def test_union_features_mixed_dimensions(base_dataset):
     }
     # Set specific values in masks to fill NaNs
     base_dataset['mask_2d'].loc[{'basin': 'basin_B', 'date': '2000-01-04'}] = 1000.0
-    base_dataset['mask_3d'].loc[{'basin': 'basin_A', 'date': '2000-01-02', 'lead_time': np.timedelta64(1, 'D')}] = 2000.0
+    # Target date is 2000-01-02 so shift by 1 day prior since lead time is 1
+    base_dataset['mask_3d'].loc[{'basin': 'basin_A', 'date': '2000-01-01', 'lead_time': np.timedelta64(1, 'D')}] = 2000.0
 
     result_ds = union_features(base_dataset, union_mapping)
 

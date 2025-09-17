@@ -1,3 +1,17 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import logging
 import pickle
 import random
@@ -5,11 +19,12 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Iterator
 
 import numpy as np
 import pandas as pd
 import torch
+from torch.amp import autocast
 import xarray
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -19,7 +34,7 @@ from neuralhydrology.datasetzoo.basedataset import BaseDataset
 from neuralhydrology.datautils.utils import get_frequency_factor, load_basin_file, sort_frequencies
 from neuralhydrology.evaluation import plots
 from neuralhydrology.evaluation.metrics import calculate_metrics, get_available_metrics
-from neuralhydrology.evaluation.utils import load_basin_id_encoding, metrics_to_dataframe
+from neuralhydrology.evaluation.utils import load_basin_id_encoding, metrics_to_dataframe, BasinBatchSampler
 from neuralhydrology.modelzoo import get_model
 from neuralhydrology.modelzoo.basemodel import BaseModel
 from neuralhydrology.training import get_loss_obj, get_regularization_obj
@@ -70,14 +85,26 @@ class BaseTester(object):
         self.id_to_int = {}
         self.additional_features = []
 
-        # placeholder to store cached validation data
-        self.cached_datasets = {}
-
         # initialize loss object to compute the loss of the evaluation data
         self.loss_obj = get_loss_obj(cfg)
         self.loss_obj.set_regularization_terms(get_regularization_obj(cfg=self.cfg))
 
         self._load_run_data()
+
+        self.dataset = self._get_dataset_all()
+
+        self.exclude_basins = set(self._calc_exclude_basins())
+
+        batch_sampler = BasinBatchSampler(
+            sample_index=self.dataset._sample_index,
+            batch_size=self.cfg.batch_size,
+        )
+        self.loader = DataLoader(
+            self.dataset,
+            batch_sampler=batch_sampler, 
+            num_workers=0,
+            collate_fn=self.dataset.collate_fn,
+        )
 
     def _set_device(self):
         if self.cfg.device is not None:
@@ -132,6 +159,17 @@ class BaseTester(object):
         LOGGER.info(f"Using the model weights from {weight_file}")
         self.model.load_state_dict(torch.load(weight_file, map_location=self.device))
 
+    def _get_dataset_all(self) -> BaseDataset:
+        """Get dataset for all basin."""
+        ds = get_dataset(cfg=self.cfg,
+                         is_train=False,
+                         period=self.period,
+                         basin=None,
+                         additional_features=self.additional_features,
+                         id_to_int=self.id_to_int,
+                         compute_scaler=False)
+        return ds
+
     def _get_dataset(self, basin: str) -> BaseDataset:
         """Get dataset for a single basin."""
         ds = get_dataset(cfg=self.cfg,
@@ -180,11 +218,10 @@ class BaseTester(object):
                 raise RuntimeError("No model was initialized for the evaluation")
 
         # during validation, depending on settings, only evaluate on a random subset of basins
-        basins = self.basins
+        basins = set(self.basins) - self.exclude_basins
         if self.period == "validation":
             if len(basins) > self.cfg.validate_n_random_basins:
-                random.shuffle(basins)
-                basins = basins[:self.cfg.validate_n_random_basins]
+                basins = set(random.sample(list(basins), k=self.cfg.validate_n_random_basins))
 
         # force model to train-mode when doing mc-dropout evaluation
         if self.cfg.mc_dropout:
@@ -195,30 +232,22 @@ class BaseTester(object):
         results = defaultdict(dict)
         all_output = {basin: None for basin in basins}
 
+        ds = self.dataset
+        eval_data = self._evaluate(model, self.loader, ds.frequencies, save_all_output, basins)
+
         pbar = tqdm(basins, file=sys.stdout, disable=self._disable_pbar)
-        pbar.set_description('# Validation' if self.period == "validation" else "# Evaluation")
+        pbar.set_description('# Validation post' if self.period == "validation" else "# Evaluation post")
 
         for basin in pbar:
-
-            if self.cfg.cache_validation_data and basin in self.cached_datasets.keys():
-                ds = self.cached_datasets[basin]
-            else:
-                try:
-                    ds = self._get_dataset(basin)
-                except NoEvaluationDataError as error:
-                    # skip basin
-                    continue
-                if self.cfg.cache_validation_data and self.period == "validation":
-                    self.cached_datasets[basin] = ds
-
-            loader = DataLoader(ds, batch_size=self.cfg.batch_size, num_workers=0, collate_fn=ds.collate_fn)
-
-            y_hat, y, dates, all_losses, all_output[basin] = self._evaluate(model, loader, ds.frequencies,
-                                                                            save_all_output)
+            y_hat = eval_data[basin]['preds']
+            y = eval_data[basin]['obs']
+            dates = eval_data[basin]['dates']
+            all_losses = eval_data[basin]['mean_losses']
+            all_output[basin] = eval_data[basin]['all_output']
 
             # log loss of this basin plus number of samples in the logger to compute epoch aggregates later
             if experiment_logger is not None:
-                experiment_logger.log_step(**{k: (v, len(loader)) for k, v in all_losses.items()})
+                experiment_logger.log_step(**{k: (v, len(self.loader)) for k, v in all_losses.items()})
 
             predict_last_n = self.cfg.predict_last_n
             seq_length = self.cfg.seq_length
@@ -228,7 +257,7 @@ class BaseTester(object):
             if isinstance(seq_length, int):
                 seq_length = {ds.frequencies[0]: seq_length}
             lowest_freq = sort_frequencies(ds.frequencies)[0]
-            
+
             for freq in ds.frequencies:
                 if predict_last_n[freq] == 0:
                     continue  # this frequency is not being predicted
@@ -267,7 +296,7 @@ class BaseTester(object):
                 })
                 xr = ds.scaler.unscale(xr)
                 results[basin][freq]['xr'] = xr
-                
+
                 # create datetime range at the current frequency
                 freq_date_range = pd.date_range(start=dates[lowest_freq][0, -1], end=dates[freq][-1, -1], freq=freq)
                 # remove datetime steps that are not being predicted from the datetime range
@@ -276,7 +305,7 @@ class BaseTester(object):
                 freq_date_range = freq_date_range[np.tile(mask, len(xr['date']))]
 
                 # only warn once per freq
-                if frequency_factor < predict_last_n[freq] and basin == basins[0]:
+                if frequency_factor < predict_last_n[freq] and basin == next(iter(basins)):
                     tqdm.write(f'Metrics for {freq} are calculated over last {frequency_factor} elements only. '
                                f'Ignoring {predict_last_n[freq] - frequency_factor} predictions per sequence.')
 
@@ -344,6 +373,23 @@ class BaseTester(object):
 
         return results
 
+    def _calc_exclude_basins(self) -> Iterator[str]:
+        if not self.cfg.tester_skip_obs_all_nan:
+            return
+        # TODO(future): this may be optimized to work vectorically via xarray on all
+        # basins at once.
+        for basin in self.basins:
+            basin_ds = self.dataset._dataset.sel(basin=basin)
+            # Calculate all-nan ranges
+            diffs = np.diff(basin_ds.streamflow.isnull(), prepend=[0], append=[0])
+            (starts,), (ends,) = np.where(diffs == 1), np.where(diffs == -1)
+
+            test_start, test_end = self.cfg.test_start_date, self.cfg.test_end_date
+            nan_date_starts = basin_ds.date.data[starts]
+            nan_date_ends = basin_ds.date.data[ends - 1]
+            if np.any((nan_date_starts <= test_start) & (nan_date_ends >= test_end)):
+                yield basin
+
     def _create_and_log_figures(self, results: dict, experiment_logger: Logger|None, epoch: int):
         basins = list(results.keys())
         random.shuffle(basins)
@@ -408,36 +454,42 @@ class BaseTester(object):
                 pickle.dump(states, fp)
             LOGGER.info(f"Stored states at {result_file}")
 
-    def _evaluate(self, model: BaseModel, loader: DataLoader, frequencies: List[str], save_all_output: bool = False):
-        """Evaluate model"""
+    def _evaluate(self, model: BaseModel, loader: DataLoader, frequencies: List[str], save_all_output: bool = False, basins: set[str] = set()):
         predict_last_n = self.cfg.predict_last_n
         if isinstance(predict_last_n, int):
             predict_last_n = {frequencies[0]: predict_last_n}  # if predict_last_n is int, there's only one frequency
 
-        preds, obs, dates, all_output = {}, {}, {}, {}
-        losses = []
+        pbar_basin = tqdm(file=sys.stdout, disable=self._disable_pbar, total=len(loader.dataset._basins))
+        pbar_basin.set_description('# Validation pre' if self.period == "validation" else "# Evaluation pre")
+
+        res = {}
         with torch.no_grad():
             for data in loader:
+                basin_index = data['basin_index'][0].item()
+                pbar_basin.update(basin_index - pbar_basin.n)
+
+                basin = loader.dataset._basins[basin_index]
+                if basin not in basins:
+                    continue
 
                 for key in data:
                     if key.startswith('x_d'):
                         data[key] = {k: v.to(self.device) for k, v in data[key].items()}
                     elif not key.startswith('date'):
                         data[key] = data[key].to(self.device)
-                data = model.pre_model_hook(data, is_train=False)
-                predictions, loss = self._get_predictions_and_loss(model, data)
+                with autocast(self.device.type, enabled=(self.device.type == 'cuda')):
+                    data = model.pre_model_hook(data, is_train=False)
+                    predictions, loss = self._get_predictions_and_loss(model, data)
 
-                if all_output:
+                all_output = res.setdefault(basin, {}).setdefault('all_output', {})
+                if save_all_output:
                     for key, value in predictions.items():
                         if value is not None and type(value) != dict:
-                            all_output[key].append(value.detach().cpu().numpy())
-                elif save_all_output:
-                    all_output = {
-                        key: [value.detach().cpu().numpy()]
-                        for key, value in predictions.items()
-                        if value is not None and type(value) != dict
-                    }
+                            all_output.setdefault(key, []).append(value.detach().cpu().numpy())
 
+                preds = res.setdefault(basin, {}).setdefault('preds', {})
+                obs = res.setdefault(basin, {}).setdefault('obs', {})
+                dates = res.setdefault(basin, {}).setdefault('dates', {})
                 for freq in frequencies:
                     if predict_last_n[freq] == 0:
                         continue  # no predictions for this frequency
@@ -455,26 +507,36 @@ class BaseTester(object):
                         obs[freq] = torch.cat((obs[freq], y_sub.detach().cpu()), 0)
                         dates[freq] = np.concatenate((dates[freq], date_sub), axis=0)
 
+                losses = res.setdefault(basin, {}).setdefault('losses', [])
                 losses.append(loss)
 
-            for freq in preds.keys():
-                preds[freq] = preds[freq].numpy()
-                obs[freq] = obs[freq].numpy()
+            pbar_basin.update(1) # Last basin
 
-        # concatenate all output variables (currently a dict-of-dicts) into a single-level dict
-        for key, list_of_data in all_output.items():
-            all_output[key] = np.concatenate(list_of_data, 0)
+            for res_for_basin in res.values():
+                preds = res_for_basin['preds']
+                obs = res_for_basin['obs']
+                for freq in preds.keys():
+                    preds[freq] = preds[freq].numpy()
+                    obs[freq] = obs[freq].numpy()
 
-        # set to NaN explicitly if all losses are NaN to avoid RuntimeWarning
-        mean_losses = {}
-        if len(losses) == 0:
-            mean_losses['loss'] = np.nan
-        else:
-            for loss_name in losses[0].keys():
-                loss_values = [loss[loss_name] for loss in losses]
-                mean_losses[loss_name] = np.nanmean(loss_values) if not np.all(np.isnan(loss_values)) else np.nan
+        for res_for_basin in res.values():
+            all_output = res_for_basin['all_output']
 
-        return preds, obs, dates, mean_losses, all_output
+            # concatenate all output variables (currently a dict-of-dicts) into a single-level dict
+            for key, list_of_data in all_output.items():
+                all_output[key] = np.concatenate(list_of_data, 0)
+
+            # set to NaN explicitly if all losses are NaN to avoid RuntimeWarning
+            mean_losses = res_for_basin.setdefault('mean_losses', {})
+            losses = res_for_basin['losses']
+            if len(losses) == 0:
+                mean_losses['loss'] = np.nan
+            else:
+                for loss_name in losses[0].keys():
+                    loss_values = [loss[loss_name] for loss in losses]
+                    mean_losses[loss_name] = np.nanmean(loss_values) if not np.all(np.isnan(loss_values)) else np.nan
+
+        return res
 
     def _get_predictions_and_loss(self, model: BaseModel, data: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, float]:
         predictions = model(data)
