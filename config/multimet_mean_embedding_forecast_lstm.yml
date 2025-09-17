@@ -85,8 +85,6 @@ forecast_inputs:
 - hres_total_precipitation
 - graphcast_temperature_2m
 - graphcast_total_precipitation
-- graphcast_u_component_of_wind_10m
-- graphcast_v_component_of_wind_10m
 hindcast_inputs:
 - imerg_precipitation
 - cpc_precipitation
