@@ -42,7 +42,7 @@ LOGGER = logging.getLogger(__name__)
 
 # Data types for all keys in the sample dictionary.
 NUMPY_VARS = ['date']
-TENSOR_VARS = ['x_s', 'x_d', 'x_d_hindcast', 'x_d_forecast', 'y', 'per_basin_target_stds']
+TENSOR_VARS = ['x_s', 'x_d', 'x_d_hindcast', 'x_d_forecast', 'y', 'per_basin_target_stds', 'basin']
 
 
 class ForecastDataset(BaseDataset):
@@ -262,6 +262,8 @@ class ForecastDataset(BaseDataset):
         if not self._forecast_features:
             sample['x_d'] = sample.pop('x_d_hindcast')
             _ = sample.pop('x_d_forecast')
+
+        sample['basin'] = np.array(self._sample_index[item]['basin'], dtype=np.int16)
 
         # Return sample with various required formats.
         return {key: _convert_to_tensor(key, value) for key, value in sample.items()}
