@@ -273,7 +273,8 @@ class ForecastDataset(BaseDataset):
         duration = self._seq_length - 1
         if not lead and not self._lead_times:
             return range(date - duration, date + 1)
-        end = date + self._lead_times[-1]
+        assert self.lead_time == self._lead_times[-1]
+        end = date + self.lead_time
         return range(end - duration, end + 1)
 
     def _extract_dates(self, item: int) -> np.ndarray:
