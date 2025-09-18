@@ -473,7 +473,11 @@ Logger settings
 
 -  ``log_loss_every_nth_update``: Refresh rate of logging of the loss value
    every n iterations. For example for `20`, the loss logging would be
-   updated every 20 iterations (updates) during training.
+   updated every 20 iterations (updates) during training. Logging loss has
+   performance cost (waits to transfer memory from GPU to CPU instead of
+   additional iterations). For example, for multimet_mean_embedding_forecast,
+   a value of 5 saves 50ms per iteration on average which translates to 1.5h
+   given 2000 updates for 30 epocs.
 
 -  ``save_git_diff``: If set to True and NeuralHydrology is a git repository
    with uncommitted changes, the git diff will be stored in the run directory.
