@@ -471,6 +471,10 @@ Logger settings
    predictions as plots of that n specific (random) basins during
    validations.
 
+-  ``log_loss_every_nth_update``: Refresh rate of logging of the loss value
+   every n iterations. For example for `20`, the loss logging would be
+   updated every 20 iterations (updates) during training.
+
 -  ``save_git_diff``: If set to True and NeuralHydrology is a git repository
    with uncommitted changes, the git diff will be stored in the run directory.
    When using this option, make sure that your run and data directories are either
