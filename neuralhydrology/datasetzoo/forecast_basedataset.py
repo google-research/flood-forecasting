@@ -264,6 +264,7 @@ class ForecastDataset(BaseDataset):
             sample['x_d'] = sample.pop('x_d_hindcast')
             _ = sample.pop('x_d_forecast')
 
+        # Can't use strings. Torch does not support it in tensors.
         sample['basin_index'] = np.array(self._sample_index[item]['basin'], dtype=np.int16)
 
         # Return sample with various required formats.

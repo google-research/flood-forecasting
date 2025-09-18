@@ -90,14 +90,16 @@ class BasinBatchSampler(BatchSampler):
     Maps every basin to samples for it, and on iterations chunks them by batch size.
     """
 
-    def __init__(self, sample_index: dict[int, dict[str, int]], batch_size: int):
+    def __init__(self, sample_index: dict[int, dict[str, int]], batch_size: int, basins_indexes: set[int]):
         super().__init__(SequentialSampler(range(len(sample_index))), batch_size, drop_last=False)
 
         self._batch_size = batch_size
         
         self._basin_indices: dict[int, list[int]] = {}
         for sample, data in sample_index.items():
-            self._basin_indices.setdefault(data['basin'], []).append(sample)
+            basin_index = data['basin']
+            if basin_index in basins_indexes:
+                self._basin_indices.setdefault(basin_index, []).append(sample)
 
         self._num_batches = sum(
             math.ceil(len(indices) / batch_size)
