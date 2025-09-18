@@ -197,7 +197,6 @@ def test_scaler_calculate_raises_error_for_zero_scale(tmp_scaler_dir, sample_dat
     scaler = Scaler(scaler_dir=tmp_scaler_dir, calculate_scaler=True, dataset=None)
     with pytest.raises(ValueError, match="Zero scale values found for features:"):
         scaler.calculate(sample_dataset_with_constant_var)
-        scaler.check_zero_scale.compute()
 
 # --- NEW TEST: Direct test of _check_zero_scale ---
 def test_check_zero_scale_method_raises_error(tmp_scaler_dir):
@@ -211,7 +210,7 @@ def test_check_zero_scale_method_raises_error(tmp_scaler_dir):
         coords={'parameter': ['center', 'scale', 'mean', 'std']}
     )
     with pytest.raises(ValueError, match="Zero scale values found for features:"):
-        scaler._create_zero_scale_checker().compute()
+        scaler._check_zero_scale()
 
 def test_check_zero_scale_method_no_error_for_nonzero(tmp_scaler_dir):
     scaler = Scaler(scaler_dir=tmp_scaler_dir, calculate_scaler=True, dataset=None)
@@ -225,7 +224,7 @@ def test_check_zero_scale_method_no_error_for_nonzero(tmp_scaler_dir):
     )
     # Should not raise an error
     try:
-        scaler._create_zero_scale_checker().compute()
+        scaler._check_zero_scale()
     except ValueError:
         pytest.fail("`_check_zero_scale` raised ValueError unexpectedly for non-zero scale values.")
 
@@ -326,4 +325,4 @@ def test_scaler_load_from_file_raises_error_for_zero_scale(tmp_scaler_dir):
 
     # Now try to load this scaler and expect a ValueError
     with pytest.raises(ValueError, match="Zero scale values found for features:"):
-        Scaler(scaler_dir=tmp_scaler_dir, calculate_scaler=False, dataset=None, calculate_scaler_to_check_zero_scale=True)
+        Scaler(scaler_dir=tmp_scaler_dir, calculate_scaler=False, dataset=None)
