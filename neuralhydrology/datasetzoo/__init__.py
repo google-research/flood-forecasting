@@ -15,15 +15,9 @@
 from typing import Type
 
 from neuralhydrology.datasetzoo.basedataset import BaseDataset
-from neuralhydrology.datasetzoo.camelsaus import CamelsAUS
-from neuralhydrology.datasetzoo.camelsbr import CamelsBR
-from neuralhydrology.datasetzoo.camelscl import CamelsCL
-from neuralhydrology.datasetzoo.camelsgb import CamelsGB
 from neuralhydrology.datasetzoo.camelsus import CamelsUS
 from neuralhydrology.datasetzoo.caravan import Caravan
-from neuralhydrology.datasetzoo.genericdataset import GenericDataset
 from neuralhydrology.datasetzoo.hourlycamelsus import HourlyCamelsUS
-from neuralhydrology.datasetzoo.lamah import LamaH
 from neuralhydrology.datasetzoo.multimet import Multimet
 from neuralhydrology.utils.config import Config
 from neuralhydrology.datasetzoo.datasetregistry import DatasetRegistry
@@ -113,14 +107,6 @@ def register_dataset(key: str, new_class: Type):
 _datasetZooRegistry: DatasetRegistry = DatasetRegistry()
 
 _datasetZooRegistry.register_dataset_class("camels_us", CamelsUS)
-_datasetZooRegistry.register_dataset_class("camels_gb", CamelsGB)
-_datasetZooRegistry.register_dataset_class("camels_aus", CamelsAUS)
-_datasetZooRegistry.register_dataset_class("camels_br", CamelsBR)
 _datasetZooRegistry.register_dataset_class("hourly_camels_us", HourlyCamelsUS)
-_datasetZooRegistry.register_dataset_class("camels_cl", CamelsCL)
-_datasetZooRegistry.register_dataset_class("generic", GenericDataset)
-_datasetZooRegistry.register_dataset_class("lamah_a", LamaH)
-_datasetZooRegistry.register_dataset_class("lamah_b", LamaH)
-_datasetZooRegistry.register_dataset_class("lamah_c", LamaH)
 _datasetZooRegistry.register_dataset_class("caravan", Caravan)
 _datasetZooRegistry.register_dataset_class("multimet", Multimet)
