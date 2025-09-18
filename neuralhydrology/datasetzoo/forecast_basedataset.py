@@ -320,12 +320,12 @@ class ForecastDataset(BaseDataset):
 
     def _extract_per_basin_stds(self, item: int) -> np.ndarray:
         assert self._per_basin_target_stds is not None
-        stds_array = self._extract_dataset(
+        features = self._extract_dataset(
             self._per_basin_target_stds, 
             self._target_features,
             {'basin': self._sample_index[item]['basin']},
         )
-        return np.expand_dims(list(stds_array.values()), axis=0)
+        return np.expand_dims(np.stack([features[e] for e in self._target_features], axis=-1), axis=0)
         # TODO (future) :: This adds a dimension to many features, as required by some models.
         # There is no need for this except that it is how basedataset works, and everything else expects
         # the trailing dim. Remove this dependency in the future.
@@ -398,9 +398,10 @@ class ForecastDataset(BaseDataset):
 
     def _extract_dataset(self, data: xr.Dataset, features: list[str], indexers: dict[Hashable, int|range]) -> dict[str, np.ndarray | np.float32]:
         def extract(feature_name):
-            feature = self._data_cache.get(feature_name)
+            key = f'{id(data)}{feature_name}'
+            feature = self._data_cache.get(key)
             if feature is None:
-                feature = self._data_cache[feature_name] = data[feature_name]
+                feature = self._data_cache[key] = data[feature_name]
             return _extract_dataarray(feature, indexers)
 
         return {feature_name: extract(feature_name) for feature_name in features}
