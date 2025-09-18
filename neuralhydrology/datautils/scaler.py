@@ -168,7 +168,7 @@ class Scaler():
         is_zero_da = (scales_to_check == 0).any("parameter").to_dataarray()
         zero_features = is_zero_da["variable"][is_zero_da]
         if any(zero_features):
-            raise ValueError(f"Zero scale values found for features: {zero_features}.")
+            raise ValueError(f"Zero scale values found for features: {list(zero_features)}.")
 
     def scale(
         self,
