@@ -58,7 +58,7 @@ def create_config_files(base_config_path: Path, modify_dict: Dict[str, list], ou
     print(f"Finished. Configs are stored in {output_dir}")
 
 
-def flatten_feature_list(data: list[str] | list[list[str]]| dict[str, list[str]]) -> list[str]:
+def flatten_feature_list(data: list[str] | list[list[str]] | dict[str, list[str]]) -> list[str]:
     if not data:
         return []
     if isinstance(data, dict):
