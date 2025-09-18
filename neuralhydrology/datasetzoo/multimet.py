@@ -16,7 +16,6 @@ from typing import Dict, List, Optional, Union, Iterable
 
 import logging
 from pathlib import Path
-import functools
 
 import numpy as np
 import pandas as pd
@@ -30,7 +29,6 @@ LOGGER = logging.getLogger(__name__)
 
 MULTIMET_MINIMUM_LEAD_TIME = 1
 
-@functools.cache
 def _open_zarr(path: Path) -> xr.Dataset:
     path = str(path).replace('gs:/', 'gs://')
     return xr.open_zarr(store=path, chunks='auto', decode_timedelta=True)
