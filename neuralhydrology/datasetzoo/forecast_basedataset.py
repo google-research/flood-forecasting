@@ -208,8 +208,8 @@ class ForecastDataset(BaseDataset):
         self._create_sample_index()
 
         # TODO: Optionally, optimize the data loader and trainer modules to work with chunked lazy data.
-        LOGGER.debug("materialize data (compute) and check_zero_scale")
-        self._dataset, _ = dask.compute(self._dataset, self.scaler.check_zero_scale)
+        LOGGER.debug("materialize data (compute)")
+        self._dataset = self._dataset.compute()
 
         # Compute stats for NSE-based loss functions.
         # TODO (future) :: Find a better way to decide whether to calculate these. At least keep a list of
