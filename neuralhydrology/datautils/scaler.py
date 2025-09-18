@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Dict, Optional, Iterator, Hashable
 
 import dask
+import dask.delayed
+from dask.delayed import Delayed
 import pandas as pd
 import xarray as xr
 
@@ -30,13 +32,9 @@ def _calc_stats(dataset: xr.Dataset, needed: set[str]):
         "median": dataset.quantile(q=0.5, skipna=True) if "median" in needed else None,
         "min": dataset.min(skipna=True) if {"min", "minmax"} & needed else None,
         "max": dataset.max(skipna=True) if {"max", "minmax"} & needed else None,
-        "minmax": (
-            dataset.max(skipna=True) - dataset.min(skipna=True)
-            if "minmax" in needed
-            else None
-        ),
     }
-    return dask.compute(stats)[0]
+    stats["minmax"] = stats["max"] - stats["min"] if "minmax" in needed else None
+    return stats
 
 
 def _calc_types(
@@ -98,7 +96,7 @@ class Scaler():
         self.scaler_dir = scaler_dir
         if not calculate_scaler:
             self.load()
-            self._check_zero_scale()
+            # _check_zero_scale_task is by caller handling scale()
         else:
             self._custom_normalization = custom_normalization
             if dataset is not None:
@@ -112,13 +110,18 @@ class Scaler():
         else:
             raise ValueError("Old scaler files are unsupported")
 
-    def save(self):
+    def save_task(self) -> Delayed:
         if self.scaler is None:
             raise ValueError('You are trying to save a scaler that has not been computed.')
         os.makedirs(self.scaler_dir, exist_ok=True)
         scaler_file = self.scaler_dir / SCALER_FILE_NAME
-        with open(scaler_file, 'wb') as f:
-            self.scaler.to_netcdf(f)
+
+        @dask.delayed
+        def task(scaler: xr.Dataset):
+            with open(scaler_file, 'wb') as f:
+                scaler.to_netcdf(f)
+
+        return task(self.scaler)
 
     def calculate(
         self,
@@ -157,23 +160,26 @@ class Scaler():
         else:
             self.scaler = scaler
 
-        self._check_zero_scale()
-
-    def _check_zero_scale(self):
-        """Creates self.check_zero_scale that throws if scale is zero for any feature.
+    def _check_zero_scale_task(self) -> Delayed:
+        """Creates a dask task that throws if scale is zero for any feature.
 
         Zero-valued scale parameters cause NaNs.
         """
         scales_to_check = self.scaler.sel(parameter=["scale", "std"])
         is_zero_da = (scales_to_check == 0).any("parameter").to_dataarray()
-        zero_features = is_zero_da["variable"][is_zero_da]
-        if any(zero_features):
-            raise ValueError(f"Zero scale values found for features: {list(zero_features)}.")
+
+        @dask.delayed
+        def task(is_zero_da: xr.DataArray):
+            features = is_zero_da["variable"][is_zero_da]
+            if any(features):
+                raise ValueError(f"Zero scale values found for features: {list(features)}.")
+
+        return task(is_zero_da)
 
     def scale(
         self,
         dataset: xr.Dataset,
-    ) -> xr.Dataset:
+    ) -> tuple[xr.Dataset, list[Delayed]]:
         """Scale a data set with a precaculated_scaler.
         
         $$ unscaled_dataset = (dataset - center) + scale $$
@@ -191,6 +197,8 @@ class Scaler():
         -------
         xr.Dataset
             The new dataset where all scalable features are scaled.
+        list[Delayed]
+            A list that includes a task to check zero scales
         
         Raises
         ------
@@ -199,7 +207,8 @@ class Scaler():
         missing_features = [feature for feature in dataset if feature not in self.scaler.data_vars]
         if any(missing_features):
             raise ValueError(f'Requesting to scale variables that are not part of the scaler: {missing_features}')
-        return (dataset - self.scaler.sel(parameter='center')) / self.scaler.sel(parameter='scale')
+        res = (dataset - self.scaler.sel(parameter='center')) / self.scaler.sel(parameter='scale')
+        return res, [self._check_zero_scale_task()]
 
     def unscale(
         self,
