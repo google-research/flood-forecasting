@@ -226,7 +226,7 @@ class BaseTester(object):
         batch_sampler = BasinBatchSampler(
             sample_index=ds._sample_index,
             batch_size=self.cfg.batch_size,
-            basins_indexes=set(np.where(np.isin(self.basins, list(basins)))[0]),
+            basins_indexes=set(np.flatnonzero(np.isin(self.basins, list(basins)))),
         )
         loader = DataLoader(ds, batch_sampler=batch_sampler, num_workers=0, collate_fn=ds.collate_fn)
 
