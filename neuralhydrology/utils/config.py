@@ -345,6 +345,10 @@ class Config(object):
         return self._cfg.get("continue_from_epoch", None)
 
     @property
+    def log_loss_every_nth_update(self) -> int:
+        return self._cfg.get("log_loss_every_nth_update", 1)
+
+    @property
     def custom_normalization(self) -> dict:
         return self._as_default_dict(self._cfg.get("custom_normalization", {}))
 
