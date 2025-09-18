@@ -56,3 +56,13 @@ def create_config_files(base_config_path: Path, modify_dict: Dict[str, list], ou
         base_config.dump_config(output_dir, f"config_{i+1}.yml")
 
     print(f"Finished. Configs are stored in {output_dir}")
+
+
+def flatten_feature_list(data: list[str] | list[list[str]] | dict[str, list[str]]) -> list[str]:
+    if not data:
+        return []
+    if isinstance(data, dict):
+        return list(itertools.chain.from_iterable(data.values()))
+    if isinstance(data, list) and isinstance(data[0], list):
+        return list(itertools.chain.from_iterable(data))
+    return list(data)

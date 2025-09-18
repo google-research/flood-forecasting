@@ -36,6 +36,7 @@ from neuralhydrology.datautils.union_features import union_features
 from neuralhydrology.datautils.utils import load_basin_file
 from neuralhydrology.datautils.validate_samples import validate_samples, extract_feature_groups
 from neuralhydrology.utils.config import Config
+from neuralhydrology.utils.configutils import flatten_feature_list
 from neuralhydrology.utils.errors import NoTrainDataError, NoEvaluationDataError
 
 LOGGER = logging.getLogger(__name__)
@@ -97,11 +98,11 @@ class ForecastDataset(BaseDataset):
         self._target_features = cfg.target_variables
         self._forecast_features = []
         if cfg.forecast_inputs:
-            self._forecast_features = cfg.forecast_inputs
+            self._forecast_features = flatten_feature_list(cfg.forecast_inputs)
         if cfg.hindcast_inputs:
-            self._hindcast_features = cfg.hindcast_inputs
+            self._hindcast_features = flatten_feature_list(cfg.hindcast_inputs)
         elif cfg.dynamic_inputs:
-            self._hindcast_features = cfg.dynamic_inputs_flattened
+            self._hindcast_features = flatten_feature_list(cfg.dynamic_inputs)
         else:
             raise ValueError('Either `hindcast_inputs` or `dynamic_inputs` must be supplied.')
         self._union_mapping = cfg.union_mapping
@@ -422,7 +423,6 @@ def _assert_floats_are_float32(dataset: xr.Dataset):
                 f"Data variable or coord '{name}' is a float but not float32. "
                 f"Actual dtype: {data_array_or_coord.dtype}"
             )
-
 
 def _convert_to_tensor(key: str, value: np.ndarray) -> torch.Tensor | np.ndarray:
     if key in NUMPY_VARS:
