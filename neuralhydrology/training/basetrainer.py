@@ -342,14 +342,9 @@ class BaseTrainer(object):
 
                 self.scaler.update()  # Update scale for the next iteration
 
-            cpu = self.device.type == 'cpu'
-            log_loss_nth_update = i % self.cfg.log_loss_every_nth_update_on_gpu == 0
-            last_iteration = (i + 1) == n_iter
-            if cpu or log_loss_nth_update or last_iteration:
+            if i % self.cfg.log_loss_every_nth_update == 0 or i + 1 == n_iter:
                 pbar.set_postfix_str(f"Loss: {loss.item():.4f}")
                 self.experiment_logger.log_step(**{k: v.item() for k, v in all_losses.items()})
-            elif not (pbar.postfix or '').endswith('*'):
-                pbar.set_postfix_str(f"{pbar.postfix}*")
 
     def _set_random_seeds(self):
         if self.cfg.seed is None:
