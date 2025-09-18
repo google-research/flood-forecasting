@@ -36,6 +36,7 @@ from neuralhydrology.datautils.union_features import union_features
 from neuralhydrology.datautils.utils import load_basin_file
 from neuralhydrology.datautils.validate_samples import validate_samples, extract_feature_groups
 from neuralhydrology.utils.config import Config
+from neuralhydrology.utils.configutils import flatten_feature_list
 from neuralhydrology.utils.errors import NoTrainDataError, NoEvaluationDataError
 
 LOGGER = logging.getLogger(__name__)
@@ -97,11 +98,11 @@ class ForecastDataset(BaseDataset):
         self._target_features = cfg.target_variables
         self._forecast_features = []
         if cfg.forecast_inputs:
-            self._forecast_features = cfg.forecast_inputs
+            self._forecast_features = flatten_feature_list(cfg.forecast_inputs)
         if cfg.hindcast_inputs:
-            self._hindcast_features = cfg.hindcast_inputs
+            self._hindcast_features = flatten_feature_list(cfg.hindcast_inputs)
         elif cfg.dynamic_inputs:
-            self._hindcast_features = cfg.dynamic_inputs_flattened
+            self._hindcast_features = flatten_feature_list(cfg.dynamic_inputs)
         else:
             raise ValueError('Either `hindcast_inputs` or `dynamic_inputs` must be supplied.')
         self._union_mapping = cfg.union_mapping
@@ -273,7 +274,7 @@ class ForecastDataset(BaseDataset):
         duration = self._seq_length - 1
         if not lead and not self._lead_times:
             return range(date - duration, date + 1)
-        end = date + self._lead_times[-1]
+        end = date + self.lead_time
         return range(end - duration, end + 1)
 
     def _extract_dates(self, item: int) -> np.ndarray:
@@ -319,12 +320,12 @@ class ForecastDataset(BaseDataset):
 
     def _extract_per_basin_stds(self, item: int) -> np.ndarray:
         assert self._per_basin_target_stds is not None
-        stds_array = self._extract_dataset(
+        features = self._extract_dataset(
             self._per_basin_target_stds, 
             self._target_features,
             {'basin': self._sample_index[item]['basin']},
         )
-        return np.expand_dims(list(stds_array.values()), axis=0)
+        return np.expand_dims(np.stack([features[e] for e in self._target_features], axis=-1), axis=0)
         # TODO (future) :: This adds a dimension to many features, as required by some models.
         # There is no need for this except that it is how basedataset works, and everything else expects
         # the trailing dim. Remove this dependency in the future.
@@ -397,9 +398,10 @@ class ForecastDataset(BaseDataset):
 
     def _extract_dataset(self, data: xr.Dataset, features: list[str], indexers: dict[Hashable, int|range]) -> dict[str, np.ndarray | np.float32]:
         def extract(feature_name):
-            feature = self._data_cache.get(feature_name)
+            key = f'{id(data)}{feature_name}'
+            feature = self._data_cache.get(key)
             if feature is None:
-                feature = self._data_cache[feature_name] = data[feature_name]
+                feature = self._data_cache[key] = data[feature_name]
             return _extract_dataarray(feature, indexers)
 
         return {feature_name: extract(feature_name) for feature_name in features}
@@ -422,7 +424,6 @@ def _assert_floats_are_float32(dataset: xr.Dataset):
                 f"Data variable or coord '{name}' is a float but not float32. "
                 f"Actual dtype: {data_array_or_coord.dtype}"
             )
-
 
 def _convert_to_tensor(key: str, value: np.ndarray) -> torch.Tensor | np.ndarray:
     if key in NUMPY_VARS:

@@ -25,7 +25,7 @@ from neuralhydrology.utils.config import Config
 LOGGER = logging.getLogger(__name__)
 
 
-def get_optimizer(model: torch.nn.Module, cfg: Config) -> torch.optim.Optimizer:
+def get_optimizer(model: torch.nn.Module, cfg: Config, *, is_gpu: bool = False) -> torch.optim.Optimizer:
     """Get specific optimizer object, depending on the run configuration.
     
     Currently only 'Adam' and 'AdamW' are supported.
@@ -43,9 +43,9 @@ def get_optimizer(model: torch.nn.Module, cfg: Config) -> torch.optim.Optimizer:
         Optimizer object that can be used for model training.
     """
     if cfg.optimizer.lower() == "adam":
-        optimizer = torch.optim.Adam(model.parameters(), lr=cfg.learning_rate[0])
+        optimizer = torch.optim.Adam(model.parameters(), lr=cfg.learning_rate[0], fused=is_gpu)
     elif cfg.optimizer.lower() == "adamw":
-        optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate[0])
+        optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate[0], fused=is_gpu)
     else:
         raise NotImplementedError(f"{cfg.optimizer} not implemented or not linked in `get_optimizer()`")
 

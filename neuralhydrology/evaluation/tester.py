@@ -317,7 +317,7 @@ class BaseTester(object):
                             .drop_vars({'datetime', 'date', 'time_step'})[f"{target_variable}_obs"]
                         obs['datetime'] = freq_date_range
                         # check if there are observations for this period
-                        if not all(obs.isnull()):
+                        if obs.notnull().any():
                             sim = xr.isel(time_step=slice(-frequency_factor, None)) \
                                 .stack(datetime=['date', 'time_step']) \
                                 .drop_vars({'datetime', 'date', 'time_step'})[f"{target_variable}_sim"]
