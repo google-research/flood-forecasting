@@ -95,8 +95,7 @@ class Scaler():
         self.scaler = None
         self.scaler_dir = scaler_dir
         if not calculate_scaler:
-            self.load()
-            # _check_zero_scale_task is by caller handling scale()
+            self.load()  # load() checks zero scale eagerly
         else:
             self._custom_normalization = custom_normalization
             if dataset is not None:
@@ -106,7 +105,8 @@ class Scaler():
         scaler_file = self.scaler_dir / SCALER_FILE_NAME
         if os.path.exists(scaler_file):
             with open(scaler_file, 'rb') as f:
-                self.scaler = xr.load_dataset(f)
+                self.scaler = xr.load_dataset(f)  # Directly load data
+                dask.compute(self._check_zero_scale_task())  # Data is available now
         else:
             raise ValueError("Old scaler files are unsupported")
 

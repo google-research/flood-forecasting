@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 from unittest.mock import patch, mock_open
 
+import dask
 import numpy as np
 import pandas as pd
 import pytest
@@ -190,13 +191,15 @@ def test_scaler_calculate_custom_normalization(tmp_scaler_dir, sample_dataset_ba
     np.testing.assert_allclose(scaler.scaler['temp'].sel(parameter='mean').item(), sample_dataset_basic['temp'].mean().item(), rtol=1e-5)
     np.testing.assert_allclose(scaler.scaler['pressure'].sel(parameter='std').item(), sample_dataset_basic['pressure'].std().item(), rtol=1e-5)
 
-# --- MODIFIED TEST for `_check_zero_scale` being called by `calculate` ---
-def test_scaler_calculate_raises_error_for_zero_scale(tmp_scaler_dir, sample_dataset_with_constant_var):
+# --- MODIFIED TEST for `_check_zero_scale` being called by `scale` ---
+def test_scaler_scale_raises_error_for_zero_scale(tmp_scaler_dir, sample_dataset_with_constant_var):
     # `constant_val` has a standard deviation of 0.0.
-    # The calculate method should now raise a ValueError due to _check_zero_scale().
+    # The scale method should now raise a ValueError due to _check_zero_scale().
     scaler = Scaler(scaler_dir=tmp_scaler_dir, calculate_scaler=True, dataset=None)
+    scaler.calculate(sample_dataset_with_constant_var)
+    _, tasks = scaler.scale(sample_dataset_with_constant_var)
     with pytest.raises(ValueError, match="Zero scale values found for features:"):
-        scaler.calculate(sample_dataset_with_constant_var)
+        dask.compute(tasks)
 
 # --- NEW TEST: Direct test of _check_zero_scale ---
 def test_check_zero_scale_method_raises_error(tmp_scaler_dir):
@@ -210,7 +213,7 @@ def test_check_zero_scale_method_raises_error(tmp_scaler_dir):
         coords={'parameter': ['center', 'scale', 'mean', 'std']}
     )
     with pytest.raises(ValueError, match="Zero scale values found for features:"):
-        scaler._check_zero_scale()
+        dask.compute(scaler._check_zero_scale_task())
 
 def test_check_zero_scale_method_no_error_for_nonzero(tmp_scaler_dir):
     scaler = Scaler(scaler_dir=tmp_scaler_dir, calculate_scaler=True, dataset=None)
@@ -224,14 +227,14 @@ def test_check_zero_scale_method_no_error_for_nonzero(tmp_scaler_dir):
     )
     # Should not raise an error
     try:
-        scaler._check_zero_scale()
+        dask.compute(scaler._check_zero_scale_task())
     except ValueError:
         pytest.fail("`_check_zero_scale` raised ValueError unexpectedly for non-zero scale values.")
 
 # --- Test Scaler.scale ---
 
 def test_scaler_scale_basic_functionality(scaler_instance_calculated, sample_dataset_basic):
-    scaled_ds = scaler_instance_calculated.scale(sample_dataset_basic)
+    scaled_ds, unused_check_zero_task = scaler_instance_calculated.scale(sample_dataset_basic)
 
     assert isinstance(scaled_ds, xr.Dataset)
     assert list(scaled_ds.dims.keys()) == list(sample_dataset_basic.dims.keys())
@@ -247,7 +250,7 @@ def test_scaler_scale_basic_functionality(scaler_instance_calculated, sample_dat
 
 def test_scaler_scale_new_dataset(scaler_instance_calculated, sample_dataset_basic):
     new_ds = sample_dataset_basic * 2.0
-    scaled_ds = scaler_instance_calculated.scale(new_ds)
+    scaled_ds, unused_check_zero_task = scaler_instance_calculated.scale(new_ds)
 
     expected_scaled_temp = (new_ds['temp'] - scaler_instance_calculated.scaler['temp'].sel(parameter='center')) / scaler_instance_calculated.scaler['temp'].sel(parameter='scale')
     expected_scaled_pressure = (new_ds['pressure'] - scaler_instance_calculated.scaler['pressure'].sel(parameter='center')) / scaler_instance_calculated.scaler['pressure'].sel(parameter='scale')
@@ -263,7 +266,7 @@ def test_scaler_scale_raises_error_for_missing_features(scaler_instance_calculat
 # --- Test Scaler.unscale ---
 
 def test_scaler_unscale_basic_functionality(scaler_instance_calculated, sample_dataset_basic):
-    scaled_ds = scaler_instance_calculated.scale(sample_dataset_basic)
+    scaled_ds, unused_check_zero_task = scaler_instance_calculated.scale(sample_dataset_basic)
     unscaled_ds = scaler_instance_calculated.unscale(scaled_ds)
 
     assert isinstance(unscaled_ds, xr.Dataset)
@@ -276,7 +279,7 @@ def test_scaler_unscale_basic_functionality(scaler_instance_calculated, sample_d
 
 def test_scaler_unscale_new_dataset(scaler_instance_calculated, sample_dataset_basic):
     new_ds = sample_dataset_basic * 2.0
-    scaled_ds = scaler_instance_calculated.scale(new_ds)
+    scaled_ds, unused_check_zero_task = scaler_instance_calculated.scale(new_ds)
     unscaled_ds = scaler_instance_calculated.unscale(scaled_ds)
 
     # Assert that unscaled data is very close to the input data for scaling
@@ -291,7 +294,7 @@ def test_scaler_unscale_raises_error_for_missing_features(scaler_instance_calcul
 # --- Test Scaler.save and Scaler.load ---
 
 def test_scaler_save_and_load(tmp_scaler_dir, scaler_instance_calculated, sample_dataset_basic):
-    scaler_instance_calculated.save()
+    dask.compute(scaler_instance_calculated.save_task())
     scaler_file_path = tmp_scaler_dir / SCALER_FILE_NAME
     assert scaler_file_path.exists()
 
@@ -301,14 +304,14 @@ def test_scaler_save_and_load(tmp_scaler_dir, scaler_instance_calculated, sample
     np.testing.assert_allclose(loaded_scaler.scaler['temp'].values, scaler_instance_calculated.scaler['temp'].values)
     np.testing.assert_allclose(loaded_scaler.scaler['pressure'].values, scaler_instance_calculated.scaler['pressure'].values)
 
-    scaled_via_loaded = loaded_scaler.scale(sample_dataset_basic)
+    scaled_via_loaded, unused_check_zero_task = loaded_scaler.scale(sample_dataset_basic)
     unscaled_via_loaded = loaded_scaler.unscale(scaled_via_loaded)
     np.testing.assert_allclose(unscaled_via_loaded['temp'].values, sample_dataset_basic['temp'].values, rtol=1e-5)
 
 def test_scaler_save_raises_error_if_not_calculated(tmp_scaler_dir):
     scaler = Scaler(scaler_dir=tmp_scaler_dir, calculate_scaler=True, dataset=None)
     with pytest.raises(ValueError, match="You are trying to save a scaler that has not been computed."):
-        scaler.save()
+        dask.compute(scaler.save_task())
 
 # --- NEW TESTS: `_check_zero_scale` interaction with `load` ---
 
