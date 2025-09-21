@@ -225,6 +225,8 @@ class ForecastDataset(BaseDataset):
 
         self._data_cache: dict[str, xr.DataArray] = {}
 
+        LOGGER.debug("forecast dataset init complete")
+
     def __len__(self) -> int:
         return self._num_samples
 
