@@ -44,7 +44,6 @@ def load_basin_id_encoding(run_dir: Path) -> Dict[str, int]:
                                     "Looked for (new) yaml file or (old) pickle file")
 
 
-
 def metrics_to_dataframe(results: dict, metrics: Iterable[str], targets: Iterable[str]) -> pd.DataFrame:
     """Extract all metric values from result dictionary and convert to pandas.DataFrame
 
@@ -90,15 +89,20 @@ class BasinBatchSampler(BatchSampler):
     Maps every basin to samples for it, and on iterations chunks them by batch size.
     """
 
-    def __init__(self, sample_index: dict[int, dict[str, int]], batch_size: int, basins_indexes: set[int]):
+    def __init__(
+        self,
+        sample_index: dict[int, dict[str, int]],
+        batch_size: int,
+        basins_indexes: set[int] = set(),
+    ):
         super().__init__(SequentialSampler(range(len(sample_index))), batch_size, drop_last=False)
 
         self._batch_size = batch_size
-        
+
         self._basin_indices: dict[int, list[int]] = {}
         for sample, data in sample_index.items():
             basin_index = data['basin']
-            if basin_index in basins_indexes:
+            if (not basins_indexes) or basin_index in basins_indexes:
                 self._basin_indices.setdefault(basin_index, []).append(sample)
 
         self._num_batches = sum(
