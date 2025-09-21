@@ -155,7 +155,7 @@ def load_caravan_attributes(data_dir: Path,
 
     # Load all required attribute files.
     LOGGER.debug('load attribute files')
-    ds = _load_attribute_files_of_subdatasets(subdataset_dirs, features)
+    ds = _load_attribute_files_of_subdatasets(subdataset_dirs, features or [])
 
     # If a specific list of basins is requested, subset the Dataset.
     if basins:
@@ -257,7 +257,7 @@ def load_caravan_timeseries_together(
     return ds.assign_coords(basin=basins)
 
 
-def _load_attribute_files_of_subdatasets(datasets: list[Path], features: Optional[List[str]]) -> xarray.Dataset:
+def _load_attribute_files_of_subdatasets(datasets: list[Path], features: List[str]) -> xarray.Dataset:
     """Loads all attribute CSV files, indexing gauge_id to basin.
 
     Converts float64 to float32.
@@ -270,7 +270,7 @@ def _load_attribute_files_of_subdatasets(datasets: list[Path], features: Optiona
             {col: np.float32 for col in df64.select_dtypes(include=["float64"]).columns}
         )
         df.rename_axis("basin", inplace=True)
-        df.drop(columns=(e for e in df.columns if e not in (features or [])), inplace=True)
+        df.drop(columns=(e for e in df.columns if e not in features), inplace=True)
         return df.to_xarray().chunk('auto')  # Uses underlying numpy arrays in df
 
     dss = map(process, itertools.chain.from_iterable(e.glob("*.csv") for e in datasets))
