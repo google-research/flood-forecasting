@@ -44,7 +44,6 @@ def load_basin_id_encoding(run_dir: Path) -> Dict[str, int]:
                                     "Looked for (new) yaml file or (old) pickle file")
 
 
-
 def metrics_to_dataframe(results: dict, metrics: Iterable[str], targets: Iterable[str]) -> pd.DataFrame:
     """Extract all metric values from result dictionary and convert to pandas.DataFrame
 
@@ -90,14 +89,21 @@ class BasinBatchSampler(BatchSampler):
     Maps every basin to samples for it, and on iterations chunks them by batch size.
     """
 
-    def __init__(self, sample_index: dict[int, dict[str, int]], batch_size: int):
+    def __init__(
+        self,
+        sample_index: dict[int, dict[str, int]],
+        batch_size: int,
+        basins_indexes: set[int] = set(),
+    ):
         super().__init__(SequentialSampler(range(len(sample_index))), batch_size, drop_last=False)
 
         self._batch_size = batch_size
-        
+
         self._basin_indices: dict[int, list[int]] = {}
         for sample, data in sample_index.items():
-            self._basin_indices.setdefault(data['basin'], []).append(sample)
+            basin_index = data['basin']
+            if (not basins_indexes) or basin_index in basins_indexes:
+                self._basin_indices.setdefault(basin_index, []).append(sample)
 
         self._num_batches = sum(
             math.ceil(len(indices) / batch_size)
@@ -111,3 +117,8 @@ class BasinBatchSampler(BatchSampler):
 
     def __len__(self):
         return self._num_batches
+
+
+def get_samples_indexes(values: list[str], *, samples: list[str]):
+    """Returns indexes of elements from samples that are in values."""
+    return np.flatnonzero(np.isin(values, samples))
