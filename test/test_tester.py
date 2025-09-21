@@ -48,6 +48,12 @@ def test_init_groups_basins(fixure):
 
     assert sampler._basin_indices == fixure["expected_groups"]
 
+def test_init_groups_basins_subset(fixure):
+    """Test grouping all sample indices by their basin id."""
+    sampler = BasinBatchSampler(fixure["sample_index"], batch_size=3, basins_indexes={102, 103})
+
+    del fixure["expected_groups"][101]
+    assert sampler._basin_indices == fixure["expected_groups"]
 
 def test_num_batches(fixure):
     """Test _num_batches is total num batches for an epoc (accounting for partial batch)."""
