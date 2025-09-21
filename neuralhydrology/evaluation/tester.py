@@ -34,7 +34,7 @@ from neuralhydrology.datasetzoo.basedataset import BaseDataset
 from neuralhydrology.datautils.utils import get_frequency_factor, load_basin_file, sort_frequencies
 from neuralhydrology.evaluation import plots
 from neuralhydrology.evaluation.metrics import calculate_metrics, get_available_metrics
-from neuralhydrology.evaluation.utils import load_basin_id_encoding, metrics_to_dataframe, BasinBatchSampler
+from neuralhydrology.evaluation.utils import load_basin_id_encoding, metrics_to_dataframe, BasinBatchSampler, get_samples_indexes
 from neuralhydrology.modelzoo import get_model
 from neuralhydrology.modelzoo.basemodel import BaseModel
 from neuralhydrology.training import get_loss_obj, get_regularization_obj
@@ -94,17 +94,6 @@ class BaseTester(object):
         self.dataset = self._get_dataset_all()
 
         self.exclude_basins = set(self._calc_exclude_basins())
-
-        batch_sampler = BasinBatchSampler(
-            sample_index=self.dataset._sample_index,
-            batch_size=self.cfg.batch_size,
-        )
-        self.loader = DataLoader(
-            self.dataset,
-            batch_sampler=batch_sampler, 
-            num_workers=0,
-            collate_fn=self.dataset.collate_fn,
-        )
 
     def _set_device(self):
         if self.cfg.device is not None:
@@ -233,7 +222,15 @@ class BaseTester(object):
         all_output = {basin: None for basin in basins}
 
         ds = self.dataset
-        eval_data = self._evaluate(model, self.loader, ds.frequencies, save_all_output, basins)
+
+        batch_sampler = BasinBatchSampler(
+            sample_index=ds._sample_index,
+            batch_size=self.cfg.batch_size,
+            basins_indexes=set(get_samples_indexes(self.basins, samples=list(basins))),
+        )
+        loader = DataLoader(ds, batch_sampler=batch_sampler, num_workers=0, collate_fn=ds.collate_fn)
+
+        eval_data = self._evaluate(model, loader, ds.frequencies, save_all_output, basins)
 
         pbar = tqdm(basins, file=sys.stdout, disable=self._disable_pbar)
         pbar.set_description('# Validation post' if self.period == "validation" else "# Evaluation post")
@@ -247,7 +244,7 @@ class BaseTester(object):
 
             # log loss of this basin plus number of samples in the logger to compute epoch aggregates later
             if experiment_logger is not None:
-                experiment_logger.log_step(**{k: (v, len(self.loader)) for k, v in all_losses.items()})
+                experiment_logger.log_step(**{k: (v, len(loader)) for k, v in all_losses.items()})
 
             predict_last_n = self.cfg.predict_last_n
             seq_length = self.cfg.seq_length
@@ -459,18 +456,21 @@ class BaseTester(object):
         if isinstance(predict_last_n, int):
             predict_last_n = {frequencies[0]: predict_last_n}  # if predict_last_n is int, there's only one frequency
 
-        pbar_basin = tqdm(file=sys.stdout, disable=self._disable_pbar, total=len(loader.dataset._basins))
+        pbar_basin = tqdm(file=sys.stdout, disable=self._disable_pbar, total=len(basins))
         pbar_basin.set_description('# Validation pre' if self.period == "validation" else "# Evaluation pre")
+
+        basins_seen = set()
 
         res = {}
         with torch.inference_mode():
             for data in loader:
                 basin_index = data['basin_index'][0].item()
-                pbar_basin.update(basin_index - pbar_basin.n)
-
                 basin = loader.dataset._basins[basin_index]
                 if basin not in basins:
                     continue
+
+                pbar_basin.update(bool(basins_seen and basin_index not in basins_seen))
+                basins_seen.add(basin_index)
 
                 for key in data:
                     if key.startswith('x_d'):
