@@ -60,7 +60,7 @@ test_basin_file: ~/neuralhydrology/config/basins/caravan/lamah.txt
 # validation_basin_file: ~/neuralhydrology/config/basins/intersections/0_0.txt
 # test_basin_file: ~/neuralhydrology/config/basins/intersections/0_0.txt
 
-train_end_date: 31/12/2015
+train_end_date: 31/12/1981
 train_start_date: 01/01/1980
 
 validation_end_date: 31/12/2018
@@ -87,6 +87,13 @@ forecast_inputs:
 - graphcast_temperature_2m
 - graphcast_total_precipitation
 hindcast_inputs:
+- hres_surface_net_solar_radiation
+- hres_surface_net_thermal_radiation
+- hres_surface_pressure
+- hres_temperature_2m
+- hres_total_precipitation
+- graphcast_temperature_2m
+- graphcast_total_precipitation
 - imerg_precipitation
 - cpc_precipitation
 static_attributes:
