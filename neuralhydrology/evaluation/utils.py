@@ -117,3 +117,7 @@ class BasinBatchSampler(BatchSampler):
 
     def __len__(self):
         return self._num_batches
+
+
+def get_samples_indexes(values: list[str], *, samples: list[str]):
+    return np.flatnonzero(np.isin(values, samples))

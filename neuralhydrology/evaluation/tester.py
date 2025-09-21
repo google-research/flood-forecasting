@@ -34,7 +34,7 @@ from neuralhydrology.datasetzoo.basedataset import BaseDataset
 from neuralhydrology.datautils.utils import get_frequency_factor, load_basin_file, sort_frequencies
 from neuralhydrology.evaluation import plots
 from neuralhydrology.evaluation.metrics import calculate_metrics, get_available_metrics
-from neuralhydrology.evaluation.utils import load_basin_id_encoding, metrics_to_dataframe, BasinBatchSampler
+from neuralhydrology.evaluation.utils import load_basin_id_encoding, metrics_to_dataframe, BasinBatchSampler, get_samples_indexes
 from neuralhydrology.modelzoo import get_model
 from neuralhydrology.modelzoo.basemodel import BaseModel
 from neuralhydrology.training import get_loss_obj, get_regularization_obj
@@ -226,7 +226,7 @@ class BaseTester(object):
         batch_sampler = BasinBatchSampler(
             sample_index=ds._sample_index,
             batch_size=self.cfg.batch_size,
-            basins_indexes=set(np.flatnonzero(np.isin(self.basins, list(basins)))),
+            basins_indexes=set(get_samples_indexes(self.basins, samples=list(basins))),
         )
         loader = DataLoader(ds, batch_sampler=batch_sampler, num_workers=0, collate_fn=ds.collate_fn)
 
