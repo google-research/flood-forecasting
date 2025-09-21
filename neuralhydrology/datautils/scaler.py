@@ -87,6 +87,8 @@ class Scaler():
         custom_normalization: Dict[str, Dict[str, float]] = {},
         dataset: Optional[xr.Dataset] = None,
     ):
+        self._calculate_scaler = calculate_scaler
+
         # Consistency check.
         if not calculate_scaler and dataset is not None:
             raise ValueError('Do not pass a dataset if you are loading a pre-calculated scaler.')
@@ -209,7 +211,12 @@ class Scaler():
         if any(missing_features):
             raise ValueError(f'Requesting to scale variables that are not part of the scaler: {missing_features}')
         res = (dataset - self.scaler.sel(parameter='center')) / self.scaler.sel(parameter='scale')
-        return res, [self._check_zero_scale_task()]
+
+        tasks = [self._check_zero_scale_task()]
+        if self._calculate_scaler:
+            tasks += [self.save_task()]
+
+        return res, tasks
 
     def unscale(
         self,

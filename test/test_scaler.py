@@ -14,16 +14,15 @@
 
 """Unit tests for Scaler."""
 import os
-from pathlib import Path
-from unittest.mock import patch, mock_open
+from unittest.mock import patch
 
 import dask
+import dask.delayed
 import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
 
-from neuralhydrology.datautils import utils
 from neuralhydrology.datautils.scaler import Scaler, SCALER_FILE_NAME, _calc_stats, _calc_types
 
 # Set a fixed seed for reproducible tests
@@ -233,8 +232,49 @@ def test_check_zero_scale_method_no_error_for_nonzero(tmp_scaler_dir):
 
 # --- Test Scaler.scale ---
 
+def test_scaler_scale_returns_save_task_when_calculated(scaler_instance_calculated, sample_dataset_basic):
+    calls = []
+
+    @dask.delayed
+    def fake():
+        calls.append(True)
+
+    with patch.object(scaler_instance_calculated, 'save_task', return_value=fake()):
+        _, tasks = scaler_instance_calculated.scale(sample_dataset_basic)
+
+    assert calls == []
+
+    dask.compute(tasks)
+
+    assert calls == [True]
+
+def test_scaler_scale_doesnt_return_save_task_when_not_calculated(
+    tmp_scaler_dir, scaler_instance_calculated, sample_dataset_basic
+):
+    dask.compute(scaler_instance_calculated.save_task())
+    scaler_file_path = tmp_scaler_dir / SCALER_FILE_NAME
+    assert scaler_file_path.exists()
+    loaded_scaler = Scaler(scaler_dir=tmp_scaler_dir, calculate_scaler=False, dataset=None)
+
+    calls = []
+
+    @dask.delayed
+    def fake():
+        calls.append(True)
+
+    with patch.object(loaded_scaler, 'save_task', return_value=fake()):
+        _, tasks = loaded_scaler.scale(sample_dataset_basic)
+
+    assert calls == []
+
+    dask.compute(tasks)
+
+    assert calls == []
+
+
 def test_scaler_scale_basic_functionality(scaler_instance_calculated, sample_dataset_basic):
-    scaled_ds, unused_check_zero_task = scaler_instance_calculated.scale(sample_dataset_basic)
+    scaled_ds, tasks = scaler_instance_calculated.scale(sample_dataset_basic)
+    dask.compute(tasks)
 
     assert isinstance(scaled_ds, xr.Dataset)
     assert list(scaled_ds.dims.keys()) == list(sample_dataset_basic.dims.keys())
@@ -250,7 +290,8 @@ def test_scaler_scale_basic_functionality(scaler_instance_calculated, sample_dat
 
 def test_scaler_scale_new_dataset(scaler_instance_calculated, sample_dataset_basic):
     new_ds = sample_dataset_basic * 2.0
-    scaled_ds, unused_check_zero_task = scaler_instance_calculated.scale(new_ds)
+    scaled_ds, tasks = scaler_instance_calculated.scale(new_ds)
+    dask.compute(tasks)
 
     expected_scaled_temp = (new_ds['temp'] - scaler_instance_calculated.scaler['temp'].sel(parameter='center')) / scaler_instance_calculated.scaler['temp'].sel(parameter='scale')
     expected_scaled_pressure = (new_ds['pressure'] - scaler_instance_calculated.scaler['pressure'].sel(parameter='center')) / scaler_instance_calculated.scaler['pressure'].sel(parameter='scale')
@@ -266,7 +307,8 @@ def test_scaler_scale_raises_error_for_missing_features(scaler_instance_calculat
 # --- Test Scaler.unscale ---
 
 def test_scaler_unscale_basic_functionality(scaler_instance_calculated, sample_dataset_basic):
-    scaled_ds, unused_check_zero_task = scaler_instance_calculated.scale(sample_dataset_basic)
+    scaled_ds, tasks = scaler_instance_calculated.scale(sample_dataset_basic)
+    dask.compute(tasks)
     unscaled_ds = scaler_instance_calculated.unscale(scaled_ds)
 
     assert isinstance(unscaled_ds, xr.Dataset)
@@ -279,7 +321,8 @@ def test_scaler_unscale_basic_functionality(scaler_instance_calculated, sample_d
 
 def test_scaler_unscale_new_dataset(scaler_instance_calculated, sample_dataset_basic):
     new_ds = sample_dataset_basic * 2.0
-    scaled_ds, unused_check_zero_task = scaler_instance_calculated.scale(new_ds)
+    scaled_ds, tasks = scaler_instance_calculated.scale(new_ds)
+    dask.compute(tasks)
     unscaled_ds = scaler_instance_calculated.unscale(scaled_ds)
 
     # Assert that unscaled data is very close to the input data for scaling
@@ -304,7 +347,8 @@ def test_scaler_save_and_load(tmp_scaler_dir, scaler_instance_calculated, sample
     np.testing.assert_allclose(loaded_scaler.scaler['temp'].values, scaler_instance_calculated.scaler['temp'].values)
     np.testing.assert_allclose(loaded_scaler.scaler['pressure'].values, scaler_instance_calculated.scaler['pressure'].values)
 
-    scaled_via_loaded, unused_check_zero_task = loaded_scaler.scale(sample_dataset_basic)
+    scaled_via_loaded, tasks = loaded_scaler.scale(sample_dataset_basic)
+    dask.compute(tasks)
     unscaled_via_loaded = loaded_scaler.unscale(scaled_via_loaded)
     np.testing.assert_allclose(unscaled_via_loaded['temp'].values, sample_dataset_basic['temp'].values, rtol=1e-5)
 

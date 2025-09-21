@@ -198,10 +198,7 @@ class ForecastDataset(BaseDataset):
             dataset=(self._dataset if compute_scaler else None)
         )
         LOGGER.debug('scale data')
-        self._dataset, scaler_tasks = self.scaler.scale(self._dataset)       
-        if compute_scaler:
-            LOGGER.debug('setup scaler save')
-            scaler_tasks.append(self.scaler.save_task())
+        self._dataset, scaler_tasks = self.scaler.scale(self._dataset)
 
         # Create sample index lookup table for `__getitem__`.
         LOGGER.debug('create sample index')
