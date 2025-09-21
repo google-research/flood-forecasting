@@ -60,7 +60,7 @@ test_basin_file: ~/neuralhydrology/config/basins/caravan/lamah.txt
 # validation_basin_file: ~/neuralhydrology/config/basins/intersections/0_0.txt
 # test_basin_file: ~/neuralhydrology/config/basins/intersections/0_0.txt
 
-train_end_date: 31/12/1981
+train_end_date: 31/12/2015
 train_start_date: 01/01/1980
 
 validation_end_date: 31/12/2018
