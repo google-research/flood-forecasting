@@ -120,4 +120,5 @@ class BasinBatchSampler(BatchSampler):
 
 
 def get_samples_indexes(values: list[str], *, samples: list[str]):
+    """Returns indexes of elements from samples that are in values."""
     return np.flatnonzero(np.isin(values, samples))
