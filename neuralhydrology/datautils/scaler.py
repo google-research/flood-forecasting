@@ -118,6 +118,7 @@ class Scaler():
 
         @dask.delayed
         def task(scaler: xr.Dataset):
+            """Scaler may be saved only when materialized (computed)."""
             with open(scaler_file, 'wb') as f:
                 scaler.to_netcdf(f)
 
