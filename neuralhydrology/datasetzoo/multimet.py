@@ -162,13 +162,14 @@ class Multimet(ForecastDataset):
             product_path = self._dynamics_data_path / product / 'timeseries.zarr'
             product_ds = _open_zarr(product_path)
 
-            # If this is a forecast product, extract only shortest leadtime for hindcasts.
+            product_ds = product_ds.sel(basin=self._basins)[bands]
+            # The same product may be used both for forecast and hindcast features. For hindcast, we load it with the
+            # full lead_time similar to forecast, and filter the minimal lead_time values during sampling.
             if 'lead_time' in product_ds:
-                lead_time_delta = np.timedelta64(MULTIMET_MINIMUM_LEAD_TIME, 'D')
-                product_ds = product_ds.sel(lead_time=lead_time_delta).squeeze(
-                    'lead_time').shift(date=MULTIMET_MINIMUM_LEAD_TIME)
+                lead_times = [pd.Timedelta(days=i) for i in range(MULTIMET_MINIMUM_LEAD_TIME, self.lead_time+1)]
+                product_ds = product_ds.sel(lead_time=lead_times)
 
-            product_dss.append(product_ds.sel(basin=self._basins)[bands])
+            product_dss.append(product_ds)
 
         return product_dss
 
@@ -223,5 +224,6 @@ class Multimet(ForecastDataset):
         """
         return load_caravan_attributes(
             data_dir=self._statics_data_path,
-            basins=self._basins
-        )[self._static_features]
+            basins=self._basins,
+            features=self._static_features,
+        )
