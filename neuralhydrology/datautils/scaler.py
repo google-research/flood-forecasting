@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Dict, Optional, Iterator, Hashable
 
 import dask
+import dask.array
+import dask.graph_manipulation
 import dask.delayed
 from dask.delayed import Delayed
 import pandas as pd
@@ -86,6 +88,7 @@ class Scaler():
         calculate_scaler,
         custom_normalization: Dict[str, Dict[str, float]] = {},
         dataset: Optional[xr.Dataset] = None,
+        check_loaded_data_for_zeroes: bool = True,
     ):
         self._calculate_scaler = calculate_scaler
 
@@ -97,40 +100,29 @@ class Scaler():
         self.scaler = None
         self.scaler_dir = scaler_dir
         if not calculate_scaler:
-            self.load()  # load() checks zero scale eagerly
+            self.load(check_loaded_data_for_zeroes)
         else:
             self._custom_normalization = custom_normalization
             if dataset is not None:
                 self.calculate(dataset)
 
-    def load(self):
+    def load(self, check_loaded_data_for_zeroes: bool):
         scaler_file = self.scaler_dir / SCALER_FILE_NAME
         if os.path.exists(scaler_file):
             with open(scaler_file, 'rb') as f:
                 self.scaler = xr.load_dataset(f)  # Directly load data
-                dask.compute(self._check_zero_scale_task())  # Data is available now
+                if check_loaded_data_for_zeroes:
+                    _check_zero_scale(self.scaler)
         else:
             raise ValueError("Old scaler files are unsupported")
 
-    def save_task(self) -> Delayed:
-        if self.scaler is None:
-            raise ValueError('You are trying to save a scaler that has not been computed.')
-        os.makedirs(self.scaler_dir, exist_ok=True)
-        scaler_file = self.scaler_dir / SCALER_FILE_NAME
-
-        @dask.delayed
-        def task(scaler: xr.Dataset):
-            """Scaler may be saved only when materialized (computed)."""
-            with open(scaler_file, 'wb') as f:
-                scaler.to_netcdf(f)
-
-        return task(self.scaler)
+    def save(self):
+        _save(self.scaler_dir, self.scaler)
 
     def calculate(
         self,
         dataset: xr.Dataset,
     ):
-        # Option for custom scaling for each feature.
         centering_types = {feature: 'mean' for feature in dataset.data_vars}
         scaling_types = {feature: 'std' for feature in dataset.data_vars}
         for feature, norm in self._custom_normalization.items():
@@ -163,26 +155,24 @@ class Scaler():
         else:
             self.scaler = scaler
 
-    def _check_zero_scale_task(self) -> Delayed:
-        """Creates a dask task that throws if scale is zero for any feature.
+        if not is_any_lazy(self.scaler):  # ensure allowing side-effects on compute
+            self.scaler = self.scaler.chunk('auto')
 
-        Zero-valued scale parameters cause NaNs.
-        """
-        scales_to_check = self.scaler.sel(parameter=["scale", "std"])
-        is_zero_da = (scales_to_check == 0).any("parameter").to_dataarray()
+        check_zero_scale_task = _check_zero_scale_task(self.scaler),
+        save_task = _save_task(self.scaler_dir, self.scaler),
 
-        @dask.delayed
-        def task(is_zero_da: xr.DataArray):
-            features = is_zero_da["variable"][is_zero_da]
-            if any(features):
-                raise ValueError(f"Zero scale values found for features: {list(features)}.")
+        [self.scaler] = dask.graph_manipulation.bind(
+            parents=[check_zero_scale_task, save_task],
+            children=[self.scaler],
+        )
 
-        return task(is_zero_da)
+    def _check_zero_scale(self):
+        _check_zero_scale(self.scaler)
 
     def scale(
         self,
         dataset: xr.Dataset,
-    ) -> tuple[xr.Dataset, list[Delayed]]:
+    ) -> xr.Dataset:
         """Scale a data set with a precaculated_scaler.
         
         $$ unscaled_dataset = (dataset - center) + scale $$
@@ -200,8 +190,6 @@ class Scaler():
         -------
         xr.Dataset
             The new dataset where all scalable features are scaled.
-        list[Delayed]
-            A list that includes a task to check zero scales
         
         Raises
         ------
@@ -210,13 +198,7 @@ class Scaler():
         missing_features = [feature for feature in dataset if feature not in self.scaler.data_vars]
         if any(missing_features):
             raise ValueError(f'Requesting to scale variables that are not part of the scaler: {missing_features}')
-        res = (dataset - self.scaler.sel(parameter='center')) / self.scaler.sel(parameter='scale')
-
-        tasks = [self._check_zero_scale_task()]
-        if self._calculate_scaler:
-            tasks += [self.save_task()]
-
-        return res, tasks
+        return (dataset - self.scaler.sel(parameter='center')) / self.scaler.sel(parameter='scale')
 
     def unscale(
         self,
@@ -248,3 +230,33 @@ class Scaler():
         if any(missing_features):
             raise ValueError(f'Requesting to unscale variables that are not part of the scaler: {missing_features}')
         return dataset * self.scaler.sel(parameter='scale') + self.scaler.sel(parameter='center')
+
+def _save(scaler_dir: Path, scaler: xr.Dataset):
+    if scaler is None:
+        raise ValueError('You are trying to save a scaler that has not been computed.')
+    os.makedirs(scaler_dir, exist_ok=True)
+    scaler_file = scaler_dir / SCALER_FILE_NAME
+    with open(scaler_file, 'wb') as f:
+        scaler.to_netcdf(f)
+
+@dask.delayed
+def _save_task(scaler_dir: Path, scaler: xr.Dataset):
+    return _save(scaler_dir, scaler)
+
+def _check_zero_scale(scaler: xr.Dataset):
+    """Creates a dask task that throws if scale is zero for any feature.
+
+    Zero-valued scale parameters cause NaNs.
+    """
+    scales_to_check = scaler.sel(parameter=["scale", "std"])
+    is_zero_da = (scales_to_check == 0).any("parameter").to_dataarray()
+    features = is_zero_da["variable"][is_zero_da]
+    if any(features):
+        raise ValueError(f"Zero scale values found for features: {list(features)}.")
+
+@dask.delayed
+def _check_zero_scale_task(scaler: xr.Dataset):
+    return _check_zero_scale(scaler)
+
+def is_any_lazy(dataset: xr.Dataset) -> bool:
+    return any(isinstance(var.data, dask.array.Array) for var in dataset.data_vars.values())

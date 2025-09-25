@@ -212,16 +212,17 @@ class ForecastDataset(BaseDataset):
             dataset=(self._dataset if compute_scaler else None)
         )
         LOGGER.debug('scale data')
-        self._dataset, scaler_tasks = self.scaler.scale(self._dataset)
-
-        # Create sample index lookup table for `__getitem__`.
-        LOGGER.debug('create sample index')
-        self._create_sample_index()
+        self._dataset = self.scaler.scale(self._dataset)
 
         # TODO: Optionally, optimize the data loader and trainer modules to work with chunked lazy data.
         LOGGER.debug("materialize data (compute)")
         # We explicitly keep the self.scaler.scaler computation since trainer uses it directly
-        self._dataset, self.scaler.scaler, _ = dask.compute(self._dataset, self.scaler.scaler, scaler_tasks)
+        # create sample index does a compute on the data. We compute here prior to avoid recompute.
+        self._dataset, self.scaler.scaler = dask.compute(self._dataset, self.scaler.scaler)
+
+        # Create sample index lookup table for `__getitem__`.
+        LOGGER.debug('create sample index')
+        self._create_sample_index()
 
         # Compute stats for NSE-based loss functions.
         # TODO (future) :: Find a better way to decide whether to calculate these. At least keep a list of
