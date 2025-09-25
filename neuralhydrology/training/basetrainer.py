@@ -21,6 +21,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.optim.lr_scheduler
 from torch.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -211,20 +212,43 @@ class BaseTrainer(object):
             target_stds = [ds.scaler.scaler.sel(parameter='std')[feature].item() for feature in self.cfg.target_variables]
             self._target_std = torch.tensor(target_stds).to(self.device)
 
+    def _create_lr_scheduler(self):
+        match self.cfg.learning_rate_strategy:
+            case 'StepLR':
+                lr_scheduler = torch.optim.lr_scheduler.StepLR(
+                    self.optimizer,
+                    step_size=self.cfg.learning_rate_epochs_drop,
+                    gamma=self.cfg.learning_rate_drop_factor,
+                )
+                def lr_step(loss: float):
+                    lr_scheduler.step()
+            case 'ReduceLROnPlateau':
+                lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                    self.optimizer,
+                    factor=self.cfg.learning_rate_drop_factor,
+                    patience=self.cfg.learning_rate_epochs_drop,
+                )
+                def lr_step(loss: float):
+                    lr_scheduler.step(loss)
+            case _:
+                raise ValueError(f'learning_rate_strategy unsupported: {self.cfg.learning_rate_strategy}')
+        return lr_scheduler, lr_step
+
     def train_and_validate(self):
         """Train and validate the model.
 
         Train the model for the number of epochs specified in the run configuration, and perform validation after every
         ``validate_every`` epochs. Model and optimizer state are saved after every ``save_weights_every`` epochs.
         """
+        lr_scheduler, lr_step = self._create_lr_scheduler()
+
         for epoch in range(self._epoch + 1, self._epoch + self.cfg.epochs + 1):
-            if epoch in self.cfg.learning_rate.keys():
-                LOGGER.info(f"Setting learning rate to {self.cfg.learning_rate[epoch]}")
-                for param_group in self.optimizer.param_groups:
-                    param_group["lr"] = self.cfg.learning_rate[epoch]
+            LOGGER.info(f"learning rate is {lr_scheduler.get_last_lr()}")
 
             self._train_epoch(epoch=epoch)
             avg_losses = self.experiment_logger.summarise()
+            lr_step(avg_losses['avg_loss'])
+
             loss_str = ", ".join(f"{k}: {v:.5f}" for k, v in avg_losses.items())
             LOGGER.info(f"Epoch {epoch} average loss: {loss_str}")
 

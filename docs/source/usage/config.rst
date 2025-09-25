@@ -388,11 +388,21 @@ Training settings
    New regularizations can be added
    :py:mod:`here <neuralhydrology.training.regularization>`.
 
--  ``learning_rate``: Learning rate. Can be either a single number (for
-   a constant learning rate) or a dictionary. If it is a dictionary, the
-   keys must be integer that reflect the epochs at which the learning
-   rate is changed to the corresponding value. The key ``0`` defines the
-   initial learning rate.
+-  ``learning_rate_strategy``: A str that determines how to change learning rate.
+   One of: ReduceLROnPlateau, StepLR
+
+-  ``initial_learning_rate``: A float representing the starting learning rate for the
+    training process. This is the base value that the scheduler will modify.
+
+-  ``learning_rate_drop_factor``: A float between 0.0 and 1.0 (exclusive). 
+    This factor determines the rate at which the learning rate is decreased. 
+    For example, a value of 0.1 would reduce the learning rate to 10% of its
+    current value at each drop step.
+
+-  ``learning_rate_epochs_drop``: An integer that specifies the number of epochs
+    to wait before the learning rate is dropped. A value of 5 would cause the learning
+    rate to decrease after every 5th epoch. A value of 0 would cause the next epoc without
+    improvement to decreate the rate right away after the current epoc.
 
 -  ``batch_size``: Mini-batch size used for training.
 

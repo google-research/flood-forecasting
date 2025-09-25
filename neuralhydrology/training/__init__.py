@@ -43,9 +43,9 @@ def get_optimizer(model: torch.nn.Module, cfg: Config, *, is_gpu: bool = False) 
         Optimizer object that can be used for model training.
     """
     if cfg.optimizer.lower() == "adam":
-        optimizer = torch.optim.Adam(model.parameters(), lr=cfg.learning_rate[0], fused=is_gpu)
+        optimizer = torch.optim.Adam(model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu)
     elif cfg.optimizer.lower() == "adamw":
-        optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate[0], fused=is_gpu)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu)
     else:
         raise NotImplementedError(f"{cfg.optimizer} not implemented or not linked in `get_optimizer()`")
 
