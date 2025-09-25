@@ -108,7 +108,7 @@ class Scaler():
         scaler_file = self.scaler_dir / SCALER_FILE_NAME
         if os.path.exists(scaler_file):
             with open(scaler_file, 'rb') as f:
-                self.scaler = xr.load_dataset(f)  # Directly load data
+                self.scaler = xr.load_dataset(f)
         else:
             raise ValueError("Old scaler files are unsupported")
 
@@ -119,6 +119,7 @@ class Scaler():
         self,
         dataset: xr.Dataset,
     ):
+        # Option for custom scaling for each feature.
         centering_types = {feature: 'mean' for feature in dataset.data_vars}
         scaling_types = {feature: 'std' for feature in dataset.data_vars}
         for feature, norm in self._custom_normalization.items():
