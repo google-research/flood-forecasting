@@ -150,25 +150,23 @@ class BaseTester(object):
 
     def _get_dataset_all(self) -> BaseDataset:
         """Get dataset for all basin."""
-        ds = get_dataset(cfg=self.cfg,
+        return get_dataset(cfg=self.cfg,
                          is_train=False,
                          period=self.period,
                          basin=None,
                          additional_features=self.additional_features,
                          id_to_int=self.id_to_int,
                          compute_scaler=False)
-        return ds
 
     def _get_dataset(self, basin: str) -> BaseDataset:
         """Get dataset for a single basin."""
-        ds = get_dataset(cfg=self.cfg,
+        return get_dataset(cfg=self.cfg,
                          is_train=False,
                          period=self.period,
                          basin=basin,
                          additional_features=self.additional_features,
                          id_to_int=self.id_to_int,
                          compute_scaler=False)
-        return ds
 
     def evaluate(self,
                  epoch: int = None,
@@ -221,16 +219,14 @@ class BaseTester(object):
         results = defaultdict(dict)
         all_output = {basin: None for basin in basins}
 
-        ds = self.dataset
-
         batch_sampler = BasinBatchSampler(
-            sample_index=ds._sample_index,
+            sample_index=self.dataset._sample_index,
             batch_size=self.cfg.batch_size,
             basins_indexes=set(get_samples_indexes(self.basins, samples=list(basins))),
         )
-        loader = DataLoader(ds, batch_sampler=batch_sampler, num_workers=0, collate_fn=ds.collate_fn)
+        loader = DataLoader(self.dataset, batch_sampler=batch_sampler, num_workers=0, collate_fn=self.dataset.collate_fn)
 
-        eval_data = self._evaluate(model, loader, ds.frequencies, save_all_output, basins)
+        eval_data = self._evaluate(model, loader, self.dataset.frequencies, save_all_output, basins)
 
         pbar = tqdm(basins, file=sys.stdout, disable=self._disable_pbar)
         pbar.set_description('# Validation post' if self.period == "validation" else "# Evaluation post")
@@ -250,12 +246,12 @@ class BaseTester(object):
             seq_length = self.cfg.seq_length
             # if predict_last_n/seq_length are int, there's only one frequency
             if isinstance(predict_last_n, int):
-                predict_last_n = {ds.frequencies[0]: predict_last_n}
+                predict_last_n = {self.dataset.frequencies[0]: predict_last_n}
             if isinstance(seq_length, int):
-                seq_length = {ds.frequencies[0]: seq_length}
-            lowest_freq = sort_frequencies(ds.frequencies)[0]
+                seq_length = {self.dataset.frequencies[0]: seq_length}
+            lowest_freq = sort_frequencies(self.dataset.frequencies)[0]
 
-            for freq in ds.frequencies:
+            for freq in self.dataset.frequencies:
                 if predict_last_n[freq] == 0:
                     continue  # this frequency is not being predicted
                 results[basin][freq] = {}
@@ -277,10 +273,10 @@ class BaseTester(object):
                     np.int64) + frequency_factor - 1
                 date_coords = dates[lowest_freq][:, -1]
                 # TODO (future) : As in all of the forecast models (but not `ForecastDataset`), this assumes
-                # that all lead times are present from 1 to `ds.lead_time`.
-                if hasattr(ds, 'lead_time') and ds.lead_time:
-                    time_step_coords += ds.lead_time
-                    date_coords = dates[lowest_freq][:, -ds.lead_time-1]
+                # that all lead times are present from 1 to `self.dataset.lead_time`.
+                if hasattr(self.dataset, 'lead_time') and self.dataset.lead_time:
+                    time_step_coords += self.dataset.lead_time
+                    date_coords = dates[lowest_freq][:, -self.dataset.lead_time-1]
                 coords = {
                     'date': date_coords,
                     'time_step': time_step_coords
@@ -291,7 +287,7 @@ class BaseTester(object):
                         pd.DatetimeIndex(pd.date_range(xr["date"].values[0], xr["date"].values[-1], freq=lowest_freq),
                                          name='date')
                 })
-                xr = ds.scaler.unscale(xr)
+                xr = self.dataset.scaler.unscale(xr)
                 results[basin][freq]['xr'] = xr
 
                 # create datetime range at the current frequency
@@ -335,7 +331,7 @@ class BaseTester(object):
                             except AllNaNError as err:
                                 msg = f'Basin {basin} ' \
                                     + (f'{target_variable} ' if len(self.cfg.target_variables) > 1 else '') \
-                                    + (f'{freq} ' if len(ds.frequencies) > 1 else '') \
+                                    + (f'{freq} ' if len(self.dataset.frequencies) > 1 else '') \
                                     + str(err)
                                 LOGGER.warning(msg)
                                 values = {metric: np.nan for metric in var_metrics}
@@ -344,7 +340,7 @@ class BaseTester(object):
                             if len(self.cfg.target_variables) > 1:
                                 values = {f"{target_variable}_{key}": val for key, val in values.items()}
                             # add frequency identifier to metrics if needed
-                            if len(ds.frequencies) > 1:
+                            if len(self.dataset.frequencies) > 1:
                                 values = {f"{key}_{freq}": val for key, val in values.items()}
                             if experiment_logger is not None:
                                 experiment_logger.log_step(**values)
