@@ -108,13 +108,11 @@ class Scaler():
             if dataset is not None:
                 self.calculate(dataset)
 
-    def load(self, check_loaded_data_for_zeroes: bool):
+    def load(self):
         scaler_file = self.scaler_dir / SCALER_FILE_NAME
         if os.path.exists(scaler_file):
             with open(scaler_file, 'rb') as f:
                 self.scaler = xr.load_dataset(f)  # Directly load data
-                if check_loaded_data_for_zeroes:
-                    _check_zero_scale(self.scaler)
         else:
             raise ValueError("Old scaler files are unsupported")
 
