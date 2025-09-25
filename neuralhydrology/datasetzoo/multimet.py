@@ -224,5 +224,6 @@ class Multimet(ForecastDataset):
         """
         return load_caravan_attributes(
             data_dir=self._statics_data_path,
-            basins=self._basins
-        )[self._static_features]
+            basins=self._basins,
+            features=self._static_features,
+        )
