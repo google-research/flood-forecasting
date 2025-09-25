@@ -402,7 +402,7 @@ Training settings
 -  ``learning_rate_epochs_drop``: An integer that specifies the number of epochs
     to wait before the learning rate is dropped. A value of 5 would cause the learning
     rate to decrease after every 5th epoch. A value of 0 would cause the next epoc without
-    improvement to decreate the rate right away after the current epoc.
+    improvement to decreate the rate right away after the current epoc for ReduceLROnPlateau.
 
 -  ``batch_size``: Mini-batch size used for training.
 
