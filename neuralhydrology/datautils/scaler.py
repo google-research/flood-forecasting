@@ -76,8 +76,6 @@ class Scaler():
         See docs for a list of accepted types and their meaning.
     dataset : Optional[xr.Dataset]
         Dataset to use for calculating a new scaler. Cannot be supplied if `calculate_scaler` is False.
-    check_zeroes_for_loaded_data : bool
-        Whether to perform checking zeroes of loaded scale data
 
     Raises
     -------
@@ -90,7 +88,6 @@ class Scaler():
         calculate_scaler,
         custom_normalization: Dict[str, Dict[str, float]] = {},
         dataset: Optional[xr.Dataset] = None,
-        check_zeroes_for_loaded_data: bool = True,
     ):
         # Consistency check.
         if not calculate_scaler and dataset is not None:
@@ -101,8 +98,7 @@ class Scaler():
         self.scaler_dir = scaler_dir
         if not calculate_scaler:
             self.load()
-            if check_zeroes_for_loaded_data:
-                self._check_zero_scale()
+            self._check_zero_scale()
         else:
             self._custom_normalization = custom_normalization
             if dataset is not None:
