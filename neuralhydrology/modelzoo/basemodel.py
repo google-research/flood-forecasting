@@ -69,7 +69,6 @@ class BaseModel(nn.Module):
             Sampled point predictions 
         """
         scaler = Scaler(scaler_dir=self.cfg.run_dir, calculate_scaler=False)
-        scaler.load()
         return sample_pointpredictions(self, data, n_samples, scaler)
 
     def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
