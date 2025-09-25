@@ -87,6 +87,13 @@ forecast_inputs:
 - graphcast_temperature_2m
 - graphcast_total_precipitation
 hindcast_inputs:
+- hres_surface_net_solar_radiation
+- hres_surface_net_thermal_radiation
+- hres_surface_pressure
+- hres_temperature_2m
+- hres_total_precipitation
+- graphcast_temperature_2m
+- graphcast_total_precipitation
 - imerg_precipitation
 - cpc_precipitation
 static_attributes:
