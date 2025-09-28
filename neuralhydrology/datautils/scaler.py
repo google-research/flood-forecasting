@@ -157,8 +157,7 @@ class Scaler():
 
         check_zero_scale_task = _check_zero_scale_task(self.scaler),
         save_task = _save_task(self.scaler_dir, self.scaler),
-
-        [self.scaler] = dask.graph_manipulation.bind(
+        [self.scaler] = dask.graph_manipulation.bind(  # https://docs.dask.org/en/stable/graph_manipulation.html
             parents=[check_zero_scale_task, save_task],
             children=[self.scaler],
         )
