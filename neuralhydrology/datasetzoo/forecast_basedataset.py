@@ -156,18 +156,6 @@ class ForecastDataset(BaseDataset):
             self._min_lead_time = int((self._dataset.lead_time.min() / np.timedelta64(1, 'D')).item())
             self._lead_times = list(range(self._min_lead_time, self.lead_time+1))
         
-        start_dates, end_dates = self._get_period_dates(cfg)
-        self._sample_dates = self._union_dates(start_dates, end_dates)
-
-        # The convention in NH is that the period dates define the SAMPLE dates.
-        # All hindcast (and forecast) seqences are extra. Therefore, when cropping
-        # the dataset for sampling, we keep all the hindcast and forecast sequence
-        # data on both sides of the period dates. This would be more memory efficient
-        # in `_load_data()` but that approach adds complexity to the child classes.
-        extended_start_dates = [start_date - pd.Timedelta(days=self._seq_length) for start_date in start_dates]
-        extended_end_dates = [end_date + pd.Timedelta(days=self.lead_time) for end_date in end_dates]
-        extended_dates = self._union_dates(extended_start_dates, extended_end_dates)
-        
         # Split hindcast features to groups with/without lead_time in the dataset.
         # These lists will be used for efficient data selection during sampling.
         self._hindcast_features_with_lead_time = [
@@ -181,6 +169,16 @@ class ForecastDataset(BaseDataset):
             if feature not in self._hindcast_features_with_lead_time
         ]
 
+        start_dates, end_dates = self._get_period_dates(cfg)
+        self._sample_dates = self._union_dates(start_dates, end_dates)
+        # The convention in NH is that the period dates define the SAMPLE dates.
+        # All hindcast (and forecast) seqences are extra. Therefore, when cropping
+        # the dataset for sampling, we keep all the hindcast and forecast sequence
+        # data on both sides of the period dates. This would be more memory efficient
+        # in `_load_data()` but that approach adds complexity to the child classes.
+        extended_start_dates = [start_date - pd.Timedelta(days=self._seq_length) for start_date in start_dates]
+        extended_end_dates = [end_date + pd.Timedelta(days=self.lead_time) for end_date in end_dates]
+        extended_dates = self._union_dates(extended_start_dates, extended_end_dates)
         LOGGER.debug('reindex data')
         self._dataset = self._dataset.sel(date=extended_dates).reindex(date=extended_dates)
 
