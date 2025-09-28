@@ -170,7 +170,7 @@ class ForecastDataset(BaseDataset):
         ]
 
         start_dates, end_dates = self._get_period_dates(cfg)
-        self._sample_dates = self._union_dates(start_dates, end_dates)
+        self._sample_dates = self._union_ranges(start_dates, end_dates)
         # The convention in NH is that the period dates define the SAMPLE dates.
         # All hindcast (and forecast) seqences are extra. Therefore, when cropping
         # the dataset for sampling, we keep all the hindcast and forecast sequence
@@ -178,7 +178,7 @@ class ForecastDataset(BaseDataset):
         # in `_load_data()` but that approach adds complexity to the child classes.
         extended_start_dates = [start_date - pd.Timedelta(days=self._seq_length) for start_date in start_dates]
         extended_end_dates = [end_date + pd.Timedelta(days=self.lead_time) for end_date in end_dates]
-        extended_dates = self._union_dates(extended_start_dates, extended_end_dates)
+        extended_dates = self._union_ranges(extended_start_dates, extended_end_dates)
         LOGGER.debug('reindex data')
         self._dataset = self._dataset.sel(date=extended_dates).reindex(date=extended_dates)
 
@@ -380,7 +380,7 @@ class ForecastDataset(BaseDataset):
             raise ValueError(f'Start dates {start_dates} are before matched end dates {end_dates}.')
         return start_dates, end_dates
 
-    def _union_dates(self, start_dates: List[pd.Timestamp], end_dates: List[pd.Timestamp]) -> pd.DatetimeIndex:
+    def _union_ranges(self, start_dates: List[pd.Timestamp], end_dates: List[pd.Timestamp]) -> pd.DatetimeIndex:
         ranges = [pd.date_range(start, end) for start, end in zip(start_dates, end_dates)]
         return functools.reduce(pd.Index.union, ranges)
 
