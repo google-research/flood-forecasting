@@ -25,6 +25,7 @@ from typing import Dict, List, Optional, Tuple, Union, Iterator
 import numpy as np
 import pandas as pd
 import torch
+import torch.cuda
 from torch.amp import autocast
 import xarray
 from torch.utils.data import DataLoader
@@ -232,6 +233,9 @@ class BaseTester(object):
         pbar.set_description('# Validation' if self.period == "validation" else "# Evaluation")
 
         for basin_data in pbar:
+            if self.device.type == 'cuda':
+                torch.cuda.synchronize()
+            
             basin = basin_data['basin']
             y_hat = basin_data['preds']
             y = basin_data['obs']
@@ -482,7 +486,7 @@ class BaseTester(object):
                     if save_all_output:
                         for key, value in predictions.items():
                             if value is not None and type(value) != dict:
-                                all_output.setdefault(key, []).append(value.detach().cpu().numpy())
+                                all_output.setdefault(key, []).append(value.detach().to('cpu', non_blocking=True))
 
                     for freq in frequencies:
                         if predict_last_n[freq] == 0:
@@ -492,24 +496,23 @@ class BaseTester(object):
                         # Date subsetting is universal across all models and thus happens here.
                         date_sub = data[f'date{freq_key}'][:, -predict_last_n[freq]:]
 
+                        y_hat_sub = y_hat_sub.detach().to('cpu', non_blocking=True)
+                        y_sub = y_sub.detach().to('cpu', non_blocking=True)
+
                         if freq not in preds:
-                            preds[freq] = y_hat_sub.detach().cpu()
-                            obs[freq] = y_sub.cpu()
+                            preds[freq] = y_hat_sub
+                            obs[freq] = y_sub
                             dates[freq] = date_sub
                         else:
-                            preds[freq] = torch.cat((preds[freq], y_hat_sub.detach().cpu()), 0)
-                            obs[freq] = torch.cat((obs[freq], y_sub.detach().cpu()), 0)
+                            preds[freq] = torch.cat((preds[freq], y_hat_sub), 0)
+                            obs[freq] = torch.cat((obs[freq], y_sub), 0)
                             dates[freq] = np.concatenate((dates[freq], date_sub), axis=0)
 
                     losses.append(loss)
 
-                for freq in preds.keys():
-                    preds[freq] = preds[freq].numpy()
-                    obs[freq] = obs[freq].numpy()
-
                 # concatenate all output variables (currently a dict-of-dicts) into a single-level dict
                 for key, list_of_data in all_output.items():
-                    all_output[key] = np.concatenate(list_of_data, 0)
+                    all_output[key] = torch.concatenate(list_of_data, 0)
 
                 # set to NaN explicitly if all losses are NaN to avoid RuntimeWarning
                 if len(losses) == 0:
