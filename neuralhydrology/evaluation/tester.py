@@ -457,10 +457,10 @@ class BaseTester(object):
         with torch.inference_mode():
             basin_samples = itertools.groupby(loader, lambda data: data['basin_index'][0].item())
             for basin_index, samples in basin_samples:
-                res = {}
                 basin = loader.dataset._basins[basin_index]
                 if basin not in basins:
                     continue
+                res = {'basin': basin}
 
                 for data in samples:
                     for key in data:
@@ -523,7 +523,6 @@ class BaseTester(object):
                         loss_values = [loss[loss_name] for loss in losses]
                         mean_losses[loss_name] = np.nanmean(loss_values) if not np.all(np.isnan(loss_values)) else np.nan
 
-                res['basin'] = basin
                 yield res
 
     def _get_predictions_and_loss(self, model: BaseModel, data: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, float]:
