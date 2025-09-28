@@ -379,6 +379,7 @@ class BaseTester(object):
 
             nan_date_starts = basin_ds.date.data[starts]
             nan_date_ends = basin_ds.date.data[ends - 1]
+            # TODO (future): Handle test or validation
             for start, end in zip(self.cfg.test_start_date, self.cfg.test_end_date):
                 if np.any((nan_date_starts <= start) & (nan_date_ends >= end)):
                     yield basin
