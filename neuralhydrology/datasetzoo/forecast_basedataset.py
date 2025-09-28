@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, List, Optional, Hashable
+from typing import Dict, List, Optional, Hashable, Tuple
 
 import logging
 import itertools
@@ -155,19 +155,15 @@ class ForecastDataset(BaseDataset):
         if self._forecast_features:
             self._min_lead_time = int((self._dataset.lead_time.min() / np.timedelta64(1, 'D')).item())
             self._lead_times = list(range(self._min_lead_time, self.lead_time+1))
-        if self._period == 'train':
-            self._sample_dates = pd.date_range(cfg.train_start_date, cfg.train_end_date)
-        elif self._period == 'test':
-            self._sample_dates = pd.date_range(cfg.test_start_date, cfg.test_end_date)
-        elif self._period == 'validation':
-            self._sample_dates = pd.date_range(cfg.validation_start_date, cfg.validation_end_date)
+        
         # The convention in NH is that the period dates define the SAMPLE dates.
         # All hindcast (and forecast) seqences are extra. Therefore, when cropping
         # the dataset for sampling, we keep all the hindcast and forecast sequence
         # data on both sides of the period dates. This would be more memory efficient
         # in `_load_data()` but that approach adds complexity to the child classes.
+        self._sample_dates = self._get_sample_dates(cfg)
         data_start_date = self._sample_dates[0] - pd.Timedelta(days=self._seq_length)
-        data_end_date = self._sample_dates[-1] + pd.Timedelta(days=self._seq_length)
+        data_end_date = self._sample_dates[-1] + pd.Timedelta(days=self._lead_times)
         data_dates = pd.date_range(data_start_date, data_end_date)
         LOGGER.debug('reindex data')
         self._dataset = self._dataset.reindex(date=data_dates).sel(date=data_dates)
@@ -332,6 +328,23 @@ class ForecastDataset(BaseDataset):
         # TODO (future) :: This adds a dimension to many features, as required by some models.
         # There is no need for this except that it is how basedataset works, and everything else expects
         # the trailing dim. Remove this dependency in the future.
+
+    def _get_period_dates(self, cfg: Config) -> Tuple[List[pd.Timestamp], List[pd.Timestamp]]:
+        if self._period == 'train':
+            return cfg.train_start_date, cfg.train_end_date
+        elif self._period == 'test':
+            return cfg.test_start_date, cfg.test_end_date
+        elif self._period == 'validation':
+            return cfg.validation_start_date, cfg.validation_end_date
+        else:
+            raise ValueError(f'Unknown period {self._period}')
+
+    def _get_sample_dates(self, cfg: Config) -> pd.DatetimeIndex:
+        start_dates, end_dates = self._get_period_dates(cfg)
+        if len(start_dates) != len(end_dates):
+            raise ValueError(f'Start and end date lists for period {self._period} must have the same length.')
+        ranges = [pd.date_range(start, end) for start, end in zip(start_dates, end_dates)]
+        return functools.reduce(pd.Index.union, ranges)
 
     # This is run by the base class.
     def _create_sample_index(self):
