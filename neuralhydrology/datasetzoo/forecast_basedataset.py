@@ -376,7 +376,7 @@ class ForecastDataset(BaseDataset):
             raise ValueError(f'Unknown period {self._period}')
         if len(start_dates) != len(end_dates):
             raise ValueError(f'Start and end date lists for period {self._period} must have the same length.')
-        if any(start_p >= end_p for start_p, end_p in zip(start_dates, end_dates)):
+        if any(start >= end for start, end in zip(start_dates, end_dates)):
             raise ValueError(f'Start dates {start_dates} are before matched end dates {end_dates}.')
         return start_dates, end_dates
 
