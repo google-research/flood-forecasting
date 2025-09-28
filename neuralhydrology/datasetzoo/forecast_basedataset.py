@@ -163,7 +163,7 @@ class ForecastDataset(BaseDataset):
         # in `_load_data()` but that approach adds complexity to the child classes.
         self._sample_dates = self._get_sample_dates(cfg)
         data_start_date = self._sample_dates[0] - pd.Timedelta(days=self._seq_length)
-        data_end_date = self._sample_dates[-1] + pd.Timedelta(days=self._lead_times)
+        data_end_date = self._sample_dates[-1] + pd.Timedelta(days=self.lead_time)
         data_dates = pd.date_range(data_start_date, data_end_date)
         LOGGER.debug('reindex data')
         self._dataset = self._dataset.reindex(date=data_dates).sel(date=data_dates)
