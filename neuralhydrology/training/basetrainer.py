@@ -215,6 +215,7 @@ class BaseTrainer(object):
     def _create_lr_scheduler(self):
         match self.cfg.learning_rate_strategy:
             case 'StepLR':
+                # Step down by a factor every step size epocs, regardless of loss.
                 lr_scheduler = torch.optim.lr_scheduler.StepLR(
                     self.optimizer,
                     step_size=self.cfg.learning_rate_epochs_drop,
@@ -223,6 +224,7 @@ class BaseTrainer(object):
                 def lr_step(loss: float):
                     lr_scheduler.step()
             case 'ReduceLROnPlateau':
+                # Step down by a factor every epoc w.r.t. to change in loss between patience epocs.
                 lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                     self.optimizer,
                     factor=self.cfg.learning_rate_drop_factor,
