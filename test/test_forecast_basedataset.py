@@ -46,8 +46,8 @@ def _get_default_config_attributes(**kwargs):
         'nan_handling_method': 'none',
         'timestep_counter': False,
         'use_basin_id_encoding': False,
-        'train_start_date': '01/01/2000',
-        'train_end_date': '03/01/2000',
+        'train_start_date': ['01/01/2000', '01/02/2006'],
+        'train_end_date': ['03/01/2000', '03/02/2006'],
         'test_start_date': '01/01/2000',
         'test_end_date': '03/01/2000',
         'validation_start_date': '01/01/2000',
@@ -116,7 +116,7 @@ def sample_dates(get_config):
     cfg = get_config("default") # Get a default config
     # This range needs to be large enough to cover seq_length + sample_dates + lead_time
     start_date = pd.to_datetime(cfg.train_start_date[0]) - pd.Timedelta(days=cfg.seq_length + cfg.lead_time)
-    end_date = pd.to_datetime(cfg.train_end_date[0]) + pd.Timedelta(days=cfg.seq_length + cfg.lead_time)
+    end_date = pd.to_datetime(cfg.train_end_date[-1]) + pd.Timedelta(days=cfg.seq_length + cfg.lead_time)
     return pd.date_range(start_date, end_date, freq='D')
 
 @pytest.fixture
