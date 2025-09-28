@@ -274,8 +274,8 @@ def _check_results(config: Config, basin: str, discharge: pd.Series = None):
 
 
 def get_test_start_end_dates(config: Config) -> Tuple[pd.Timestamp, pd.Timestamp]:
-    test_start_date = pd.to_datetime(config.test_start_date, format='%d/%m/%Y')
-    test_end_date = pd.to_datetime(config.test_end_date, format='%d/%m/%Y') + pd.Timedelta(days=1, seconds=-1)
+    test_start_date = pd.to_datetime(config.test_start_date[0], format='%d/%m/%Y')
+    test_end_date = pd.to_datetime(config.test_end_date[0], format='%d/%m/%Y') + pd.Timedelta(days=1, seconds=-1)
 
     return test_start_date, test_end_date
 

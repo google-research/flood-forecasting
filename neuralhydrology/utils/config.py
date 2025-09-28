@@ -885,12 +885,12 @@ class Config(object):
         return self._get_value_verbose("test_basin_file")
 
     @property
-    def test_end_date(self) -> pd.Timestamp:
-        return self._get_value_verbose("test_end_date")
+    def test_end_date(self) -> List[pd.Timestamp]:
+        return self._as_default_list(self._get_value_verbose("test_end_date"))
 
     @property
-    def test_start_date(self) -> pd.Timestamp:
-        return self._get_value_verbose("test_start_date")
+    def test_start_date(self) -> List[pd.Timestamp]:
+        return self._as_default_list(self._get_value_verbose("test_start_date"))
 
     @property
     def timestep_counter(self) -> bool:
@@ -913,12 +913,12 @@ class Config(object):
         self._cfg["train_dir"] = folder
 
     @property
-    def train_end_date(self) -> pd.Timestamp:
-        return self._get_value_verbose("train_end_date")
+    def train_end_date(self) -> List[pd.Timestamp]:
+        return self._as_default_list(self._get_value_verbose("train_end_date"))
 
     @property
-    def train_start_date(self) -> pd.Timestamp:
-        return self._get_value_verbose("train_start_date")
+    def train_start_date(self) -> List[pd.Timestamp]:
+        return self._as_default_list(self._get_value_verbose("train_start_date"))
 
     @property
     def transfer_mtslstm_states(self) -> Dict[str, str]:
@@ -959,12 +959,12 @@ class Config(object):
         return self._get_value_verbose("validation_basin_file")
 
     @property
-    def validation_end_date(self) -> pd.Timestamp:
-        return self._get_value_verbose("validation_end_date")
+    def validation_end_date(self) -> List[pd.Timestamp]:
+        return self._as_default_list(self._get_value_verbose("validation_end_date"))
 
     @property
-    def validation_start_date(self) -> pd.Timestamp:
-        return self._get_value_verbose("validation_start_date")
+    def validation_start_date(self) -> List[pd.Timestamp]:
+        return self._as_default_list(self._get_value_verbose("validation_start_date"))
 
     @property
     def verbose(self) -> int:
