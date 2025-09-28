@@ -628,9 +628,7 @@ def test_validate_samples_static_features_only(
 
 @patch('neuralhydrology.datautils.validate_samples.validate_samples_for_nan_handling')
 @patch('neuralhydrology.datautils.validate_samples.validate_sequence_all')
-@patch('neuralhydrology.datautils.validate_samples.extract_feature_groups', return_value=[['h1', 'h2']])
 def test_validate_samples_hindcast_features(
-    mock_extract_feature_groups,
     mock_validate_sequence_all,
     mock_validate_samples_for_nan_handling,
     basins_fixture, sample_dates_fixture
@@ -653,7 +651,6 @@ def test_validate_samples_hindcast_features(
         seq_length=5
     )
 
-    mock_extract_feature_groups.assert_called_once_with([['h1', 'h2']], ['h1', 'h2'])
     mock_validate_samples_for_nan_handling.assert_called_once_with(
         dataset=dummy_dataset[['h1', 'h2']],
         nan_handling_method='input_replacing',
@@ -668,9 +665,7 @@ def test_validate_samples_hindcast_features(
     xr.testing.assert_equal(result_mask, mock_mask)
 
 @patch('neuralhydrology.datautils.validate_samples.validate_samples_for_nan_handling')
-@patch('neuralhydrology.datautils.validate_samples.extract_feature_groups', return_value=[['f1', 'f2']])
 def test_validate_samples_forecast_features(
-    mock_extract_feature_groups,
     mock_validate_samples_for_nan_handling, 
     basins_fixture, sample_dates_fixture
 ):
@@ -691,7 +686,6 @@ def test_validate_samples_forecast_features(
         forecast_features=['f1', 'f2']
     )
 
-    mock_extract_feature_groups.assert_called_once_with([['f1', 'f2']], ['f1', 'f2'])
     mock_validate_samples_for_nan_handling.assert_called_once_with(
         dataset=dummy_dataset[['f1', 'f2']],
         nan_handling_method='input_replacing',
@@ -704,9 +698,7 @@ def test_validate_samples_forecast_features(
 
 @patch('neuralhydrology.datautils.validate_samples.validate_samples_for_nan_handling')
 @patch('neuralhydrology.datautils.validate_samples.validate_sequence_all')
-@patch('neuralhydrology.datautils.validate_samples.extract_feature_groups', return_value=[['f1', 'f2']])
 def test_validate_samples_forecast_features_with_overlap(
-    mock_extract_feature_groups,
     mock_validate_sequence_all,
     mock_validate_samples_for_nan_handling,
     basins_fixture, sample_dates_fixture
@@ -731,7 +723,6 @@ def test_validate_samples_forecast_features_with_overlap(
         min_lead_time=1
     )
 
-    assert mock_extract_feature_groups.call_count == 1 # Called once for forecast_features
     assert mock_validate_samples_for_nan_handling.call_count == 2 # Once for forecast, once for forecast_overlap
     assert mock_validate_sequence_all.call_count == 1 # Once for forecast_overlap
     assert len(masks) == 3

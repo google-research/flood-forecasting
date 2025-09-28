@@ -47,6 +47,7 @@ class BaseModel(nn.Module):
             self.output_size *= 4 * cfg.n_distributions
         elif cfg.head.lower() == 'umal':
             self.output_size *= 2
+        self._scaler = Scaler(scaler_dir=self.cfg.run_dir, calculate_scaler=False)
 
     def sample(self, data: Dict[str, torch.Tensor], n_samples: int) -> Dict[str, torch.Tensor]:
         """Provides point prediction samples from a probabilistic model.
@@ -68,9 +69,7 @@ class BaseModel(nn.Module):
         Dict[str, torch.Tensor]
             Sampled point predictions 
         """
-        scaler = Scaler(scaler_dir=self.cfg.run_dir, calculate_scaler=False)
-        scaler.load()
-        return sample_pointpredictions(self, data, n_samples, scaler)
+        return sample_pointpredictions(self, data, n_samples, self._scaler)
 
     def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Perform a forward pass.

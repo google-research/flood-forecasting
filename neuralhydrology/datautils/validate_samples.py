@@ -180,11 +180,10 @@ def validate_samples(
         if seq_length is None:
             raise ValueError('Sequence length is required when validating hindcast data.')
 
-        hindcast_groups = extract_feature_groups(feature_groups, hindcast_features)
         mask = validate_samples_for_nan_handling(
             dataset=dataset[hindcast_features],
             nan_handling_method=nan_handling_method,
-            feature_groups=hindcast_groups
+            feature_groups=[hindcast_features]
         )
 
         masks.append(
@@ -198,12 +197,11 @@ def validate_samples(
     # Forecasts must pass a check that depends on the NaN-handling.
     if forecast_features:
         LOGGER.debug('forecast features')
-        forecast_groups = extract_feature_groups(feature_groups, forecast_features)
         masks.append(
             validate_samples_for_nan_handling(
                 dataset=dataset[forecast_features],
                 nan_handling_method=nan_handling_method,
-                feature_groups=forecast_groups
+                feature_groups=[forecast_features]
             ).rename('forecasts')
         )
         
@@ -215,7 +213,7 @@ def validate_samples(
             mask = validate_samples_for_nan_handling(
                 dataset=dataset[forecast_features].isel(lead_time=0).squeeze().drop('lead_time'),
                 nan_handling_method=nan_handling_method,
-                feature_groups=forecast_groups
+                feature_groups=[forecast_features]
             )
             
             masks.append(

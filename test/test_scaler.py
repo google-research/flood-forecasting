@@ -14,15 +14,16 @@
 
 """Unit tests for Scaler."""
 import os
-from pathlib import Path
-from unittest.mock import patch, mock_open
+from unittest.mock import patch
 
+import dask
+import dask.delayed
 import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
 
-from neuralhydrology.datautils import utils
+from neuralhydrology.datautils import scaler
 from neuralhydrology.datautils.scaler import Scaler, SCALER_FILE_NAME, _calc_stats, _calc_types
 
 # Set a fixed seed for reproducible tests
@@ -145,6 +146,7 @@ def test_scaler_init_load_with_dataset_raises_error(tmp_scaler_dir, sample_datas
 def test_scaler_calculate_parameters_correctness(tmp_scaler_dir, sample_dataset_basic):
     scaler = Scaler(scaler_dir=tmp_scaler_dir, calculate_scaler=True, dataset=None)
     scaler.calculate(sample_dataset_basic)
+    [scaler.scaler] = dask.compute(scaler.scaler)
 
     # Verify 'mean' and 'std' parameters
     expected_mean_temp = sample_dataset_basic['temp'].mean().item()
@@ -174,6 +176,7 @@ def test_scaler_calculate_custom_normalization(tmp_scaler_dir, sample_dataset_ba
     }
     scaler = Scaler(scaler_dir=tmp_scaler_dir, calculate_scaler=True, dataset=None, custom_normalization=custom_norm)
     scaler.calculate(sample_dataset_basic)
+    [scaler.scaler] = dask.compute(scaler.scaler)
 
     # Verify custom 'center' and 'scale'
     expected_center_temp = sample_dataset_basic['temp'].min().item()
@@ -191,12 +194,13 @@ def test_scaler_calculate_custom_normalization(tmp_scaler_dir, sample_dataset_ba
     np.testing.assert_allclose(scaler.scaler['pressure'].sel(parameter='std').item(), sample_dataset_basic['pressure'].std().item(), rtol=1e-5)
 
 # --- MODIFIED TEST for `_check_zero_scale` being called by `calculate` ---
-def test_scaler_calculate_raises_error_for_zero_scale(tmp_scaler_dir, sample_dataset_with_constant_var):
+def test_scaler_scale_raises_error_for_zero_scale(tmp_scaler_dir, sample_dataset_with_constant_var):
     # `constant_val` has a standard deviation of 0.0.
-    # The calculate method should now raise a ValueError due to _check_zero_scale().
+    # The scale method should now raise a ValueError due to _check_zero_scale().
     scaler = Scaler(scaler_dir=tmp_scaler_dir, calculate_scaler=True, dataset=None)
+    scaler.calculate(sample_dataset_with_constant_var)
     with pytest.raises(ValueError, match="Zero scale values found for features:"):
-        scaler.calculate(sample_dataset_with_constant_var)
+        dask.compute(scaler.scaler)
 
 # --- NEW TEST: Direct test of _check_zero_scale ---
 def test_check_zero_scale_method_raises_error(tmp_scaler_dir):
@@ -230,7 +234,44 @@ def test_check_zero_scale_method_no_error_for_nonzero(tmp_scaler_dir):
 
 # --- Test Scaler.scale ---
 
+def test_scaler_calculate_binds_save_when_calculated(sample_dataset_basic):
+    calls = []
+
+    def fake(*args, **kwargs):
+        calls.append(True)
+
+    with patch.object(scaler, '_save', side_effect=fake):
+        scaler_instance_calculated = Scaler(scaler_dir=tmp_scaler_dir, calculate_scaler=True, dataset=sample_dataset_basic)
+
+        assert calls == []
+
+        dask.compute(scaler_instance_calculated.scaler)
+
+    assert calls == [True]
+
+def test_scaler_calculate_doesnt_bind_save_when_not_calculated(
+    tmp_scaler_dir, scaler_instance_calculated, sample_dataset_basic
+):
+    scaler_instance_calculated.save()
+    scaler_file_path = tmp_scaler_dir / SCALER_FILE_NAME
+    assert scaler_file_path.exists()
+
+    calls = []
+
+    def fake():
+        calls.append(True)
+
+    with patch.object(scaler, '_save', side_effect=fake):
+        loaded_scaler = Scaler(scaler_dir=tmp_scaler_dir, calculate_scaler=False, dataset=None)
+        loaded_scaler.scale(sample_dataset_basic)
+
+        dask.compute(loaded_scaler.scaler)
+
+    assert calls == []
+
+
 def test_scaler_scale_basic_functionality(scaler_instance_calculated, sample_dataset_basic):
+    [scaler_instance_calculated.scaler] = dask.compute(scaler_instance_calculated.scaler)
     scaled_ds = scaler_instance_calculated.scale(sample_dataset_basic)
 
     assert isinstance(scaled_ds, xr.Dataset)

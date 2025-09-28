@@ -568,16 +568,20 @@ class Config(object):
         return self._cfg.get("lead_time", 0)
 
     @property
-    def learning_rate(self) -> Dict[int, float]:
-        if ("learning_rate" in self._cfg.keys()) and (self._cfg["learning_rate"] is not None):
-            if isinstance(self._cfg["learning_rate"], float):
-                return {0: self._cfg["learning_rate"]}
-            elif isinstance(self._cfg["learning_rate"], dict):
-                return self._cfg["learning_rate"]
-            else:
-                raise ValueError("Unsupported data type for learning rate. Use either dict (epoch to float) or float.")
-        else:
-            raise ValueError("No learning rate specified in the config (.yml).")
+    def learning_rate_strategy(self) -> str|None:
+        return self._cfg.get("learning_rate_strategy", None)
+
+    @property
+    def initial_learning_rate(self) -> float:
+        return self._get_value_verbose("initial_learning_rate")
+
+    @property
+    def learning_rate_drop_factor(self) -> float:
+        return self._cfg.get("learning_rate_drop_factor", 0.1)
+
+    @property
+    def learning_rate_epochs_drop(self) -> int:
+        return self._cfg.get("learning_rate_epochs_drop", 0)
 
     @property
     def log_interval(self) -> int:

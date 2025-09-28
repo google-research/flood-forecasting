@@ -23,8 +23,10 @@ experiment_name: mean_embedding_forecast_lstm
 clip_gradient_norm: 1
 clip_targets_to_zero:
 - streamflow
-learning_rate:
-  0: 0.0005
+learning_rate_strategy: ReduceLROnPlateau
+initial_learning_rate: 0.0005
+learning_rate_drop_factor: 0.1
+learning_rate_epochs_drop: 1
 # max_updates_per_epoch:
 max_updates_per_epoch: 2000
 metrics:
@@ -91,6 +93,13 @@ forecast_inputs:
 - graphcast_temperature_2m
 - graphcast_total_precipitation
 hindcast_inputs:
+- hres_surface_net_solar_radiation
+- hres_surface_net_thermal_radiation
+- hres_surface_pressure
+- hres_temperature_2m
+- hres_total_precipitation
+- graphcast_temperature_2m
+- graphcast_total_precipitation
 - imerg_precipitation
 - cpc_precipitation
 static_attributes:

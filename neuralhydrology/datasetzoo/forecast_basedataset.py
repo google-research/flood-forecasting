@@ -167,6 +167,20 @@ class ForecastDataset(BaseDataset):
         extended_start_dates = [start_date - pd.Timedelta(days=self._seq_length) for start_date in start_dates]
         extended_end_dates = [end_date + pd.Timedelta(days=self.lead_time) for end_date in end_dates]
         extended_dates = self._union_dates(extended_start_dates, extended_end_dates)
+        
+        # Split hindcast features to groups with/without lead_time in the dataset.
+        # These lists will be used for efficient data selection during sampling.
+        self._hindcast_features_with_lead_time = [
+            feature
+            for feature in self._hindcast_features
+            if 'lead_time' in self._dataset[feature].dims
+        ]
+        self._hindcast_features_without_lead_time = [
+            feature 
+            for feature in self._hindcast_features 
+            if feature not in self._hindcast_features_with_lead_time
+        ]
+
         LOGGER.debug('reindex data')
         self._dataset = self._dataset.sel(date=extended_dates).reindex(date=extended_dates)
 
@@ -196,18 +210,17 @@ class ForecastDataset(BaseDataset):
             dataset=(self._dataset if compute_scaler else None)
         )
         LOGGER.debug('scale data')
-        self._dataset = self.scaler.scale(self._dataset)       
-        if compute_scaler:
-            LOGGER.debug('save scaler')
-            self.scaler.save()
+        self._dataset = self.scaler.scale(self._dataset)
+
+        # TODO: Optionally, optimize the data loader and trainer modules to work with chunked lazy data.
+        LOGGER.debug("materialize data (compute)")
+        # We explicitly keep the self.scaler.scaler computation since trainer uses it directly
+        # create sample index does a compute on the data. We compute here prior to avoid recompute.
+        self._dataset, self.scaler.scaler = dask.compute(self._dataset, self.scaler.scaler)
 
         # Create sample index lookup table for `__getitem__`.
         LOGGER.debug('create sample index')
         self._create_sample_index()
-
-        # TODO: Optionally, optimize the data loader and trainer modules to work with chunked lazy data.
-        LOGGER.debug("materialize data (compute)")
-        self._dataset = self._dataset.compute()
 
         # Compute stats for NSE-based loss functions.
         # TODO (future) :: Find a better way to decide whether to calculate these. At least keep a list of
@@ -289,9 +302,32 @@ class ForecastDataset(BaseDataset):
         return np.stack([features[e] for e in self._static_features], axis=-1)
 
     def _extract_hindcasts(self, item: int) -> dict[str, np.ndarray]:
-        dim_indexes = self._sample_index[item].copy()
-        dim_indexes['date'] = range(dim_indexes['date']-self._seq_length+1, dim_indexes['date']+1)
-        features = self._extract_dataset(self._dataset, self._hindcast_features, dim_indexes)
+        # Extract hindcast features without lead_time.
+        dim_indexes_without_lead_time = self._sample_index[item].copy()
+        dim_indexes_without_lead_time["date"] = range(
+            dim_indexes_without_lead_time["date"] - self._seq_length + 1,
+            dim_indexes_without_lead_time["date"] + 1,
+        )
+        features = self._extract_dataset(
+            self._dataset,
+            self._hindcast_features_without_lead_time,
+            dim_indexes_without_lead_time,
+        )
+
+        # Forecast features with lead_time may be used as hindcast features. In that case, we select
+        # only the first lead_time value, and move selection period one day backwards.
+        dim_indexes_with_lead_time = self._sample_index[item].copy()
+        dim_indexes_with_lead_time["lead_time"] = 0
+        dim_indexes_with_lead_time["date"] = range(
+            dim_indexes_with_lead_time["date"] - self._seq_length,
+            dim_indexes_with_lead_time["date"],
+        )
+        features |= self._extract_dataset(
+            self._dataset,
+            self._hindcast_features_with_lead_time,
+            dim_indexes_with_lead_time,
+        )
+
         return {name: np.expand_dims(feature, -1) for name, feature in features.items()}
         # TODO (future) :: This adds a dimension to many features, as required by some models.
         # There is no need for this except that it is how basedataset works, and everything else expects
