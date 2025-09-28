@@ -214,6 +214,15 @@ class BaseTrainer(object):
 
     def _create_lr_scheduler(self):
         match self.cfg.learning_rate_strategy:
+            case 'ConstantLR':
+                # Keep learning rate constant.
+                lr_scheduler = torch.optim.lr_scheduler.ConstantLR(
+                    self.optimizer,
+                    factor=1.0,
+                    total_iters=1,
+                )
+                def lr_step(loss: float):
+                    pass
             case 'StepLR':
                 # Step down by a factor every step size epocs, regardless of loss.
                 lr_scheduler = torch.optim.lr_scheduler.StepLR(
