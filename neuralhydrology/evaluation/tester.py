@@ -381,11 +381,11 @@ class BaseTester(object):
             diffs = np.diff(basin_ds.streamflow.isnull(), prepend=[0], append=[0])
             (starts,), (ends,) = np.where(diffs == 1), np.where(diffs == -1)
 
-            test_start, test_end = self.cfg.test_start_date, self.cfg.test_end_date
             nan_date_starts = basin_ds.date.data[starts]
             nan_date_ends = basin_ds.date.data[ends - 1]
-            if np.any((nan_date_starts <= test_start) & (nan_date_ends >= test_end)):
-                yield basin
+            for start, end in zip(self.cfg.test_start_date, self.cfg.test_end_date):
+                if np.any((nan_date_starts <= start) & (nan_date_ends >= end)):
+                    yield basin
 
     def _create_and_log_figures(self, results: dict, experiment_logger: Logger|None, epoch: int):
         basins = list(results.keys())
