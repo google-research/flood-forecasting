@@ -227,17 +227,17 @@ class BaseTester(object):
         )
         loader = DataLoader(self.dataset, batch_sampler=batch_sampler, num_workers=0, collate_fn=self.dataset.collate_fn)
 
-        eval_data = self._evaluate(model, loader, self.dataset.frequencies, save_all_output, basins)
+        eval_data_it = self._evaluate(model, loader, self.dataset.frequencies, save_all_output, basins)
+        pbar = tqdm(eval_data_it, file=sys.stdout, disable=self._disable_pbar, total=len(basins))
+        pbar.set_description('# Validation' if self.period == "validation" else "# Evaluation")
 
-        pbar = tqdm(basins, file=sys.stdout, disable=self._disable_pbar)
-        pbar.set_description('# Validation post' if self.period == "validation" else "# Evaluation post")
-
-        for basin in pbar:
-            y_hat = eval_data[basin]['preds']
-            y = eval_data[basin]['obs']
-            dates = eval_data[basin]['dates']
-            all_losses = eval_data[basin]['mean_losses']
-            all_output[basin] = eval_data[basin]['all_output']
+        for basin_data in pbar:
+            basin = basin_data['basin']
+            y_hat = basin_data['preds']
+            y = basin_data['obs']
+            dates = basin_data['dates']
+            all_losses = basin_data['mean_losses']
+            all_output[basin] = basin_data['all_output']
 
             # log loss of this basin plus number of samples in the logger to compute epoch aggregates later
             if experiment_logger is not None:
@@ -454,16 +454,13 @@ class BaseTester(object):
         if isinstance(predict_last_n, int):
             predict_last_n = {frequencies[0]: predict_last_n}  # if predict_last_n is int, there's only one frequency
 
-        basin_samples = itertools.groupby(loader, lambda data: data['basin_index'][0].item())
-        pbar_basin = tqdm(basin_samples, file=sys.stdout, disable=self._disable_pbar, total=len(basins))
-        pbar_basin.set_description('# Validation pre' if self.period == "validation" else "# Evaluation pre")
-
-        res = {}
         with torch.inference_mode():
-            for basin_index, samples in pbar_basin:
+            basin_samples = itertools.groupby(loader, lambda data: data['basin_index'][0].item())
+            for basin_index, samples in basin_samples:
                 basin = loader.dataset._basins[basin_index]
                 if basin not in basins:
                     continue
+                res = {'basin': basin}
 
                 for data in samples:
                     for key in data:
@@ -475,15 +472,15 @@ class BaseTester(object):
                         data = model.pre_model_hook(data, is_train=False)
                         predictions, loss = self._get_predictions_and_loss(model, data)
 
-                    all_output = res.setdefault(basin, {}).setdefault('all_output', {})
+                    all_output = res.setdefault('all_output', {})
                     if save_all_output:
                         for key, value in predictions.items():
                             if value is not None and type(value) != dict:
                                 all_output.setdefault(key, []).append(value.detach().cpu().numpy())
 
-                    preds = res.setdefault(basin, {}).setdefault('preds', {})
-                    obs = res.setdefault(basin, {}).setdefault('obs', {})
-                    dates = res.setdefault(basin, {}).setdefault('dates', {})
+                    preds = res.setdefault('preds', {})
+                    obs = res.setdefault('obs', {})
+                    dates = res.setdefault('dates', {})
                     for freq in frequencies:
                         if predict_last_n[freq] == 0:
                             continue  # no predictions for this frequency
@@ -501,34 +498,32 @@ class BaseTester(object):
                             obs[freq] = torch.cat((obs[freq], y_sub.detach().cpu()), 0)
                             dates[freq] = np.concatenate((dates[freq], date_sub), axis=0)
 
-                    losses = res.setdefault(basin, {}).setdefault('losses', [])
+                    losses = res.setdefault('losses', [])
                     losses.append(loss)
 
-            for res_for_basin in res.values():
-                preds = res_for_basin['preds']
-                obs = res_for_basin['obs']
+                preds = res['preds']
+                obs = res['obs']
                 for freq in preds.keys():
                     preds[freq] = preds[freq].numpy()
                     obs[freq] = obs[freq].numpy()
 
-        for res_for_basin in res.values():
-            all_output = res_for_basin['all_output']
+                all_output = res['all_output']
 
-            # concatenate all output variables (currently a dict-of-dicts) into a single-level dict
-            for key, list_of_data in all_output.items():
-                all_output[key] = np.concatenate(list_of_data, 0)
+                # concatenate all output variables (currently a dict-of-dicts) into a single-level dict
+                for key, list_of_data in all_output.items():
+                    all_output[key] = np.concatenate(list_of_data, 0)
 
-            # set to NaN explicitly if all losses are NaN to avoid RuntimeWarning
-            mean_losses = res_for_basin.setdefault('mean_losses', {})
-            losses = res_for_basin['losses']
-            if len(losses) == 0:
-                mean_losses['loss'] = np.nan
-            else:
-                for loss_name in losses[0].keys():
-                    loss_values = [loss[loss_name] for loss in losses]
-                    mean_losses[loss_name] = np.nanmean(loss_values) if not np.all(np.isnan(loss_values)) else np.nan
+                # set to NaN explicitly if all losses are NaN to avoid RuntimeWarning
+                mean_losses = res.setdefault('mean_losses', {})
+                losses = res['losses']
+                if len(losses) == 0:
+                    mean_losses['loss'] = np.nan
+                else:
+                    for loss_name in losses[0].keys():
+                        loss_values = [loss[loss_name] for loss in losses]
+                        mean_losses[loss_name] = np.nanmean(loss_values) if not np.all(np.isnan(loss_values)) else np.nan
 
-        return res
+                yield res
 
     def _get_predictions_and_loss(self, model: BaseModel, data: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, float]:
         predictions = model(data)
