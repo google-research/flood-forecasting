@@ -14,16 +14,16 @@
 
 # --- Training Parameters -------------------------------------------------------
 batch_size: 256
-epochs: 5
+epochs: 30
 experiment_name: multimet_handoff_forecast_lstm
 clip_gradient_norm: 1
 clip_targets_to_zero:
 - streamflow
 loss: NSE
-learning_rate:
-  0: 0.001
-  10: 0.0005
-  25: 0.0001
+learning_rate_strategy: StepLR
+initial_learning_rate: 0.001
+learning_rate_drop_factor: 0.2
+learning_rate_epochs_drop: 10
 max_updates_per_epoch:
 metrics:
 - NSE
