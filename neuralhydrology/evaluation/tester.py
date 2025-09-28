@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import itertools
 import logging
 import pickle
 import random
@@ -453,61 +454,55 @@ class BaseTester(object):
         if isinstance(predict_last_n, int):
             predict_last_n = {frequencies[0]: predict_last_n}  # if predict_last_n is int, there's only one frequency
 
-        pbar_basin = tqdm(file=sys.stdout, disable=self._disable_pbar, total=len(basins))
+        basin_samples = itertools.groupby(loader, lambda data: data['basin_index'][0].item())
+        pbar_basin = tqdm(basin_samples, file=sys.stdout, disable=self._disable_pbar, total=len(basins))
         pbar_basin.set_description('# Validation pre' if self.period == "validation" else "# Evaluation pre")
-
-        basins_seen = set()
 
         res = {}
         with torch.inference_mode():
-            for data in loader:
-                basin_index = data['basin_index'][0].item()
+            for basin_index, samples in pbar_basin:
                 basin = loader.dataset._basins[basin_index]
                 if basin not in basins:
                     continue
 
-                pbar_basin.update(bool(basins_seen and basin_index not in basins_seen))
-                basins_seen.add(basin_index)
+                for data in samples:
+                    for key in data:
+                        if key.startswith('x_d'):
+                            data[key] = {k: v.to(self.device) for k, v in data[key].items()}
+                        elif not key.startswith('date'):
+                            data[key] = data[key].to(self.device)
+                    with autocast(self.device.type, enabled=(self.device.type == 'cuda')):
+                        data = model.pre_model_hook(data, is_train=False)
+                        predictions, loss = self._get_predictions_and_loss(model, data)
 
-                for key in data:
-                    if key.startswith('x_d'):
-                        data[key] = {k: v.to(self.device) for k, v in data[key].items()}
-                    elif not key.startswith('date'):
-                        data[key] = data[key].to(self.device)
-                with autocast(self.device.type, enabled=(self.device.type == 'cuda')):
-                    data = model.pre_model_hook(data, is_train=False)
-                    predictions, loss = self._get_predictions_and_loss(model, data)
+                    all_output = res.setdefault(basin, {}).setdefault('all_output', {})
+                    if save_all_output:
+                        for key, value in predictions.items():
+                            if value is not None and type(value) != dict:
+                                all_output.setdefault(key, []).append(value.detach().cpu().numpy())
 
-                all_output = res.setdefault(basin, {}).setdefault('all_output', {})
-                if save_all_output:
-                    for key, value in predictions.items():
-                        if value is not None and type(value) != dict:
-                            all_output.setdefault(key, []).append(value.detach().cpu().numpy())
+                    preds = res.setdefault(basin, {}).setdefault('preds', {})
+                    obs = res.setdefault(basin, {}).setdefault('obs', {})
+                    dates = res.setdefault(basin, {}).setdefault('dates', {})
+                    for freq in frequencies:
+                        if predict_last_n[freq] == 0:
+                            continue  # no predictions for this frequency
+                        freq_key = '' if len(frequencies) == 1 else f'_{freq}'
+                        y_hat_sub, y_sub = self._subset_targets(model, data, predictions, predict_last_n[freq], freq_key)
+                        # Date subsetting is universal across all models and thus happens here.
+                        date_sub = data[f'date{freq_key}'][:, -predict_last_n[freq]:]
 
-                preds = res.setdefault(basin, {}).setdefault('preds', {})
-                obs = res.setdefault(basin, {}).setdefault('obs', {})
-                dates = res.setdefault(basin, {}).setdefault('dates', {})
-                for freq in frequencies:
-                    if predict_last_n[freq] == 0:
-                        continue  # no predictions for this frequency
-                    freq_key = '' if len(frequencies) == 1 else f'_{freq}'
-                    y_hat_sub, y_sub = self._subset_targets(model, data, predictions, predict_last_n[freq], freq_key)
-                    # Date subsetting is universal across all models and thus happens here.
-                    date_sub = data[f'date{freq_key}'][:, -predict_last_n[freq]:]
+                        if freq not in preds:
+                            preds[freq] = y_hat_sub.detach().cpu()
+                            obs[freq] = y_sub.cpu()
+                            dates[freq] = date_sub
+                        else:
+                            preds[freq] = torch.cat((preds[freq], y_hat_sub.detach().cpu()), 0)
+                            obs[freq] = torch.cat((obs[freq], y_sub.detach().cpu()), 0)
+                            dates[freq] = np.concatenate((dates[freq], date_sub), axis=0)
 
-                    if freq not in preds:
-                        preds[freq] = y_hat_sub.detach().cpu()
-                        obs[freq] = y_sub.cpu()
-                        dates[freq] = date_sub
-                    else:
-                        preds[freq] = torch.cat((preds[freq], y_hat_sub.detach().cpu()), 0)
-                        obs[freq] = torch.cat((obs[freq], y_sub.detach().cpu()), 0)
-                        dates[freq] = np.concatenate((dates[freq], date_sub), axis=0)
-
-                losses = res.setdefault(basin, {}).setdefault('losses', [])
-                losses.append(loss)
-
-            pbar_basin.update(1) # Last basin
+                    losses = res.setdefault(basin, {}).setdefault('losses', [])
+                    losses.append(loss)
 
             for res_for_basin in res.values():
                 preds = res_for_basin['preds']
