@@ -156,17 +156,19 @@ class ForecastDataset(BaseDataset):
             self._min_lead_time = int((self._dataset.lead_time.min() / np.timedelta64(1, 'D')).item())
             self._lead_times = list(range(self._min_lead_time, self.lead_time+1))
         
+        start_dates, end_dates = self._get_period_dates(cfg)
+        self._sample_dates = self._union_dates(start_dates, end_dates)
+
         # The convention in NH is that the period dates define the SAMPLE dates.
         # All hindcast (and forecast) seqences are extra. Therefore, when cropping
         # the dataset for sampling, we keep all the hindcast and forecast sequence
         # data on both sides of the period dates. This would be more memory efficient
         # in `_load_data()` but that approach adds complexity to the child classes.
-        self._sample_dates = self._get_sample_dates(cfg)
-        data_start_date = self._sample_dates[0] - pd.Timedelta(days=self._seq_length)
-        data_end_date = self._sample_dates[-1] + pd.Timedelta(days=self.lead_time)
-        data_dates = pd.date_range(data_start_date, data_end_date)
+        extended_start_dates = [start_date - pd.Timedelta(days=self._seq_length) for start_date in start_dates]
+        extended_end_dates = [end_date + pd.Timedelta(days=self.lead_time) for end_date in end_dates]
+        extended_dates = self._union_dates(extended_start_dates, extended_end_dates)
         LOGGER.debug('reindex data')
-        self._dataset = self._dataset.reindex(date=data_dates).sel(date=data_dates)
+        self._dataset = self._dataset.sel(date=extended_dates).reindex(date=extended_dates)
 
         # Timestep counters indicate the lead time of each forecast timestep.
         self._hindcast_counter = None
@@ -331,18 +333,20 @@ class ForecastDataset(BaseDataset):
 
     def _get_period_dates(self, cfg: Config) -> Tuple[List[pd.Timestamp], List[pd.Timestamp]]:
         if self._period == 'train':
-            return cfg.train_start_date, cfg.train_end_date
+            start_dates, end_dates = cfg.train_start_date, cfg.train_end_date
         elif self._period == 'test':
-            return cfg.test_start_date, cfg.test_end_date
+            start_dates, end_dates = cfg.test_start_date, cfg.test_end_date
         elif self._period == 'validation':
-            return cfg.validation_start_date, cfg.validation_end_date
+            start_dates, end_dates = cfg.validation_start_date, cfg.validation_end_date
         else:
             raise ValueError(f'Unknown period {self._period}')
-
-    def _get_sample_dates(self, cfg: Config) -> pd.DatetimeIndex:
-        start_dates, end_dates = self._get_period_dates(cfg)
         if len(start_dates) != len(end_dates):
             raise ValueError(f'Start and end date lists for period {self._period} must have the same length.')
+        if any(start_p >= end_p for start_p, end_p in zip(start_dates, end_dates)):
+            raise ValueError(f'Start dates {start_dates} are before matched end dates {end_dates}.')
+        return start_dates, end_dates
+
+    def _union_dates(self, start_dates: List[pd.Timestamp], end_dates: List[pd.Timestamp]) -> pd.DatetimeIndex:
         ranges = [pd.date_range(start, end) for start, end in zip(start_dates, end_dates)]
         return functools.reduce(pd.Index.union, ranges)
 
