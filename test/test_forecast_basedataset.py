@@ -115,8 +115,8 @@ def sample_dates(get_config):
     """Provides a date range for the dataset based on mock_config."""
     cfg = get_config("default") # Get a default config
     # This range needs to be large enough to cover seq_length + sample_dates + lead_time
-    start_date = pd.to_datetime(cfg.train_start_date) - pd.Timedelta(days=cfg.seq_length + cfg.lead_time)
-    end_date = pd.to_datetime(cfg.train_end_date) + pd.Timedelta(days=cfg.seq_length + cfg.lead_time)
+    start_date = pd.to_datetime(cfg.train_start_date[0]) - pd.Timedelta(days=cfg.seq_length + cfg.lead_time)
+    end_date = pd.to_datetime(cfg.train_end_date[0]) + pd.Timedelta(days=cfg.seq_length + cfg.lead_time)
     return pd.date_range(start_date, end_date, freq='D')
 
 @pytest.fixture
