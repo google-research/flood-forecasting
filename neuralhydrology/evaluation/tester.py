@@ -460,7 +460,13 @@ class BaseTester(object):
                 basin = loader.dataset._basins[basin_index]
                 if basin not in basins:
                     continue
-                res = {'basin': basin}
+
+                preds = {}
+                obs = {}
+                dates = {}
+                all_output = {}
+                losses = []
+                mean_losses = {}
 
                 for data in samples:
                     for key in data:
@@ -468,19 +474,16 @@ class BaseTester(object):
                             data[key] = {k: v.to(self.device) for k, v in data[key].items()}
                         elif not key.startswith('date'):
                             data[key] = data[key].to(self.device)
+
                     with autocast(self.device.type, enabled=(self.device.type == 'cuda')):
                         data = model.pre_model_hook(data, is_train=False)
                         predictions, loss = self._get_predictions_and_loss(model, data)
 
-                    all_output = res.setdefault('all_output', {})
                     if save_all_output:
                         for key, value in predictions.items():
                             if value is not None and type(value) != dict:
                                 all_output.setdefault(key, []).append(value.detach().cpu().numpy())
 
-                    preds = res.setdefault('preds', {})
-                    obs = res.setdefault('obs', {})
-                    dates = res.setdefault('dates', {})
                     for freq in frequencies:
                         if predict_last_n[freq] == 0:
                             continue  # no predictions for this frequency
@@ -498,24 +501,17 @@ class BaseTester(object):
                             obs[freq] = torch.cat((obs[freq], y_sub.detach().cpu()), 0)
                             dates[freq] = np.concatenate((dates[freq], date_sub), axis=0)
 
-                    losses = res.setdefault('losses', [])
                     losses.append(loss)
 
-                preds = res['preds']
-                obs = res['obs']
                 for freq in preds.keys():
                     preds[freq] = preds[freq].numpy()
                     obs[freq] = obs[freq].numpy()
-
-                all_output = res['all_output']
 
                 # concatenate all output variables (currently a dict-of-dicts) into a single-level dict
                 for key, list_of_data in all_output.items():
                     all_output[key] = np.concatenate(list_of_data, 0)
 
                 # set to NaN explicitly if all losses are NaN to avoid RuntimeWarning
-                mean_losses = res.setdefault('mean_losses', {})
-                losses = res['losses']
                 if len(losses) == 0:
                     mean_losses['loss'] = np.nan
                 else:
@@ -523,7 +519,15 @@ class BaseTester(object):
                         loss_values = [loss[loss_name] for loss in losses]
                         mean_losses[loss_name] = np.nanmean(loss_values) if not np.all(np.isnan(loss_values)) else np.nan
 
-                yield res
+                yield {
+                    'basin': basin,
+                    'preds': preds,
+                    'obs': obs,
+                    'dates': dates,
+                    'all_output': all_output,
+                    'losses': losses,
+                    'mean_losses': mean_losses,
+                }
 
     def _get_predictions_and_loss(self, model: BaseModel, data: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, float]:
         predictions = model(data)
