@@ -53,10 +53,7 @@ output_dropout: 0.4
 # --- Training configuration -----------------------------------------------------------------------
 optimizer: Adam
 loss: MSE
-learning_rate:
-  0: 1e-3
-  10: 5e-4
-  20: 1e-4
+initial_learning_rate: 0.001
 batch_size: 256
 epochs: 1
 clip_gradient_norm: 1
