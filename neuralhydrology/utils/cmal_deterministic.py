@@ -1,11 +1,11 @@
 """Generates representative point predictions from CMAL head parameters.
 
-This method is an efficient deterministic alternative to random sampling CMAL,
-where there's memory constraints on GPU and/or CPU, by taking 10 representative
-points from the predictive dist, and 32 binary search iterations for quantiles.
-10 points are 9 quantiles from 0.1 to 0.9 and a statistical mean of mixture dist.
+This method is a deterministic alternative to random sampling CMAL, where there's
+memory constraints on GPU and/or CPU. It takes 10 representative points from the
+predictive dist, and 32 binary search iterations for quantiles. 10 points are
+9 quantiles from 0.1 to 0.9 and a statistical mean of mixture dist.
 
-It's a better approximation for sampling n_samples is low in low mem scenarios.
+When n_samples is low, this algorithm should serve as a better approximation.
 """
 
 from typing import Callable
