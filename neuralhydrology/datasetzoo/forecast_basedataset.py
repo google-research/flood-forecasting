@@ -180,7 +180,7 @@ class ForecastDataset(BaseDataset):
         extended_end_dates = [end_date + pd.Timedelta(days=self.lead_time) for end_date in end_dates]
         extended_dates = self._union_ranges(extended_start_dates, extended_end_dates)
         LOGGER.debug('reindex data')
-        self._dataset = self._dataset.sel(date=extended_dates).reindex(date=extended_dates)
+        self._dataset = self._dataset.reindex(date=extended_dates).sel(date=extended_dates)
 
         # Timestep counters indicate the lead time of each forecast timestep.
         self._hindcast_counter = None
