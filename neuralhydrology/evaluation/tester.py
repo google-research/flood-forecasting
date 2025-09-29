@@ -376,6 +376,11 @@ class BaseTester(object):
     def _calc_exclude_basins(self) -> Iterator[str]:
         if not self.cfg.tester_skip_obs_all_nan:
             return
+
+        period_start, period_end = self.cfg.test_start_date, self.cfg.test_end_date
+        if self.period == 'validation':
+            period_start, period_end = self.cfg.validation_start_date, self.cfg.validation_end_date
+
         # TODO(future): this may be optimized to work vectorically via xarray on all
         # basins at once.
         for basin in self.basins:
@@ -386,8 +391,7 @@ class BaseTester(object):
 
             nan_date_starts = basin_ds.date.data[starts]
             nan_date_ends = basin_ds.date.data[ends - 1]
-            # TODO (future): Handle test or validation
-            for start, end in zip(self.cfg.test_start_date, self.cfg.test_end_date):
+            for start, end in zip(period_start, period_end):
                 if np.any((nan_date_starts <= start) & (nan_date_ends >= end)):
                     yield basin
 
