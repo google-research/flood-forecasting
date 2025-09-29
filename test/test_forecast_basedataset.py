@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import torch
+import re
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 from typing import Callable, Dict, List
@@ -352,17 +353,17 @@ def test_forecast_dataset_init_compute_scaler_error(
     """
     cfg = get_config("default") # Get a default config
     # Validation period
-    with pytest.raises(ValueError, match="Scaler must be loaded \(not computed\) for validation, test, and finetuning."):
+    with pytest.raises(ValueError, match=re.escape("Scaler must be loaded (not computed) for validation, test, and finetuning.")):
         ForecastDataset(cfg=cfg, is_train=False, period='validation', compute_scaler=True)
 
     # Test period
-    with pytest.raises(ValueError, match="Scaler must be loaded \(not computed\) for validation, test, and finetuning."):
+    with pytest.raises(ValueError, match=re.escape("Scaler must be loaded (not computed) for validation, test, and finetuning.")):
         ForecastDataset(cfg=cfg, is_train=False, period='test', compute_scaler=True)
 
     # Finetuning
     cfg_finetuning = get_config("default")
     cfg_finetuning.is_finetuning = True # Manually set attribute
-    with pytest.raises(ValueError, match="Scaler must be loaded \(not computed\) for validation, test, and finetuning."):
+    with pytest.raises(ValueError, match=re.escape("Scaler must be loaded (not computed) for validation, test, and finetuning.")):
         ForecastDataset(cfg=cfg_finetuning, is_train=True, period='train', compute_scaler=True)
 
 @patch('neuralhydrology.datasetzoo.forecast_basedataset.load_basin_file')
