@@ -225,7 +225,13 @@ class BaseTester(object):
             batch_size=self.cfg.batch_size,
             basins_indexes=set(get_samples_indexes(self.basins, samples=list(basins))),
         )
-        loader = DataLoader(self.dataset, batch_sampler=batch_sampler, num_workers=0, collate_fn=self.dataset.collate_fn)
+        loader = DataLoader(
+            self.dataset,
+            batch_sampler=batch_sampler,
+            num_workers=0,
+            collate_fn=self.dataset.collate_fn,
+            pin_memory=True,  # avoid 1 of 2 mem copies to gpu
+        )
 
         eval_data_it = self._evaluate(model, loader, self.dataset.frequencies, save_all_output, basins)
         pbar = tqdm(eval_data_it, file=sys.stdout, disable=self._disable_pbar, total=len(basins))
