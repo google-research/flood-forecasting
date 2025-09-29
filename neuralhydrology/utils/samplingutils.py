@@ -17,12 +17,14 @@ from typing import Callable, Dict, List, Union
 import numpy as np
 import pandas as pd
 import torch
+import torch.cuda
 import xarray
 from numba import njit
 from torch.distributions import Categorical
 
 from neuralhydrology.datautils.scaler import Scaler
 from neuralhydrology.utils.config import Config
+from neuralhydrology.utils import cmal_deterministic
 
 
 def sample_pointpredictions(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int,
@@ -59,7 +61,10 @@ def sample_pointpredictions(model: 'BaseModel', data: Dict[str, torch.Tensor], n
     if model.cfg.head.lower() == "gmm":
         samples = sample_gmm(model, data, n_samples, scaler)
     elif model.cfg.head.lower() == "cmal":
-        samples = sample_cmal(model, data, n_samples, scaler)
+        if model.cfg.cmal_deterministic:
+            samples = sample_cmal_deterministic(model, data)
+        else:
+            samples = sample_cmal(model, data, n_samples, scaler)
     elif model.cfg.head.lower() == "umal":
         samples = sample_umal(model, data, n_samples, scaler)
     elif model.cfg.head.lower() == "regression":
@@ -400,6 +405,60 @@ def sample_gmm(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int
         # add sample_points to dictionary of samples:
         freq_key = f'y_hat{freq_suffix}'
         samples.update({freq_key: sample_points})
+    return samples
+
+
+def sample_cmal_deterministic(
+    model: "BaseModel", data: Dict[str, torch.Tensor]
+) -> Dict[str, torch.Tensor]:
+    """Sample 10 point predictions with the Countable Mixture of Asymmetric Laplacians (CMAL) head.
+
+    Note: If the config setting 'mc_dropout' is true this function will force the model to train mode (`model.train()`)
+    and not set it back to its original state.
+
+    Parameters
+    ----------
+    model : BaseModel
+        A model with a CMAL head.
+    data : Dict[str, torch.Tensor]
+        Dictionary, containing input features as key-value pairs.
+
+    Returns
+    -------
+    Dict[str, torch.Tensor]
+        Dictionary, containing the sampled model outputs for the `predict_last_n` (config argument) time steps of
+        each frequency. The shape of the output tensor for each frequency is
+        ``[batch size, predict_last_n, n_samples]``.
+    """
+    setup = _SamplingSetup(model, data, "cmal")
+
+    # force model into train mode if mc_dropout
+    if setup.mc_dropout:
+        model.train()
+
+    # Make predictions (forward pass). For CMAL head those are dist params and
+    # not point predictions.
+    pred = model(data)
+
+    # Map output frequencies to final sample tensors:
+    samples = {}
+
+    # Loop over all model output frequencies (e.g., 'daily', 'hourly').
+    for freq_suffix in setup.freq_suffixes:
+        mu = pred[f"mu{freq_suffix}"]  # means
+        b = pred[f"b{freq_suffix}"]  # scales
+        tau = pred[f"tau{freq_suffix}"]  # asymmetries
+        pi = pred[f"pi{freq_suffix}"]  # weights
+
+        sample_points = [
+            cmal_deterministic.generate_predictions(mu, b, tau, pi)
+            .detach().to("cpu", non_blocking=True)
+        ]
+        samples.update({f"y_hat{freq_suffix}": torch.stack(sample_points, 2)})
+
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
     return samples
 
 
