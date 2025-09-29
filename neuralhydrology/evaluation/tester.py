@@ -217,7 +217,7 @@ class BaseTester(object):
         else:
             model.eval()
 
-        results = defaultdict(dict)
+        results = {}
         all_output = {basin: None for basin in basins}
 
         batch_sampler = BasinBatchSampler(
@@ -261,7 +261,7 @@ class BaseTester(object):
             for freq in self.dataset.frequencies:
                 if predict_last_n[freq] == 0:
                     continue  # this frequency is not being predicted
-                results[basin][freq] = {}
+                results.setdefault(basin, {}).setdefault(freq, {})
 
                 # Create data_vars dictionary for the xarray.Dataset
                 data_vars = self._create_xarray_data_vars(y_hat[freq], y[freq])
@@ -351,12 +351,7 @@ class BaseTester(object):
                                 values = {f"{key}_{freq}": val for key, val in values.items()}
                             if experiment_logger is not None:
                                 experiment_logger.log_step(**values)
-                            for k, v in values.items():
-                                results[basin][freq][k] = v
-
-        # convert default dict back to normal Python dict to avoid unexpected behavior when trying to access
-        # a non-existing basin
-        results = dict(results)
+                            results[basin][freq].update(values)
 
         if (self.cfg.log_n_figures > 0) and results:
             self._create_and_log_figures(results, experiment_logger, epoch or -1)
