@@ -261,7 +261,7 @@ class BaseTester(object):
             for freq in self.dataset.frequencies:
                 if predict_last_n[freq] == 0:
                     continue  # this frequency is not being predicted
-                basin_results = results.setdefault(basin, {}).setdefault(freq, {})
+                results.setdefault(basin, {}).setdefault(freq, {})
 
                 # Create data_vars dictionary for the xarray.Dataset
                 data_vars = self._create_xarray_data_vars(y_hat[freq], y[freq])
@@ -295,7 +295,7 @@ class BaseTester(object):
                                          name='date')
                 })
                 xr = self.dataset.scaler.unscale(xr)
-                basin_results['xr'] = xr
+                results[basin][freq]['xr'] = xr
 
                 # create datetime range at the current frequency
                 freq_date_range = pd.date_range(start=dates[lowest_freq][0, -1], end=dates[freq][-1, -1], freq=freq)
@@ -351,7 +351,7 @@ class BaseTester(object):
                                 values = {f"{key}_{freq}": val for key, val in values.items()}
                             if experiment_logger is not None:
                                 experiment_logger.log_step(**values)
-                            basin_results.update(values)
+                            results[basin][freq].update(values)
 
         if (self.cfg.log_n_figures > 0) and results:
             self._create_and_log_figures(results, experiment_logger, epoch or -1)
