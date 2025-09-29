@@ -103,7 +103,7 @@ hindcast_inputs:
 - era5land_volumetric_soil_water_layer_2
 - era5land_volumetric_soil_water_layer_3
 - era5land_volumetric_soil_water_layer_4
-- chirps_precipitation
+# - chirps_precipitation
 - imerg_precipitation
 - cpc_precipitation
 static_attributes:
