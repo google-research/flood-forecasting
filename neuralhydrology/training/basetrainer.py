@@ -21,6 +21,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from torch.utils.data import Dataset
 import torch.optim.lr_scheduler
 from torch.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
@@ -28,7 +29,6 @@ from tqdm import tqdm
 
 import neuralhydrology.training.loss as loss
 from neuralhydrology.datasetzoo import get_dataset
-from neuralhydrology.datasetzoo.basedataset import BaseDataset
 from neuralhydrology.datautils.utils import load_basin_file
 from neuralhydrology.evaluation import get_tester
 from neuralhydrology.evaluation.tester import BaseTester
@@ -90,7 +90,7 @@ class BaseTrainer(object):
         self._set_random_seeds()
         self._set_device()
 
-    def _get_dataset(self, compute_scaler: bool) -> BaseDataset:
+    def _get_dataset(self, compute_scaler: bool) -> Dataset:
         return get_dataset(cfg=self.cfg, period="train", is_train=True, compute_scaler=compute_scaler)
 
     def _get_model(self) -> torch.nn.Module:
@@ -108,7 +108,7 @@ class BaseTrainer(object):
     def _get_tester(self) -> BaseTester:
         return get_tester(cfg=self.cfg, run_dir=self.cfg.run_dir, period="validation", init_model=False)
 
-    def _get_data_loader(self, ds: BaseDataset) -> torch.utils.data.DataLoader:
+    def _get_data_loader(self, ds: Dataset) -> torch.utils.data.DataLoader:
         return DataLoader(ds,
                           batch_size=self.cfg.batch_size,
                           shuffle=True,
@@ -214,15 +214,17 @@ class BaseTrainer(object):
 
     def _create_lr_scheduler(self):
         match self.cfg.learning_rate_strategy:
-            case 'ConstantLR':
+            case "ConstantLR":
                 # Keep learning rate constant.
                 lr_scheduler = torch.optim.lr_scheduler.ConstantLR(
                     self.optimizer,
                     factor=1.0,
                     total_iters=1,
                 )
+
                 def lr_step(loss: float):
                     pass
+
             case 'StepLR':
                 # Step down by a factor every step size epocs, regardless of loss.
                 lr_scheduler = torch.optim.lr_scheduler.StepLR(

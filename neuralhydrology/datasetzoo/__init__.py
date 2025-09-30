@@ -14,7 +14,8 @@
 
 from typing import Type
 
-from neuralhydrology.datasetzoo.basedataset import BaseDataset
+from torch.utils.data import Dataset
+
 from neuralhydrology.datasetzoo.camelsus import CamelsUS
 from neuralhydrology.datasetzoo.caravan import Caravan
 from neuralhydrology.datasetzoo.hourlycamelsus import HourlyCamelsUS
@@ -29,7 +30,7 @@ def get_dataset(cfg: Config,
                 basin: str = None,
                 additional_features: list = [],
                 id_to_int: dict = {},
-                compute_scaler: bool = False) -> BaseDataset:
+                compute_scaler: bool = False) -> Dataset:
     """Get data set instance, depending on the run configuration.
 
     Currently implemented datasets are 'caravan', 'camels_aus', 'camels_br', 'camels_cl', 'camels_gb', 'camels_us', and
@@ -65,7 +66,7 @@ def get_dataset(cfg: Config,
 
     Returns
     -------
-    BaseDataset
+    Dataset
         A new data set instance, depending on the run configuration.
 
     Raises
@@ -81,7 +82,7 @@ def get_dataset(cfg: Config,
 def register_dataset(key: str, new_class: Type):
     """Adds a dataset class to the dataset registry.
     
-    This class must derive from BaseDataset. New dataset class has to be added at the beginning of runtime.
+    This class must derive from Dataset. New dataset class has to be added at the beginning of runtime.
 
     Parameters
     ----------
@@ -98,7 +99,7 @@ def register_dataset(key: str, new_class: Type):
     Raises
     ------
     TypeError
-        If the new class is not derived from BaseDataset.
+        If the new class is not derived from Dataset.
     """
     global _datasetZooRegistry
     _datasetZooRegistry.register_dataset_class(key, new_class)

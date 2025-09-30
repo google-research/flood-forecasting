@@ -25,6 +25,7 @@ from typing import Dict, List, Optional, Tuple, Union, Iterator
 import numpy as np
 import pandas as pd
 import torch
+from torch.utils.data import Dataset
 import torch.cuda
 from torch.amp import autocast
 import xarray
@@ -32,7 +33,6 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from neuralhydrology.datasetzoo import get_dataset
-from neuralhydrology.datasetzoo.basedataset import BaseDataset
 from neuralhydrology.datautils.utils import get_frequency_factor, load_basin_file, sort_frequencies
 from neuralhydrology.evaluation import plots
 from neuralhydrology.evaluation.metrics import calculate_metrics, get_available_metrics
@@ -150,7 +150,7 @@ class BaseTester(object):
         LOGGER.info(f"Using the model weights from {weight_file}")
         self.model.load_state_dict(torch.load(weight_file, map_location=self.device))
 
-    def _get_dataset_all(self) -> BaseDataset:
+    def _get_dataset_all(self) -> Dataset:
         """Get dataset for all basin."""
         return get_dataset(cfg=self.cfg,
                          is_train=False,
@@ -160,7 +160,7 @@ class BaseTester(object):
                          id_to_int=self.id_to_int,
                          compute_scaler=False)
 
-    def _get_dataset(self, basin: str) -> BaseDataset:
+    def _get_dataset(self, basin: str) -> Dataset:
         """Get dataset for a single basin."""
         return get_dataset(cfg=self.cfg,
                          is_train=False,
@@ -241,7 +241,7 @@ class BaseTester(object):
         for basin_data in pbar:
             if self.device.type == 'cuda':
                 torch.cuda.synchronize()
-            
+
             basin = basin_data['basin']
             y_hat = basin_data['preds']
             y = basin_data['obs']

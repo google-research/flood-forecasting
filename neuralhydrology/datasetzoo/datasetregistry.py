@@ -16,7 +16,6 @@ from typing import Type
 
 from torch.utils.data import Dataset
 
-from neuralhydrology.datasetzoo.basedataset import BaseDataset
 from neuralhydrology.utils.config import Config
 
 
@@ -35,7 +34,7 @@ class DatasetRegistry:
             The unique identifier for the dataset class. This key will be used in configuration files
             to specify which dataset to use.
         new_class : Type
-            The dataset class to register. Must be a subclass of BaseDataset.
+            The dataset class to register. Must be a subclass of Dataset.
 
         Returns
         -------
@@ -44,7 +43,7 @@ class DatasetRegistry:
         Raises
         ------
         TypeError
-            If the provided class is not a subclass of BaseDataset.
+            If the provided class is not a subclass of Dataset.
 
         Examples
         --------
@@ -52,7 +51,7 @@ class DatasetRegistry:
         >>> registry.register_dataset_class("my_dataset", MyCustomDataset)
         """
         if not issubclass(new_class, Dataset):
-            raise TypeError(f"Class {type(new_class)} is not a subclass of BaseDataset.")
+            raise TypeError(f"Class {type(new_class)} is not a subclass of Dataset.")
         self.__dataset_class[key] = new_class
 
     def instantiate_dataset(self,
@@ -62,7 +61,7 @@ class DatasetRegistry:
                             basin: str = None,
                             additional_features: list = [],
                             id_to_int: dict = {},
-                            compute_scaler: bool = True) -> BaseDataset:
+                            compute_scaler: bool = True) -> Dataset:
         """Creates and returns an instance of a dataset class based on the configuration.
 
         Parameters
@@ -92,7 +91,7 @@ class DatasetRegistry:
 
         Returns
         -------
-        BaseDataset
+        Dataset
             An instance of the appropriate dataset class based on the configuration.
 
         Raises
