@@ -61,10 +61,9 @@ def sample_pointpredictions(model: 'BaseModel', data: Dict[str, torch.Tensor], n
     if model.cfg.head.lower() == "gmm":
         samples = sample_gmm(model, data, n_samples, scaler)
     elif model.cfg.head.lower() == "cmal":
-        if model.cfg.cmal_deterministic:
-            samples = sample_cmal_deterministic(model, data)
-        else:
-            samples = sample_cmal(model, data, n_samples, scaler)
+        samples = sample_cmal(model, data, n_samples, scaler)
+    elif model.cfg.head.lower() == "cmal_deterministic":
+        samples = sample_cmal_deterministic(model, data)
     elif model.cfg.head.lower() == "umal":
         samples = sample_umal(model, data, n_samples, scaler)
     elif model.cfg.head.lower() == "regression":
@@ -430,7 +429,7 @@ def sample_cmal_deterministic(
         each frequency. The shape of the output tensor for each frequency is
         ``[batch size, predict_last_n, n_samples]``.
     """
-    setup = _SamplingSetup(model, data, "cmal")
+    setup = _SamplingSetup(model, data, "cmal_deterministic")
 
     # force model into train mode if mc_dropout
     if setup.mc_dropout:

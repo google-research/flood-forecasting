@@ -48,7 +48,7 @@ def get_head(cfg: Config, n_in: int, n_out: int, *, n_hidden: int = 100) -> nn.M
         head = GMM(n_in=n_in, n_out=n_out, n_hidden=n_hidden)
     elif cfg.head.lower() == "umal":
         head = UMAL(n_in=n_in, n_out=n_out, n_hidden=n_hidden)
-    elif cfg.head.lower() == "cmal":
+    elif cfg.head.lower() in ["cmal", "cmal_deterministic"]:
         head = CMAL(n_in=n_in, n_out=n_out, n_hidden=n_hidden)
     elif cfg.head.lower() == "":
         raise ValueError(f"No 'head' specified in the config but is required for {cfg.model}")

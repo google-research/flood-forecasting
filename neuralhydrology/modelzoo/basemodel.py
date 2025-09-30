@@ -43,7 +43,7 @@ class BaseModel(nn.Module):
         self.output_size = len(cfg.target_variables)
         if cfg.head.lower() == 'gmm':
             self.output_size *= 3 * cfg.n_distributions
-        elif cfg.head.lower() == 'cmal':
+        elif cfg.head.lower() in ['cmal', 'cmal_deterministic']:
             self.output_size *= 4 * cfg.n_distributions
         elif cfg.head.lower() == 'umal':
             self.output_size *= 2

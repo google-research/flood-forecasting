@@ -51,6 +51,11 @@ head_configs = {
         "loss": "CMALLoss",
         "n_distributions": 3,
     },
+    "cmal_deterministic": {
+        "head": "cmal_deterministic",
+        "loss": "CMALLoss",
+        "n_distributions": 3,
+    },
     "gmm": {
         "head": "gmm",
         "loss": "GMMLoss",
@@ -63,7 +68,7 @@ def build_full_config(head):
     config = head_configs[head].copy()
 
     # Only add common uncertainty fields if the head supports them
-    if head in ["umal", "cmal", "gmm"]:
+    if head in ["umal", "cmal", "cmal_deterministic", "gmm"]:
         config.update(common_uncertainty_config)
     
     return config
@@ -71,7 +76,7 @@ def build_full_config(head):
 
 @pytest.mark.parametrize("mc_dropout", [False, True])
 @pytest.mark.parametrize("negative_sample_handling", ["none", "clip", "truncate"])
-@pytest.mark.parametrize("head", ["umal", "cmal", "gmm"])
+@pytest.mark.parametrize("head", ["umal", "cmal", "cmal_deterministic", "gmm"])
 def test_daily_uncertainty(get_config: Fixture[Callable[[str], dict]],
                            daily_dataset: Fixture[str],
                            single_timescale_forcings: Fixture[str],
