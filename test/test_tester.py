@@ -14,7 +14,6 @@
 
 from math import ceil
 import pytest
-from unittest.mock import MagicMock
 
 from neuralhydrology.evaluation.utils import BasinBatchSampler
 

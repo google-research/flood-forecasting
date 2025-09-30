@@ -12,13 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Callable, Dict, List, Union
+from typing import Callable, Dict, List
 
 import numpy as np
-import pandas as pd
 import torch
 import torch.cuda
-import xarray
 from numba import njit
 from torch.distributions import Categorical
 

@@ -12,13 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, List, Optional, Hashable, Tuple
+from typing import Dict, List, Hashable, Tuple
 
 import logging
 import itertools
 import functools
-import datetime
-from pathlib import Path
 
 import dask
 import dask.array
@@ -26,15 +24,12 @@ import numpy as np
 import pandas as pd
 import torch
 import xarray as xr
-from torch.utils.data import Dataset
-from ruamel.yaml import YAML
-from collections import defaultdict
 
 from neuralhydrology.datasetzoo.basedataset import BaseDataset
 from neuralhydrology.datautils.scaler import Scaler
 from neuralhydrology.datautils.union_features import union_features
 from neuralhydrology.datautils.utils import load_basin_file
-from neuralhydrology.datautils.validate_samples import validate_samples, extract_feature_groups
+from neuralhydrology.datautils.validate_samples import validate_samples
 from neuralhydrology.utils.config import Config
 from neuralhydrology.utils.configutils import flatten_feature_list
 from neuralhydrology.utils.errors import NoTrainDataError, NoEvaluationDataError

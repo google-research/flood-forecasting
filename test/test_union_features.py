@@ -16,7 +16,6 @@ import pytest
 import numpy as np
 import pandas as pd
 import xarray as xr
-from typing import Dict
 
 from neuralhydrology.datautils.union_features import (
     _expand_lead_times,

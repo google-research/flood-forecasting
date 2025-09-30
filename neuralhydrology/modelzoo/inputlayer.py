@@ -14,7 +14,7 @@
 
 import itertools
 import logging
-from typing import Dict, Optional, Union, Tuple
+from typing import Optional, Union, Tuple
 
 import torch
 import torch.nn as nn
