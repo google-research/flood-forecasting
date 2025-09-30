@@ -16,9 +16,7 @@ from typing import Type
 
 from torch.utils.data import Dataset
 
-from neuralhydrology.datasetzoo.camelsus import CamelsUS
 from neuralhydrology.datasetzoo.caravan import Caravan
-from neuralhydrology.datasetzoo.hourlycamelsus import HourlyCamelsUS
 from neuralhydrology.datasetzoo.multimet import Multimet
 from neuralhydrology.utils.config import Config
 from neuralhydrology.datasetzoo.datasetregistry import DatasetRegistry
@@ -33,8 +31,8 @@ def get_dataset(cfg: Config,
                 compute_scaler: bool = False) -> Dataset:
     """Get data set instance, depending on the run configuration.
 
-    Currently implemented datasets are 'caravan', 'camels_aus', 'camels_br', 'camels_cl', 'camels_gb', 'camels_us', and
-    'hourly_camels_us', as well as the 'generic' dataset class that can be used for any kind of dataset as long as it is
+    Currently implemented datasets are 'caravan', 'camels_aus', 'camels_br', 'camels_cl', 'camels_gb',
+    as well as the 'generic' dataset class that can be used for any kind of dataset as long as it is
     in the correct format.
 
     New dataset classes can be added at the beginning of runtime using the function register_dataset().
@@ -107,7 +105,5 @@ def register_dataset(key: str, new_class: Type):
 
 _datasetZooRegistry: DatasetRegistry = DatasetRegistry()
 
-_datasetZooRegistry.register_dataset_class("camels_us", CamelsUS)
-_datasetZooRegistry.register_dataset_class("hourly_camels_us", HourlyCamelsUS)
 _datasetZooRegistry.register_dataset_class("caravan", Caravan)
 _datasetZooRegistry.register_dataset_class("multimet", Multimet)
