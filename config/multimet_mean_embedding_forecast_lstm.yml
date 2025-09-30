@@ -149,6 +149,7 @@ forecast_overlap: 365
 ### head ###
 loss: CMALLoss
 head: cmal
+# head: cmal_deterministic
 # loss: NSE
 # head: regression
 n_distributions: 3

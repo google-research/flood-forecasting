@@ -127,7 +127,7 @@ General model configuration
    e.g., [``cudalstm``, ``ealstm``, ``mtslstm``]
 
 -  ``head``: The prediction head that is used on top of the output of
-   the model class. Currently supported are ``regression``, ``gmm``, ``cmal``, and ``umal``.
+   the model class. Currently supported are ``regression``, ``gmm``, ``cmal``, ``cmal_deterministic`` and ``umal``.
    Make sure to pass the necessary options depending on your
    choice of the head (see below).
 
@@ -167,7 +167,7 @@ Can be ignored if ``head != 'gmm'``
 
 CMAL head
 ~~~~~~~~~
-Can be ignored if ``head != 'cmal'``
+Can be ignored if ``head not in ['cmal', 'cmal_deterministic']``
 
 -  ``n_distributions``: The number of distributions used for the CMAL head. 
 -  ``n_samples``: Number of samples generated  (per time-step) from CMAL. 
@@ -181,6 +181,13 @@ Can be ignored if ``head != 'cmal'``
    ``truncate`` option of the ``negative_sample_max_retries`` argument.
 -  ``mc_dropout``: True/False. Whether Monte-Carlo dropout is used to 
    sample during inference.    
+-  ``head: cmal_deterministic``: Use the deterministic 10 point cmal sampler.
+   It may be used when there are low memory constraints, for GPU or CPU or both.
+   Instead of using a low n_samples, this sampler may be enabled, which should result in a better
+   approximation for such cases.
+   The 10 points are:
+   * a point that is the distribution's mean,
+   * then 9 points that represent 9 quantiles (0.1 through 0.9).
 
 
 UMAL head
