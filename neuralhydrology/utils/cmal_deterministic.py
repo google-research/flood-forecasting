@@ -9,6 +9,7 @@ When n_samples is low, this algorithm should serve as a better approximation.
 """
 
 import torch
+import torch.cuda
 
 
 @torch.compile()
@@ -28,14 +29,15 @@ def generate_predictions(
     Returns:
         Summary dist where last dim has the dist mean followed by calculated quantiles.
     """
-    # https://www.tandfonline.com/doi/abs/10.1080/03610920500199018
-    tau_c = 1 - tau
-    means = mu + b * tau * tau_c * (1 / tau**2 - 1 / tau_c**2)
-    mean = torch.unsqueeze(torch.sum(pi * means, dim=-1), dim=-1)
-    quantiles = _mixture_params_to_quantiles(mu, b, tau, pi)
-    # Returned tensor, in last dimension, has the distribution mean followed by
-    # the calculated quantiles.
-    return torch.concat([mean, quantiles], dim=-1)
+    with torch.cuda.amp.autocast(enabled=torch.cuda.is_available()):
+        # https://www.tandfonline.com/doi/abs/10.1080/03610920500199018
+        tau_c = 1 - tau
+        means = mu + b * tau * tau_c * (1 / tau**2 - 1 / tau_c**2)
+        mean = torch.unsqueeze(torch.sum(pi * means, dim=-1), dim=-1)
+        quantiles = _mixture_params_to_quantiles(mu, b, tau, pi)
+        # Returned tensor, in last dimension, has the distribution mean followed by
+        # the calculated quantiles.
+        return torch.concat([mean, quantiles], dim=-1).to(torch.float32)
 
 
 def _cdf(
