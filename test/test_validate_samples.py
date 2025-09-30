@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from neuralhydrology.datautils.validate_samples import (
     _flatten_feature_groups,

@@ -15,7 +15,6 @@
 from typing import Tuple, Dict, Iterable
 
 import dataclasses
-import functools
 import numpy as np
 import torch
 import torch.nn as nn

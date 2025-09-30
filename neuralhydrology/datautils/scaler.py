@@ -20,7 +20,6 @@ import dask
 import dask.array
 import dask.graph_manipulation
 import dask.delayed
-from dask.delayed import Delayed
 import pandas as pd
 import xarray as xr
 

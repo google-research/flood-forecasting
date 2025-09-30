@@ -20,9 +20,8 @@ import torch
 import re
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-from typing import Callable, Dict, List
+from typing import Callable
 
-from neuralhydrology.datasetzoo.basedataset import BaseDataset
 from neuralhydrology.datasetzoo.forecast_basedataset import ForecastDataset
 from neuralhydrology.utils.config import Config
 from neuralhydrology.utils.errors import NoTrainDataError, NoEvaluationDataError

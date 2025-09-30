@@ -17,7 +17,6 @@ import os
 from unittest.mock import patch
 
 import dask
-import dask.delayed
 import numpy as np
 import pandas as pd
 import pytest
