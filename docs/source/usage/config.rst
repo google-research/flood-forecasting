@@ -185,8 +185,9 @@ Can be ignored if ``head not in ['cmal', 'cmal_deterministic']``
    It may be used when there are low memory constraints, for GPU or CPU or both.
    Instead of using a low n_samples, this sampler may be enabled, which should result in a better
    approximation for such cases.
-   Another use is deterministic results may be compared 1:1.
-   The 10 points are the dist mean followed by 9 quantiles (0.1 through 0.9).
+   The 10 points are:
+   * a point that is the distribution's mean,
+   * then 9 points that represent 9 quantiles (0.1 through 0.9).
 
 
 UMAL head
