@@ -23,7 +23,6 @@ SINGLE_FREQ_MODELS = ["handoff_forecast_lstm"]
 AUTOREGRESSIVE_MODELS = []
 
 
-torch.compile(mode="max-autotune")
 def get_model(cfg: Config) -> nn.Module:
     """Get model object, depending on the run configuration.
     
@@ -53,4 +52,4 @@ def get_model(cfg: Config) -> nn.Module:
     else:
         raise NotImplementedError(f"{cfg.model} not implemented or not linked in `get_model()`")
 
-    return model
+    return torch.compile(model, mode="max-autotune")
