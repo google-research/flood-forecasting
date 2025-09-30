@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, List, Hashable, Tuple, Iterable
+from typing import Dict, List, Hashable, Tuple, Iterable, Union
 
 import logging
 import itertools
@@ -24,9 +24,9 @@ import dask.array
 import numpy as np
 import pandas as pd
 import torch
+from torch.utils.data import Dataset
 import xarray as xr
 
-from neuralhydrology.datasetzoo.basedataset import BaseDataset
 from neuralhydrology.datasetzoo.caravan import load_caravan_attributes, load_caravan_timeseries_together
 from neuralhydrology.datautils.scaler import Scaler
 from neuralhydrology.datautils.union_features import union_features
@@ -52,7 +52,7 @@ TENSOR_VARS = [
 MULTIMET_MINIMUM_LEAD_TIME = 1
 
 
-class Multimet(BaseDataset):
+class Multimet(Dataset):
     """Base data set class for forecast models.
 
     Use subclasses of this class for training/evaluating a model with forecast capabilities.
@@ -655,6 +655,35 @@ class Multimet(BaseDataset):
             basins=self._basins,
             features=self._static_features,
         )
+
+    @staticmethod
+    def collate_fn(
+        samples: List[
+            Dict[str, Union[torch.Tensor, np.ndarray, Dict[str, torch.Tensor]]]
+        ],
+    ) -> Dict[str, Union[torch.Tensor, np.ndarray, Dict[str, torch.Tensor]]]:
+        batch = {}
+        if not samples:
+            return batch
+        features = list(samples[0].keys())
+        for feature in features:
+            if feature.startswith("date"):
+                # Dates are stored as a numpy array of datetime64, which we maintain as numpy array.
+                batch[feature] = np.stack(
+                    [sample[feature] for sample in samples], axis=0
+                )
+            elif feature.startswith("x_d"):
+                # Dynamics are stored as dictionaries with feature names as keys.
+                batch[feature] = {
+                    k: torch.stack([sample[feature][k] for sample in samples], dim=0)
+                    for k in samples[0][feature]
+                }
+            else:
+                # Everything else is a torch.Tensor.
+                batch[feature] = torch.stack(
+                    [sample[feature] for sample in samples], dim=0
+                )
+        return batch
 
 
 def _extract_dataarray(

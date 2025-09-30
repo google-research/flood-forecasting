@@ -14,6 +14,8 @@
 
 from typing import Type
 
+from torch.utils.data import Dataset
+
 from neuralhydrology.datasetzoo.basedataset import BaseDataset
 from neuralhydrology.utils.config import Config
 
@@ -49,7 +51,7 @@ class DatasetRegistry:
         >>> registry = DatasetZooRegistry()
         >>> registry.register_dataset_class("my_dataset", MyCustomDataset)
         """
-        if not issubclass(new_class, BaseDataset):
+        if not issubclass(new_class, Dataset):
             raise TypeError(f"Class {type(new_class)} is not a subclass of BaseDataset.")
         self.__dataset_class[key] = new_class
 
