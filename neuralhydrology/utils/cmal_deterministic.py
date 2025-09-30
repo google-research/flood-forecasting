@@ -8,8 +8,6 @@ predictive dist, and 32 binary search iterations for quantiles. 10 points are
 When n_samples is low, this algorithm should serve as a better approximation.
 """
 
-from typing import Callable
-
 import torch
 
 
@@ -39,6 +37,7 @@ def generate_predictions(
     return torch.concat([mean, quantiles], dim=-1)
 
 
+@torch.jit.script
 def _cdf(
     x: torch.Tensor, mu: torch.Tensor, b: torch.Tensor, tau: torch.Tensor
 ) -> torch.Tensor:
@@ -51,6 +50,7 @@ def _cdf(
     )
 
 
+@torch.jit.script
 def _ppf(
     quantile: torch.Tensor, mu: torch.Tensor, b: torch.Tensor, tau: torch.Tensor
 ) -> torch.Tensor:
@@ -66,30 +66,42 @@ def _ppf(
     )
 
 
+@torch.jit.script
+def _mixture_cdf(
+    x: torch.Tensor,
+    mu: torch.Tensor,
+    b: torch.Tensor,
+    tau: torch.Tensor,
+    pi: torch.Tensor,
+) -> torch.Tensor:
+    """Returns the CDF of the mixture dist.
+
+    The CDF is the weighted sum of the CDFs of the components.
+    """
+    return torch.sum(_cdf(x, mu, b, tau) * pi, dim=2, keepdim=True)
+
+
+@torch.jit.script
 def _search_quantile(
-    mixture_cdf_fn, quantile: torch.Tensor, low: torch.Tensor, high: torch.Tensor
+    quantile: torch.Tensor,
+    low: torch.Tensor,
+    high: torch.Tensor,
+    mu: torch.Tensor,
+    b: torch.Tensor,
+    tau: torch.Tensor,
+    pi: torch.Tensor,
 ) -> torch.Tensor:
     """Binary searches for the quantile of a mixture dist."""
     # k shape: batch_size X sequence_length X num_kernels X len(quantile).
     k = 0.5 * (high + low)
     for _ in range(32):
-        cdf_val = mixture_cdf_fn(k)
+        cdf_val = _mixture_cdf(k, mu, b, tau, pi)
         low = torch.where(cdf_val < quantile, k, low)
         high = torch.where(cdf_val >= quantile, k, high)
         k = 0.5 * (high + low)
 
     # shape: batch_size X sequence_length X len(quantile).
     return torch.squeeze(k, dim=2)  # get rid of the kernels axis.
-
-
-def _get_mixture_cdf_fn(
-    mu: torch.Tensor, b: torch.Tensor, tau: torch.Tensor, pi: torch.Tensor
-) -> Callable[[torch.Tensor], torch.Tensor]:
-    """Returns a func that calcs CDF of the mixture dist.
-
-    The CDF is the weighted sum of the CDFs of the components.
-    """
-    return lambda x: torch.sum(_cdf(x, mu, b, tau) * pi, dim=2, keepdim=True)
 
 
 def _calc_mixture_quantile(
@@ -104,8 +116,7 @@ def _calc_mixture_quantile(
     # The high and low limits for the binary search are determined by the higest
     # and lowest quantiles among all mixture components (on the second axis).
     low, high = torch.aminmax(kernels_quantile_values, dim=2, keepdim=True)
-    mixture_cdf_fn = _get_mixture_cdf_fn(mu, b, tau, pi)
-    return _search_quantile(mixture_cdf_fn, quantile, low, high)
+    return _search_quantile(quantile, low, high, mu, b, tau, pi)
 
 
 def _mixture_params_to_quantiles(
