@@ -116,6 +116,7 @@ def _search_quantile(
     """Search for the quantile of a mixture dist via newton-raphson (NR).
 
     NR works by: x_{n+1} = x_n - f(x_n) / f'(x_n)
+    Need to find a root x for mixture_cdf(x) - quantile = 0
     So f(x)  = mixture_cdf(x) - quantile
        f'(x) = CDF(x) dx = PDF(x)
     """
