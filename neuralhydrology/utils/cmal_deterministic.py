@@ -11,7 +11,7 @@ When n_samples is low, this algorithm should serve as a better approximation.
 import torch
 
 
-@torch.compile(mode="reduce-overhead")
+@torch.compile()
 def generate_predictions(
     mu: torch.Tensor, b: torch.Tensor, tau: torch.Tensor, pi: torch.Tensor
 ) -> torch.Tensor:
