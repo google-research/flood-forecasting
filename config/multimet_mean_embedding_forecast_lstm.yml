@@ -16,6 +16,7 @@ logging_level: INFO
 detect_anomaly: False
 
 # --- Training Parameters -------------------------------------------------------
+
 batch_size: 512
 epochs: 30
 experiment_name: mean_embedding_forecast_lstm
