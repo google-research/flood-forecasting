@@ -50,6 +50,30 @@ def _cdf(
     )
 
 
+def _pdf(
+    x: torch.Tensor, mu: torch.Tensor, b: torch.Tensor, tau: torch.Tensor
+) -> torch.Tensor:
+    """Computes the Probability Density Function (PDF) at x, the derivative of CDF."""
+    tau_c = 1.0 - tau
+    indicator = (x > mu).float()
+    main_term = tau * tau_c / b  # scaled exp func
+    exp_term = torch.exp(
+        -indicator * tau * (x - mu) / b - (1.0 - indicator) * tau_c * (mu - x) / b
+    )
+    return main_term * exp_term
+
+
+def _mixture_pdf(
+    x: torch.Tensor,
+    mu: torch.Tensor,
+    b: torch.Tensor,
+    tau: torch.Tensor,
+    pi: torch.Tensor,
+) -> torch.Tensor:
+    """Calculates the PDF of the mixture distribution."""
+    return torch.sum(_pdf(x, mu, b, tau) * pi, dim=2, keepdim=True)
+
+
 def _ppf(
     quantile: torch.Tensor, mu: torch.Tensor, b: torch.Tensor, tau: torch.Tensor
 ) -> torch.Tensor:
@@ -81,40 +105,27 @@ def _mixture_cdf(
 
 def _search_quantile(
     quantile: torch.Tensor,
-    low: torch.Tensor,
-    high: torch.Tensor,
     mu: torch.Tensor,
     b: torch.Tensor,
     tau: torch.Tensor,
     pi: torch.Tensor,
-    iterations: int = 32,
+    iterations: int = 8,
 ) -> torch.Tensor:
-    """Binary searches for the quantile of a mixture dist."""
-    # k shape: batch_size X sequence_length X num_kernels X len(quantile).
-    k = 0.5 * (high + low)
+    """Search for the quantile of a mixture dist via newton-raphson (NR).
+
+    NR works by: x_{n+1} = x_n - f(x_n) / f'(x_n)
+    So f(x)  = mixture_cdf(x) - quantile
+       f'(x) = CDF(x) dx = PDF(x)
+    """
+    k = torch.mean(_ppf(quantile, mu, b, tau), dim=2, keepdim=True)
+    epsilon = 1e-6  # to avoid zero values
+
     for _ in range(iterations):
         cdf_val = _mixture_cdf(k, mu, b, tau, pi)
-        low = torch.where(cdf_val < quantile, k, low)
-        high = torch.where(cdf_val >= quantile, k, high)
-        k = 0.5 * (high + low)
+        pdf_val = _mixture_pdf(k, mu, b, tau, pi)
+        k = k - (cdf_val - quantile) / (pdf_val + epsilon)
 
-    # shape: batch_size X sequence_length X len(quantile).
-    return torch.squeeze(k, dim=2)  # get rid of the kernels axis.
-
-
-def _calc_mixture_quantile(
-    quantile: torch.Tensor,
-    mu: torch.Tensor,
-    b: torch.Tensor,
-    tau: torch.Tensor,
-    pi: torch.Tensor,
-) -> torch.Tensor:
-    """Calculates a quantile for the mixture of asymmetric laplace dists."""
-    kernels_quantile_values = _ppf(quantile, mu, b, tau)
-    # The high and low limits for the binary search are determined by the higest
-    # and lowest quantiles among all mixture components (on the second axis).
-    low, high = torch.aminmax(kernels_quantile_values, dim=2, keepdim=True)
-    return _search_quantile(quantile, low, high, mu, b, tau, pi)
+    return torch.squeeze(k, dim=2)
 
 
 def _mixture_params_to_quantiles(
@@ -134,4 +145,4 @@ def _mixture_params_to_quantiles(
         device=mu.device,
         dtype=mu.dtype,
     )
-    return _calc_mixture_quantile(quantiles.view(1, 1, 1, -1), mu_exp, b_exp, tau_exp, pi_exp)
+    return _search_quantile(quantiles.view(1, 1, 1, -1), mu_exp, b_exp, tau_exp, pi_exp)
