@@ -30,7 +30,8 @@ def generate_predictions(
         Summary dist where last dim has the dist mean followed by calculated quantiles.
     """
     # https://www.tandfonline.com/doi/abs/10.1080/03610920500199018
-    means = mu + b * tau * (1 - tau) * (1 / tau**2 - 1 / (1 - tau) ** 2)
+    tau_c = 1 - tau
+    means = mu + b * tau * tau_c * (1 / tau**2 - 1 / tau_c**2)
     mean = torch.unsqueeze(torch.sum(pi * means, dim=-1), dim=-1)
     quantiles = _mixture_params_to_quantiles(mu, b, tau, pi)
     # Returned tensor, in last dimension, has the distribution mean followed by
@@ -42,10 +43,11 @@ def _cdf(
     x: torch.Tensor, mu: torch.Tensor, b: torch.Tensor, tau: torch.Tensor
 ) -> torch.Tensor:
     """Computes the Cumulative Distribution Function (CDF) at x for the dists."""
+    tau_c = 1 - tau
     return torch.where(
         x <= mu,
-        tau * torch.exp((1 - tau) * (x - mu) / b),
-        1 - (1 - tau) * torch.exp(-tau * (x - mu) / b),
+        tau * torch.exp(tau_c * (x - mu) / b),
+        1 - tau_c * torch.exp(-tau * (x - mu) / b),
     )
 
 
@@ -56,10 +58,11 @@ def _ppf(
 
     PPF is inverse of CDF.
     """
+    tau_c = 1 - tau
     return torch.where(
         quantile <= tau,
-        mu + (b / (1 - tau)) * torch.log(quantile / tau),
-        mu - (b / tau) * torch.log((1 - quantile) / (1 - tau)),
+        mu + (b / tau_c) * torch.log(quantile / tau),
+        mu - (b / tau) * torch.log((1 - quantile) / tau_c),
     )
 
 
@@ -70,8 +73,9 @@ def _search_quantile(
     # k shape: batch_size X sequence_length X num_kernels X len(quantile).
     k = 0.5 * (high + low)
     for _ in range(32):
-        low = torch.where(mixture_cdf_fn(k) < quantile, k, low)
-        high = torch.where(mixture_cdf_fn(k) > quantile, k, high)
+        cdf_val = mixture_cdf_fn(k)
+        low = torch.where(cdf_val < quantile, k, low)
+        high = torch.where(cdf_val >= quantile, k, high)
         k = 0.5 * (high + low)
 
     # shape: batch_size X sequence_length X len(quantile).
@@ -99,8 +103,7 @@ def _calc_mixture_quantile(
     kernels_quantile_values = _ppf(quantile, mu, b, tau)
     # The high and low limits for the binary search are determined by the higest
     # and lowest quantiles among all mixture components (on the second axis).
-    low, _ = torch.min(kernels_quantile_values, dim=2, keepdim=True)
-    high, _ = torch.max(kernels_quantile_values, dim=2, keepdim=True)
+    low, high = torch.aminmax(kernels_quantile_values, dim=2, keepdim=True)
     mixture_cdf_fn = _get_mixture_cdf_fn(mu, b, tau, pi)
     return _search_quantile(mixture_cdf_fn, quantile, low, high)
 
