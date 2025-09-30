@@ -283,7 +283,7 @@ class BaseTester(object):
                 time_step_coords = ((dates[freq][0, :] - dates[freq][0, -1]) / pd.Timedelta(freq)).astype(
                     np.int64) + frequency_factor - 1
                 date_coords = dates[lowest_freq][:, -1]
-                # TODO (future) : As in all of the forecast models (but not `ForecastDataset`), this assumes
+                # TODO (future) : As in all of the forecast models (but not `Multimet`), this assumes
                 # that all lead times are present from 1 to `self.dataset.lead_time`.
                 if hasattr(self.dataset, 'lead_time') and self.dataset.lead_time:
                     time_step_coords += self.dataset.lead_time

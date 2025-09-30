@@ -70,7 +70,7 @@ class HandoffForecastLSTM(BaseModel):
         # Data sizes for expanding features in the forward pass.
         self.seq_length = cfg.seq_length
         # TODO (future) :: Models assume that all lead times are present up to the longest `lead_time`.
-        # ForecastBaseDataset does not require or enforce this assumption.
+        # Multimet does not require or enforce this assumption.
         self.lead_time = cfg.lead_time
 
         # Hidden sizes are necessary for setting initial forget gate biases.
