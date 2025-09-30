@@ -720,7 +720,5 @@ def _get_products_and_bands_from_feature_strings(
         product = feature.split("_")[0].upper()
         if product == "ERA5LAND":
             product = "ERA5_LAND"
-        if product not in product_bands:
-            product_bands[product] = []
-        product_bands[product].append(feature)
+        product_bands.setdefault(product, []).append(feature)
     return product_bands
