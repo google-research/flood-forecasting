@@ -84,8 +84,6 @@ class BaseTester(object):
 
         # pre-initialize variables, defined in class methods
         self.basins = None
-        self.id_to_int = {}
-        self.additional_features = []
 
         # initialize loss object to compute the loss of the evaluation data
         self.loss_obj = get_loss_obj(cfg)
@@ -126,14 +124,6 @@ class BaseTester(object):
         # get list of basins
         self.basins = load_basin_file(getattr(self.cfg, f"{self.period}_basin_file"))
 
-        # load basin_id to integer dictionary for one-hot-encoding
-        if self.cfg.use_basin_id_encoding:
-            self.id_to_int = load_basin_id_encoding(self.run_dir)
-
-        for file in self.cfg.additional_feature_files:
-            with open(file, "rb") as fp:
-                self.additional_features.append(pickle.load(fp))
-
     def _get_weight_file(self, epoch: int):
         """Get file path to weight file"""
         if epoch is None:
@@ -156,8 +146,6 @@ class BaseTester(object):
                          is_train=False,
                          period=self.period,
                          basin=None,
-                         additional_features=self.additional_features,
-                         id_to_int=self.id_to_int,
                          compute_scaler=False)
 
     def _get_dataset(self, basin: str) -> Dataset:
@@ -166,8 +154,6 @@ class BaseTester(object):
                          is_train=False,
                          period=self.period,
                          basin=basin,
-                         additional_features=self.additional_features,
-                         id_to_int=self.id_to_int,
                          compute_scaler=False)
 
     def evaluate(self,

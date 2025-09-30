@@ -71,10 +71,6 @@ class Multimet(Dataset):
     basin : str, optional
         If passed, the data for only this basin will be loaded. Otherwise, the basin(s) is(are) read from the
         appropriate basin file, corresponding to the `period`.
-    additional_features : List[Dict[str, pd.DataFrame]], optional
-        Not supported for forecast models and datasets.
-    id_to_int : Dict[str, int], optional
-        Not supported for forecast models and datasets.
     compute_scaler : bool
         Forces the dataset to calculate a new scaler instead of loading a precalculated scaler. Used during training, but
         not finetuning.
@@ -86,10 +82,6 @@ class Multimet(Dataset):
         is_train: bool,
         period: str,
         basin: str = None,
-        # TODO (future) :: Why is this passed in separately?
-        # Can we remove this functionality altogether or load in BaseDataset?
-        additional_features: List[Dict[str, pd.DataFrame]] = [],
-        id_to_int: Dict[str, int] = {},
         compute_scaler: bool = True,
     ):
         # Sequence length parameters.
