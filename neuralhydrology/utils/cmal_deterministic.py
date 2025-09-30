@@ -132,6 +132,9 @@ def _mixture_params_to_quantiles(
     pi_exp = torch.unsqueeze(pi, dim=3)
 
     # Returns a tensor shaped batch_size x seq_length x len(quantiles).
-    quantiles = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-    quantiles_tensor = torch.reshape(torch.tensor(quantiles), [1, 1, 1, -1])
-    return _calc_mixture_quantile(quantiles_tensor, mu_exp, b_exp, tau_exp, pi_exp)
+    quantiles = torch.tensor(
+        [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
+        device=mu.device, dtype=mu.dtype)
+    quantiles = torch.reshape(quantiles, [1, 1, 1, -1])
+
+    return _calc_mixture_quantile(quantiles, mu_exp, b_exp, tau_exp, pi_exp)
