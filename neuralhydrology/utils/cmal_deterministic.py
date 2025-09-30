@@ -120,7 +120,7 @@ def _search_quantile(
     So f(x)  = mixture_cdf(x) - quantile
        f'(x) = CDF(x) dx = PDF(x)
     """
-    k = torch.mean(_ppf(quantile, mu, b, tau), dim=2, keepdim=True)
+    k = torch.mean(_ppf(quantile, mu, b, tau), dim=2, keepdim=True)  # initial point
     epsilon = 1e-6  # to avoid zero values
 
     for _ in range(iterations):
