@@ -90,11 +90,12 @@ def _search_quantile(
     b: torch.Tensor,
     tau: torch.Tensor,
     pi: torch.Tensor,
+    iterations: int = 32,
 ) -> torch.Tensor:
     """Binary searches for the quantile of a mixture dist."""
     # k shape: batch_size X sequence_length X num_kernels X len(quantile).
     k = 0.5 * (high + low)
-    for _ in range(32):
+    for _ in range(iterations):
         cdf_val = _mixture_cdf(k, mu, b, tau, pi)
         low = torch.where(cdf_val < quantile, k, low)
         high = torch.where(cdf_val >= quantile, k, high)
