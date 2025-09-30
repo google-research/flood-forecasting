@@ -16,7 +16,7 @@ import torch
 def generate_predictions(
     mu: torch.Tensor, b: torch.Tensor, tau: torch.Tensor, pi: torch.Tensor
 ) -> torch.Tensor:
-    """Generates predictions from a CMAL head.
+    """Generates predictions from a CMAL head: the dist mean followed by 9 quantiles.
 
     Calculates mean of mixture dists and quantiles as a summary of predicting dist.
 
