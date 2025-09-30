@@ -8,11 +8,11 @@ predictive dist, and 32 binary search iterations for quantiles. 10 points are
 When n_samples is low, this algorithm should serve as a better approximation.
 """
 
-from typing import Callable
-
 import torch
+import torch.cuda
 
 
+@torch.compile()
 def generate_predictions(
     mu: torch.Tensor, b: torch.Tensor, tau: torch.Tensor, pi: torch.Tensor
 ) -> torch.Tensor:
@@ -29,24 +29,51 @@ def generate_predictions(
     Returns:
         Summary dist where last dim has the dist mean followed by calculated quantiles.
     """
-    # https://www.tandfonline.com/doi/abs/10.1080/03610920500199018
-    means = mu + b * tau * (1 - tau) * (1 / tau**2 - 1 / (1 - tau) ** 2)
-    mean = torch.unsqueeze(torch.sum(pi * means, dim=-1), dim=-1)
-    quantiles = _mixture_params_to_quantiles(mu, b, tau, pi)
-    # Returned tensor, in last dimension, has the distribution mean followed by
-    # the calculated quantiles.
-    return torch.concat([mean, quantiles], dim=-1)
+    with torch.cuda.amp.autocast(enabled=torch.cuda.is_available()):
+        # https://www.tandfonline.com/doi/abs/10.1080/03610920500199018
+        tau_c = 1 - tau
+        means = mu + b * tau * tau_c * (1 / tau**2 - 1 / tau_c**2)
+        mean = torch.unsqueeze(torch.sum(pi * means, dim=-1), dim=-1)
+        quantiles = _mixture_params_to_quantiles(mu, b, tau, pi)
+        # Returned tensor, in last dimension, has the distribution mean followed by
+        # the calculated quantiles.
+        return torch.concat([mean, quantiles], dim=-1)
 
 
 def _cdf(
     x: torch.Tensor, mu: torch.Tensor, b: torch.Tensor, tau: torch.Tensor
 ) -> torch.Tensor:
     """Computes the Cumulative Distribution Function (CDF) at x for the dists."""
+    tau_c = 1 - tau
     return torch.where(
         x <= mu,
-        tau * torch.exp((1 - tau) * (x - mu) / b),
-        1 - (1 - tau) * torch.exp(-tau * (x - mu) / b),
+        tau * torch.exp(tau_c * (x - mu) / b),
+        1 - tau_c * torch.exp(-tau * (x - mu) / b),
     )
+
+
+def _pdf(
+    x: torch.Tensor, mu: torch.Tensor, b: torch.Tensor, tau: torch.Tensor
+) -> torch.Tensor:
+    """Computes the Probability Density Function (PDF) at x, the derivative of CDF."""
+    tau_c = 1.0 - tau
+    indicator = (x > mu).float()
+    main_term = tau * tau_c / b  # scaled exp func
+    exp_term = torch.exp(
+        -indicator * tau * (x - mu) / b - (1.0 - indicator) * tau_c * (mu - x) / b
+    )
+    return main_term * exp_term
+
+
+def _mixture_pdf(
+    x: torch.Tensor,
+    mu: torch.Tensor,
+    b: torch.Tensor,
+    tau: torch.Tensor,
+    pi: torch.Tensor,
+) -> torch.Tensor:
+    """Calculates the PDF of the mixture distribution."""
+    return torch.sum(_pdf(x, mu, b, tau) * pi, dim=2, keepdim=True)
 
 
 def _ppf(
@@ -56,53 +83,52 @@ def _ppf(
 
     PPF is inverse of CDF.
     """
+    tau_c = 1 - tau
     return torch.where(
         quantile <= tau,
-        mu + (b / (1 - tau)) * torch.log(quantile / tau),
-        mu - (b / tau) * torch.log((1 - quantile) / (1 - tau)),
+        mu + (b / tau_c) * torch.log(quantile / tau),
+        mu - (b / tau) * torch.log((1 - quantile) / tau_c),
     )
 
 
-def _search_quantile(
-    mixture_cdf_fn, quantile: torch.Tensor, low: torch.Tensor, high: torch.Tensor
-) -> torch.Tensor:
-    """Binary searches for the quantile of a mixture dist."""
-    # k shape: batch_size X sequence_length X num_kernels X len(quantile).
-    k = 0.5 * (high + low)
-    for _ in range(32):
-        low = torch.where(mixture_cdf_fn(k) < quantile, k, low)
-        high = torch.where(mixture_cdf_fn(k) > quantile, k, high)
-        k = 0.5 * (high + low)
-
-    # shape: batch_size X sequence_length X len(quantile).
-    return torch.squeeze(k, dim=2)  # get rid of the kernels axis.
-
-
-def _get_mixture_cdf_fn(
-    mu: torch.Tensor, b: torch.Tensor, tau: torch.Tensor, pi: torch.Tensor
-) -> Callable[[torch.Tensor], torch.Tensor]:
-    """Returns a func that calcs CDF of the mixture dist.
-
-    The CDF is the weighted sum of the CDFs of the components.
-    """
-    return lambda x: torch.sum(_cdf(x, mu, b, tau) * pi, dim=2, keepdim=True)
-
-
-def _calc_mixture_quantile(
-    quantile: torch.Tensor,
+def _mixture_cdf(
+    x: torch.Tensor,
     mu: torch.Tensor,
     b: torch.Tensor,
     tau: torch.Tensor,
     pi: torch.Tensor,
 ) -> torch.Tensor:
-    """Calculates a quantile for the mixture of asymmetric laplace dists."""
-    kernels_quantile_values = _ppf(quantile, mu, b, tau)
-    # The high and low limits for the binary search are determined by the higest
-    # and lowest quantiles among all mixture components (on the second axis).
-    low, _ = torch.min(kernels_quantile_values, dim=2, keepdim=True)
-    high, _ = torch.max(kernels_quantile_values, dim=2, keepdim=True)
-    mixture_cdf_fn = _get_mixture_cdf_fn(mu, b, tau, pi)
-    return _search_quantile(mixture_cdf_fn, quantile, low, high)
+    """Returns the CDF of the mixture dist.
+
+    The CDF is the weighted sum of the CDFs of the components.
+    """
+    return torch.sum(_cdf(x, mu, b, tau) * pi, dim=2, keepdim=True)
+
+
+def _search_quantile(
+    quantile: torch.Tensor,
+    mu: torch.Tensor,
+    b: torch.Tensor,
+    tau: torch.Tensor,
+    pi: torch.Tensor,
+    iterations: int = 8,
+) -> torch.Tensor:
+    """Search for the quantile of a mixture dist via newton-raphson (NR).
+
+    NR works by: x_{n+1} = x_n - f(x_n) / f'(x_n)
+    Need to find a root x for mixture_cdf(x) - quantile = 0
+    So f(x)  = mixture_cdf(x) - quantile
+       f'(x) = CDF(x) dx = PDF(x)
+    """
+    k = torch.mean(_ppf(quantile, mu, b, tau), dim=2, keepdim=True)  # initial point
+    epsilon = 1e-6  # to avoid zero values
+
+    for _ in range(iterations):
+        cdf_val = _mixture_cdf(k, mu, b, tau, pi)
+        pdf_val = _mixture_pdf(k, mu, b, tau, pi)
+        k = k - (cdf_val - quantile) / (pdf_val + epsilon)
+
+    return torch.squeeze(k, dim=2)
 
 
 def _mixture_params_to_quantiles(
@@ -117,6 +143,9 @@ def _mixture_params_to_quantiles(
     pi_exp = torch.unsqueeze(pi, dim=3)
 
     # Returns a tensor shaped batch_size x seq_length x len(quantiles).
-    quantiles = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-    quantiles_tensor = torch.reshape(torch.tensor(quantiles), [1, 1, 1, -1])
-    return _calc_mixture_quantile(quantiles_tensor, mu_exp, b_exp, tau_exp, pi_exp)
+    quantiles = torch.tensor(
+        [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
+        device=mu.device,
+        dtype=mu.dtype,
+    )
+    return _search_quantile(quantiles.view(1, 1, 1, -1), mu_exp, b_exp, tau_exp, pi_exp)
