@@ -132,9 +132,11 @@ General model configuration
    choice of the head (see below).
 
 -  ``cmal_deterministic``: When using the ``cmal`` head, use the deterministic 10 point cmal sampler.
-   It may be used when there are low memory constraints, for GPU or CPU or both. Instead of using
-   a low n_samples, this sampler may be enabled, which should result in a better approximation.
+   It may be used when there are low memory constraints, for GPU or CPU or both.
+   Instead of using a low n_samples, this sampler may be enabled, which should result in a better
+   approximation for such cases.
    Another use is deterministic results may be compared 1:1.
+   Default value is `False`.
 
 -  ``hidden_size``: Hidden size of the model class. In the case of an
    LSTM, this reflects the number of LSTM states.
