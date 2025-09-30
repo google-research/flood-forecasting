@@ -11,6 +11,7 @@ When n_samples is low, this algorithm should serve as a better approximation.
 import torch
 
 
+@torch.compile(mode="reduce-overhead")
 def generate_predictions(
     mu: torch.Tensor, b: torch.Tensor, tau: torch.Tensor, pi: torch.Tensor
 ) -> torch.Tensor:
@@ -37,7 +38,6 @@ def generate_predictions(
     return torch.concat([mean, quantiles], dim=-1)
 
 
-@torch.jit.script
 def _cdf(
     x: torch.Tensor, mu: torch.Tensor, b: torch.Tensor, tau: torch.Tensor
 ) -> torch.Tensor:
@@ -50,7 +50,6 @@ def _cdf(
     )
 
 
-@torch.jit.script
 def _ppf(
     quantile: torch.Tensor, mu: torch.Tensor, b: torch.Tensor, tau: torch.Tensor
 ) -> torch.Tensor:
@@ -66,7 +65,6 @@ def _ppf(
     )
 
 
-@torch.jit.script
 def _mixture_cdf(
     x: torch.Tensor,
     mu: torch.Tensor,
@@ -81,7 +79,6 @@ def _mixture_cdf(
     return torch.sum(_cdf(x, mu, b, tau) * pi, dim=2, keepdim=True)
 
 
-@torch.jit.script
 def _search_quantile(
     quantile: torch.Tensor,
     low: torch.Tensor,
