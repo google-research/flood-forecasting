@@ -37,7 +37,7 @@ def generate_predictions(
         quantiles = _mixture_params_to_quantiles(mu, b, tau, pi)
         # Returned tensor, in last dimension, has the distribution mean followed by
         # the calculated quantiles.
-        return torch.concat([mean, quantiles], dim=-1).to(torch.float32)
+        return torch.concat([mean, quantiles], dim=-1)
 
 
 def _cdf(
