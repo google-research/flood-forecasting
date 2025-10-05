@@ -118,6 +118,14 @@ Validation settings
    are quite large. Predictions in this file will not be scaled. 
    This is the raw output from the model.
 
+Evaluation settings
+-------------------
+
+- ``inference_mode``: Boolean that controls two things: first, whether to save
+observed data and the running model's output to disk - second, whether to not
+skip all-nan dates. `True` means to do save to disk and to not skip data without
+observed data.
+
 General model configuration
 ---------------------------
 
