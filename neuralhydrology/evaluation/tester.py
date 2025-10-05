@@ -25,6 +25,7 @@ from typing import Dict, List, Optional, Tuple, Union, Iterator
 import numpy as np
 import pandas as pd
 import torch
+from torch.utils.data import Dataset
 import torch.cuda
 from torch.amp import autocast
 import xarray
@@ -32,7 +33,6 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from neuralhydrology.datasetzoo import get_dataset
-from neuralhydrology.datasetzoo.basedataset import BaseDataset
 from neuralhydrology.datautils.utils import get_frequency_factor, load_basin_file, sort_frequencies
 from neuralhydrology.evaluation import plots
 from neuralhydrology.evaluation.metrics import calculate_metrics, get_available_metrics
@@ -84,8 +84,6 @@ class BaseTester(object):
 
         # pre-initialize variables, defined in class methods
         self.basins = None
-        self.id_to_int = {}
-        self.additional_features = []
 
         # initialize loss object to compute the loss of the evaluation data
         self.loss_obj = get_loss_obj(cfg)
@@ -126,14 +124,6 @@ class BaseTester(object):
         # get list of basins
         self.basins = load_basin_file(getattr(self.cfg, f"{self.period}_basin_file"))
 
-        # load basin_id to integer dictionary for one-hot-encoding
-        if self.cfg.use_basin_id_encoding:
-            self.id_to_int = load_basin_id_encoding(self.run_dir)
-
-        for file in self.cfg.additional_feature_files:
-            with open(file, "rb") as fp:
-                self.additional_features.append(pickle.load(fp))
-
     def _get_weight_file(self, epoch: int):
         """Get file path to weight file"""
         if epoch is None:
@@ -150,24 +140,20 @@ class BaseTester(object):
         LOGGER.info(f"Using the model weights from {weight_file}")
         self.model.load_state_dict(torch.load(weight_file, map_location=self.device))
 
-    def _get_dataset_all(self) -> BaseDataset:
+    def _get_dataset_all(self) -> Dataset:
         """Get dataset for all basin."""
         return get_dataset(cfg=self.cfg,
                          is_train=False,
                          period=self.period,
                          basin=None,
-                         additional_features=self.additional_features,
-                         id_to_int=self.id_to_int,
                          compute_scaler=False)
 
-    def _get_dataset(self, basin: str) -> BaseDataset:
+    def _get_dataset(self, basin: str) -> Dataset:
         """Get dataset for a single basin."""
         return get_dataset(cfg=self.cfg,
                          is_train=False,
                          period=self.period,
                          basin=basin,
-                         additional_features=self.additional_features,
-                         id_to_int=self.id_to_int,
                          compute_scaler=False)
 
     def evaluate(self,
@@ -241,7 +227,7 @@ class BaseTester(object):
         for basin_data in pbar:
             if self.device.type == 'cuda':
                 torch.cuda.synchronize()
-            
+
             basin = basin_data['basin']
             y_hat = basin_data['preds']
             y = basin_data['obs']
@@ -283,7 +269,7 @@ class BaseTester(object):
                 time_step_coords = ((dates[freq][0, :] - dates[freq][0, -1]) / pd.Timedelta(freq)).astype(
                     np.int64) + frequency_factor - 1
                 date_coords = dates[lowest_freq][:, -1]
-                # TODO (future) : As in all of the forecast models (but not `ForecastDataset`), this assumes
+                # TODO (future) : As in all of the forecast models (but not `Multimet`), this assumes
                 # that all lead times are present from 1 to `self.dataset.lead_time`.
                 if hasattr(self.dataset, 'lead_time') and self.dataset.lead_time:
                     time_step_coords += self.dataset.lead_time

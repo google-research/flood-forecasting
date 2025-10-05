@@ -23,7 +23,7 @@ from pandas.tseries.frequencies import to_offset
 import pytest
 from pytest import approx
 
-from neuralhydrology.datasetzoo import camelsus, hourlycamelsus, caravan
+from neuralhydrology.datasetzoo import caravan
 from neuralhydrology.evaluation.evaluate import start_evaluation
 from neuralhydrology.training.train import start_training
 from neuralhydrology.utils.config import Config
