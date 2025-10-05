@@ -72,7 +72,7 @@ def load_basin_file(basin_file: Path) -> list[str]:
     return basins
 
 
-def sort_frequencies(frequencies: List[str]) -> List[str]:
+def sort_frequencies(frequencies: list[str]) -> list[str]:
     """Sort the passed frequencies from low to high frequencies.
 
     Use `pandas frequency strings
