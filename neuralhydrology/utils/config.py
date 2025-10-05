@@ -20,7 +20,7 @@ import warnings
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import pandas as pd
 from ruamel.yaml import YAML
@@ -297,7 +297,7 @@ class Config(object):
             case _: raise ValueError(f'Invalid logging_level: {level}')
 
     @property
-    def additional_feature_files(self) -> List[Path]:
+    def additional_feature_files(self) -> list[Path]:
         return self._as_default_list(self._cfg.get("additional_feature_files", None))
 
     @property
@@ -305,7 +305,7 @@ class Config(object):
         return self._cfg.get("allow_subsequent_nan_losses", 0)
 
     @property
-    def autoregressive_inputs(self) -> Union[List[str], Dict[str, List[str]]]:
+    def autoregressive_inputs(self) -> Union[list[str], Dict[str, list[str]]]:
         return self._as_default_list(self._cfg.get("autoregressive_inputs", []))
 
     @property
@@ -337,7 +337,7 @@ class Config(object):
         return self._cfg.get("clip_gradient_norm", None)
 
     @property
-    def clip_targets_to_zero(self) -> List[str]:
+    def clip_targets_to_zero(self) -> list[str]:
         return self._as_default_list(self._cfg.get("clip_targets_to_zero", []))
 
     @property
@@ -386,7 +386,7 @@ class Config(object):
             raise RuntimeError(f"Unsupported type {type(duplicate_features)} for 'duplicate_features' argument.")
 
     @property
-    def dynamic_conceptual_inputs(self) -> List[str]:
+    def dynamic_conceptual_inputs(self) -> list[str]:
         return self._as_default_list(self._cfg.get("dynamic_conceptual_inputs", []))
 
     @property
@@ -420,7 +420,7 @@ class Config(object):
         return self._get_value_verbose("epochs")
 
     @property
-    def evolving_attributes(self) -> List[str]:
+    def evolving_attributes(self) -> list[str]:
         if "evolving_attributes" in self._cfg.keys():
             return self._as_default_list(self._cfg["evolving_attributes"])
         elif "static_inputs" in self._cfg.keys():
@@ -437,7 +437,7 @@ class Config(object):
             return self._cfg["experiment_name"]
 
     @property
-    def finetune_modules(self) -> Union[List[str], Dict[str, str]]:
+    def finetune_modules(self) -> Union[list[str], Dict[str, str]]:
         finetune_modules = self._cfg.get("finetune_modules", [])
         if finetune_modules is None:
             return []
@@ -485,7 +485,7 @@ class Config(object):
         return self._get_value_verbose("dynamics_data_dir")
 
     @property
-    def forcings(self) -> List[str]:
+    def forcings(self) -> list[str]:
         return self._as_default_list(self._get_value_verbose("forcings"))
 
     @property
@@ -532,7 +532,7 @@ class Config(object):
         return self._cfg.get("hindcast_hidden_size", self.hidden_size)
 
     @property
-    def hydroatlas_attributes(self) -> List[str]:
+    def hydroatlas_attributes(self) -> list[str]:
         return self._as_default_list(self._cfg.get("hydroatlas_attributes", []))
 
     @property
@@ -623,7 +623,7 @@ class Config(object):
         return self._cfg.get("expand", 2)
 
     @property
-    def mass_inputs(self) -> List[str]:
+    def mass_inputs(self) -> list[str]:
         return self._as_default_list(self._cfg.get("mass_inputs", []))
 
     @property
@@ -635,11 +635,11 @@ class Config(object):
         return self._cfg.get("mc_dropout", False)
 
     @property
-    def metrics(self) -> Union[List[str], Dict[str, List[str]]]:
+    def metrics(self) -> Union[list[str], Dict[str, list[str]]]:
         return self._cfg.get("metrics", [])
 
     @metrics.setter
-    def metrics(self, metrics: Union[str, List[str], Dict[str, List[str]]]):
+    def metrics(self, metrics: Union[str, list[str], Dict[str, list[str]]]):
         self._cfg["metrics"] = metrics
 
     @property
@@ -754,7 +754,7 @@ class Config(object):
         return self._get_value_verbose("rating_curve_file")
 
     @property
-    def regularization(self) -> List[Union[str, Tuple[str, float]]]:
+    def regularization(self) -> list[Union[str, Tuple[str, float]]]:
         return self._as_default_list(self._cfg.get("regularization", []))
 
     @property
@@ -833,7 +833,7 @@ class Config(object):
         return self._cfg.get("shared_mtslstm", False)
 
     @property
-    def static_attributes(self) -> List[str]:
+    def static_attributes(self) -> list[str]:
         if "static_attributes" in self._cfg.keys():
             return self._as_default_list(self._cfg["static_attributes"])
         elif "camels_attributes" in self._cfg.keys():
@@ -852,7 +852,7 @@ class Config(object):
         return self._get_embedding_spec(embedding_spec)
 
     @property
-    def target_loss_weights(self) -> List[float]:
+    def target_loss_weights(self) -> list[float]:
         return self._cfg.get("target_loss_weights", None)
 
     @property
@@ -863,7 +863,7 @@ class Config(object):
             return self._cfg["target_noise_std"]
 
     @property
-    def target_variables(self) -> List[str]:
+    def target_variables(self) -> list[str]:
         if "target_variables" in self._cfg.keys():
             return self._cfg["target_variables"]
         elif "target_variable" in self._cfg.keys():
@@ -889,11 +889,11 @@ class Config(object):
         return self._get_value_verbose("test_basin_file")
 
     @property
-    def test_end_date(self) -> List[pd.Timestamp]:
+    def test_end_date(self) -> list[pd.Timestamp]:
         return self._as_default_list(self._get_value_verbose("test_end_date"))
 
     @property
-    def test_start_date(self) -> List[pd.Timestamp]:
+    def test_start_date(self) -> list[pd.Timestamp]:
         return self._as_default_list(self._get_value_verbose("test_start_date"))
 
     @property
@@ -917,11 +917,11 @@ class Config(object):
         self._cfg["train_dir"] = folder
 
     @property
-    def train_end_date(self) -> List[pd.Timestamp]:
+    def train_end_date(self) -> list[pd.Timestamp]:
         return self._as_default_list(self._get_value_verbose("train_end_date"))
 
     @property
-    def train_start_date(self) -> List[pd.Timestamp]:
+    def train_start_date(self) -> list[pd.Timestamp]:
         return self._as_default_list(self._get_value_verbose("train_start_date"))
 
     @property
@@ -937,7 +937,7 @@ class Config(object):
         return self._cfg.get("use_basin_id_encoding", False)
 
     @property
-    def use_frequencies(self) -> List[str]:
+    def use_frequencies(self) -> list[str]:
         return self._as_default_list(self._cfg.get("use_frequencies", []))
 
     @property
@@ -963,11 +963,11 @@ class Config(object):
         return self._get_value_verbose("validation_basin_file")
 
     @property
-    def validation_end_date(self) -> List[pd.Timestamp]:
+    def validation_end_date(self) -> list[pd.Timestamp]:
         return self._as_default_list(self._get_value_verbose("validation_end_date"))
 
     @property
-    def validation_start_date(self) -> List[pd.Timestamp]:
+    def validation_start_date(self) -> list[pd.Timestamp]:
         return self._as_default_list(self._get_value_verbose("validation_start_date"))
 
     @property

@@ -14,7 +14,7 @@
 
 import logging
 import warnings
-from typing import List
+
 
 import torch
 
@@ -89,7 +89,7 @@ def get_loss_obj(cfg: Config) -> loss.BaseLoss:
     return loss_obj
 
 
-def get_regularization_obj(cfg: Config) -> List[regularization.BaseRegularization]:
+def get_regularization_obj(cfg: Config) -> list[regularization.BaseRegularization]:
     """Get list of regularization objects.
     
     Currently, only the 'tie_frequencies' regularization is implemented.
@@ -101,7 +101,7 @@ def get_regularization_obj(cfg: Config) -> List[regularization.BaseRegularizatio
 
     Returns
     -------
-    List[regularization.BaseRegularization]
+    list[regularization.BaseRegularization]
         List of regularization objects that will be added to the loss during training.
     """
     regularization_modules = []

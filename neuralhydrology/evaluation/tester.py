@@ -20,7 +20,7 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union, Iterator
+from typing import Dict, Optional, Tuple, Union, Iterator
 
 import numpy as np
 import pandas as pd
@@ -444,7 +444,7 @@ class BaseTester(object):
                 pickle.dump(states, fp)
             LOGGER.info(f"Stored states at {result_file}")
 
-    def _evaluate(self, model: BaseModel, loader: DataLoader, frequencies: List[str], save_all_output: bool = False, basins: set[str] = set()):
+    def _evaluate(self, model: BaseModel, loader: DataLoader, frequencies: list[str], save_all_output: bool = False, basins: set[str] = set()):
         predict_last_n = self.cfg.predict_last_n
         if isinstance(predict_last_n, int):
             predict_last_n = {frequencies[0]: predict_last_n}  # if predict_last_n is int, there's only one frequency
