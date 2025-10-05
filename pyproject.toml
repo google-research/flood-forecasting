@@ -7,11 +7,9 @@ target-version = "py312"
 select = ["ALL"]
 
 ignore = [
-  # Formatter:
   "D203",  # A blank line before class (conflicts: no-blank-line-before-class)
   "D213",  # Summary on second line (conflicts: multi-line-summary-first-line)
-  # Linter:
-  "COM812", # Missing trailing comma
+  "COM812",  # Missing trailing comma
   "Q000",   # Bad quotes (single quotes)
   "Q003",   # Bad quotes (avoidable escaped quote)
 ]
