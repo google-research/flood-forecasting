@@ -39,7 +39,7 @@ metrics:
 - Missed-Peaks
 num_workers: 0  # Scalene profiler works only without multiprocessing (`0`)
 optimizer: Adam
-validate_every: 2
+validate_every: 1
 validate_n_random_basins: 12
 predict_last_n: 8
 log_n_figures: 5
@@ -52,17 +52,17 @@ validation_basin_file: ~/flood-forecasting/config/basins/caravan/lamah.txt
 test_basin_file: ~/flood-forecasting/config/basins/caravan/lamah.txt
 
 train_end_date:
-- 31/12/2015
-- 31/12/2023
+- 31/12/2020
+- 31/12/2013
 train_start_date:
-- 01/01/1980
-- 01/01/2020
+- 01/01/2017
+- 01/01/2010
 
-validation_end_date: 31/12/2018
-validation_start_date: 01/01/2017
+validation_end_date: 31/12/2015
+validation_start_date: 01/01/2015
 
-test_end_date: 31/12/2018
-test_start_date: 01/01/2017
+test_end_date: 31/12/2015
+test_start_date: 01/01/2015
 tester_skip_obs_all_nan: True
 
 # data_dir: ~/nh-data/data/Caravan-multimet
