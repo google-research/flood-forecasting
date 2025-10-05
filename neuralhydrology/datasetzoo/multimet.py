@@ -541,7 +541,7 @@ class Multimet(Dataset):
         if not datasets:
             raise ValueError("At least one type of data must be loaded.")
         LOGGER.debug("merge")
-        return xr.merge(datasets)
+        return xr.merge(datasets, join='outer')
 
     def _load_hindcast_features(self) -> list[xr.Dataset]:
         """Load Caravan-Multimet data for hindcast features.
