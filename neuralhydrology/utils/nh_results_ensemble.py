@@ -18,7 +18,7 @@ import pickle
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import List
+
 
 import numpy as np
 import pandas as pd
@@ -33,9 +33,9 @@ from neuralhydrology.utils.config import Config
 from neuralhydrology.utils.errors import AllNaNError
 
 
-def create_results_ensemble(run_dirs: List[Path],
+def create_results_ensemble(run_dirs: list[Path],
                             best_k: int = None,
-                            metrics: List[str] = None,
+                            metrics: list[str] = None,
                             period: str = 'test',
                             epoch: int = None) -> dict:
     """Average the predictions of several runs for the specified period and calculate new metrics.
@@ -44,11 +44,11 @@ def create_results_ensemble(run_dirs: List[Path],
     
     Parameters
     ----------
-    run_dirs : List[Path]
+    run_dirs : list[Path]
         List of directories of the runs to be merged
     best_k : int, optional
         If provided, will only merge the k best runs based on validation NSE.
-    metrics : List[str], optional
+    metrics : list[str], optional
         Use this parameter to override the metrics from the config files in the run directories.
     period : {'test', 'validation', 'train'}, optional
         One of train, val, test. If best_k is used, only 'test' is allowed. 
@@ -88,7 +88,7 @@ def create_results_ensemble(run_dirs: List[Path],
     return _create_ensemble(best_runs, frequencies, config)
 
 
-def _create_ensemble(results_files: List[Path], frequencies: List[str], config: Config) -> dict:
+def _create_ensemble(results_files: list[Path], frequencies: list[str], config: Config) -> dict:
     """Averages the predictions of the passed runs and re-calculates metrics. """
     lowest_freq = sort_frequencies(frequencies)[0]
     ensemble_sum = defaultdict(dict)
@@ -185,7 +185,7 @@ def _get_medians(results: dict, metric='NSE') -> dict:
     return medians
 
 
-def _get_best_validation_runs(run_dirs: List[Path], k: int, epoch: int = None) -> List[Path]:
+def _get_best_validation_runs(run_dirs: list[Path], k: int, epoch: int = None) -> list[Path]:
     """Returns the k run directories with the best median validation metrics. """
     val_files = list(zip(run_dirs, [_get_results_file(run_dir, 'validation', epoch) for run_dir in run_dirs]))
 

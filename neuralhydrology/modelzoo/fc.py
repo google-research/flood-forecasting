@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List
+
 
 import numpy as np
 import torch
@@ -30,7 +30,7 @@ class FC(nn.Module):
     ----------
     input_size : int
         Number of input features.
-    hidden_sizes : List[int]
+    hidden_sizes : list[int]
         Size of the hidden and output layers.
     activation : str, optional
         Activation function for intermediate layers, default tanh.
@@ -38,7 +38,7 @@ class FC(nn.Module):
         Dropout rate in intermediate layers.
     """
 
-    def __init__(self, input_size: int, hidden_sizes: List[int], activation: str | List[str] = 'tanh', dropout: float = 0.0):
+    def __init__(self, input_size: int, hidden_sizes: list[int], activation: str | list[str] = 'tanh', dropout: float = 0.0):
         super(FC, self).__init__()
 
         if len(hidden_sizes) == 0:

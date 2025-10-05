@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from collections import defaultdict
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 import torch
@@ -33,14 +33,14 @@ class BaseLoss(torch.nn.Module):
     ----------
     cfg : Config
         The run configuration.
-    prediction_keys : List[str]
+    prediction_keys : list[str]
         List of keys that will be predicted. During the forward pass, the passed `prediction` dict
         must contain these keys. Note that the keys listed here should be without frequency identifier.
-    ground_truth_keys : List[str]
+    ground_truth_keys : list[str]
         List of ground truth keys that will be needed to compute the loss. During the forward pass, the
         passed `data` dict must contain these keys. Note that the keys listed here should be without
         frequency identifier.
-    additional_data : List[str], optional
+    additional_data : list[str], optional
         Additional list of keys that will be taken from `data` in the forward pass to compute the loss.
         For instance, this parameter can be used to pass the variances that are needed to compute an NSE.
     output_size_per_target : int, optional
@@ -52,9 +52,9 @@ class BaseLoss(torch.nn.Module):
 
     def __init__(self,
                  cfg: Config,
-                 prediction_keys: List[str],
-                 ground_truth_keys: List[str],
-                 additional_data: List[str] = None,
+                 prediction_keys: list[str],
+                 ground_truth_keys: list[str],
+                 additional_data: list[str] = None,
                  output_size_per_target: int = 1):
         super(BaseLoss, self).__init__()
         self._predict_last_n = _get_predict_last_n(cfg)
@@ -175,12 +175,12 @@ class BaseLoss(torch.nn.Module):
     def _get_loss(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor], **kwargs):
         raise NotImplementedError
 
-    def set_regularization_terms(self, regularization_modules: List[BaseRegularization]):
+    def set_regularization_terms(self, regularization_modules: list[BaseRegularization]):
         """Register the passed regularization terms to be added to the loss function.
 
         Parameters
         ----------
-        regularization_modules : List[BaseRegularization]
+        regularization_modules : list[BaseRegularization]
             List of regularization functions to be added to the loss during `forward`.
         """
         self._regularization_terms = regularization_modules

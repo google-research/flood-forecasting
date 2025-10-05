@@ -15,7 +15,7 @@
 import subprocess
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Union, List
+from typing import Dict, Union
 
 import matplotlib as mpl
 import numpy as np
@@ -96,12 +96,12 @@ class Logger(object):
             self.writer.close()
             self.writer = None
 
-    def log_figures(self, figures: List[mpl.figure.Figure], freq: str, preamble: str = "", period: str = "validation"):
+    def log_figures(self, figures: list[mpl.figure.Figure], freq: str, preamble: str = "", period: str = "validation"):
         """Log matplotlib figures as to disk.
 
         Parameters
         ----------
-        figures : List[mpl.figure.Figure]
+        figures : list[mpl.figure.Figure]
             List of figures to save.
         freq : str
             Prediction frequency of the figures.
@@ -187,7 +187,7 @@ class Logger(object):
 
         return value
 
-def do_log_figures(writer: SummaryWriter|None, img_log_dir: Path, epoch: int, figures: List[mpl.figure.Figure], freq: str, preamble: str = "", period: str = "validation"):
+def do_log_figures(writer: SummaryWriter|None, img_log_dir: Path, epoch: int, figures: list[mpl.figure.Figure], freq: str, preamble: str = "", period: str = "validation"):
     if writer is not None:
         writer.add_figure(f'{period}/timeseries/{freq}', figures, global_step=epoch)
 

@@ -16,7 +16,7 @@ import functools
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import List, Union
+from typing import Union
 
 import numpy as np
 import pandas as pd
@@ -37,7 +37,7 @@ except ValueError:
     _QE_FREQ = 'Q'
 
 
-def load_basin_file(basin_file: Path) -> List[str]:
+def load_basin_file(basin_file: Path) -> list[str]:
     """Load list of basins from text file.
     
     Note: Basins names are not allowed to end with '_period*'
@@ -49,7 +49,7 @@ def load_basin_file(basin_file: Path) -> List[str]:
 
     Returns
     -------
-    List[str]
+    list[str]
         List of basin ids as strings.
         
     Raises
@@ -81,12 +81,12 @@ def sort_frequencies(frequencies: List[str]) -> List[str]:
 
     Parameters
     ----------
-    frequencies : List[str]
+    frequencies : list[str]
         List of pandas frequency identifiers to be sorted.
 
     Returns
     -------
-    List[str]
+    list[str]
         Sorted list of pandas frequency identifiers.
 
     Raises
