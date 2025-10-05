@@ -435,18 +435,17 @@ class BaseTester(object):
         weight_file = self._get_weight_file(epoch=epoch)
         parent_directory = self.run_dir / self.period / weight_file.stem
 
-        # gather all metric files
         csvs = map(pd.read_csv, parent_directory.glob(f'{self.period}_*_metrics.csv'))
-        metrics = pd.concat(csvs, ignore_index=True)
+        combined_metrics = pd.concat(csvs, ignore_index=True)
 
-        # remove incremental files
-        for incremental_metrics in parent_directory.glob(f"{self.period}_*_metrics.csv"):
-            incremental_metrics.unlink()
+        incremental_metrics_to_remove = list(parent_directory.glob(f"{self.period}_*_metrics.csv"))
 
-        # write combined file
         metrics_file = parent_directory / f"{self.period}_all_metrics.csv"
-        metrics.to_csv(metrics_file, index=False)
+        combined_metrics.to_csv(metrics_file, index=False)
         LOGGER.info(f"Stored combined metrics at {metrics_file}")
+
+        for incremental_metrics in incremental_metrics_to_remove:
+            incremental_metrics.unlink()
 
     def _evaluate(self, model: BaseModel, loader: DataLoader, frequencies: list[str], save_all_output: bool = False, basins: set[str] = set()):
         predict_last_n = self.cfg.predict_last_n
