@@ -1,0 +1,15 @@
+[tool.ruff]
+line-length = 80
+target-version = "py312"
+select = ["ALL"]
+ignore = [
+  "D104",  # Ignore missing docstrings in __init__.py files
+  "ANN101", "ANN102",  # Ignore missing type annotations for self/cls
+  "FIX002",  # Ignore "TODO:" comments
+]
+
+[tool.ruff.format]
+quote-style = "single"
+line-ending = "lf"
+docstring-code-format = true
+skip-magic-trailing-comma = true
