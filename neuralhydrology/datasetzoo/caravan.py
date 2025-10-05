@@ -209,4 +209,4 @@ def _load_attribute_files_of_subdatasets(datasets: list[Path], features: List[st
     dss = map(process, itertools.chain.from_iterable(e.glob("*.csv") for e in datasets))
     dss = dask.compute(*dss)
 
-    return xarray.merge(dss)
+    return xarray.merge(dss, join='outer')
