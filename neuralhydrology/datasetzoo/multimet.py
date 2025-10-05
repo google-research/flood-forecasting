@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, List, Hashable, Tuple, Iterable, Union
+from typing import Dict, Hashable, Tuple, Iterable, Union
 
 import logging
 import itertools
@@ -411,7 +411,7 @@ class Multimet(Dataset):
 
     def _get_period_dates(
         self, cfg: Config
-    ) -> Tuple[List[pd.Timestamp], List[pd.Timestamp]]:
+    ) -> Tuple[list[pd.Timestamp], list[pd.Timestamp]]:
         if self._period == "train":
             start_dates, end_dates = cfg.train_start_date, cfg.train_end_date
         elif self._period == "test":
@@ -431,7 +431,7 @@ class Multimet(Dataset):
         return start_dates, end_dates
 
     def _union_ranges(
-        self, start_dates: List[pd.Timestamp], end_dates: List[pd.Timestamp]
+        self, start_dates: list[pd.Timestamp], end_dates: list[pd.Timestamp]
     ) -> pd.DatetimeIndex:
         ranges = [
             pd.date_range(start, end) for start, end in zip(start_dates, end_dates)
@@ -541,7 +541,7 @@ class Multimet(Dataset):
         if not datasets:
             raise ValueError("At least one type of data must be loaded.")
         LOGGER.debug("merge")
-        return xr.merge(datasets)
+        return xr.merge(datasets, join='outer')
 
     def _load_hindcast_features(self) -> list[xr.Dataset]:
         """Load Caravan-Multimet data for hindcast features.
@@ -650,7 +650,7 @@ class Multimet(Dataset):
 
     @staticmethod
     def collate_fn(
-        samples: List[
+        samples: list[
             Dict[str, Union[torch.Tensor, np.ndarray, Dict[str, torch.Tensor]]]
         ],
     ) -> Dict[str, Union[torch.Tensor, np.ndarray, Dict[str, torch.Tensor]]]:
@@ -720,19 +720,19 @@ def _open_zarr(path: Path) -> xr.Dataset:
 
 def _get_products_and_bands_from_feature_strings(
     features: Iterable[str],
-) -> Dict[str, List[str]]:
+) -> Dict[str, list[str]]:
     """
     Processes feature strings to create a dictionary of product to band(s).
 
     Parameters
     ----------
-    features : List[str]
+    features : list[str]
         A list features in the format `<product>_<band>. This is the format for feature
         names in the Multimet dataset.
 
     Returns
     -------
-    Dict[str, List[str]]
+    Dict[str, list[str]]
         Keys are product names and values are a list of features for that product. Features
         remain in the format <product>_<band>.
     """

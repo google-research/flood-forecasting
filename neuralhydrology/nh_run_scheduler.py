@@ -20,7 +20,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import List
+
 
 import numpy as np
 
@@ -47,7 +47,7 @@ def _main():
     schedule_runs(**args)
 
 
-def schedule_runs(mode: str, directory: Path, gpu_ids: List[int], runs_per_gpu: int):
+def schedule_runs(mode: str, directory: Path, gpu_ids: list[int], runs_per_gpu: int):
     """Schedule multiple runs across one or multiple GPUs.
     
     Parameters
@@ -59,7 +59,7 @@ def schedule_runs(mode: str, directory: Path, gpu_ids: List[int], runs_per_gpu: 
         If mode is one of {'train', 'finetune'}, this path should point to a folder containing the config files (.yml) 
         to use for model training/finetuning. For each config file, one run is started. If mode is 'evaluate', this path 
         should point to the folder containing the different model run directories.
-    gpu_ids : List[int]
+    gpu_ids : list[int]
         List of GPU ids to use for training/evaluating.
     runs_per_gpu : int
         Number of runs to start on a single GPU.

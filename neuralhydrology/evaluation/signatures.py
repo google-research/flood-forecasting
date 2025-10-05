@@ -14,7 +14,7 @@
 
 import warnings
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 
 from dateutil.relativedelta import relativedelta
 
@@ -25,12 +25,12 @@ from xarray.core.dataarray import DataArray
 from neuralhydrology.datautils import utils
 
 
-def get_available_signatures() -> List[str]:
+def get_available_signatures() -> list[str]:
     """Return a list of available signatures.
 
     Returns
     -------
-    List[str]
+    list[str]
         List of all available signatures.
     """
     signatures = [
@@ -79,7 +79,7 @@ def calculate_all_signatures(da: DataArray, prcp: DataArray, datetime_coord: str
 
 
 def calculate_signatures(da: DataArray,
-                         signatures: List[str],
+                         signatures: list[str],
                          datetime_coord: str = None,
                          prcp: DataArray = None) -> Dict[str, float]:
     """Calculate the specified signatures with default values.
@@ -88,7 +88,7 @@ def calculate_signatures(da: DataArray,
     ----------
     da : DataArray
         Array of discharge values for which the signatures will be calculated.
-    signatures : List[str]
+    signatures : list[str]
         List of names of the signatures to calculate.
     datetime_coord : str, optional
         Datetime coordinate in the passed DataArray. Tried to infer automatically if not specified.
