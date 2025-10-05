@@ -179,11 +179,6 @@ class BaseTester(object):
             If a model is passed, this is used for validation.
         experiment_logger : Logger, optional
             Logger can be passed during training to log metrics
-
-        Returns
-        -------
-        dict
-            A dictionary containing one xarray per basin with the evaluation results.
         """
         if model is None:
             if self.init_model:
@@ -358,8 +353,6 @@ class BaseTester(object):
             states_to_save = all_output
         if save_results or save_all_output:
             self._save_results(results=results_to_save, states=states_to_save, epoch=epoch)
-
-        return results
 
     def _calc_exclude_basins(self) -> Iterator[str]:
         if not self.cfg.tester_skip_obs_all_nan:
