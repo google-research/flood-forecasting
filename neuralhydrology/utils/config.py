@@ -572,8 +572,8 @@ class Config(object):
         return self._cfg.get("lead_time", 0)
 
     @property
-    def learning_rate_strategy(self) -> str|None:
-        return self._cfg.get("learning_rate_strategy", None)
+    def learning_rate_strategy(self) -> str:
+        return self._cfg.get("learning_rate_strategy", "ConstantLR")
 
     @property
     def initial_learning_rate(self) -> float:

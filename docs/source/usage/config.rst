@@ -396,7 +396,7 @@ Training settings
    :py:mod:`here <neuralhydrology.training.regularization>`.
 
 -  ``learning_rate_strategy``: A str that determines how to change learning rate.
-   One of: ConstantLR, StepLR, ReduceLROnPlateau
+   One of: ConstantLR, StepLR, ReduceLROnPlateau. Defaults to 'ConstantLR'.
 
 -  ``initial_learning_rate``: A float representing the starting learning rate for the
     training process. This is the base value that the scheduler will modify.
