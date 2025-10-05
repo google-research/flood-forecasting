@@ -118,6 +118,12 @@ Validation settings
    are quite large. Predictions in this file will not be scaled. 
    This is the raw output from the model.
 
+Evaluation settings
+-------------------
+
+- ``inference_mode``: Boolean that controls whether to save observed data
+and the running model's output to disk.
+
 General model configuration
 ---------------------------
 

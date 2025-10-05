@@ -285,6 +285,14 @@ class Config(object):
         return self._cfg.get("tester_skip_obs_all_nan", False)
 
     @property
+    def inference_mode(self) -> bool:
+        return self._cfg.get("inference_mode", True)
+
+    @inference_mode.setter
+    def inference_mode(self, value: bool):
+        self._cfg["inference_mode"] = value
+
+    @property
     def logging_level(self) -> int:
         level = self._cfg.get("logging_level", "INFO").upper()
         match level:

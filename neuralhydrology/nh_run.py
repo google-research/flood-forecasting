@@ -31,7 +31,7 @@ from neuralhydrology.utils.logging_utils import setup_logging
 
 def _get_args() -> dict:
     parser = argparse.ArgumentParser()
-    parser.add_argument('mode', choices=["train", "continue_training", "finetune", "evaluate"])
+    parser.add_argument('mode', choices=["train", "continue_training", "finetune", "evaluate", "infer"])
     parser.add_argument('--config-file', type=str)
     parser.add_argument('--run-dir', type=str)
     parser.add_argument('--epoch', type=int, help="Epoch, of which the model should be evaluated")
@@ -46,7 +46,7 @@ def _get_args() -> dict:
     if (args["mode"] == "continue_training") and (args["run_dir"] is None):
         raise ValueError("Missing path to run directory file")
 
-    if (args["mode"] == "evaluate") and (args["run_dir"] is None):
+    if (args["mode"] in ["evaluate", "infer"]) and (args["run_dir"] is None):
         raise ValueError("Missing path to run directory")
 
     return args
@@ -56,7 +56,7 @@ def _main():
     args = _get_args()
     config = Config(Path(args["config_file"] or Path(args["run_dir"]) / "config.yml"))
 
-    if (args["run_dir"] is not None) and (args["mode"] == "evaluate"):
+    if (args["run_dir"] is not None) and (args["mode"] in ["evaluate", "infer"]):
         setup_logging(str(Path(args["run_dir"]) / "output.log"), config.logging_level)
 
     torch.autograd.set_detect_anomaly(config.detect_anomaly)
@@ -71,8 +71,9 @@ def _main():
                      gpu=args["gpu"])
     elif args["mode"] == "finetune":
         finetune(config_file=Path(args["config_file"]), gpu=args["gpu"])
-    elif args["mode"] == "evaluate":
-        eval_run(run_dir=Path(args["run_dir"]), period=args["period"], epoch=args["epoch"], gpu=args["gpu"])
+    elif args["mode"] in ["evaluate", "infer"]:
+        config.inference_mode = (args["mode"] == "infer")
+        eval_run(config, run_dir=Path(args["run_dir"]), period=args["period"], epoch=args["epoch"], gpu=args["gpu"])
     else:
         raise RuntimeError(f"Unknown mode {args['mode']}")
 
@@ -168,11 +169,13 @@ def finetune(config_file: Path = None, gpu: int = None):
     start_training(config)
 
 
-def eval_run(run_dir: Path, period: str, epoch: int = None, gpu: int = None):
+def eval_run(config: Config, run_dir: Path, period: str, epoch: int = None, gpu: int = None):
     """Start evaluating a trained model.
-    
+
     Parameters
     ----------
+    config: Config
+        Config object from a config file (.yml), defining the settings for the specific run.
     run_dir : Path
         Path to the run directory.
     period : {'train', 'validation', 'test'}
@@ -184,8 +187,6 @@ def eval_run(run_dir: Path, period: str, epoch: int = None, gpu: int = None):
         Don't use this argument if you want to use the device as specified in the config file e.g. MPS.
 
     """
-    config = Config(run_dir / "config.yml")
-
     # check if a GPU has been specified as command line argument. If yes, overwrite config
     if gpu is not None and gpu >= 0:
         config.device = f"cuda:{gpu}"

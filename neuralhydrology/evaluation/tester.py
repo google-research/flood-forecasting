@@ -222,7 +222,10 @@ class BaseTester(object):
 
         eval_data_it = self._evaluate(model, loader, self.dataset.frequencies, save_all_output, basins)
         pbar = tqdm(eval_data_it, file=sys.stdout, disable=self._disable_pbar, total=len(basins))
-        pbar.set_description('# Validation' if self.period == "validation" else "# Evaluation")
+        if self.period == "validation":
+            pbar.set_description('# Validation')
+        else:
+            pbar.set_description('# Inference' if self.cfg.inference_mode else '# Evaluation')
 
         for basin_data in pbar:
             if self.device.type == 'cuda':
@@ -431,14 +434,14 @@ class BaseTester(object):
             LOGGER.info(f"Stored metrics at {metrics_file}")
 
         # store all results packed as pickle file
-        if results is not None:
+        if results is not None and not self.cfg.inference_mode:
             result_file = parent_directory / f"{self.period}_results.p"
             with result_file.open("wb") as fp:
                 pickle.dump(results, fp)
             LOGGER.info(f"Stored results at {result_file}")
 
         # store all model output packed as pickle file
-        if states is not None:
+        if states is not None and not self.cfg.inference_mode:
             result_file = parent_directory / f"{self.period}_all_output.p"
             with result_file.open("wb") as fp:
                 pickle.dump(states, fp)
