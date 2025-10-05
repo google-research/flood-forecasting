@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Callable, Dict, List
+from typing import Callable, Dict
 
 import numpy as np
 import torch
@@ -129,7 +129,7 @@ def _handle_negative_values(cfg: Config, values: torch.Tensor, sample_values: Ca
     return values
 
 
-def _sample_gaussian_mixtures(ids: List[int], m_sub: torch.Tensor, s_sub: torch.Tensor,
+def _sample_gaussian_mixtures(ids: list[int], m_sub: torch.Tensor, s_sub: torch.Tensor,
                               p_sub: torch.Tensor) -> torch.Tensor:
     # unbound sampling:
     categorical = Categorical(p_sub)
@@ -148,7 +148,7 @@ def _sample_gaussian_mixtures(ids: List[int], m_sub: torch.Tensor, s_sub: torch.
     return values
 
 
-def _sample_asymmetric_laplacians(ids: List[int], m_sub: torch.Tensor, b_sub: torch.Tensor,
+def _sample_asymmetric_laplacians(ids: list[int], m_sub: torch.Tensor, b_sub: torch.Tensor,
                                   t_sub: torch.Tensor) -> torch.Tensor:
     # The ids are used for location-specific resampling for 'truncation' in '_handle_negative_values'
     prob = torch.FloatTensor(m_sub[ids].shape) \
@@ -292,7 +292,7 @@ def sample_mcd(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int
 
         for nth_target in range(setup.number_of_targets):
             # unbound sampling:
-            def _sample_values(ids: List[int]) -> torch.Tensor:
+            def _sample_values(ids: list[int]) -> torch.Tensor:
                 # The ids are used for location-specific resampling for 'truncation' in '_handle_negative_values'
                 target_values = torch.zeros(len(ids), frequency_last_n, n_samples)
                 for i in range(n_samples):  # forward-pass for each frequency separately to guarantee independence

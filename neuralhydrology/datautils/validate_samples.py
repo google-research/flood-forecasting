@@ -14,7 +14,7 @@
 
 import logging
 import itertools
-from typing import List, Optional
+from typing import Optional
 
 import pandas as pd
 import xarray as xr
@@ -22,7 +22,7 @@ import xarray as xr
 LOGGER = logging.getLogger(__name__)
 
 
-def _flatten_feature_groups(groups: List[List[str]])-> List[str]:
+def _flatten_feature_groups(groups: list[list[str]])-> list[str]:
     """Conditionally flattens a list of lists."""
     if not groups:
         return []
@@ -42,16 +42,16 @@ def _flatten_feature_groups(groups: List[List[str]])-> List[str]:
 
 
 def extract_feature_groups(
-    groups: List[List[str]],
-    features: List[str]
-) -> List[List[str]]:
+    groups: list[list[str]],
+    features: list[str]
+) -> list[list[str]]:
     """Extract relevant feature groups from a larger set of groups.
     
     Parameters
     ----------
-    groups : List[List[str]]
+    groups : list[list[str]]
         List of feature groups.
-    features : List[str]
+    features : list[str]
         Flattened list of features.
         
     Returns
@@ -102,16 +102,16 @@ def validate_samples(
     dataset: xr.Dataset,
     sample_dates: pd.DatetimeIndex,
     nan_handling_method: Optional[str],
-    feature_groups: List[List[str]],
+    feature_groups: list[list[str]],
     lead_time: int = 0,   
     seq_length: Optional[int] = None,
     predict_last_n: Optional[int] = None,
     forecast_overlap: Optional[int] = None,
     min_lead_time: Optional[int] = None,
-    forecast_features: Optional[List[str]] = None,
-    hindcast_features: Optional[List[str]] = None,
-    target_features: Optional[List[str]] = None,
-    static_features: Optional[List[str]] = None,
+    forecast_features: Optional[list[str]] = None,
+    hindcast_features: Optional[list[str]] = None,
+    target_features: Optional[list[str]] = None,
+    static_features: Optional[list[str]] = None,
 ) -> xr.DataArray:
     """Validates samples based on the NaN-handling method.
     
@@ -125,7 +125,7 @@ def validate_samples(
         Sample dates.
     nan_handling_method : Optional[str]
         Name of the NaN-handling method. This can be None, but we require that to be passed explicitly.
-    feature_groups : List[List[str]]
+    feature_groups : list[list[str]]
         A list of feature groups where each group is a list of features. Used in certain types of NaN-handling.
     lead_time : int
         Sequence length for validating a look-ahead sequence of target variables. Defaults to nowcasts.
@@ -140,13 +140,13 @@ def validate_samples(
     min_lead_time : Optional[int]
         Integer representing the minimum lead time in the forecast data as a number of timesteps.
         Required if forecast_overlap > 0.
-    forecast_features : Optional[List[str]]
+    forecast_features : Optional[list[str]]
         List of forecast features to validate. Defaults to None. At least one feature list is required.
-    hindcast_features : Optional[List[str]]
+    hindcast_features : Optional[list[str]]
         List of hindcast features to validate. Defaults to None. At least one feature list is required.
-    target_features : Optional[List[str]]
+    target_features : Optional[list[str]]
         List of target features to validate. Defaults to None. At least one feature list is required.
-    static_features : Optional[List[str]]
+    static_features : Optional[list[str]]
         List of static features to validate. Defaults to None. At least one feature list is required.
 
     Returns
@@ -268,7 +268,7 @@ def validate_samples(
 def validate_samples_for_nan_handling(
     dataset: xr.Dataset,
     nan_handling_method: Optional[str],
-    feature_groups: List[List[str]]
+    feature_groups: list[list[str]]
 ) -> xr.DataArray:
     """Validates samples based on the NaN-handling method.
     
@@ -278,7 +278,7 @@ def validate_samples_for_nan_handling(
         Dataset with any combination of dims (basin, date, lead_time)
     nan_handling_method : Optional[str]
         Name of the NaN-handling method. This can be None, but we require that to be passed explicitly.
-    feature_groups : List[List[str]]
+    feature_groups : list[list[str]]
         A list of feature groups where each group is a list of features. Used in certain types of NaN-handling.
 
     Returns
@@ -310,7 +310,7 @@ def validate_samples_for_nan_handling(
 
 def validate_samples_any_all_group(
     dataset: xr.Dataset,
-    feature_groups: List[List[str]]
+    feature_groups: list[list[str]]
 ) -> xr.DataArray:
     """Validates samples using an ANY-valid / ALL-valid criteria over groups.
     
@@ -321,7 +321,7 @@ def validate_samples_any_all_group(
     ----------
     dataset : xarray.Dataset
         Dataset with any combination of dims (basin, date, lead_time)
-    feature_groups : List[List[str]]
+    feature_groups : list[list[str]]
         A list of feature groups where each group is a list of features. Used in certain types of NaN-handling.
 
     Returns
@@ -343,7 +343,7 @@ def validate_samples_any_all_group(
 
 def validate_samples_all_any_group(
     dataset: xr.Dataset,
-    feature_groups: List[List[str]]
+    feature_groups: list[list[str]]
 ) -> xr.DataArray:
     """Validates samples using an ALL-valid / ANY-valid criteria over groups.
     
@@ -353,7 +353,7 @@ def validate_samples_all_any_group(
     ----------
     dataset : xarray.Dataset
         Dataset with any combination of dims (basin, date, lead_time)
-    feature_groups : List[List[str]]
+    feature_groups : list[list[str]]
         A list of feature groups where each group is a list of features. Used in certain types of NaN-handling.
 
     Returns

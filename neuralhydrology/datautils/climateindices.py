@@ -16,7 +16,7 @@ import logging
 import pickle
 import sys
 from pathlib import Path
-from typing import List, Dict
+from typing import Dict
 
 import numpy as np
 import pandas as pd
@@ -30,7 +30,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 def calculate_camels_us_dyn_climate_indices(data_dir: Path,
-                                         basins: List[str],
+                                         basins: list[str],
                                          window_length: int,
                                          forcings: str,
                                          variable_names: Dict[str, str] = None,
@@ -48,7 +48,7 @@ def calculate_camels_us_dyn_climate_indices(data_dir: Path,
     ----------
     data_dir : Path
         Path to the CAMELS US directory.
-    basins : List[str]
+    basins : list[str]
         List of basin ids.
     window_length : int
         Look-back period to use to compute the climate indices.
