@@ -124,7 +124,7 @@ class BaseTester(object):
         # get list of basins
         self.basins = load_basin_file(getattr(self.cfg, f"{self.period}_basin_file"))
 
-    def _get_weight_file(self, epoch: int):
+    def _get_weight_file(self, epoch: int|None):
         """Get file path to weight file"""
         if epoch is None:
             weight_file = sorted(list(self.run_dir.glob('model_epoch*.pt')))[-1]
@@ -200,7 +200,6 @@ class BaseTester(object):
             model.eval()
 
         results = {}
-        all_output = {basin: None for basin in basins}
 
         batch_sampler = BasinBatchSampler(
             sample_index=self.dataset._sample_index,
@@ -234,7 +233,6 @@ class BaseTester(object):
             y = basin_data['obs']
             dates = basin_data['dates']
             all_losses = basin_data['mean_losses']
-            all_output[basin] = basin_data['all_output']
 
             # log loss of this basin plus number of samples in the logger to compute epoch aggregates later
             if experiment_logger is not None:
@@ -347,15 +345,9 @@ class BaseTester(object):
             if basin in basins_for_figures:
                 self._create_and_log_figures(basin, results[basin], experiment_logger, epoch or -1)
 
-        # save model output to file, if requested
-        results_to_save = None
-        states_to_save = None
-        if save_results:
-            results_to_save = results
-        if save_all_output:
-            states_to_save = all_output
-        if save_results or save_all_output:
-            self._save_results(results=results_to_save, states=states_to_save, epoch=epoch)
+            self._save_incremental_results(basin, results=results[basin], states=basin_data['all_output'], epoch=epoch)
+
+        self._union_metric_csvs(epoch=epoch)
 
     def _calc_exclude_basins(self) -> Iterator[str]:
         if not self.cfg.tester_skip_obs_all_nan:
@@ -399,7 +391,7 @@ class BaseTester(object):
                 else:
                     do_log_figures(None, self.cfg.img_log_dir, epoch, figures, freq, preamble, self.period, basin)
 
-    def _save_results(self, results: Optional[dict], states: Optional[dict] = None, epoch: int = None):
+    def _save_incremental_results(self, basin: str, results: dict, states: dict, epoch: int|None = None):
         """Store results in various formats to disk.
         
         Developer note: We cannot store the time series data (the xarray objects) as netCDF file but have to use
@@ -420,24 +412,41 @@ class BaseTester(object):
                 metrics_list = list(set(metrics_list.values()))
             if "all" in metrics_list:
                 metrics_list = get_available_metrics()
-            df = metrics_to_dataframe(results, metrics_list, self.cfg.target_variables)
-            metrics_file = parent_directory / f"{self.period}_metrics.csv"
+            df = metrics_to_dataframe({basin: results}, metrics_list, self.cfg.target_variables)
+            metrics_file = parent_directory / f"{self.period}_{basin}_metrics.csv"
             df.to_csv(metrics_file)
             LOGGER.info(f"Stored metrics at {metrics_file}")
 
         # store all results packed as pickle file
-        if results is not None and self.cfg.inference_mode:
-            result_file = parent_directory / f"{self.period}_results.p"
+        if results and self.cfg.inference_mode:
+            result_file = parent_directory / f"{self.period}_{basin}_results.p"
             with result_file.open("wb") as fp:
                 pickle.dump(results, fp)
             LOGGER.info(f"Stored results at {result_file}")
 
         # store all model output packed as pickle file
-        if states is not None and self.cfg.inference_mode:
-            result_file = parent_directory / f"{self.period}_all_output.p"
+        if states and self.cfg.inference_mode:
+            result_file = parent_directory / f"{self.period}_{basin}_all_output.p"
             with result_file.open("wb") as fp:
                 pickle.dump(states, fp)
             LOGGER.info(f"Stored states at {result_file}")
+
+    def _union_metric_csvs(self, epoch: int|None = None):
+        weight_file = self._get_weight_file(epoch=epoch)
+        parent_directory = self.run_dir / self.period / weight_file.stem
+
+        # gather all metric files
+        csvs = map(pd.read_csv, parent_directory.glob(f'{self.period}_*_metrics.csv'))
+        metrics = pd.concat(csvs, ignore_index=True)
+
+        # remove incremental files
+        for incremental_metrics in parent_directory.glob(f"{self.period}_*_metrics.csv"):
+            incremental_metrics.unlink()
+
+        # write combined file
+        metrics_file = parent_directory / f"{self.period}_all_metrics.csv"
+        metrics.to_csv(metrics_file, index=False)
+        LOGGER.info(f"Stored combined metrics at {metrics_file}")
 
     def _evaluate(self, model: BaseModel, loader: DataLoader, frequencies: list[str], save_all_output: bool = False, basins: set[str] = set()):
         predict_last_n = self.cfg.predict_last_n
