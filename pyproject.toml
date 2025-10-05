@@ -1,0 +1,21 @@
+[tool.ruff]
+line-length = 80
+target-version = "py312"
+
+
+[tool.ruff.lint]
+select = ["ALL"]
+
+ignore = [
+  "D203",  # A blank line before class (conflicts: no-blank-line-before-class)
+  "D213",  # Summary on second line (conflicts: multi-line-summary-first-line)
+  "COM812",  # Missing trailing comma
+  "Q000",   # Bad quotes (single quotes)
+  "Q003",   # Bad quotes (avoidable escaped quote)
+]
+
+
+[tool.ruff.format]
+quote-style = "single"
+line-ending = "lf"
+docstring-code-format = true
