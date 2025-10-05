@@ -210,7 +210,7 @@ def validate_samples(
                 raise ValueError('`min_lead_time`is required when validating a forecast overlap sequence.')
             
             mask = validate_samples_for_nan_handling(
-                dataset=dataset[forecast_features].isel(lead_time=0).squeeze().drop('lead_time'),
+                dataset=dataset[forecast_features].isel(lead_time=0).squeeze().drop_vars('lead_time'),
                 nan_handling_method=nan_handling_method,
                 feature_groups=[forecast_features]
             )
