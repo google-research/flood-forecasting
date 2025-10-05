@@ -122,7 +122,7 @@ Evaluation settings
 -------------------
 
 - ``inference_mode``: Boolean that controls whether to save observed data
-and the running model's output to disk. `True` means to not save to disk.
+and the running model's output to disk. `True` means to do save to disk.
 
 General model configuration
 ---------------------------
