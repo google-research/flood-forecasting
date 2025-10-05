@@ -3,10 +3,6 @@ line-length = 80
 target-version = "py312"
 
 lint.select = ["ALL"]
-lint.ignore = [
-  "D104",  # Ignore missing docstrings in __init__.py files
-  "FIX002",  # Ignore "TODO:" comments
-]
 
 [tool.ruff.format]
 quote-style = "single"
