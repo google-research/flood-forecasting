@@ -450,12 +450,14 @@ class BaseTester(object):
             and self.period == 'test'
         ):
             result_file = parent_directory / f'{self.period}_results.zarr'
+
             dss = (
                 freq_results['xr'].assign_coords(freq=freq)
                 for freq, freq_results in results.items()
             )
             ds = xarray.concat(dss, dim='freq').expand_dims(basin=[basin])
             ds = _ensure_unicode_or_bytes_are_strings(ds)
+
             if result_file.exists():
                 ds.to_zarr(result_file, append_dim='basin')
             else:
@@ -469,12 +471,15 @@ class BaseTester(object):
             and self.period == 'test'
         ):
             result_file = parent_directory / f'{self.period}_all_output.zarr'
+
+            # TODO(future): setup dims by name instead of by order.
             data_vars = {
                 key: (tuple(f'{key}_dim_{i}' for i in range(value.ndim)), value)
                 for key, value in states.items()
             }
             ds = xarray.Dataset(data_vars).expand_dims(basin=[basin])
             ds = _ensure_unicode_or_bytes_are_strings(ds)
+
             if result_file.exists():
                 ds.to_zarr(result_file, append_dim='basin')
             else:
