@@ -199,8 +199,6 @@ class BaseTester(object):
         else:
             model.eval()
 
-        results = {}
-
         batch_sampler = BasinBatchSampler(
             sample_index=self.dataset._sample_index,
             batch_size=self.cfg.batch_size,
@@ -225,6 +223,8 @@ class BaseTester(object):
             pbar.set_description('# Inference' if self.cfg.inference_mode else '# Evaluation')
 
         for basin_data in pbar:
+            results = {}
+
             if self.device.type == 'cuda':
                 torch.cuda.synchronize()
 
@@ -250,7 +250,7 @@ class BaseTester(object):
             for freq in self.dataset.frequencies:
                 if predict_last_n[freq] == 0:
                     continue  # this frequency is not being predicted
-                results.setdefault(basin, {}).setdefault(freq, {})
+                results.setdefault(freq, {})
 
                 # Create data_vars dictionary for the xarray.Dataset
                 data_vars = self._create_xarray_data_vars(y_hat[freq], y[freq])
@@ -284,7 +284,7 @@ class BaseTester(object):
                                          name='date')
                 })
                 xr = self.dataset.scaler.unscale(xr)
-                results[basin][freq]['xr'] = xr
+                results[freq]['xr'] = xr
 
                 # create datetime range at the current frequency
                 freq_date_range = pd.date_range(start=dates[lowest_freq][0, -1], end=dates[freq][-1, -1], freq=freq)
@@ -340,12 +340,12 @@ class BaseTester(object):
                                 values = {f"{key}_{freq}": val for key, val in values.items()}
                             if experiment_logger is not None:
                                 experiment_logger.log_step(**values)
-                            results[basin][freq].update(values)
+                            results[freq].update(values)
 
             if basin in basins_for_figures:
-                self._create_and_log_figures(basin, results[basin], experiment_logger, epoch or -1)
+                self._create_and_log_figures(basin, results, experiment_logger, epoch or -1)
 
-            self._save_incremental_results(basin, results=results[basin], states=basin_data['all_output'], epoch=epoch)
+            self._save_incremental_results(basin, results=results, states=basin_data['all_output'], epoch=epoch)
 
         self._union_metric_csvs(epoch=epoch)
 
