@@ -8,4 +8,3 @@ lint.select = ["ALL"]
 quote-style = "single"
 line-ending = "lf"
 docstring-code-format = true
-skip-magic-trailing-comma = true
