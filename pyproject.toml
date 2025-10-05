@@ -1,10 +1,10 @@
 [tool.ruff]
 line-length = 80
 target-version = "py312"
-select = ["ALL"]
-ignore = [
+
+lint.select = ["ALL"]
+lint.ignore = [
   "D104",  # Ignore missing docstrings in __init__.py files
-  "ANN101", "ANN102",  # Ignore missing type annotations for self/cls
   "FIX002",  # Ignore "TODO:" comments
 ]
 
