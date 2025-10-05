@@ -127,7 +127,7 @@ def uncertainty_plot(y: np.ndarray, y_hat: np.ndarray, title: str = '') -> Tuple
     # only take part of y to have a better zoom-in
     y_long = y[:, -1].flatten()
     y_hat_long = y_hat[:, -1, :].reshape(y_long.shape[0], -1)
-    x_bnd = np.arange(0, 400)
+    x_bnd = np.arange(0, min(y_long.shape[0], 400))
     y_bnd_len = len(x_bnd)
 
     # hydrograph:
