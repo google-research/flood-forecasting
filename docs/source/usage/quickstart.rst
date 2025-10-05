@@ -104,4 +104,5 @@ Running evaluate in inference mode; run::
 
     nh-run infer --run-dir /path/to/run_dir
 
-This mode runs evaluation but without saving extra data such as observed data nor models' outputs.
+This mode runs evaluation but without saving extra data such as observed data nor models' outputs
+nor skipping all-nan observed data dates.
