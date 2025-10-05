@@ -418,14 +418,14 @@ class BaseTester(object):
             LOGGER.info(f"Stored metrics at {metrics_file}")
 
         # store all results packed as pickle file
-        if results and self.cfg.inference_mode:
+        if results and self.cfg.inference_mode and self.period != 'test':
             result_file = parent_directory / f"{self.period}_{basin}_results.p"
             with result_file.open("wb") as fp:
                 pickle.dump(results, fp)
             LOGGER.info(f"Stored results at {result_file}")
 
         # store all model output packed as pickle file
-        if states and self.cfg.inference_mode:
+        if states and self.cfg.inference_mode and self.period != 'test':
             result_file = parent_directory / f"{self.period}_{basin}_all_output.p"
             with result_file.open("wb") as fp:
                 pickle.dump(states, fp)
