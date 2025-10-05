@@ -215,6 +215,9 @@ class BaseTester(object):
             pin_memory=True,  # avoid 1 of 2 mem copies to gpu
         )
 
+        max_figures = min(self.cfg.validate_n_random_basins, self.cfg.log_n_figures, len(basins))
+        basins_for_figures = random.sample(list(basins), k=max_figures)
+
         eval_data_it = self._evaluate(model, loader, self.dataset.frequencies, save_all_output, basins)
         pbar = tqdm(eval_data_it, file=sys.stdout, disable=self._disable_pbar, total=len(basins))
         if self.period == "validation":
@@ -341,8 +344,8 @@ class BaseTester(object):
                                 experiment_logger.log_step(**values)
                             results[basin][freq].update(values)
 
-        if (self.cfg.log_n_figures > 0) and results:
-            self._create_and_log_figures(results, experiment_logger, epoch or -1)
+            if basin in basins_for_figures:
+                self._create_and_log_figures(basin, results[basin], experiment_logger, epoch or -1)
 
         # save model output to file, if requested
         results_to_save = None
@@ -376,29 +379,25 @@ class BaseTester(object):
                 if np.any((nan_date_starts <= start) & (nan_date_ends >= end)):
                     yield basin
 
-    def _create_and_log_figures(self, results: dict, experiment_logger: Logger|None, epoch: int):
-        basins = list(results.keys())
-        random.shuffle(basins)
+    def _create_and_log_figures(self, basin: str, results: dict, experiment_logger: Logger|None, epoch: int):
         for target_var in self.cfg.target_variables:
-            max_figures = min(self.cfg.validate_n_random_basins, self.cfg.log_n_figures, len(basins))
-            for freq in results[basins[0]].keys():
-                figures = []
-                for i in range(max_figures):
-                    xr = results[basins[i]][freq]['xr']
-                    obs = xr[f"{target_var}_obs"].values
-                    sim = xr[f"{target_var}_sim"].values
-                    # clip negative predictions to zero, if variable is listed in config 'clip_target_to_zero'
-                    if target_var in self.cfg.clip_targets_to_zero:
-                        sim = xarray.where(sim < 0, 0, sim)
-                    figures.append(
-                        self._get_plots(
-                            obs, sim, title=f"{target_var} - Basin {basins[i]} - Epoch {epoch} - Frequency {freq}")[0])
+            for freq in results:
+                xr = results[freq]['xr']
+                obs = xr[f"{target_var}_obs"].values
+                sim = xr[f"{target_var}_sim"].values
+                # clip negative predictions to zero, if variable is listed in config 'clip_target_to_zero'
+                if target_var in self.cfg.clip_targets_to_zero:
+                    sim = xarray.where(sim < 0, 0, sim)
+                figures = [
+                    self._get_plots(
+                        obs, sim, title=f"{target_var} - Basin {basin} - Epoch {epoch} - Frequency {freq}")[0],
+                ]
                 # make sure the preamble is a valid file name
                 preamble = re.sub(r"[^A-Za-z0-9\._\-]+", "", target_var)
                 if experiment_logger:
-                    experiment_logger.log_figures(figures, freq, preamble, self.period)
+                    experiment_logger.log_figures(figures, freq, preamble, self.period, basin)
                 else:
-                    do_log_figures(None, self.cfg.img_log_dir, epoch, figures, freq, preamble, self.period)
+                    do_log_figures(None, self.cfg.img_log_dir, epoch, figures, freq, preamble, self.period, basin)
 
     def _save_results(self, results: Optional[dict], states: Optional[dict] = None, epoch: int = None):
         """Store results in various formats to disk.

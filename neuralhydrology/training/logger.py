@@ -96,7 +96,7 @@ class Logger(object):
             self.writer.close()
             self.writer = None
 
-    def log_figures(self, figures: list[mpl.figure.Figure], freq: str, preamble: str = "", period: str = "validation"):
+    def log_figures(self, figures: list[mpl.figure.Figure], freq: str, preamble: str = "", period: str = "validation", suffix: str = ""):
         """Log matplotlib figures as to disk.
 
         Parameters
@@ -109,8 +109,10 @@ class Logger(object):
             Prefix to prepend to the figures' file names.
         period : str
             'validation' or 'test'
+        suffix : str
+            Appended to figure filenames
         """
-        do_log_figures(self.writer, self._img_log_dir, self.epoch, figures, freq, preamble, period)
+        do_log_figures(self.writer, self._img_log_dir, self.epoch, figures, freq, preamble, period, suffix)
 
     def log_step(self, **kwargs):
         """Log the results of a single step within an epoch.
@@ -187,9 +189,9 @@ class Logger(object):
 
         return value
 
-def do_log_figures(writer: SummaryWriter|None, img_log_dir: Path, epoch: int, figures: list[mpl.figure.Figure], freq: str, preamble: str = "", period: str = "validation"):
+def do_log_figures(writer: SummaryWriter|None, img_log_dir: Path, epoch: int, figures: list[mpl.figure.Figure], freq: str, preamble: str = "", period: str = "validation", suffix: str = ""):
     if writer is not None:
         writer.add_figure(f'{period}/timeseries/{freq}', figures, global_step=epoch)
 
-    for idx, figure in enumerate(figures):
-        figure.savefig(Path(img_log_dir, preamble + f'_{period}_freq{freq}_epoch{epoch}_{idx + 1}'), dpi=300)
+    for figure in figures:
+        figure.savefig(Path(img_log_dir, preamble + f'_{period}_freq{freq}_epoch{epoch}_{suffix}'), dpi=300)
