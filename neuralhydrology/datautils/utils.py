@@ -37,37 +37,6 @@ except ValueError:
     _QE_FREQ = 'Q'
 
 
-def load_hydroatlas_attributes(data_dir: Path, basins: List[str] = []) -> pd.DataFrame:
-    """Load HydroATLAS attributes into a pandas DataFrame
-
-    Parameters
-    ----------
-    data_dir : Path
-        Path to the root directory of the dataset. Must contain a folder called 'hydroatlas_attributes' with a file
-        called `attributes.csv`. The attributes file is expected to have one column called `basin_id`.
-    basins : List[str], optional
-        If passed, return only attributes for the basins specified in this list. Otherwise, the attributes of all basins
-        are returned.
-
-    Returns
-    -------
-    pd.DataFrame
-        Basin-indexed DataFrame containing the HydroATLAS attributes.
-    """
-    attribute_file = data_dir / "hydroatlas_attributes" / "attributes.csv"
-    if not attribute_file.is_file():
-        raise FileNotFoundError(attribute_file)
-
-    df = pd.read_csv(attribute_file, dtype={'basin_id': str})
-    df = df.set_index('basin_id')
-
-    if basins:
-        drop_basins = [b for b in df.index if b not in basins]
-        df = df.drop(drop_basins, axis=0)
-
-    return df
-
-
 def load_basin_file(basin_file: Path) -> List[str]:
     """Load list of basins from text file.
     
@@ -101,52 +70,6 @@ def load_basin_file(basin_file: Path) -> List[str]:
         raise ValueError(" ".join(msg))
 
     return basins
-
-
-def attributes_sanity_check(df: pd.DataFrame):
-    """Utility function to check the suitability of the attributes for model training.
-    
-    This utility function can be used to check if any attribute has a standard deviation of zero. This would lead to 
-    NaN's when normalizing the features and thus would lead to NaN's when training the model. It also checks if any
-    attribute for any basin contains a NaN, which would also cause NaNs during model training.
-    
-    Parameters
-    ----------
-    df : pd.DataFrame
-        DataFrame of catchment attributes as columns.
-
-    Raises
-    ------
-    RuntimeError
-        If one or more attributes have a standard deviation of zero or any attribute for any basin is NaN.
-    """
-    # Check for NaNs in standard deviation of attributes.
-    attributes = []
-    if any(df.std() == 0.0) or any(df.std().isnull()):
-        for k, v in df.std().items():
-            if (v == 0) or (np.isnan(v)):
-                attributes.append(k)
-    if attributes:
-        msg = [
-            "The following attributes have a std of zero or NaN, which results in NaN's ",
-            "when normalizing the features. Remove the attributes from the attribute feature list ",
-            "and restart the run. \n", f"Attributes: {attributes}"
-        ]
-        raise RuntimeError("".join(msg))
-
-    # Check for NaNs in any attribute of any basin
-    nan_df = df[df.isnull().any(axis=1)]
-    if len(nan_df) > 0:
-        failure_cases = defaultdict(list)
-        for basin, row in nan_df.iterrows():
-            for feature, value in row.items():
-                if np.isnan(value):
-                    failure_cases[basin].append(feature)
-        # create verbose error message
-        msg = ["The following basins/attributes are NaN, which can't be used as input:"]
-        for basin, features in failure_cases.items():
-            msg.append(f"{basin}: {features}")
-        raise RuntimeError("\n".join(msg))
 
 
 def sort_frequencies(frequencies: List[str]) -> List[str]:
