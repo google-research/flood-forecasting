@@ -186,6 +186,7 @@ def load_caravan_timeseries_together(
         concat_dim="basin",
         parallel=False,  # open_mfdataset has a bug (seg fault) when True
         chunks={"date": "auto"},
+        join='outer',
     )
     return ds.assign_coords(basin=basins)
 
