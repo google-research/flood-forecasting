@@ -16,7 +16,7 @@ import functools
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import List, Union
+from typing import Union
 
 import numpy as np
 import pandas as pd
@@ -37,7 +37,7 @@ except ValueError:
     _QE_FREQ = 'Q'
 
 
-def load_hydroatlas_attributes(data_dir: Path, basins: List[str] = []) -> pd.DataFrame:
+def load_hydroatlas_attributes(data_dir: Path, basins: list[str] = []) -> pd.DataFrame:
     """Load HydroATLAS attributes into a pandas DataFrame
 
     Parameters
@@ -45,7 +45,7 @@ def load_hydroatlas_attributes(data_dir: Path, basins: List[str] = []) -> pd.Dat
     data_dir : Path
         Path to the root directory of the dataset. Must contain a folder called 'hydroatlas_attributes' with a file
         called `attributes.csv`. The attributes file is expected to have one column called `basin_id`.
-    basins : List[str], optional
+    basins : list[str], optional
         If passed, return only attributes for the basins specified in this list. Otherwise, the attributes of all basins
         are returned.
 
@@ -68,7 +68,7 @@ def load_hydroatlas_attributes(data_dir: Path, basins: List[str] = []) -> pd.Dat
     return df
 
 
-def load_basin_file(basin_file: Path) -> List[str]:
+def load_basin_file(basin_file: Path) -> list[str]:
     """Load list of basins from text file.
     
     Note: Basins names are not allowed to end with '_period*'
@@ -80,7 +80,7 @@ def load_basin_file(basin_file: Path) -> List[str]:
 
     Returns
     -------
-    List[str]
+    list[str]
         List of basin ids as strings.
         
     Raises
@@ -149,7 +149,7 @@ def attributes_sanity_check(df: pd.DataFrame):
         raise RuntimeError("\n".join(msg))
 
 
-def sort_frequencies(frequencies: List[str]) -> List[str]:
+def sort_frequencies(frequencies: list[str]) -> list[str]:
     """Sort the passed frequencies from low to high frequencies.
 
     Use `pandas frequency strings
@@ -158,12 +158,12 @@ def sort_frequencies(frequencies: List[str]) -> List[str]:
 
     Parameters
     ----------
-    frequencies : List[str]
+    frequencies : list[str]
         List of pandas frequency identifiers to be sorted.
 
     Returns
     -------
-    List[str]
+    list[str]
         Sorted list of pandas frequency identifiers.
 
     Raises

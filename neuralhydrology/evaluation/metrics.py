@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import logging
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 import pandas as pd
@@ -26,12 +26,12 @@ from neuralhydrology.utils.errors import AllNaNError
 LOGGER = logging.getLogger(__name__)
 
 
-def get_available_metrics() -> List[str]:
+def get_available_metrics() -> list[str]:
     """Get list of available metrics.
 
     Returns
     -------
-    List[str]
+    list[str]
         List of implemented metric names.
     """
     metrics = [
@@ -277,7 +277,7 @@ def beta_kge(obs: DataArray, sim: DataArray) -> float:
     return float(sim.mean() / obs.mean())
 
 
-def kge(obs: DataArray, sim: DataArray, weights: List[float] = [1., 1., 1.]) -> float:
+def kge(obs: DataArray, sim: DataArray, weights: list[float] = [1., 1., 1.]) -> float:
     r"""Calculate the Kling-Gupta Efficieny [#]_
     
     .. math:: 
@@ -294,7 +294,7 @@ def kge(obs: DataArray, sim: DataArray, weights: List[float] = [1., 1., 1.]) -> 
         Observed time series.
     sim : DataArray
         Simulated time series.
-    weights : List[float]
+    weights : list[float]
         Weighting factors of the 3 KGE parts, by default each part has a weight of 1.
 
     Returns
@@ -819,7 +819,7 @@ def calculate_all_metrics(obs: DataArray,
 
 def calculate_metrics(obs: DataArray,
                       sim: DataArray,
-                      metrics: List[str],
+                      metrics: list[str],
                       resolution: str = "1D",
                       datetime_coord: str = None) -> Dict[str, float]:
     """Calculate specific metrics with default values.
@@ -830,7 +830,7 @@ def calculate_metrics(obs: DataArray,
         Observed time series.
     sim : DataArray
         Simulated time series.
-    metrics : List[str]
+    metrics : list[str]
         List of metric names.
     resolution : str, optional
         Temporal resolution of the time series in pandas format, e.g. '1D' for daily and '1h' for hourly.

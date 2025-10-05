@@ -15,7 +15,7 @@
 import itertools
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import dask
 import dask.delayed
@@ -27,9 +27,9 @@ LOGGER = logging.getLogger(__name__)
 
 
 def load_caravan_attributes(data_dir: Path,
-                            basins: Optional[List[str]] = None,
+                            basins: Optional[list[str]] = None,
                             subdataset: Optional[str] = None,
-                            features: Optional[List[str]] = None) -> xarray.Dataset:
+                            features: Optional[list[str]] = None) -> xarray.Dataset:
     """Load the attributes of the Caravan dataset.
 
     Parameters
@@ -37,7 +37,7 @@ def load_caravan_attributes(data_dir: Path,
     data_dir : Path
         Path to the root directory of Caravan that has to include a sub-directory called 'attributes' which contain the 
         attributes of all sub-datasets in separate folders.
-    basins : List[str], optional
+    basins : list[str], optional
         If passed, returns only attributes for the basins specified in this list. Otherwise, the attributes of all 
         basins are returned.
     subdataset : str, optional
@@ -190,7 +190,7 @@ def load_caravan_timeseries_together(
     return ds.assign_coords(basin=basins)
 
 
-def _load_attribute_files_of_subdatasets(datasets: list[Path], features: List[str]) -> xarray.Dataset:
+def _load_attribute_files_of_subdatasets(datasets: list[Path], features: list[str]) -> xarray.Dataset:
     """Loads all attribute CSV files, indexing gauge_id to basin.
 
     Converts float64 to float32.
