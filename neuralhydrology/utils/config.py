@@ -284,6 +284,10 @@ class Config(object):
     def tester_skip_obs_all_nan(self) -> bool:
         return self._cfg.get("tester_skip_obs_all_nan", False)
 
+    @tester_skip_obs_all_nan.setter
+    def tester_skip_obs_all_nan(self, value: bool):
+        self._cfg["tester_skip_obs_all_nan"] = value
+
     @property
     def inference_mode(self) -> bool:
         return self._cfg.get("inference_mode", True)

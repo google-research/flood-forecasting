@@ -73,6 +73,8 @@ def _main():
         finetune(config_file=Path(args["config_file"]), gpu=args["gpu"])
     elif args["mode"] in ["evaluate", "infer"]:
         config.inference_mode = (args["mode"] == "infer")
+        if config.inference_mode:
+            config.tester_skip_obs_all_nan = False
         eval_run(config, run_dir=Path(args["run_dir"]), period=args["period"], epoch=args["epoch"], gpu=args["gpu"])
     else:
         raise RuntimeError(f"Unknown mode {args['mode']}")

@@ -121,8 +121,10 @@ Validation settings
 Evaluation settings
 -------------------
 
-- ``inference_mode``: Boolean that controls whether to save observed data
-and the running model's output to disk. `True` means to do save to disk.
+- ``inference_mode``: Boolean that controls two things: first, whether to save
+observed data and the running model's output to disk - second, whether to not
+skip all-nan dates. `True` means to do save to disk and to not skip data without
+observed data.
 
 General model configuration
 ---------------------------
