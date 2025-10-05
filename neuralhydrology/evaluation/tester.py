@@ -179,11 +179,6 @@ class BaseTester(object):
             If a model is passed, this is used for validation.
         experiment_logger : Logger, optional
             Logger can be passed during training to log metrics
-
-        Returns
-        -------
-        dict
-            A dictionary containing one xarray per basin with the evaluation results.
         """
         if model is None:
             if self.init_model:
@@ -220,9 +215,15 @@ class BaseTester(object):
             pin_memory=True,  # avoid 1 of 2 mem copies to gpu
         )
 
+        max_figures = min(self.cfg.validate_n_random_basins, self.cfg.log_n_figures, len(basins))
+        basins_for_figures = random.sample(list(basins), k=max_figures)
+
         eval_data_it = self._evaluate(model, loader, self.dataset.frequencies, save_all_output, basins)
         pbar = tqdm(eval_data_it, file=sys.stdout, disable=self._disable_pbar, total=len(basins))
-        pbar.set_description('# Validation' if self.period == "validation" else "# Evaluation")
+        if self.period == "validation":
+            pbar.set_description('# Validation')
+        else:
+            pbar.set_description('# Inference' if self.cfg.inference_mode else '# Evaluation')
 
         for basin_data in pbar:
             if self.device.type == 'cuda':
@@ -343,8 +344,8 @@ class BaseTester(object):
                                 experiment_logger.log_step(**values)
                             results[basin][freq].update(values)
 
-        if (self.cfg.log_n_figures > 0) and results:
-            self._create_and_log_figures(results, experiment_logger, epoch or -1)
+            if basin in basins_for_figures:
+                self._create_and_log_figures(basin, results[basin], experiment_logger, epoch or -1)
 
         # save model output to file, if requested
         results_to_save = None
@@ -355,8 +356,6 @@ class BaseTester(object):
             states_to_save = all_output
         if save_results or save_all_output:
             self._save_results(results=results_to_save, states=states_to_save, epoch=epoch)
-
-        return results
 
     def _calc_exclude_basins(self) -> Iterator[str]:
         if not self.cfg.tester_skip_obs_all_nan:
@@ -380,29 +379,25 @@ class BaseTester(object):
                 if np.any((nan_date_starts <= start) & (nan_date_ends >= end)):
                     yield basin
 
-    def _create_and_log_figures(self, results: dict, experiment_logger: Logger|None, epoch: int):
-        basins = list(results.keys())
-        random.shuffle(basins)
+    def _create_and_log_figures(self, basin: str, results: dict, experiment_logger: Logger|None, epoch: int):
         for target_var in self.cfg.target_variables:
-            max_figures = min(self.cfg.validate_n_random_basins, self.cfg.log_n_figures, len(basins))
-            for freq in results[basins[0]].keys():
-                figures = []
-                for i in range(max_figures):
-                    xr = results[basins[i]][freq]['xr']
-                    obs = xr[f"{target_var}_obs"].values
-                    sim = xr[f"{target_var}_sim"].values
-                    # clip negative predictions to zero, if variable is listed in config 'clip_target_to_zero'
-                    if target_var in self.cfg.clip_targets_to_zero:
-                        sim = xarray.where(sim < 0, 0, sim)
-                    figures.append(
-                        self._get_plots(
-                            obs, sim, title=f"{target_var} - Basin {basins[i]} - Epoch {epoch} - Frequency {freq}")[0])
+            for freq in results:
+                xr = results[freq]['xr']
+                obs = xr[f"{target_var}_obs"].values
+                sim = xr[f"{target_var}_sim"].values
+                # clip negative predictions to zero, if variable is listed in config 'clip_target_to_zero'
+                if target_var in self.cfg.clip_targets_to_zero:
+                    sim = xarray.where(sim < 0, 0, sim)
+                figures = [
+                    self._get_plots(
+                        obs, sim, title=f"{target_var} - Basin {basin} - Epoch {epoch} - Frequency {freq}")[0],
+                ]
                 # make sure the preamble is a valid file name
                 preamble = re.sub(r"[^A-Za-z0-9\._\-]+", "", target_var)
                 if experiment_logger:
-                    experiment_logger.log_figures(figures, freq, preamble, self.period)
+                    experiment_logger.log_figures(figures, freq, preamble, self.period, basin)
                 else:
-                    do_log_figures(None, self.cfg.img_log_dir, epoch, figures, freq, preamble, self.period)
+                    do_log_figures(None, self.cfg.img_log_dir, epoch, figures, freq, preamble, self.period, basin)
 
     def _save_results(self, results: Optional[dict], states: Optional[dict] = None, epoch: int = None):
         """Store results in various formats to disk.
@@ -431,14 +426,14 @@ class BaseTester(object):
             LOGGER.info(f"Stored metrics at {metrics_file}")
 
         # store all results packed as pickle file
-        if results is not None:
+        if results is not None and self.cfg.inference_mode:
             result_file = parent_directory / f"{self.period}_results.p"
             with result_file.open("wb") as fp:
                 pickle.dump(results, fp)
             LOGGER.info(f"Stored results at {result_file}")
 
         # store all model output packed as pickle file
-        if states is not None:
+        if states is not None and self.cfg.inference_mode:
             result_file = parent_directory / f"{self.period}_all_output.p"
             with result_file.open("wb") as fp:
                 pickle.dump(states, fp)

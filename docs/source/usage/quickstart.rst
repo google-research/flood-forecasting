@@ -99,3 +99,10 @@ use the ``nh-results-ensemble`` script::
     nh-results-ensemble --run-dirs $DIR1 $DIR2 ... --output-dir /path/to/output/directory --metrics NSE MSE ...
 
 ``--metrics`` specifies which metrics will be calculated for the averaged predictions.
+
+Running evaluate in inference mode; run::
+
+    nh-run infer --run-dir /path/to/run_dir
+
+This mode runs evaluation but without saving extra data such as observed data nor models' outputs
+nor skipping all-nan observed data dates.
