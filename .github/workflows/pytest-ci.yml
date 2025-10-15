@@ -38,9 +38,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: conda-incubator/setup-miniconda@v3
         with:
-          activate-environment: neuralhydrology
+          activate-environment: googlehydrology
           environment-file: environments/environment_cpu.yml
           python-version: "3.10"
           auto-activate-base: false
       - run: |
-          pytest --cov=neuralhydrology
+          pytest --cov=googlehydrology

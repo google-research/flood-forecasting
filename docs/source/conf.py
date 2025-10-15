@@ -32,10 +32,10 @@ sys.path.insert(0, os.path.abspath('.'))
 sys.path.insert(0, os.path.abspath('../../'))
 # -- Project information -----------------------------------------------------
 about = {}
-with open('../../neuralhydrology/__about__.py', "r") as fp:
+with open('../../googlehydrology/__about__.py', "r") as fp:
     exec(fp.read(), about)
 
-project = 'NeuralHydrology'
+project = 'GoogleHydrology'
 copyright = f'{datetime.datetime.now().year}, Frederik Kratzert'
 author = 'Frederik Kratzert'
 

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """Unit tests for configutils functions. """
-from neuralhydrology.utils.configutils import flatten_feature_list
+from googlehydrology.utils.configutils import flatten_feature_list
 
 def test_empty_list_input():
     """Tests behavior with an empty list input."""

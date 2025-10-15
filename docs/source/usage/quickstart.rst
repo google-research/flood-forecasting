@@ -4,7 +4,7 @@ Quick Start
 Prerequisites
 -------------
 As a first step you need a Python environment with all required dependencies. The recommended way is to use Mini-/Anaconda
-and to create a new environment using one of our predefined environment files in `environments/ <https://github.com/neuralhydrology/neuralhydrology/tree/master/environments>`__.
+and to create a new environment using one of our predefined environment files in `environments/ <https://github.com/googlehydrology/googlehydrology/tree/master/environments>`__.
 Make sure to select the correct file, depending on your system.
 
 If you don't have a CUDA-capable GPU, or if you want to train on MacOS with Metal support, use:
@@ -21,19 +21,19 @@ The next steps should be executed from within this Python environment.
 
 Installation
 ------------
-There are two ways how you can install NeuralHydrology: Editable or non-editable.
+There are two ways how you can install GoogleHydrology: Editable or non-editable.
 If all you want to do is run experiments with existing datasets and existing models, you can use the non-editable
 installation. To install the latest release from PyPI:
 
 .. code-block::
 
-    pip install neuralhydrology
+    pip install googlehydrology
 
 To install the package directly from the current master branch of this repository, including any changes that are not yet part of a release, run:
 
 .. code-block::
 
-    pip install git+https://github.com/neuralhydrology/neuralhydrology.git
+    pip install git+https://github.com/googlehydrology/googlehydrology.git
 
 If you want to try implementing your own models or datasets, you'll need an editable installation.
 For this, start by downloading or cloning the repository to your local machine.
@@ -41,16 +41,16 @@ If you use git, you can run:
 
 .. code-block::
 
-    git clone https://github.com/neuralhydrology/neuralhydrology.git
+    git clone https://github.com/googlehydrology/googlehydrology.git
 
-If you don't know git, you can also download the code from `here <https://github.com/neuralhydrology/neuralhydrology/zipball/master>`__ and extract the zip-file.
+If you don't know git, you can also download the code from `here <https://github.com/googlehydrology/googlehydrology/zipball/master>`__ and extract the zip-file.
 
-After you cloned or downloaded the zip-file, you'll end up with a directory called "neuralhydrology" (or "neuralhydrology-master").
+After you cloned or downloaded the zip-file, you'll end up with a directory called "googlehydrology" (or "googlehydrology-master").
 Next, we'll go to that directory and install a local, editable copy of the package:
 
 .. code-block::
 
-    cd neuralhydrology
+    cd googlehydrology
     pip install -e .
 
 The installation procedure (both the editable and the non-editable version) adds the package to your Python environment and installs three bash scripts:

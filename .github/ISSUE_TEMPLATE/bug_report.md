@@ -24,7 +24,7 @@ Please provide the full stack trace if any exception occured. If applicable, add
 
 **Desktop & Environment (please complete the following information):**
  - OS: [e.g. Linux, Windows, iOS]
- - The git commit if you cloned the repo, or the version number in `neuralhydrology/__about__.py`)
+ - The git commit if you cloned the repo, or the version number in `googlehydrology/__about__.py`)
  - The Python version and a list of installed Python packages. If you use conda, you can create this list via `conda env export`.
 
 **Additional context**

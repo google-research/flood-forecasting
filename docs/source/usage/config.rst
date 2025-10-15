@@ -2,7 +2,7 @@ Configuration Arguments
 =======================
 
 This page provides a list of possible configuration arguments.
-Check out the file `examples/config.yml.example <https://github.com/neuralhydrology/neuralhydrology/blob/master/examples/config.yml.example>`__ for an example of how a config file could look like.
+Check out the file `examples/config.yml.example <https://github.com/googlehydrology/googlehydrology/blob/master/examples/config.yml.example>`__ for an example of how a config file could look like.
 
 General experiment configurations
 ---------------------------------
@@ -98,7 +98,7 @@ Validation settings
 
 -  ``metrics``: List of metrics to calculate during validation/testing.
    See
-   :py:mod:`neuralhydrology.evaluation.metrics`
+   :py:mod:`googlehydrology.evaluation.metrics`
    for a list of available metrics. Can also be a dictionary of lists,
    where each key-value pair corresponds to one target variable and
    the metrics that should be computed for this target. Like this,
@@ -131,7 +131,7 @@ General model configuration
 
 -  ``model``: Defines the model class, i.e. the core of the model, that will be used. Names
    have to match the values in `this
-   function <https://github.com/neuralhydrology/neuralhydrology/blob/master/neuralhydrology/modelzoo/__init__.py#L17>`__,
+   function <https://github.com/googlehydrology/googlehydrology/blob/master/googlehydrology/modelzoo/__init__.py#L17>`__,
    e.g., [``cudalstm``, ``ealstm``, ``mtslstm``]
 
 -  ``head``: The prediction head that is used on top of the output of
@@ -378,11 +378,11 @@ Training settings
 
 -  ``optimizer``: Specify which optimizer to use. Currently supported
    are Adam and AdamW. New optimizers can be added
-   :py:func:`here <neuralhydrology.training.get_optimizer>`.
+   :py:func:`here <googlehydrology.training.get_optimizer>`.
 
 -  ``loss``: Which loss to use. Currently supported are ``MSE``,
    ``NSE``, ``RMSE``, ``GMMLoss``, ``CMALLoss``, and ``UMALLoss``. New 
-   losses can be added :py:mod:`here <neuralhydrology.training.loss>`.
+   losses can be added :py:mod:`here <googlehydrology.training.loss>`.
 
 - ``allow_subsequent_nan_losses``: Define a number of training steps for
    which a loss value of ``NaN`` is ignored and no error is raised but 
@@ -401,7 +401,7 @@ Training settings
    all frequencies via an MSE term, and (2) ``forecast_overlap``, which
    couples overlapping sequences between hindcast and forecast models.
    New regularizations can be added
-   :py:mod:`here <neuralhydrology.training.regularization>`.
+   :py:mod:`here <googlehydrology.training.regularization>`.
 
 -  ``learning_rate_strategy``: A str that determines how to change learning rate.
    One of: ConstantLR, StepLR, ReduceLROnPlateau. Defaults to 'ConstantLR'.
@@ -504,7 +504,7 @@ Logger settings
    a value of 5 saves 50ms per iteration on average which translates to 1.5h
    given 2000 updates for 30 epocs.
 
--  ``save_git_diff``: If set to True and NeuralHydrology is a git repository
+-  ``save_git_diff``: If set to True and GoogleHydrology is a git repository
    with uncommitted changes, the git diff will be stored in the run directory.
    When using this option, make sure that your run and data directories are either
    not located inside the git repository, or that they are part of the ``.gitignore`` file.
@@ -525,7 +525,7 @@ Data settings
    ``hourly_camels_us`` (hourly forcing and streamflow data for 516 CAMELS (US) basins, published 
    by `Gauch et al. <https://hess.copernicus.org/articles/25/2045/2021/>`__), 
    and ``generic`` (can be used with any dataset that is stored in a specific format, 
-   see :py:class:`documentation <neuralhydrology.datasetzoo.genericdataset>` for further informations).
+   see :py:class:`documentation <googlehydrology.datasetzoo.genericdataset>` for further informations).
 
 -  ``data_dir``: Full or relative path to the root directory of the data set.
 

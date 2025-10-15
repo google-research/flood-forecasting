@@ -41,7 +41,7 @@ jobs:
         --wheel
         --outdir dist/
     - name: Publish distribution to PyPI
-      if: github.repository == 'neuralhydrology/neuralhydrology'
+      if: github.repository == 'googlehydrology/googlehydrology'
       uses: pypa/gh-action-pypi-publish@master
       with:
         user: __token__

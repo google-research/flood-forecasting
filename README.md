@@ -10,7 +10,7 @@ The repository provides open-source replication of Google’s state-of-the-art f
 - Implementation of hydrology forecast models for gauged and ungauged basins.
 - Data pipelines reading from public datasets: [Caravan](https://www.nature.com/articles/s41597-023-01975-w) and [Caravan MultiMet](https://arxiv.org/abs/2411.09459).
 - Pipelines for training, fine-tuning with historical data, and assimilating real-time data.
-- The coding style and workflows in this repository are based on the open source NeuralHydrology library. All models are implemented using PyTorch.
+- The coding style and workflows in this repository are based on the open source GoogleHydrology library. All models are implemented using PyTorch.
 
 ## Installation
 ...

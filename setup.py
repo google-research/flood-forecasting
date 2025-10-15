@@ -22,30 +22,30 @@ with readme_file.open("r") as fp:
     long_description = fp.read()
 
 about = {}
-with open("neuralhydrology/__about__.py", "r") as fp:
+with open("googlehydrology/__about__.py", "r") as fp:
     exec(fp.read(), about)
 
-setup(name='neuralhydrology',
+setup(name='googlehydrology',
       version=about["__version__"],
       packages=[
-          'neuralhydrology', 'neuralhydrology.datasetzoo', 'neuralhydrology.datautils', 'neuralhydrology.utils',
-          'neuralhydrology.modelzoo', 'neuralhydrology.training', 'neuralhydrology.evaluation'
+          'googlehydrology', 'googlehydrology.datasetzoo', 'googlehydrology.datautils', 'googlehydrology.utils',
+          'googlehydrology.modelzoo', 'googlehydrology.training', 'googlehydrology.evaluation'
       ],
-      url='https://neuralhydrology.readthedocs.io',
+      url='https://googlehydrology.readthedocs.io',
       project_urls={
-          'Documentation': 'https://neuralhydrology.readthedocs.io',
-          'Source': 'https://github.com/neuralhydrology/neuralhydrology',
-          'Research Blog': 'https://neuralhydrology.github.io/'
+          'Documentation': 'https://googlehydrology.readthedocs.io',
+          'Source': 'https://github.com/googlehydrology/googlehydrology',
+          'Research Blog': 'https://googlehydrology.github.io/'
       },
       author='Frederik Kratzert, Daniel Klotz, Martin Gauch',
-      author_email='neuralhydrology@googlegroups.com',
+      author_email='googlehydrology@googlegroups.com',
       description='Library for training deep learning models with environmental focus',
       long_description=long_description,
       long_description_content_type='text/markdown',
       entry_points={
           'console_scripts': [
-              'nh-schedule-runs=neuralhydrology.nh_run_scheduler:_main', 'nh-run=neuralhydrology.nh_run:_main',
-              'nh-results-ensemble=neuralhydrology.utils.nh_results_ensemble:_main'
+              'nh-schedule-runs=googlehydrology.nh_run_scheduler:_main', 'nh-run=googlehydrology.nh_run:_main',
+              'nh-results-ensemble=googlehydrology.utils.nh_results_ensemble:_main'
           ]
       },
       python_requires='>=3.8',

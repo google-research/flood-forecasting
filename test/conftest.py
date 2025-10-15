@@ -17,7 +17,7 @@ from typing import Union, Dict, Callable
 
 import pytest
 
-from neuralhydrology.utils.config import Config
+from googlehydrology.utils.config import Config
 from test import Fixture
 
 

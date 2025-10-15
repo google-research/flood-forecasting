@@ -9,7 +9,7 @@
 # folder
 build/*
 dist/*
-neuralhydrology.egg-info/*
+googlehydrology.egg-info/*
 .vscode/*
 .idea/*
 .ipynb_checkpoints/

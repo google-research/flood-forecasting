@@ -19,9 +19,9 @@ import pandas as pd
 import numpy as np
 import pytest
 
-from neuralhydrology.evaluation.evaluate import start_evaluation
-from neuralhydrology.training.train import start_training
-from neuralhydrology.utils.config import Config
+from googlehydrology.evaluation.evaluate import start_evaluation
+from googlehydrology.training.train import start_training
+from googlehydrology.utils.config import Config
 
 from test import Fixture
 
