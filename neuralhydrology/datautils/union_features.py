@@ -130,4 +130,5 @@ def union_features(
                 feature_da, mask_feature_da
             )
 
-    return dataset.update(new_das)
+    dataset.update(new_das)
+    return dataset
