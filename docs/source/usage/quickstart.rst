@@ -4,7 +4,7 @@ Quick Start
 Prerequisites
 -------------
 As a first step you need a Python environment with all required dependencies. The recommended way is to use Mini-/Anaconda
-and to create a new environment using one of our predefined environment files in `environments/ <https://github.com/googlehydrology/googlehydrology/tree/master/environments>`__.
+and to create a new environment using one of our predefined environment files in `environments/ <https://github.com/google-research/flood-forecasting/tree/master/environments>`__.
 Make sure to select the correct file, depending on your system.
 
 If you don't have a CUDA-capable GPU, or if you want to train on MacOS with Metal support, use:
@@ -33,7 +33,7 @@ To install the package directly from the current master branch of this repositor
 
 .. code-block::
 
-    pip install git+https://github.com/googlehydrology/googlehydrology.git
+    pip install git+https://github.com/google-research/flood-forecasting.git
 
 If you want to try implementing your own models or datasets, you'll need an editable installation.
 For this, start by downloading or cloning the repository to your local machine.
@@ -41,9 +41,9 @@ If you use git, you can run:
 
 .. code-block::
 
-    git clone https://github.com/googlehydrology/googlehydrology.git
+    git clone https://github.com/google-research/flood-forecasting.git
 
-If you don't know git, you can also download the code from `here <https://github.com/googlehydrology/googlehydrology/zipball/master>`__ and extract the zip-file.
+If you don't know git, you can also download the code from `here <https://github.com/google-research/flood-forecasting/zipball/master>`__ and extract the zip-file.
 
 After you cloned or downloaded the zip-file, you'll end up with a directory called "googlehydrology" (or "googlehydrology-master").
 Next, we'll go to that directory and install a local, editable copy of the package:

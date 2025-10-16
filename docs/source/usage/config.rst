@@ -2,7 +2,7 @@ Configuration Arguments
 =======================
 
 This page provides a list of possible configuration arguments.
-Check out the file `examples/config.yml.example <https://github.com/googlehydrology/googlehydrology/blob/master/examples/config.yml.example>`__ for an example of how a config file could look like.
+Check out the file `examples/config.yml.example <https://github.com/google-research/flood-forecasting/blob/master/examples/config.yml.example>`__ for an example of how a config file could look like.
 
 General experiment configurations
 ---------------------------------
@@ -131,7 +131,7 @@ General model configuration
 
 -  ``model``: Defines the model class, i.e. the core of the model, that will be used. Names
    have to match the values in `this
-   function <https://github.com/googlehydrology/googlehydrology/blob/master/googlehydrology/modelzoo/__init__.py#L17>`__,
+   function <https://github.com/google-research/flood-forecasting/blob/master/googlehydrology/modelzoo/__init__.py#L17>`__,
    e.g., [``cudalstm``, ``ealstm``, ``mtslstm``]
 
 -  ``head``: The prediction head that is used on top of the output of

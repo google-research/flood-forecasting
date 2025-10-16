@@ -7,7 +7,7 @@ Welcome to GoogleHydrology's documentation!
 ===========================================
 
 This is the documentation for the GoogleHydrology Python package.
-The source code is available on `GitHub <https://github.com/googlehydrology/googlehydrology/>`_.
+The source code is available on `GitHub <https://github.com/google-research/flood-forecasting/>`_.
 
 On this documentation page, you'll find a :doc:`quickstart guide <usage/quickstart>` with step-by-step instructions on installation, required datasets, and command-line usage.
 We've also written a few :doc:`tutorials <tutorials/index>` that walk you through code examples to train your first models.
