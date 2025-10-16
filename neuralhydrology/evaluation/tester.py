@@ -17,6 +17,7 @@ import logging
 import pickle
 import random
 import re
+import shutil
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -222,6 +223,8 @@ class BaseTester(object):
         else:
             pbar.set_description('# Inference' if self.cfg.inference_mode else '# Evaluation')
 
+        self._ensure_no_previous_results_saved(epoch)
+
         for basin_data in pbar:
             results = {}
 
@@ -345,9 +348,14 @@ class BaseTester(object):
             if basin in basins_for_figures:
                 self._create_and_log_figures(basin, results, experiment_logger, epoch or -1)
 
-            self._save_incremental_results(basin, results=results, states=basin_data['all_output'], epoch=epoch)
-
-        self._union_metric_csvs(epoch=epoch)
+            self._save_incremental_results(
+                basin,
+                results=results,
+                states=basin_data['all_output'] if save_all_output else {},
+                save_results=save_results,
+                save_all_output=save_all_output,
+                epoch=epoch,
+            )
 
     def _calc_exclude_basins(self) -> Iterator[str]:
         if not self.cfg.tester_skip_obs_all_nan:
@@ -391,61 +399,98 @@ class BaseTester(object):
                 else:
                     do_log_figures(None, self.cfg.img_log_dir, epoch, figures, freq, preamble, self.period, basin)
 
-    def _save_incremental_results(self, basin: str, results: dict, states: dict, epoch: int|None = None):
+    def _ensure_no_previous_results_saved(self, epoch: int | None = None):
+        parent_directory = self._parent_directory_for_results(epoch)
+
+        zarr_stores_to_remove = [
+            parent_directory / f'{self.period}_results.zarr',
+            parent_directory / f'{self.period}_all_output.zarr',
+        ]
+        for zarr_store in zarr_stores_to_remove:
+            shutil.rmtree(zarr_store, ignore_errors=True)
+
+        metrics_csv_path = parent_directory / f'{self.period}_metrics.csv'
+        if metrics_csv_path.exists():
+            metrics_csv_path.unlink()
+
+    def _save_incremental_results(
+        self,
+        basin: str,
+        *,
+        results: dict,
+        states: dict,
+        save_results: bool,
+        save_all_output: bool,
+        epoch: int | None,
+    ):
         """Store results in various formats to disk.
         
         Developer note: We cannot store the time series data (the xarray objects) as netCDF file but have to use
         pickle as a wrapper. The reason is that netCDF files have special constraints on the characters/symbols that can
         be used as variable names. However, for convenience we will store metrics, if calculated, in a separate csv-file.
         """
-        # use name of weight file as part of the result folder name
-        weight_file = self._get_weight_file(epoch=epoch)
-
-        # make sure the parent directory exists
-        parent_directory = self.run_dir / self.period / weight_file.stem
-        parent_directory.mkdir(parents=True, exist_ok=True)
+        parent_directory = self._parent_directory_for_results(epoch)
 
         # save metrics any time this function is called, as long as they exist
-        if self.cfg.metrics and results is not None:
+        if self.cfg.metrics and results:
             metrics_list = self.cfg.metrics
             if isinstance(metrics_list, dict):
                 metrics_list = list(set(metrics_list.values()))
             if "all" in metrics_list:
                 metrics_list = get_available_metrics()
             df = metrics_to_dataframe({basin: results}, metrics_list, self.cfg.target_variables)
-            metrics_file = parent_directory / f"{self.period}_{basin}_metrics.csv"
-            df.to_csv(metrics_file)
-            LOGGER.info(f"Stored metrics at {metrics_file}")
+            metrics_file = parent_directory / f'{self.period}_metrics.csv'
+            df.to_csv(metrics_file, mode='a', header=not metrics_file.exists())
 
-        # store all results packed as pickle file
-        if results and self.cfg.inference_mode and self.period == 'test':
-            result_file = parent_directory / f"{self.period}_{basin}_results.p"
-            with result_file.open("wb") as fp:
-                pickle.dump(results, fp)
-            LOGGER.info(f"Stored results at {result_file}")
+        # store all results in a zarr store
+        if (
+            results
+            and save_results
+            and self.cfg.inference_mode
+            and self.period == 'test'
+        ):
+            result_file = parent_directory / f'{self.period}_results.zarr'
 
-        # store all model output packed as pickle file
-        if states and self.cfg.inference_mode and self.period == 'test':
-            result_file = parent_directory / f"{self.period}_{basin}_all_output.p"
-            with result_file.open("wb") as fp:
-                pickle.dump(states, fp)
-            LOGGER.info(f"Stored states at {result_file}")
+            dss = (
+                freq_results['xr'].assign_coords(freq=freq)
+                for freq, freq_results in results.items()
+            )
+            ds = xarray.concat(dss, dim='freq').expand_dims(basin=[basin])
+            ds = _ensure_unicode_or_bytes_are_strings(ds)
 
-    def _union_metric_csvs(self, epoch: int|None = None):
+            if result_file.exists():
+                ds.to_zarr(result_file, append_dim='basin')
+            else:
+                ds.to_zarr(result_file, mode='w')
+
+        # store all model output in a zarr store
+        if (
+            states
+            and save_all_output
+            and self.cfg.inference_mode
+            and self.period == 'test'
+        ):
+            result_file = parent_directory / f'{self.period}_all_output.zarr'
+
+            # TODO(future): setup dims by name instead of by order.
+            data_vars = {
+                key: (tuple(f'{key}_dim_{i}' for i in range(value.ndim)), value)
+                for key, value in states.items()
+            }
+            ds = xarray.Dataset(data_vars).expand_dims(basin=[basin])
+            ds = _ensure_unicode_or_bytes_are_strings(ds)
+
+            if result_file.exists():
+                ds.to_zarr(result_file, append_dim='basin')
+            else:
+                ds.to_zarr(result_file, mode='w')
+
+    def _parent_directory_for_results(self, epoch: int | None = None):
+        # determine parent directory name and create if needed
         weight_file = self._get_weight_file(epoch=epoch)
         parent_directory = self.run_dir / self.period / weight_file.stem
-
-        csvs = map(pd.read_csv, parent_directory.glob(f'{self.period}_*_metrics.csv'))
-        combined_metrics = pd.concat(csvs, ignore_index=True)
-
-        incremental_metrics_to_remove = list(parent_directory.glob(f"{self.period}_*_metrics.csv"))
-
-        metrics_file = parent_directory / f"{self.period}_all_metrics.csv"
-        combined_metrics.to_csv(metrics_file, index=False)
-        LOGGER.info(f"Stored combined metrics at {metrics_file}")
-
-        for incremental_metrics in incremental_metrics_to_remove:
-            incremental_metrics.unlink()
+        parent_directory.mkdir(parents=True, exist_ok=True)
+        return parent_directory
 
     def _evaluate(self, model: BaseModel, loader: DataLoader, frequencies: list[str], save_all_output: bool = False, basins: set[str] = set()):
         predict_last_n = self.cfg.predict_last_n
@@ -629,3 +674,11 @@ class UncertaintyTester(BaseTester):
 
     def _get_plots(self, qobs: np.ndarray, qsim: np.ndarray, title: str):
         return plots.uncertainty_plot(qobs, qsim, title)
+
+def _ensure_unicode_or_bytes_are_strings(ds: xarray.Dataset):
+    updates = {
+        name: coord.astype(str)
+        for name, coord in ds.coords.items()
+        if coord.dtype.kind in ('U', 'S')
+    }
+    return ds.assign_coords(updates)
