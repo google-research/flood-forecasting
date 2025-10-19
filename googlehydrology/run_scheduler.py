@@ -87,7 +87,7 @@ def schedule_runs(mode: str, directory: Path, gpu_ids: list[int], runs_per_gpu: 
     gpu_counter = np.zeros((len(gpu_ids)), dtype=int)
 
     # for command line tool, we need full path to the main.py script
-    script_path = str(Path(__file__).absolute().parent / "nh_run.py")
+    script_path = str(Path(__file__).absolute().parent / "run.py")
 
     running_processes = {}
     counter = 0
