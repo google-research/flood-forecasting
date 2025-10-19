@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from neuralhydrology.datautils.union_features import (
+from googlehydrology.datautils.union_features import (
     _expand_lead_times,
     _union_features_with_same_dimensions,
     _union_lead_time_feature_with_non_lead_time_feature,

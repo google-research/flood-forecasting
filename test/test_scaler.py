@@ -22,8 +22,8 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-from neuralhydrology.datautils import scaler
-from neuralhydrology.datautils.scaler import Scaler, SCALER_FILE_NAME, _calc_stats, _calc_types
+from googlehydrology.datautils import scaler
+from googlehydrology.datautils.scaler import Scaler, SCALER_FILE_NAME, _calc_stats, _calc_types
 
 # Set a fixed seed for reproducible tests
 np.random.seed(42)

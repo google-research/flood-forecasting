@@ -22,9 +22,9 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 from typing import Callable
 
-from neuralhydrology.datasetzoo.multimet import Multimet
-from neuralhydrology.utils.config import Config
-from neuralhydrology.utils.errors import NoTrainDataError, NoEvaluationDataError
+from googlehydrology.datasetzoo.multimet import Multimet
+from googlehydrology.utils.config import Config
+from googlehydrology.utils.errors import NoTrainDataError, NoEvaluationDataError
 
 # --- Helper for Config attributes ---
 def _get_default_config_attributes(**kwargs):
@@ -157,9 +157,9 @@ def mock_load_data_return(get_config, sample_basins, sample_dates):
 
 # Patching `Multimet._load_data` because it's a NotImplementedError in the base class
 # and needs to return a concrete Dataset for the rest of __init__ to function.
-@patch("neuralhydrology.datasetzoo.multimet.load_basin_file")
+@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
 @patch.object(Multimet, "_load_data")
-@patch("neuralhydrology.datasetzoo.multimet.Scaler")
+@patch("googlehydrology.datasetzoo.multimet.Scaler")
 def test_forecast_dataset_init_success(
     mock_scaler, mock_load_data, mock_load_basin_file,
     get_config, sample_basins, mock_load_data_return
@@ -197,7 +197,7 @@ def test_forecast_dataset_init_success(
     assert dataset._dataset is not None
 
 
-@patch("neuralhydrology.datasetzoo.multimet.load_basin_file")
+@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
 @patch.object(Multimet, "_load_data")
 def test_forecast_dataset_len(
     mock_load_data, mock_load_basin_file, get_config, sample_basins, mock_load_data_return
@@ -217,7 +217,7 @@ def test_forecast_dataset_len(
     assert len(dataset) > 0
 
 
-@patch("neuralhydrology.datasetzoo.multimet.load_basin_file")
+@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
 @patch.object(Multimet, "_load_data")
 def test_forecast_dataset_getitem(
     mock_load_data, mock_load_basin_file, get_config, sample_basins, mock_load_data_return
@@ -259,8 +259,8 @@ def test_forecast_dataset_getitem(
         dataset[0.5]
 
 
-@patch("neuralhydrology.datasetzoo.multimet.validate_samples")
-@patch("neuralhydrology.datasetzoo.multimet.load_basin_file")
+@patch("googlehydrology.datasetzoo.multimet.validate_samples")
+@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
 @patch.object(Multimet, "_load_data")
 def test_forecast_dataset_no_train_data_error(
     mock_load_data, mock_load_basin_file, mock_validate_samples,
@@ -284,9 +284,9 @@ def test_forecast_dataset_no_train_data_error(
         Multimet(cfg=cfg, is_train=True, period="train")
 
 
-@patch("neuralhydrology.datasetzoo.multimet.validate_samples")
-@patch("neuralhydrology.datasetzoo.multimet.load_basin_file")
-@patch("neuralhydrology.datasetzoo.multimet.Scaler")
+@patch("googlehydrology.datasetzoo.multimet.validate_samples")
+@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
+@patch("googlehydrology.datasetzoo.multimet.Scaler")
 @patch.object(Multimet, "_load_data")
 def test_forecast_dataset_no_evaluation_data_error(
     mock_load_data, mock_scaler, mock_load_basin_file, mock_validate_samples,
@@ -313,7 +313,7 @@ def test_forecast_dataset_no_evaluation_data_error(
         Multimet(cfg=cfg, is_train=False, period="test", compute_scaler=False)
 
 
-@patch("neuralhydrology.datasetzoo.multimet.load_basin_file")
+@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
 @patch.object(Multimet, "_load_data")
 def test_forecast_dataset_init_period_error(
     mock_load_data, mock_load_basin_file, get_config
@@ -326,7 +326,7 @@ def test_forecast_dataset_init_period_error(
         Multimet(cfg=cfg, is_train=True, period="invalid_period")
 
 
-@patch("neuralhydrology.datasetzoo.multimet.load_basin_file")
+@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
 @patch.object(Multimet, "_load_data")
 def test_forecast_dataset_init_forecast_hindcast_mismatch_error(
     mock_load_data, mock_load_basin_file, get_config
@@ -347,7 +347,7 @@ def test_forecast_dataset_init_forecast_hindcast_mismatch_error(
         Multimet(cfg=cfg, is_train=True, period="train")
 
 
-@patch("neuralhydrology.datasetzoo.multimet.load_basin_file")
+@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
 @patch.object(Multimet, "_load_data")
 def test_forecast_dataset_init_compute_scaler_error(
     mock_load_data, mock_load_basin_file, get_config
@@ -371,7 +371,7 @@ def test_forecast_dataset_init_compute_scaler_error(
         Multimet(cfg=cfg_finetuning, is_train=True, period="train", compute_scaler=True)
 
 
-@patch("neuralhydrology.datasetzoo.multimet.load_basin_file")
+@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
 @patch.object(Multimet, "_load_data")
 def test_forecast_dataset_nan_handling_method_error(
     mock_load_data, mock_load_basin_file, get_config
@@ -402,7 +402,7 @@ def test_forecast_dataset_nan_handling_method_error(
         Multimet(cfg=cfg_nan_handling_unioning, is_train=True, period="train")
 
 
-@patch("neuralhydrology.datasetzoo.multimet.load_basin_file")
+@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
 @patch.object(Multimet, "_load_data")
 def test_forecast_dataset_per_basin_target_stds(
     mock_load_data, mock_load_basin_file, get_config, sample_basins, mock_load_data_return
@@ -437,7 +437,7 @@ def test_forecast_dataset_per_basin_target_stds(
     assert 'per_basin_target_stds' not in sample_mse
 
 
-@patch("neuralhydrology.datasetzoo.multimet.load_basin_file")
+@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
 @patch.object(Multimet, "_load_data")
 def test_forecast_dataset_timestep_counter(
     mock_load_data, mock_load_basin_file, get_config, sample_basins, mock_load_data_return
@@ -463,7 +463,7 @@ def test_forecast_dataset_timestep_counter(
     assert sample['x_d_forecast']['forecast_counter'].shape == (cfg_with_counter.lead_time + cfg_with_counter.forecast_overlap, 1)
 
 
-@patch("neuralhydrology.datasetzoo.multimet.load_basin_file")
+@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
 @patch.object(Multimet, "_load_data")
 def test_forecast_dataset_no_forecast_features_renames_key(
     mock_load_data, mock_load_basin_file, get_config, sample_basins, mock_load_data_return

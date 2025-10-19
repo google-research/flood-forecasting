@@ -16,7 +16,7 @@
 import pandas as pd
 import pytest
 
-from neuralhydrology.datautils.utils import (get_frequency_factor, infer_frequency, sort_frequencies, _ME_FREQ,
+from googlehydrology.datautils.utils import (get_frequency_factor, infer_frequency, sort_frequencies, _ME_FREQ,
                                              _QE_FREQ, _YE_FREQ)
 
 

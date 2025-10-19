@@ -2,16 +2,16 @@ Tutorials
 =========
 
 All tutorials are based on Jupyter notebooks that are hosted on GitHub. 
-If you want to run the code yourself, you can find the notebooks in the `examples folder <https://github.com/neuralhydrology/neuralhydrology/tree/master/examples>`__ of the NeuralHydrology GitHub repository.
+If you want to run the code yourself, you can find the notebooks in the `examples folder <https://github.com/google-research/flood-forecasting/tree/master/examples>`__ of the GoogleHydrology GitHub repository.
 
 | **Data Prerequisites**
 | For most of our tutorials you will need some data to train and evaluate models. In all of these examples we use the publicly available CAMELS US dataset. :doc:`This tutorial <data-prerequisites>` will guide you through the download process of the different dataset pieces and explain how the code expects the local folder structure.
 
-| **Introduction to NeuralHydrology**
-| If you're new to the NeuralHydrology package, :doc:`this tutorial <introduction>` is the place to get started. It walks you through the basic command-line and API usage patterns, and you get to train and evaluate your first model.
+| **Introduction to GoogleHydrology**
+| If you're new to the GoogleHydrology package, :doc:`this tutorial <introduction>` is the place to get started. It walks you through the basic command-line and API usage patterns, and you get to train and evaluate your first model.
 
 | **Adding a New Model: Gated Recurrent Unit (GRU)**
-| Once you know the basics, you might want to add your own model. Using the `GRU <https://en.wikipedia.org/wiki/Gated_recurrent_unit>`__ model as an example, :doc:`this tutorial <adding-gru>` shows how and where to add models in the NeuralHydrology codebase.
+| Once you know the basics, you might want to add your own model. Using the `GRU <https://en.wikipedia.org/wiki/Gated_recurrent_unit>`__ model as an example, :doc:`this tutorial <adding-gru>` shows how and where to add models in the GoogleHydrology codebase.
 
 | **Adding a New Dataset: CAMELS-CL**
 | Always using the United States CAMELS dataset is getting boring? :doc:`This tutorial <add-dataset>` shows you how to add a new dataset: The Chilean version of CAMELS.

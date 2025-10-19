@@ -15,7 +15,7 @@
 from math import ceil
 import pytest
 
-from neuralhydrology.evaluation.utils import BasinBatchSampler
+from googlehydrology.evaluation.utils import BasinBatchSampler
 
 
 @pytest.fixture
