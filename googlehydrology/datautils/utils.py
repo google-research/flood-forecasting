@@ -123,7 +123,7 @@ def infer_frequency(index: Union[pd.DatetimeIndex, np.ndarray]) -> str:
         native_frequency = f'1{native_frequency}'
 
     # pd.Timedelta doesn't understand weekly (W) frequencies, so we convert them to the equivalent multiple of 7D.
-    weekly_freq = re.match('(\d+)W(-(MON|TUE|WED|THU|FRI|SAT|SUN))?$', native_frequency)
+    weekly_freq = re.match(r'(\d+)W(-(MON|TUE|WED|THU|FRI|SAT|SUN))?$', native_frequency)
     if weekly_freq is not None:
         n = int(weekly_freq[1]) * 7
         native_frequency = f'{n}D'
