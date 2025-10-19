@@ -55,7 +55,7 @@ setup(
             'results-ensemble=googlehydrology.utils.results_ensemble:_main',
         ]
     },
-    python_requires='>=3.8',
+    python_requires='>=3.12',
     install_requires=[
         'matplotlib',
         'numba',
