@@ -1,7 +1,7 @@
-nh\_run\_scheduler
+run\_scheduler
 ==================
 
-.. automodule:: googlehydrology.nh_run_scheduler
+.. automodule:: googlehydrology.run_scheduler
    :members:
    :undoc-members:
    :show-inheritance:

@@ -25,47 +25,55 @@ about = {}
 with open("googlehydrology/__about__.py", "r") as fp:
     exec(fp.read(), about)
 
-setup(name='googlehydrology',
-      version=about["__version__"],
-      packages=[
-          'googlehydrology', 'googlehydrology.datasetzoo', 'googlehydrology.datautils', 'googlehydrology.utils',
-          'googlehydrology.modelzoo', 'googlehydrology.training', 'googlehydrology.evaluation'
-      ],
-      url='https://googlehydrology.readthedocs.io',
-      project_urls={
-          'Documentation': 'https://googlehydrology.readthedocs.io',
-          'Source': 'https://github.com/googlehydrology/googlehydrology',
-          'Research Blog': 'https://googlehydrology.github.io/'
-      },
-      author='Frederik Kratzert, Daniel Klotz, Martin Gauch',
-      author_email='googlehydrology@googlegroups.com',
-      description='Library for training deep learning models with environmental focus',
-      long_description=long_description,
-      long_description_content_type='text/markdown',
-      entry_points={
-          'console_scripts': [
-              'nh-schedule-runs=googlehydrology.nh_run_scheduler:_main', 'nh-run=googlehydrology.nh_run:_main',
-              'nh-results-ensemble=googlehydrology.utils.nh_results_ensemble:_main'
-          ]
-      },
-      python_requires='>=3.8',
-      install_requires=[
-          'matplotlib',
-          'numba',
-          'numpy',
-          'pandas',
-          'ruamel.yaml',
-          'torch',
-          'scipy',
-          'tensorboard',
-          'tqdm',
-          'xarray',
-      ],
-      classifiers=[
-          'Programming Language :: Python :: 3',
-          'Operating System :: OS Independent',
-          'Topic :: Scientific/Engineering :: Artificial Intelligence',
-          'Topic :: Scientific/Engineering :: Hydrology',
-          'License :: OSI Approved :: BSD License',
-      ],
-      keywords='deep learning hydrology lstm neural network streamflow discharge rainfall-runoff')
+setup(
+    name='googlehydrology',
+    version=about['__version__'],
+    packages=[
+        'googlehydrology',
+        'googlehydrology.datasetzoo',
+        'googlehydrology.datautils',
+        'googlehydrology.utils',
+        'googlehydrology.modelzoo',
+        'googlehydrology.training',
+        'googlehydrology.evaluation',
+    ],
+    url='https://googlehydrology.readthedocs.io',
+    project_urls={
+        'Documentation': 'https://googlehydrology.readthedocs.io',
+        'Source': 'https://github.com/googlehydrology/googlehydrology',
+        'Research Blog': 'https://googlehydrology.github.io/',
+    },
+    author='Frederik Kratzert, Daniel Klotz, Martin Gauch',
+    author_email='googlehydrology@googlegroups.com',
+    description='Library for training deep learning models with environmental focus',
+    long_description=long_description,
+    long_description_content_type='text/markdown',
+    entry_points={
+        'console_scripts': [
+            'schedule-runs=googlehydrology.run_scheduler:_main',
+            'run=googlehydrology.run:_main',
+            'results-ensemble=googlehydrology.utils.results_ensemble:_main',
+        ]
+    },
+    python_requires='>=3.8',
+    install_requires=[
+        'matplotlib',
+        'numba',
+        'numpy',
+        'pandas',
+        'ruamel.yaml',
+        'torch',
+        'scipy',
+        'tensorboard',
+        'tqdm',
+        'xarray',
+    ],
+    classifiers=[
+        'Programming Language :: Python :: 3',
+        'Operating System :: OS Independent',
+        'Topic :: Scientific/Engineering :: Artificial Intelligence',
+        'Topic :: Scientific/Engineering :: Hydrology',
+        'License :: OSI Approved :: BSD License',
+    ],
+    keywords='deep learning hydrology lstm neural network streamflow discharge rainfall-runoff',
+)

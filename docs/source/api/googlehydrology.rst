@@ -23,6 +23,6 @@ Main Entry Points
 .. toctree::
    :maxdepth: 4
 
-   googlehydrology.nh_run
-   googlehydrology.nh_run_scheduler
-   googlehydrology.utils.nh_results_ensemble
+   googlehydrology.run
+   googlehydrology.run_scheduler
+   googlehydrology.utils.results_ensemble

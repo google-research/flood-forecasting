@@ -54,7 +54,7 @@ Next, we'll go to that directory and install a local, editable copy of the packa
     pip install -e .
 
 The installation procedure (both the editable and the non-editable version) adds the package to your Python environment and installs three bash scripts:
-`nh-run`, `nh-schedule-runs` and `nh-results-ensemble`. For details, see below.
+`run`, `schedule-runs` and `results-ensemble`. For details, see below.
 
 Data
 ----
@@ -68,12 +68,12 @@ Training a model
 ----------------
 To train a model, prepare a configuration file, then run::
 
-    nh-run train --config-file /path/to/config.yml
+    run train --config-file /path/to/config.yml
 
-If you want to train multiple models, you can make use of the ``nh-schedule-runs`` command.
+If you want to train multiple models, you can make use of the ``schedule-runs`` command.
 Place all configs in a folder, then run::
 
-    nh-schedule-runs train --directory /path/to/config_dir/ --runs-per-gpu X --gpu-ids Y
+    schedule-runs train --directory /path/to/config_dir/ --runs-per-gpu X --gpu-ids Y
 
 With X, you can specify how many models should be trained on parallel on a single GPU.
 With Y, you can specify which GPUs to use for training (use the id as specified in ``nvidia-smi``).
@@ -83,26 +83,26 @@ Evaluating a model
 ------------------
 To evaluate a trained model on the test set, run::
 
-    nh-run evaluate --run-dir /path/to/run_dir/
+    run evaluate --run-dir /path/to/run_dir/
 
 If the optional argument ``--epoch N`` (where N is the epoch to evaluate) is not specified,
 the weights of the last epoch are used.
 
 To evaluate all runs in a specific directory you can, similarly to training, run::
 
-    nh-schedule-runs evaluate --directory /path/to/config_dir/ --runs-per-gpu X --gpu-ids Y
+    schedule-runs evaluate --directory /path/to/config_dir/ --runs-per-gpu X --gpu-ids Y
 
 
 To merge the predictons of a number of runs (stored in ``$DIR1``, ...) into one averaged ensemble,
-use the ``nh-results-ensemble`` script::
+use the ``results-ensemble`` script::
 
-    nh-results-ensemble --run-dirs $DIR1 $DIR2 ... --output-dir /path/to/output/directory --metrics NSE MSE ...
+    results-ensemble --run-dirs $DIR1 $DIR2 ... --output-dir /path/to/output/directory --metrics NSE MSE ...
 
 ``--metrics`` specifies which metrics will be calculated for the averaged predictions.
 
 Running evaluate in inference mode; run::
 
-    nh-run infer --run-dir /path/to/run_dir
+    run infer --run-dir /path/to/run_dir
 
 This mode runs evaluation but without saving extra data such as observed data nor models' outputs
 nor skipping all-nan observed data dates.
