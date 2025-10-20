@@ -856,12 +856,22 @@ class Config(object):
             return []
 
     @property
-    def statics_embedding(self) -> dict:
-        embedding_spec = self._cfg.get("statics_embedding", None)
+    def statics_embedding(self) -> dict | None:
+        return self._get_embedding_spec(
+            self._cfg.get('statics_embedding', None)
+        )
 
-        if embedding_spec is None:
-            return None
-        return self._get_embedding_spec(embedding_spec)
+    @property
+    def hindcast_embedding(self) -> dict | None:
+        return self._get_embedding_spec(
+            self._cfg.get('hindcast_embedding', None)
+        )
+
+    @property
+    def forecast_embedding(self) -> dict | None:
+        return self._get_embedding_spec(
+            self._cfg.get('forecast_embedding', None)
+        )
 
     @property
     def target_loss_weights(self) -> list[float]:
@@ -996,7 +1006,9 @@ class Config(object):
         """
         return self._cfg.get("verbose", 1)
 
-    def _get_embedding_spec(self, embedding_spec: dict) -> dict:
+    def _get_embedding_spec(self, embedding_spec: dict | None) -> dict | None:
+        if embedding_spec is None:
+            return None
         return {
             'type': embedding_spec.get('type', 'fc'),
             'hiddens': self._as_default_list(embedding_spec.get('hiddens', [])),

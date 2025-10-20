@@ -55,55 +55,45 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         self.config_data = ConfigData.from_config(cfg)
 
         # Static attributes
-        self.static_attributes_fc = FC(
+        self.static_attributes_fc = self._create_fc(
+            embedding_spec = cfg.statics_embedding,
             input_size=len(self.config_data.static_attributes_names),
-            hidden_sizes=[100, 100, self.config_data.embedding_size],
-            activation=["tanh", "tanh", "linear"],
-            dropout=0,
         )
 
         # CPC
-        self.cpc_input_fc = FC(
+        self.cpc_input_fc = self._create_fc(
+            embedding_spec=cfg.hindcast_embedding,
             input_size=(
                 len(self.config_data.cpc_attributes_names)
-                + self.config_data.embedding_size
+                + self.static_attributes_fc.output_size
             ),
-            hidden_sizes=[100, self.config_data.embedding_size],
-            activation=["tanh", "linear"],
-            dropout=0,
         )
 
         # IMERG
-        self.imerg_input_fc = FC(
+        self.imerg_input_fc = self._create_fc(
+            embedding_spec=cfg.hindcast_embedding,
             input_size=(
                 len(self.config_data.imerg_attributes_names)
-                + self.config_data.embedding_size
+                + self.static_attributes_fc.output_size
             ),
-            hidden_sizes=[100, self.config_data.embedding_size],
-            activation=["tanh", "linear"],
-            dropout=0,
         )
 
         # HRES
-        self.hres_input_fc = FC(
+        self.hres_input_fc = self._create_fc(
+            embedding_spec=cfg.forecast_embedding,
             input_size=(
                 len(self.config_data.hres_attributes_names)
-                + self.config_data.embedding_size
+                + self.static_attributes_fc.output_size
             ),
-            hidden_sizes=[20, 20, 20, self.config_data.embedding_size],
-            activation=["tanh", "tanh", "tanh", "linear"],
-            dropout=0,
         )
 
         # GraphCast
-        self.graphcast_input_fc = FC(
+        self.graphcast_input_fc = self._create_fc(
+            embedding_spec=cfg.forecast_embedding,
             input_size=(
                 len(self.config_data.graphcast_attributes_names)
-                + self.config_data.embedding_size
+                + self.static_attributes_fc.output_size
             ),
-            hidden_sizes=[20, 20, 20, self.config_data.embedding_size],
-            activation=["tanh", "tanh", "tanh", "linear"],
-            dropout=0,
         )
 
         # Hindcast LSTM
@@ -128,6 +118,28 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         )
 
         self._reset_parameters()
+
+    def _create_fc(self, embedding_spec: dict|None, input_size: int) -> FC:
+        if embedding_spec is None:
+            raise ValueError(f'embedding_spec is missing.')
+        if input_size == 0:
+            raise ValueError(f'Cannot create embedding layer with input size 0')
+
+        emb_type = embedding_spec['type'].lower()
+        if emb_type != 'fc':
+            raise ValueError(f'embedding type {emb_type} not supported.')
+
+        hiddens = embedding_spec['hiddens']
+        if len(hiddens) == 0:
+            raise ValueError(f'hiddens must have at least one entry')
+
+        activation = embedding_spec['activation']
+        if len(activation) != len(hiddens):
+            raise ValueError(f'hiddens and activation layers must match')
+
+        dropout = embedding_spec['dropout']
+
+        return FC(input_size=input_size, hidden_sizes=hiddens, activation=activation, dropout=dropout)
 
     def _reset_parameters(self):
         """Special initialization of certain model weights."""
