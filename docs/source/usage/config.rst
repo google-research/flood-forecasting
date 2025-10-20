@@ -373,6 +373,12 @@ the EA-LSTM model. For multi-timescale models, these settings can be ignored.
 - ``dynamics_embedding``: None (default) or a dict that defines the embedding network for dynamic inputs. See ``statics_embedding``
   for a description of the dictionary structure.
 
+- ``hindcast_embedding``: None (default) or a dict that defines the embedding network for hindcast inputs. See ``statics_embedding``
+  for a description of the dictionary structure.
+
+- ``forecast_embedding``: None (default) or a dict that defines the embedding network for forecast inputs. See ``statics_embedding``
+  for a description of the dictionary structure.
+
 Training settings
 -----------------
 
