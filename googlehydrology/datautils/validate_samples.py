@@ -97,6 +97,13 @@ def extract_feature_groups(
     return extracted_groups
 
 
+def _skip_all_zero_samples(dataset: xr.Dataset) -> xr.DataArray:
+    mask = (dataset != 0).to_array(dim='variable').any(dim='variable')
+    if 'lead_time' in dataset.dims:
+        mask = mask.any(dim='lead_time')
+    return mask
+
+
 def validate_samples(
     is_train: bool,
     dataset: xr.Dataset,
@@ -228,7 +235,11 @@ def validate_samples(
         LOGGER.debug('target features')
         if predict_last_n is None:
             raise ValueError('Target sequence length is required when validating target data.')
-        mask = validate_samples_any(dataset=dataset[target_features])
+        dataset_targets = dataset[target_features]
+
+        masks.append(_skip_all_zero_samples(dataset_targets).rename('non_zero_targets'))
+
+        mask = validate_samples_any(dataset=dataset_targets)
         masks.append(
             validate_sequence_any(
                 mask=mask,

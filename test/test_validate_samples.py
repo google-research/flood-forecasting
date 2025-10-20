@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, ANY
 
 from googlehydrology.datautils.validate_samples import (
     _flatten_feature_groups,
@@ -761,10 +761,47 @@ def test_validate_samples_target_features_train(
     mock_validate_sequence_any.assert_called_once_with(
         mask=mock_mask, seq_length=2, shift_right=1
     )
-    assert len(masks) == 2
-    assert masks[0].name == 'targets'
-    assert masks[1].name == 'dates'
+    assert [mask.name for mask in masks] == [
+        'non_zero_targets',
+        'targets',
+        'dates',
+    ]
     xr.testing.assert_equal(result_mask, mock_mask)
+
+@patch('googlehydrology.datautils.validate_samples.validate_sequence_any')
+def test_validate_samples_target_features_train_zeros(
+    mock_validate_sequence_any,
+    basins_fixture, sample_dates_fixture
+):
+    """Test that samples with all zero targets are skipped in training mode."""
+    lead_times = [0, 1, 2]
+    dummy_dataset = create_test_dataset({'t1': np.zeros((len(basins_fixture), len(sample_dates_fixture), len(lead_times)))},
+                                         basins_fixture, sample_dates_fixture, lead_times)
+    mock_mask = xr.DataArray(True, coords={'basin': basins_fixture, 'date': sample_dates_fixture}, dims=['basin', 'date'])
+    mock_validate_sequence_any.return_value = mock_mask
+
+    expected_mask = xr.DataArray(False, coords={'basin': basins_fixture, 'date': sample_dates_fixture}, dims=['basin', 'date'])
+
+    result_mask, masks = validate_samples(
+        is_train=True,
+        dataset=dummy_dataset,
+        sample_dates=sample_dates_fixture,
+        nan_handling_method=None,
+        feature_groups=[],
+        target_features=['t1'],
+        predict_last_n=2,
+        lead_time=1
+    )
+
+    mock_validate_sequence_any.assert_called_once_with(
+        mask=ANY, seq_length=2, shift_right=1
+    )
+    assert [mask.name for mask in masks] == [
+        'non_zero_targets',
+        'targets',
+        'dates',
+    ]
+    xr.testing.assert_equal(result_mask, expected_mask)
 
 @patch('googlehydrology.datautils.validate_samples.validate_samples_any')
 @patch('googlehydrology.datautils.validate_samples.validate_sequence_any')
