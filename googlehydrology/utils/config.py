@@ -997,24 +997,10 @@ class Config(object):
         return self._cfg.get("verbose", 1)
 
     def _get_embedding_spec(self, embedding_spec: dict) -> dict:
-        if isinstance(embedding_spec, bool) and embedding_spec:  #
-            msg = [
-                "The semantics of 'dynamics/statics_embedding' have changed, and the associated arguments "
-                "'embedding_hiddens/activation/dropout' are deprecated. The old specifications may no longer work in "
-                "the future. Specify embeddings as a dict in dynamics/statics_embedding instead."
-            ]
-            warnings.warn(" ".join(msg), FutureWarning)
-            return {
-                'type': 'fc',
-                'hiddens': self._as_default_list(self._cfg.get("embedding_hiddens", [])),
-                'activation': self._cfg.get("embedding_activation", "tanh"),
-                'dropout': self._cfg.get("embedding_dropout", 0.0)
-            }
-
         return {
             'type': embedding_spec.get('type', 'fc'),
             'hiddens': self._as_default_list(embedding_spec.get('hiddens', [])),
-            'activation': embedding_spec.get('activation', 'tanh'),
+            'activation': self._as_default_list(embedding_spec.get('activation', ['tanh'])),
             'dropout': embedding_spec.get('dropout', 0.0)
         }
 

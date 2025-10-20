@@ -32,7 +32,7 @@ class FC(nn.Module):
         Number of input features.
     hidden_sizes : list[int]
         Size of the hidden and output layers.
-    activation : str, optional
+    activation : str | list[str], optional
         Activation function for intermediate layers, default tanh.
     dropout : float, optional
         Dropout rate in intermediate layers.
