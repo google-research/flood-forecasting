@@ -162,8 +162,17 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         hres = self._calc_hres(forward_data, static_attributes)
         graphcast = self._calc_graphcast(forward_data, static_attributes)
 
-        hindcast = self._calc_hindcast(static_attributes, cpc, imerg, hres, graphcast)
-        forecast = self._calc_forecast(hindcast, static_attributes, hres, graphcast)
+        hindcast = self._calc_lstm(
+            lstm=self.hindcast_lstm,
+            embeddings=[cpc, imerg, hres, graphcast],
+            static_attributes=static_attributes,
+        )
+        forecast = self._calc_lstm(
+            lstm=self.forecast_lstm,
+            embeddings=[hres, graphcast],
+            static_attributes=static_attributes,
+            other_inputs=hindcast,
+        )
 
         head = self._calc_head(forecast)
 
@@ -252,35 +261,23 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         )
         return self.graphcast_input_fc(graphcast_input_concat)
 
-    def _calc_hindcast(
+    def _calc_lstm(
         self,
+        lstm: nn.LSTM,
+        embeddings: Iterable[torch.Tensor],
         static_attributes: torch.Tensor,
-        cpc: torch.Tensor,
-        imerg: torch.Tensor,
-        hres: torch.Tensor,
-        graphcast: torch.Tensor,
+        other_inputs: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        hindcast_mean = self._masked_mean([cpc, imerg, hres, graphcast])
-        hindcast_data_concat = self._append_static_attributes(
-            hindcast_mean, static_attributes
+        masked_mean_embeddings = self._masked_mean(embeddings)
+        if other_inputs is not None:
+            masked_mean_embeddings = torch.cat(
+                [masked_mean_embeddings, other_inputs], dim=-1
+            )
+        lstm_inputs = self._append_static_attributes(
+            masked_mean_embeddings, static_attributes
         )
-        hindcast, _ = self.hindcast_lstm(input=hindcast_data_concat)
-        return hindcast
-
-    def _calc_forecast(
-        self,
-        hindcast: torch.Tensor,
-        static_attributes: torch.Tensor,
-        hres: torch.Tensor,
-        graphcast: torch.Tensor,
-    ) -> torch.Tensor:
-        forecast_mean = self._masked_mean([hres, graphcast])
-        forecast_data_concat = self._append_static_attributes(
-            torch.cat([forecast_mean, hindcast], dim=-1),
-            static_attributes,
-        )
-        forecast, _ = self.forecast_lstm(input=forecast_data_concat)
-        return forecast
+        output, _ = lstm(input=lstm_inputs)
+        return output
 
     def _calc_head(self, forecast: torch.Tensor) -> dict[str, torch.Tensor]:
         return self.head(self.dropout(forecast))
