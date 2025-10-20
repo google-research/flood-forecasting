@@ -119,27 +119,28 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         self._reset_parameters()
 
-    def _create_fc(self, embedding_spec: dict|None, input_size: int) -> FC:
-        if embedding_spec is None:
-            raise ValueError(f'embedding_spec is missing.')
-        if input_size == 0:
-            raise ValueError(f'Cannot create embedding layer with input size 0')
+    def _create_fc(self, embedding_spec: dict | None, input_size: int) -> FC:
+        assert input_size > 0, 'Cannot create embedding layer with input size 0'
 
         emb_type = embedding_spec['type'].lower()
-        if emb_type != 'fc':
-            raise ValueError(f'embedding type {emb_type} not supported.')
+        assert emb_type == 'fc', f'{emb_type=} not supported'
 
         hiddens = embedding_spec['hiddens']
-        if len(hiddens) == 0:
-            raise ValueError(f'hiddens must have at least one entry')
+        assert len(hiddens) > 0, 'hiddens must have at least one entry'
 
         activation = embedding_spec['activation']
-        if len(activation) != len(hiddens):
-            raise ValueError(f'hiddens and activation layers must match')
+        assert len(activation) == len(hiddens), (
+            'hiddens and activation layers must match'
+        )
 
-        dropout = embedding_spec['dropout']
+        dropout = float(embedding_spec['dropout'])
 
-        return FC(input_size=input_size, hidden_sizes=hiddens, activation=activation, dropout=dropout)
+        return FC(
+            input_size=input_size,
+            hidden_sizes=hiddens,
+            activation=activation,
+            dropout=dropout,
+        )
 
     def _reset_parameters(self):
         """Special initialization of certain model weights."""
