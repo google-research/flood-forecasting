@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple, Dict, Iterable
+from typing import Tuple, Iterable
 
 import dataclasses
 import numpy as np
@@ -154,7 +154,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
     def forward(
         self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """Perform a forward pass on the MeanEmbeddingForecastLSTM model.
 
         Parameters
@@ -164,7 +164,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         Returns
         -------
-        Dict[str, torch.Tensor]
+        dict[str, torch.Tensor]
             Model outputs and intermediate states as a dictionary from CMAL head.
         """
         forward_data = ForwardData.from_forward_data(data, self.config_data)

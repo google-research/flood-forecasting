@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import logging
-from typing import Dict
+
 
 import torch
 import torch.nn as nn
@@ -87,7 +87,7 @@ class Regression(nn.Module):
                 LOGGER.warning(f"## WARNING: Ignored output activation {activation} and used 'linear' instead.")
         self.net = nn.Sequential(*layers)
 
-    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         """Perform a forward pass on the Regression head.
         
         Parameters
@@ -96,7 +96,7 @@ class Regression(nn.Module):
 
         Returns
         -------
-        Dict[str, torch.Tensor]
+        dict[str, torch.Tensor]
             Dictionary containing the model predictions in the 'y_hat' key.
         """
         return {'y_hat': self.net(x)}
@@ -131,7 +131,7 @@ class GMM(nn.Module):
         self.fc2 = nn.Linear(n_hidden, n_out)
         self._eps = 1e-5
 
-    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         """Perform a GMM head forward pass.
 
         Parameters
@@ -141,7 +141,7 @@ class GMM(nn.Module):
 
         Returns
         -------
-        Dict[str, torch.Tensor]
+        dict[str, torch.Tensor]
             Dictionary containing mixture parameters and weights; where the key 'mu' stores the means, the key
             'sigma' the variances, and the key 'pi' the weights.
         """
@@ -186,7 +186,7 @@ class CMAL(nn.Module):
         self._softplus = torch.nn.Softplus(2)
         self._eps = 1e-5
 
-    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         """Perform a CMAL head forward pass.
 
         Parameters
@@ -196,7 +196,7 @@ class CMAL(nn.Module):
 
         Returns
         -------
-        Dict[str, torch.Tensor]
+        dict[str, torch.Tensor]
             Dictionary, containing the mixture component parameters and weights; where the key 'mu'stores the means,
             the key 'b' the scale parameters, the key 'tau' the skewness parameters, and the key 'pi' the weights).
         """
@@ -248,7 +248,7 @@ class UMAL(nn.Module):
         self._upper_bound_scale = 0.5  # this parameter found empirical by testing UMAL for a limited set of basins
         self._eps = 1e-5
 
-    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         """Perform a UMAL head forward pass.
 
         Parameters
@@ -258,7 +258,7 @@ class UMAL(nn.Module):
 
         Returns
         -------
-        Dict[str, torch.Tensor]
+        dict[str, torch.Tensor]
             Dictionary containing the means ('mu') and scale parameters ('b') to parametrize the asymmetric Laplacians.
         """
         h = torch.relu(self.fc1(x))

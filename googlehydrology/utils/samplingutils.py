@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Callable, Dict
+from typing import Callable
 
 import numpy as np
 import torch
@@ -25,8 +25,8 @@ from googlehydrology.utils.config import Config
 from googlehydrology.utils import cmal_deterministic
 
 
-def sample_pointpredictions(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int,
-                            scaler: Scaler) -> Dict[str, torch.Tensor]:
+def sample_pointpredictions(model: 'BaseModel', data: dict[str, torch.Tensor], n_samples: int,
+                            scaler: Scaler) -> dict[str, torch.Tensor]:
     """Point prediction samplers for the different uncertainty estimation approaches.
     
     This function provides different point sampling functions for the different uncertainty estimation approaches 
@@ -42,7 +42,7 @@ def sample_pointpredictions(model: 'BaseModel', data: Dict[str, torch.Tensor], n
     ----------
     model : BaseModel
         The googlehydrology model from which to sample from.
-    data : Dict[str, torch.Tensor]
+    data : dict[str, torch.Tensor]
         Dictionary, containing input features as key-value pairs.
     n_samples : int
         The number of point prediction samples that should be created.
@@ -51,7 +51,7 @@ def sample_pointpredictions(model: 'BaseModel', data: Dict[str, torch.Tensor], n
 
     Returns
     -------
-    Dict[str, torch.Tensor]
+    dict[str, torch.Tensor]
         Dictionary, containing the sampled model outputs for the `predict_last_n` (config argument) time steps of 
         each frequency.
     """
@@ -72,7 +72,7 @@ def sample_pointpredictions(model: 'BaseModel', data: Dict[str, torch.Tensor], n
     return samples
 
 
-def _subset_target(parameter: Dict[str, torch.Tensor], n_target: int, steps: int) -> Dict[str, torch.Tensor]:
+def _subset_target(parameter: dict[str, torch.Tensor], n_target: int, steps: int) -> dict[str, torch.Tensor]:
     # determine which output neurons correspond to the n_target target variable
     start = n_target * steps
     end = (n_target + 1) * steps
@@ -163,7 +163,7 @@ def _sample_asymmetric_laplacians(ids: list[int], m_sub: torch.Tensor, b_sub: to
 
 class _SamplingSetup():
 
-    def __init__(self, model: 'BaseModel', data: Dict[str, torch.Tensor], head: str):
+    def __init__(self, model: 'BaseModel', data: dict[str, torch.Tensor], head: str):
         # make model checks:
         cfg = model.cfg
         if not cfg.head.lower() == head.lower():
@@ -244,8 +244,8 @@ def _get_frequency_last_n(predict_last_n: dict[str, int] | int, freq_suffix: str
     return frequency_last_n
 
 
-def sample_mcd(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int,
-               scaler: Scaler) -> Dict[str, torch.Tensor]:
+def sample_mcd(model: 'BaseModel', data: dict[str, torch.Tensor], n_samples: int,
+               scaler: Scaler) -> dict[str, torch.Tensor]:
     """MC-Dropout based point predictions sampling.
 
     Naive sampling. This function does `n_samples` forward passes for each sample in the batch. Currently it is 
@@ -261,7 +261,7 @@ def sample_mcd(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int
     ----------
     model : BaseModel
         A model with a non-probabilistic head.
-    data : Dict[str, torch.Tensor]
+    data : dict[str, torch.Tensor]
         Dictionary, containing input features as key-value pairs.
     n_samples : int
         Number of samples to generate for each input sample.
@@ -270,7 +270,7 @@ def sample_mcd(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int
 
     Returns
     -------
-    Dict[str, torch.Tensor]
+    dict[str, torch.Tensor]
         Dictionary, containing the sampled model outputs for the `predict_last_n` (config argument) time steps of 
         each frequency.
     """
@@ -314,8 +314,8 @@ def sample_mcd(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int
     return samples
 
 
-def sample_gmm(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int,
-               scaler: Scaler) -> Dict[str, torch.Tensor]:
+def sample_gmm(model: 'BaseModel', data: dict[str, torch.Tensor], n_samples: int,
+               scaler: Scaler) -> dict[str, torch.Tensor]:
     """Sample point predictions with the Gaussian Mixture (GMM) head.
 
     This function generates `n_samples` GMM sample points for each entry in the batch. Concretely, the model is 
@@ -333,7 +333,7 @@ def sample_gmm(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int
     ----------
     model : BaseModel
         A model with a GMM head.
-    data : Dict[str, torch.Tensor]
+    data : dict[str, torch.Tensor]
         Dictionary, containing input features as key-value pairs.
     n_samples : int
         Number of samples to generate for each input sample.
@@ -342,7 +342,7 @@ def sample_gmm(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int
 
     Returns
     -------
-    Dict[str, torch.Tensor]
+    dict[str, torch.Tensor]
         Dictionary, containing the sampled model outputs for the `predict_last_n` (config argument) time steps of 
         each frequency. 
 
@@ -406,8 +406,8 @@ def sample_gmm(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int
 
 
 def sample_cmal_deterministic(
-    model: "BaseModel", data: Dict[str, torch.Tensor]
-) -> Dict[str, torch.Tensor]:
+    model: "BaseModel", data: dict[str, torch.Tensor]
+) -> dict[str, torch.Tensor]:
     """Sample 10 point predictions with the Countable Mixture of Asymmetric Laplacians (CMAL) head.
 
     Note: If the config setting 'mc_dropout' is true this function will force the model to train mode (`model.train()`)
@@ -417,12 +417,12 @@ def sample_cmal_deterministic(
     ----------
     model : BaseModel
         A model with a CMAL head.
-    data : Dict[str, torch.Tensor]
+    data : dict[str, torch.Tensor]
         Dictionary, containing input features as key-value pairs.
 
     Returns
     -------
-    Dict[str, torch.Tensor]
+    dict[str, torch.Tensor]
         Dictionary, containing the sampled model outputs for the `predict_last_n` (config argument) time steps of
         each frequency. The shape of the output tensor for each frequency is
         ``[batch size, predict_last_n, n_samples]``.
@@ -459,8 +459,8 @@ def sample_cmal_deterministic(
     return samples
 
 
-def sample_cmal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int,
-                scaler: Scaler) -> Dict[str, torch.Tensor]:
+def sample_cmal(model: 'BaseModel', data: dict[str, torch.Tensor], n_samples: int,
+                scaler: Scaler) -> dict[str, torch.Tensor]:
     """Sample point predictions with the Countable Mixture of Asymmetric Laplacians (CMAL) head.
 
     This function generates `n_samples` CMAL sample points for each entry in the batch. Concretely, the model is 
@@ -478,7 +478,7 @@ def sample_cmal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: in
     ----------
     model : BaseModel
         A model with a CMAL head.
-    data : Dict[str, torch.Tensor]
+    data : dict[str, torch.Tensor]
         Dictionary, containing input features as key-value pairs.
     n_samples : int
         Number of samples to generate for each input sample.
@@ -487,7 +487,7 @@ def sample_cmal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: in
 
     Returns
     -------
-    Dict[str, torch.Tensor]
+    dict[str, torch.Tensor]
         Dictionary, containing the sampled model outputs for the `predict_last_n` (config argument) time steps of 
         each frequency. The shape of the output tensor for each frequency is 
         ``[batch size, predict_last_n, n_samples]``.
@@ -601,8 +601,8 @@ def sample_cmal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: in
     return samples
 
 
-def sample_umal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int,
-                scaler: Scaler) -> Dict[str, torch.Tensor]:
+def sample_umal(model: 'BaseModel', data: dict[str, torch.Tensor], n_samples: int,
+                scaler: Scaler) -> dict[str, torch.Tensor]:
     """Sample point predictions with the Uncountable Mixture of Asymmetric Laplacians (UMAL) head.
 
     This function generates `n_samples` UMAL sample points for each entry in the batch. Concretely, the model is 
@@ -620,7 +620,7 @@ def sample_umal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: in
     ----------
     model : BaseModel
         A model with an UMAL head.
-    data : Dict[str, torch.Tensor]
+    data : dict[str, torch.Tensor]
         Dictionary, containing input features as key-value pairs.
     n_samples : int
         Number of samples to generate for each input sample.
@@ -629,7 +629,7 @@ def sample_umal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: in
 
     Returns
     -------
-    Dict[str, torch.Tensor]
+    dict[str, torch.Tensor]
         Dictionary containing the sampled model outputs for the `predict_last_n` (config argument) time steps of 
         each frequency.
 
@@ -706,8 +706,8 @@ def sample_umal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: in
         samples.update({freq_key: sample_points})
     return samples
 
-def umal_extend_batch(data: Dict[str, torch.Tensor], cfg: Config, n_taus: int = 1, extend_y: bool = False) \
-        -> Dict[str, torch.Tensor]:
+def umal_extend_batch(data: dict[str, torch.Tensor], cfg: Config, n_taus: int = 1, extend_y: bool = False) \
+        -> dict[str, torch.Tensor]:
     """This function extends the batch for the usage in UMAL (see: [#]_). 
     
     UMAL makes an MC approximation to a mixture integral by sampling random asymmetry parameters (tau). This can be 
@@ -715,7 +715,7 @@ def umal_extend_batch(data: Dict[str, torch.Tensor], cfg: Config, n_taus: int = 
     
     Parameters
     ----------
-    data : Dict[str, torch.Tensor]
+    data : dict[str, torch.Tensor]
         Dictionary, containing input features as key-value pairs.
     cfg : Config
         The run configuration.
@@ -726,7 +726,7 @@ def umal_extend_batch(data: Dict[str, torch.Tensor], cfg: Config, n_taus: int = 
     
     Returns
     -------
-    Dict[str, torch.Tensor]
+    dict[str, torch.Tensor]
         Dictionary, containing expanded input features and tau samples as key-value pairs.
 
     References

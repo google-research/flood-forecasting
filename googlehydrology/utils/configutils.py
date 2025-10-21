@@ -15,12 +15,12 @@
 """Utility script to generate config files from a base config and a defined set of variations"""
 import itertools
 from pathlib import Path
-from typing import Dict
+
 
 from googlehydrology.utils.config import Config
 
 
-def create_config_files(base_config_path: Path, modify_dict: Dict[str, list], output_dir: Path):
+def create_config_files(base_config_path: Path, modify_dict: dict[str, list], output_dir: Path):
     """Create configs, given a base config and a dictionary of parameters to modify.
     
     This function will create one config file for each combination of parameters defined in the modify_dict.

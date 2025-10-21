@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from collections import defaultdict
-from typing import Dict, Tuple
+from typing import Tuple
 
 import numpy as np
 import torch
@@ -83,17 +83,17 @@ class BaseLoss(torch.nn.Module):
                 raise ValueError("Number of weights must be equal to the number of target variables")
         self._target_weights = weights
 
-    def forward(self, prediction: Dict[str, torch.Tensor],
-                data: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+    def forward(self, prediction: dict[str, torch.Tensor],
+                data: dict[str, torch.Tensor]) -> Tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Calculate the loss.
 
         Parameters
         ----------
-        prediction : Dict[str, torch.Tensor]
+        prediction : dict[str, torch.Tensor]
             Dictionary of predictions for each frequency. If more than one frequency is predicted,
             the keys must have suffixes ``_{frequency}``. For the required keys, refer to the documentation
             of the concrete loss.
-        data : Dict[str, torch.Tensor]
+        data : dict[str, torch.Tensor]
             Dictionary of ground truth data for each frequency. If more than one frequency is predicted,
             the keys must have suffixes ``_{frequency}``. For the required keys, refer to the documentation
             of the concrete loss.
@@ -102,7 +102,7 @@ class BaseLoss(torch.nn.Module):
         -------
         torch.Tensor
             The overall calculated loss.
-        Dict[str, torch.Tensor]
+        dict[str, torch.Tensor]
             The individual components of the loss (e.g., regularization terms). 'total_loss' contains the overall loss.
         """
         # unpack loss-specific additional arguments
@@ -148,15 +148,15 @@ class BaseLoss(torch.nn.Module):
         return total_loss, all_losses
 
     @staticmethod
-    def _subset_in_time(prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor],
-                        predict_last_n: int) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+    def _subset_in_time(prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor],
+                        predict_last_n: int) -> Tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
         ground_truth_sub = {key: gt[:, -predict_last_n:, :] for key, gt in ground_truth.items()}
         prediction_sub = {key: pred[:, -predict_last_n:, :] for key, pred in prediction.items()}
 
         return prediction_sub, ground_truth_sub
 
-    def _subset_target(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor],
-                       n_target: int) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+    def _subset_target(self, prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor],
+                       n_target: int) -> Tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
         # determine which output neurons correspond to the n_target target variable
         start = n_target * self._output_size_per_target
         end = (n_target + 1) * self._output_size_per_target
@@ -168,11 +168,11 @@ class BaseLoss(torch.nn.Module):
         return prediction_sub, ground_truth_sub
 
     @staticmethod
-    def _subset_additional_data(additional_data: Dict[str, torch.Tensor], n_target: int) -> Dict[str, torch.Tensor]:
+    def _subset_additional_data(additional_data: dict[str, torch.Tensor], n_target: int) -> dict[str, torch.Tensor]:
         # by default, nothing happens
         return additional_data
 
-    def _get_loss(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor], **kwargs):
+    def _get_loss(self, prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor], **kwargs):
         raise NotImplementedError
 
     def set_regularization_terms(self, regularization_modules: list[BaseRegularization]):
@@ -201,7 +201,7 @@ class MaskedMSELoss(BaseLoss):
     def __init__(self, cfg: Config):
         super(MaskedMSELoss, self).__init__(cfg, prediction_keys=['y_hat'], ground_truth_keys=['y'])
 
-    def _get_loss(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor], **kwargs):
+    def _get_loss(self, prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor], **kwargs):
         mask = ~torch.isnan(ground_truth['y'])
         loss = 0.5 * torch.mean((prediction['y_hat'][mask] - ground_truth['y'][mask])**2)
         return loss
@@ -222,7 +222,7 @@ class MaskedRMSELoss(BaseLoss):
     def __init__(self, cfg: Config):
         super(MaskedRMSELoss, self).__init__(cfg, prediction_keys=['y_hat'], ground_truth_keys=['y'])
 
-    def _get_loss(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor], **kwargs):
+    def _get_loss(self, prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor], **kwargs):
         mask = ~torch.isnan(ground_truth['y'])
         loss = torch.sqrt(0.5 * torch.mean((prediction['y_hat'][mask] - ground_truth['y'][mask])**2))
         return loss
@@ -257,7 +257,7 @@ class MaskedNSELoss(BaseLoss):
                                             additional_data=['per_basin_target_stds'])
         self.eps = eps
 
-    def _get_loss(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor], **kwargs):
+    def _get_loss(self, prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor], **kwargs):
         mask = ~torch.isnan(ground_truth['y'])
         y_hat = prediction['y_hat'][mask]
         y = ground_truth['y'][mask]
@@ -271,7 +271,7 @@ class MaskedNSELoss(BaseLoss):
         return torch.mean(scaled_loss)
 
     @staticmethod
-    def _subset_additional_data(additional_data: Dict[str, torch.Tensor], n_target: int) -> Dict[str, torch.Tensor]:
+    def _subset_additional_data(additional_data: dict[str, torch.Tensor], n_target: int) -> dict[str, torch.Tensor]:
         # here we need to subset the per_basin_target_stds. We slice to keep the shape of [bs, seq, 1]
         return {key: value[:, :, n_target:n_target + 1] for key, value in additional_data.items()}
 
@@ -309,7 +309,7 @@ class MaskedGMMLoss(BaseLoss):
         result = -0.5 * (result * result)
         return (torch.exp(result) * torch.reciprocal(sigma)) * ONE_OVER_2PI_SQUARED
 
-    def _get_loss(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor], **kwargs):
+    def _get_loss(self, prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor], **kwargs):
         mask = ~torch.isnan(ground_truth['y']).any(1).any(1)
         y = ground_truth['y'][mask]
         m = prediction['mu'][mask]
@@ -340,7 +340,7 @@ class MaskedCMALLoss(BaseLoss):
                                              output_size_per_target=cfg.n_distributions)
         self.eps = eps  # stability epsilon
 
-    def _get_loss(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor], **kwargs):
+    def _get_loss(self, prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor], **kwargs):
         mask = ~torch.isnan(ground_truth['y']).any(1).any(1)
         y = ground_truth['y'][mask]
         m = prediction['mu'][mask]
@@ -380,7 +380,7 @@ class MaskedUMALLoss(BaseLoss):
         self._n_taus_count = cfg.n_taus
         self._n_taus_log = torch.as_tensor(np.log(cfg.n_taus).astype('float32'))
 
-    def _get_loss(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor], **kwargs):
+    def _get_loss(self, prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor], **kwargs):
         mask = ~torch.isnan(ground_truth['y_extended']).any(1).any(1)
         y = ground_truth['y_extended'][mask]
         t = ground_truth['tau'][mask]

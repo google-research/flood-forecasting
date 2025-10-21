@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict
+
 
 import torch
 import torch.nn as nn
@@ -49,7 +49,7 @@ class BaseModel(nn.Module):
             self.output_size *= 2
         self._scaler = Scaler(scaler_dir=self.cfg.run_dir, calculate_scaler=False)
 
-    def sample(self, data: Dict[str, torch.Tensor], n_samples: int) -> Dict[str, torch.Tensor]:
+    def sample(self, data: dict[str, torch.Tensor], n_samples: int) -> dict[str, torch.Tensor]:
         """Provides point prediction samples from a probabilistic model.
         
         This function wraps the `sample_pointpredictions` function, which provides different point sampling functions
@@ -59,19 +59,19 @@ class BaseModel(nn.Module):
 
         Parameters
         ----------
-        data : Dict[str, torch.Tensor]
+        data : dict[str, torch.Tensor]
             Dictionary, containing input features as key-value pairs.
         n_samples : int
             Number of point predictions that ought ot be sampled form the model. 
 
         Returns
         -------
-        Dict[str, torch.Tensor]
+        dict[str, torch.Tensor]
             Sampled point predictions 
         """
         return sample_pointpredictions(self, data, n_samples, self._scaler)
 
-    def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
+    def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
         """Perform a forward pass.
 
         Parameters
@@ -81,25 +81,25 @@ class BaseModel(nn.Module):
 
         Returns
         -------
-        Dict[str, torch.Tensor]
+        dict[str, torch.Tensor]
             Model output and potentially any intermediate states and activations as a dictionary.
         """
         raise NotImplementedError
 
-    def pre_model_hook(self, data: Dict[str, torch.Tensor], is_train: bool) -> Dict[str, torch.Tensor]:
+    def pre_model_hook(self, data: dict[str, torch.Tensor], is_train: bool) -> dict[str, torch.Tensor]:
         """A function to execute before the model in training, validation and test. 
         The beahvior can be adapted depending on the run configuration and the provided arguments.
 
         Parameters
         ----------
-        data : Dict[str, torch.Tensor]
+        data : dict[str, torch.Tensor]
             Dictionary, containing input features as key-value pairs and labels y.
         is_train : bool
             Defines if the hook is executed in train mode or in validation/test mode.
 
         Returns
         -------
-        data : Dict[str, torch.Tensor]
+        data : dict[str, torch.Tensor]
             The modified (or unmodified) data that are used for the training or evaluation.
         """
         if self.cfg.head.lower() == "umal":
