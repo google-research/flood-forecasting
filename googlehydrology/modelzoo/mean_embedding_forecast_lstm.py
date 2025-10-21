@@ -171,22 +171,22 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         static_attributes = self._calc_static_attributes(forward_data)
 
-        cpc = self._calc_embedding(
+        cpc = self._calc_dynamic_embedding(
             embedding_network=self.cpc_input_fc,
             dynamic_data=forward_data.cpc_data,
             static_attributes=static_attributes,
             append_nan=True)
-        imerg = self._calc_embedding(
+        imerg = self._calc_dynamic_embedding(
             embedding_network=self.imerg_input_fc,
             dynamic_data=forward_data.imerg_data,
             static_attributes=static_attributes,
             append_nan=True)
-        hres = self._calc_embedding(
+        hres = self._calc_dynamic_embedding(
             embedding_network=self.hres_input_fc,
             dynamic_data=forward_data.hres_data,
             static_attributes=static_attributes,
             append_nan=False)
-        graphcast = self._calc_embedding(
+        graphcast = self._calc_dynamic_embedding(
             embedding_network=self.graphcast_input_fc,
             dynamic_data=forward_data.graphcast_data,
             static_attributes=static_attributes,
@@ -255,7 +255,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
     def _calc_static_attributes(self, forward_data: "ForwardData") -> torch.Tensor:
         return self.static_attributes_fc(forward_data.static_attributes)
 
-    def _calc_embedding(
+    def _calc_dynamic_embedding(
         self,
         embedding_network: FC,
         dynamic_data: torch.Tensor,
