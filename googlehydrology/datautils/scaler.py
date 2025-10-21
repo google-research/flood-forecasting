@@ -14,7 +14,7 @@
 
 import os
 from pathlib import Path
-from typing import Dict, Optional, Iterator, Hashable
+from typing import Optional, Iterator, Hashable
 
 import dask
 import dask.array
@@ -70,7 +70,7 @@ class Scaler():
         Directory for loading a pre-calculated scaler or saving this scaler if it is calculated.
     calculate_scaler : bool
         Flag to indicate if the scaler should be computed (the alternative is to load an existing scaler file).
-    custom_normalization : Dict[str, Dict[str, float]]
+    custom_normalization : dict[str, dict[str, float]]
         Feature-specific scaling instructions as a mapping from feature name to centering and/or scaling type.
         See docs for a list of accepted types and their meaning.
     dataset : Optional[xr.Dataset]
@@ -85,7 +85,7 @@ class Scaler():
         self,
         scaler_dir: Path,
         calculate_scaler,
-        custom_normalization: Dict[str, Dict[str, float]] = {},
+        custom_normalization: dict[str, dict[str, float]] = {},
         dataset: Optional[xr.Dataset] = None,
     ):
         # Consistency check.

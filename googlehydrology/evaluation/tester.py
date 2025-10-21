@@ -21,7 +21,7 @@ import shutil
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union, Iterator
+from typing import Optional, Tuple, Union, Iterator
 
 import numpy as np
 import pandas as pd
@@ -571,12 +571,12 @@ class BaseTester(object):
                     'mean_losses': mean_losses,
                 }
 
-    def _get_predictions_and_loss(self, model: BaseModel, data: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, float]:
+    def _get_predictions_and_loss(self, model: BaseModel, data: dict[str, torch.Tensor]) -> Tuple[torch.Tensor, float]:
         predictions = model(data)
         _, all_losses = self.loss_obj(predictions, data)
         return predictions, {k: v.item() for k, v in all_losses.items()}
 
-    def _subset_targets(self, model: BaseModel, data: Dict[str, torch.Tensor], predictions: np.ndarray,
+    def _subset_targets(self, model: BaseModel, data: dict[str, torch.Tensor], predictions: np.ndarray,
                         predict_last_n: int, freq: str):
         raise NotImplementedError
 
@@ -607,7 +607,7 @@ class RegressionTester(BaseTester):
     def __init__(self, cfg: Config, run_dir: Path, period: str = "test", init_model: bool = True):
         super(RegressionTester, self).__init__(cfg, run_dir, period, init_model)
 
-    def _subset_targets(self, model: BaseModel, data: Dict[str, torch.Tensor], predictions: np.ndarray,
+    def _subset_targets(self, model: BaseModel, data: dict[str, torch.Tensor], predictions: np.ndarray,
                         predict_last_n: np.ndarray, freq: str):
         y_hat_sub = predictions[f'y_hat{freq}'][:, -predict_last_n:, :]
         y_sub = data[f'y{freq}'][:, -predict_last_n:, :]
@@ -644,7 +644,7 @@ class UncertaintyTester(BaseTester):
     def __init__(self, cfg: Config, run_dir: Path, period: str = "test", init_model: bool = True):
         super(UncertaintyTester, self).__init__(cfg, run_dir, period, init_model)
 
-    def _get_predictions_and_loss(self, model: BaseModel, data: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, float]:
+    def _get_predictions_and_loss(self, model: BaseModel, data: dict[str, torch.Tensor]) -> Tuple[torch.Tensor, float]:
         LOGGER.debug('getting model outputs')
         outputs = model(data)
         LOGGER.debug('getting model losses')
@@ -657,7 +657,7 @@ class UncertaintyTester(BaseTester):
 
     def _subset_targets(self,
                         model: BaseModel,
-                        data: Dict[str, torch.Tensor],
+                        data: dict[str, torch.Tensor],
                         predictions: np.ndarray,
                         predict_last_n: int,
                         freq: str = None):

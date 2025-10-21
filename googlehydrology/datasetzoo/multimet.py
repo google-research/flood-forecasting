@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, Hashable, Tuple, Iterable, Union
+from typing import Hashable, Tuple, Iterable, Union
 
 import logging
 import itertools
@@ -90,6 +90,7 @@ class Multimet(Dataset):
         self._seq_length = cfg.seq_length
         self._predict_last_n = cfg.predict_last_n
         self._forecast_overlap = cfg.forecast_overlap
+        self._allzero_samples_are_invalid = cfg.allzero_samples_are_invalid
 
         # Feature lists by type.
         self._static_features = cfg.static_attributes
@@ -265,7 +266,7 @@ class Multimet(Dataset):
 
     def __getitem__(
         self, item: int
-    ) -> Dict[str, torch.Tensor | np.ndarray | Dict[str, torch.Tensor]]:
+    ) -> dict[str, torch.Tensor | np.ndarray | dict[str, torch.Tensor]]:
         """Retrieves a sample by integer index."""
 
         # Stop iteration.
@@ -460,6 +461,7 @@ class Multimet(Dataset):
             hindcast_features=self._hindcast_features,
             target_features=self._target_features,
             feature_groups=self._feature_groups,
+            allzero_samples_are_invalid=self._allzero_samples_are_invalid,
         )[0]
 
         LOGGER.debug("valid_sample_mask compute")
@@ -651,9 +653,9 @@ class Multimet(Dataset):
     @staticmethod
     def collate_fn(
         samples: list[
-            Dict[str, Union[torch.Tensor, np.ndarray, Dict[str, torch.Tensor]]]
+            dict[str, Union[torch.Tensor, np.ndarray, dict[str, torch.Tensor]]]
         ],
-    ) -> Dict[str, Union[torch.Tensor, np.ndarray, Dict[str, torch.Tensor]]]:
+    ) -> dict[str, Union[torch.Tensor, np.ndarray, dict[str, torch.Tensor]]]:
         batch = {}
         if not samples:
             return batch
@@ -720,7 +722,7 @@ def _open_zarr(path: Path) -> xr.Dataset:
 
 def _get_products_and_bands_from_feature_strings(
     features: Iterable[str],
-) -> Dict[str, list[str]]:
+) -> dict[str, list[str]]:
     """
     Processes feature strings to create a dictionary of product to band(s).
 
@@ -732,7 +734,7 @@ def _get_products_and_bands_from_feature_strings(
 
     Returns
     -------
-    Dict[str, list[str]]
+    dict[str, list[str]]
         Keys are product names and values are a list of features for that product. Features
         remain in the format <product>_<band>.
     """

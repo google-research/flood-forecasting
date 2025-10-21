@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict
+
 
 import numpy as np
 import pandas as pd
@@ -79,7 +79,7 @@ def _union_non_lead_time_feature_with_lead_time_feature(
 
 def union_features(
     dataset: xr.Dataset,
-    union_feature_mapping: Dict[str, str]
+    union_feature_mapping: dict[str, str]
 ) -> xr.Dataset:
     """Replace missing values in various features with values from another feature.
     
@@ -89,7 +89,7 @@ def union_features(
     ----------
     dataset : xr.Dataset
         Dataset of features to be masked *and* features used for masking.
-    union_feature_mapping : Dict[str, str]
+    union_feature_mapping : dict[str, str]
         A 1-to-1 mapping from a feature that will be masked by another feature. 
     
     Returns

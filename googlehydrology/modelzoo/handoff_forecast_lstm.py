@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict
+
 
 import torch
 import torch.nn as nn
@@ -123,8 +123,8 @@ class HandoffForecastLSTM(BaseModel):
 
     def forward(
         self,
-        data: Dict[str, torch.Tensor]
-    ) -> Dict[str, torch.Tensor]:
+        data: dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
         """Perform a forward pass on the EncoderDecoderForecastLSTM model.
 
         Parameters
@@ -134,7 +134,7 @@ class HandoffForecastLSTM(BaseModel):
 
         Returns
         -------
-        Dict[str, torch.Tensor]
+        dict[str, torch.Tensor]
             Model outputs as a dictionary.
                 - `y_hat`: model predictions of shape [batch size, sequence length, number of target variables]..
                 - `y_hindcast_overlap`: Output sequence from hindcast model used for regularization 

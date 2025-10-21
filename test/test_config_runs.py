@@ -15,7 +15,7 @@
 """Integration tests that perform full runs. """
 import pickle
 from pathlib import Path
-from typing import Dict, Tuple, Callable
+from typing import Tuple, Callable
 
 import numpy as np
 import pandas as pd
@@ -280,7 +280,7 @@ def get_test_start_end_dates(config: Config) -> Tuple[pd.Timestamp, pd.Timestamp
     return test_start_date, test_end_date
 
 
-def get_basin_results(run_dir: Path, epoch: int) -> Dict:
+def get_basin_results(run_dir: Path, epoch: int) -> dict:
     results_file = list(run_dir.glob(f'test/model_epoch{str(epoch).zfill(3)}/test_results.p'))
     if len(results_file) != 1:
         pytest.fail('Results file not found.')
