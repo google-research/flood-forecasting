@@ -15,7 +15,7 @@
 """Integration tests that perform full runs. """
 import pickle
 from pathlib import Path
-from typing import Tuple, Callable
+from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -273,7 +273,7 @@ def _check_results(config: Config, basin: str, discharge: pd.Series = None):
     assert not pd.isna(results[f'{config.target_variables[0]}_sim']).any()
 
 
-def get_test_start_end_dates(config: Config) -> Tuple[pd.Timestamp, pd.Timestamp]:
+def get_test_start_end_dates(config: Config) -> tuple[pd.Timestamp, pd.Timestamp]:
     test_start_date = pd.to_datetime(config.test_start_date[0], format='%d/%m/%Y')
     test_end_date = pd.to_datetime(config.test_end_date[0], format='%d/%m/%Y') + pd.Timedelta(days=1, seconds=-1)
 

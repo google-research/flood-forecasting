@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple, Iterable
+from typing import Iterable
 
 import dataclasses
 import numpy as np
@@ -310,14 +310,14 @@ class ConfigData:
 
     hidden_size: int
     embedding_size: int
-    static_attributes_names: Tuple[str, ...]
-    cpc_attributes_names: Tuple[str, ...]
-    imerg_attributes_names: Tuple[str, ...]
-    hres_attributes_names: Tuple[str, ...]
-    graphcast_attributes_names: Tuple[str, ...]
+    static_attributes_names: tuple[str, ...]
+    cpc_attributes_names: tuple[str, ...]
+    imerg_attributes_names: tuple[str, ...]
+    hres_attributes_names: tuple[str, ...]
+    graphcast_attributes_names: tuple[str, ...]
 
 
-def _filter_by_prefix(names: list[str], prefix: str) -> Tuple[str, ...]:
+def _filter_by_prefix(names: list[str], prefix: str) -> tuple[str, ...]:
     return tuple(s for s in names if s.startswith(prefix))
 
 

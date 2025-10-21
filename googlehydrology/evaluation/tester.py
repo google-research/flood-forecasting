@@ -21,7 +21,7 @@ import shutil
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional, Tuple, Union, Iterator
+from typing import Optional, Union, Iterator
 
 import numpy as np
 import pandas as pd
@@ -571,7 +571,7 @@ class BaseTester(object):
                     'mean_losses': mean_losses,
                 }
 
-    def _get_predictions_and_loss(self, model: BaseModel, data: dict[str, torch.Tensor]) -> Tuple[torch.Tensor, float]:
+    def _get_predictions_and_loss(self, model: BaseModel, data: dict[str, torch.Tensor]) -> tuple[torch.Tensor, float]:
         predictions = model(data)
         _, all_losses = self.loss_obj(predictions, data)
         return predictions, {k: v.item() for k, v in all_losses.items()}
@@ -644,7 +644,7 @@ class UncertaintyTester(BaseTester):
     def __init__(self, cfg: Config, run_dir: Path, period: str = "test", init_model: bool = True):
         super(UncertaintyTester, self).__init__(cfg, run_dir, period, init_model)
 
-    def _get_predictions_and_loss(self, model: BaseModel, data: dict[str, torch.Tensor]) -> Tuple[torch.Tensor, float]:
+    def _get_predictions_and_loss(self, model: BaseModel, data: dict[str, torch.Tensor]) -> tuple[torch.Tensor, float]:
         LOGGER.debug('getting model outputs')
         outputs = model(data)
         LOGGER.debug('getting model losses')
