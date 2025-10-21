@@ -20,6 +20,23 @@ from typing import Optional
 
 LOGGER = logging.getLogger(__name__)
 
+class WarningOnceFilter(logging.Filter):
+    """Filters out non-unique warnings."""
+
+    def __init__(self, name: str = '') -> None:
+        super().__init__(name)
+        self._seen = set()
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno != logging.WARNING:
+            return True
+
+        serialized = repr(record)
+        if serialized in self._seen:
+            return False
+
+        self._seen.add(serialized)
+        return True
 
 def setup_logging(log_file: str, level: int):
     """Initialize logging to `log_file` and stdout.
@@ -31,6 +48,9 @@ def setup_logging(log_file: str, level: int):
     level : int
         Py logging level to print from from.
     """
+    logging.captureWarnings(True)
+    logging.getLogger('py.warnings').addFilter(WarningOnceFilter())
+
     file_handler = logging.FileHandler(filename=log_file)
     stdout_handler = logging.StreamHandler(sys.stdout)
 
