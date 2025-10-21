@@ -44,6 +44,7 @@ validate_n_random_basins: 300
 predict_last_n: 8
 log_n_figures: 5
 log_loss_every_nth_update: 50
+allzero_samples_are_invalid: False
 
 # --- Dataset Parameters --------------------------------------------------------
 

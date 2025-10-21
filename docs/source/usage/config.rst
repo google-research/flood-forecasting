@@ -85,6 +85,9 @@ General experiment configurations
 -  ``device``: Which device to use in format of ``cuda:0``, ``cuda:1``,
    etc, for GPUs, ``mps`` for MacOS with Metal support, or ``cpu``
 
+-  ``allzero_samples_are_invalid``: Whether to skip all-zero samples in data.
+   False by default.
+
 Validation settings
 -------------------
 

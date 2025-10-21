@@ -90,6 +90,7 @@ class Multimet(Dataset):
         self._seq_length = cfg.seq_length
         self._predict_last_n = cfg.predict_last_n
         self._forecast_overlap = cfg.forecast_overlap
+        self._allzero_samples_are_invalid = cfg.allzero_samples_are_invalid
 
         # Feature lists by type.
         self._static_features = cfg.static_attributes
@@ -460,6 +461,7 @@ class Multimet(Dataset):
             hindcast_features=self._hindcast_features,
             target_features=self._target_features,
             feature_groups=self._feature_groups,
+            allzero_samples_are_invalid=self._allzero_samples_are_invalid,
         )[0]
 
         LOGGER.debug("valid_sample_mask compute")
