@@ -704,15 +704,13 @@ def _assert_floats_are_float32(dataset: xr.Dataset):
 def _convert_to_tensor(key: str, value: np.ndarray) -> torch.Tensor | np.ndarray:
     if key in NUMPY_VARS:
         return value
-    elif key in TENSOR_VARS:
-        if isinstance(value, dict):
-            return {k: torch.from_numpy(v) for k, v in value.items()}
-        elif isinstance(value, np.ndarray):
-            return torch.from_numpy(value)
-        else:
-            raise ValueError(f"Unrecognized data type: {type(value)}")
-    else:
+    if key not in TENSOR_VARS:
         raise ValueError(f"Unrecognized data key: {key}")
+    if isinstance(value, dict):
+        return {k: torch.from_numpy(v) for k, v in value.items()}
+    if isinstance(value, np.ndarray):
+        return torch.from_numpy(value)
+    raise ValueError(f"Unrecognized data type: {type(value)}")
 
 
 def _open_zarr(path: Path) -> xr.Dataset:
