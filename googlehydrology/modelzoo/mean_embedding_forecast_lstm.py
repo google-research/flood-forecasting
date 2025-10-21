@@ -170,10 +170,27 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         forward_data = ForwardData.from_forward_data(data, self.config_data)
 
         static_attributes = self._calc_static_attributes(forward_data)
-        cpc = self._calc_cpc(forward_data, static_attributes)
-        imerg = self._calc_imerg(forward_data, static_attributes)
-        hres = self._calc_hres(forward_data, static_attributes)
-        graphcast = self._calc_graphcast(forward_data, static_attributes)
+
+        cpc = self._calc_dynamic_embedding(
+            embedding_network=self.cpc_input_fc,
+            dynamic_data=forward_data.cpc_data,
+            static_attributes=static_attributes,
+            append_nan=True)
+        imerg = self._calc_dynamic_embedding(
+            embedding_network=self.imerg_input_fc,
+            dynamic_data=forward_data.imerg_data,
+            static_attributes=static_attributes,
+            append_nan=True)
+        hres = self._calc_dynamic_embedding(
+            embedding_network=self.hres_input_fc,
+            dynamic_data=forward_data.hres_data,
+            static_attributes=static_attributes,
+            append_nan=False)
+        graphcast = self._calc_dynamic_embedding(
+            embedding_network=self.graphcast_input_fc,
+            dynamic_data=forward_data.graphcast_data,
+            static_attributes=static_attributes,
+            append_nan=False)
 
         hindcast = self._calc_lstm(
             lstm=self.hindcast_lstm,
@@ -238,41 +255,20 @@ class MeanEmbeddingForecastLSTM(BaseModel):
     def _calc_static_attributes(self, forward_data: "ForwardData") -> torch.Tensor:
         return self.static_attributes_fc(forward_data.static_attributes)
 
-    def _calc_cpc(
-        self, forward_data: "ForwardData", static_attributes: torch.Tensor
+    def _calc_dynamic_embedding(
+        self,
+        embedding_network: FC,
+        dynamic_data: torch.Tensor,
+        static_attributes: torch.Tensor,
+        append_nan: bool,
     ) -> torch.Tensor:
-        cpc_input_concat = self._append_static_attributes(
-            forward_data.cpc_data, static_attributes
+        dynamic_data_concat = self._append_static_attributes(
+            dynamic_data, static_attributes
         )
-        cpc = self.cpc_input_fc(cpc_input_concat)
-        cpc_with_nan = self._add_nan_padding(cpc)
-        return cpc_with_nan
-
-    def _calc_imerg(
-        self, forward_data: "ForwardData", static_attributes: torch.Tensor
-    ) -> torch.Tensor:
-        imerg_input_concat = self._append_static_attributes(
-            forward_data.imerg_data, static_attributes
-        )
-        imerg = self.imerg_input_fc(imerg_input_concat)
-        imerg_with_nan = self._add_nan_padding(imerg)
-        return imerg_with_nan
-
-    def _calc_hres(
-        self, forward_data: "ForwardData", static_attributes: torch.Tensor
-    ) -> torch.Tensor:
-        hres_input_concat = self._append_static_attributes(
-            forward_data.hres_data, static_attributes
-        )
-        return self.hres_input_fc(hres_input_concat)
-
-    def _calc_graphcast(
-        self, forward_data: "ForwardData", static_attributes: torch.Tensor
-    ) -> torch.Tensor:
-        graphcast_input_concat = self._append_static_attributes(
-            forward_data.graphcast_data, static_attributes
-        )
-        return self.graphcast_input_fc(graphcast_input_concat)
+        output = embedding_network(dynamic_data_concat)
+        if append_nan:
+            output = self._add_nan_padding(output)
+        return output
 
     def _calc_lstm(
         self,
