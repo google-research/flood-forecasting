@@ -23,20 +23,20 @@ LOGGER = logging.getLogger(__name__)
 class WarningOnceFilter(logging.Filter):
     """Filters out non-unique warnings."""
 
-    def __init__(self, name: str = '') -> None:
-        super().__init__(name)
+    def __init__(self) -> None:
+        super().__init__()
         self._seen = set()
 
     def filter(self, record: logging.LogRecord) -> bool:
         if record.levelno != logging.WARNING:
-            return True
+            return True  # No effect for non-warning
 
-        serialized = repr(record)
-        if serialized in self._seen:
-            return False
+        if (cmp := repr(record)) in self._seen:
+            return False  # Filter out (already seen)
+        self._seen.add(cmp)
 
-        self._seen.add(serialized)
-        return True
+        return True  # First seen so printed
+
 
 def setup_logging(log_file: str, level: int):
     """Initialize logging to `log_file` and stdout.
