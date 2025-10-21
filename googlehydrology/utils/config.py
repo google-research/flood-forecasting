@@ -970,6 +970,10 @@ class Config(object):
             return self._cfg["validate_every"]
 
     @property
+    def allzero_samples_are_invalid(self) -> bool:
+        return self._cfg.get("allzero_samples_are_invalid", False)
+
+    @property
     def validate_n_random_basins(self) -> int:
         if (self._cfg.get("validate_n_random_basins", None) is None) or (self._cfg["validate_n_random_basins"] < 1):
             return 0

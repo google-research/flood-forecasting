@@ -119,6 +119,7 @@ def validate_samples(
     hindcast_features: Optional[list[str]] = None,
     target_features: Optional[list[str]] = None,
     static_features: Optional[list[str]] = None,
+    allzero_samples_are_invalid: bool = False,
 ) -> xr.DataArray:
     """Validates samples based on the NaN-handling method.
     
@@ -155,6 +156,8 @@ def validate_samples(
         List of target features to validate. Defaults to None. At least one feature list is required.
     static_features : Optional[list[str]]
         List of static features to validate. Defaults to None. At least one feature list is required.
+    allzero_samples_are_invalid : bool
+        Whether to skip all-zero samples (via a mask).
 
     Returns
     -------
@@ -237,7 +240,8 @@ def validate_samples(
             raise ValueError('Target sequence length is required when validating target data.')
         dataset_targets = dataset[target_features]
 
-        masks.append(_skip_all_zero_samples(dataset_targets).rename('non_zero_targets'))
+        if allzero_samples_are_invalid:
+            masks.append(_skip_all_zero_samples(dataset_targets).rename('non_zero_targets'))
 
         mask = validate_samples_any(dataset=dataset_targets)
         masks.append(

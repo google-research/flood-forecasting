@@ -762,7 +762,6 @@ def test_validate_samples_target_features_train(
         mask=mock_mask, seq_length=2, shift_right=1
     )
     assert [mask.name for mask in masks] == [
-        'non_zero_targets',
         'targets',
         'dates',
     ]
@@ -790,7 +789,8 @@ def test_validate_samples_target_features_train_zeros(
         feature_groups=[],
         target_features=['t1'],
         predict_last_n=2,
-        lead_time=1
+        lead_time=1,
+        allzero_samples_are_invalid=True,
     )
 
     mock_validate_sequence_any.assert_called_once_with(
