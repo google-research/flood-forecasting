@@ -25,7 +25,7 @@ clip_targets_to_zero:
 - streamflow
 learning_rate_strategy: ReduceLROnPlateau
 initial_learning_rate: 0.0005
-learning_rate_drop_factor: 0.1
+learning_rate_drop_factor: 0.5
 learning_rate_epochs_drop: 5
 # max_updates_per_epoch:
 max_updates_per_epoch: 2000
