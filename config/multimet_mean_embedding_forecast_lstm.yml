@@ -31,12 +31,12 @@ learning_rate_epochs_drop: 5
 max_updates_per_epoch: 2000
 metrics:
 - NSE
-- KGE
-- Alpha-NSE
-- Beta-NSE
-- Beta-KGE
-- Peak-Timing
-- Missed-Peaks
+# - KGE
+# - Alpha-NSE
+# - Beta-NSE
+# - Beta-KGE
+# - Peak-Timing
+# - Missed-Peaks
 num_workers: 0  # Scalene profiler works only without multiprocessing (`0`)
 optimizer: Adam
 validate_every: 5
@@ -47,22 +47,36 @@ log_loss_every_nth_update: 50
 
 # --- Dataset Parameters --------------------------------------------------------
 
-train_basin_file: ~/flood-forecasting/config/basins/caravan/lamah.txt
-validation_basin_file: ~/flood-forecasting/config/basins/caravan/lamah.txt
-test_basin_file: ~/flood-forecasting/config/basins/caravan/lamah.txt
+train_basin_file: ~/flood-forecasting/config/basins/caravan/camels.txt
+validation_basin_file: ~/flood-forecasting/config/basins/caravan/camels.txt
+test_basin_file: ~/flood-forecasting/config/basins/caravan/camels.txt
 
-train_end_date:
-- 31/12/2015
-- 31/12/2023
-train_start_date:
-- 01/01/1980
-- 01/01/2020
+train_end_date: 31/12/2020
+train_start_date: 01/01/2016
 
-validation_end_date: 31/12/2018
-validation_start_date: 01/01/2017
+validation_end_date: 31/12/2025
+validation_start_date: 01/01/2021
 
-test_end_date: 31/12/2018
-test_start_date: 01/01/2017
+test_end_date: 31/12/2025
+test_start_date: 01/01/2021
+
+# train_basin_file: ~/flood-forecasting/config/basins/caravan/lamah.txt
+# validation_basin_file: ~/flood-forecasting/config/basins/caravan/lamah.txt
+# test_basin_file: ~/flood-forecasting/config/basins/caravan/lamah.txt
+#
+# train_end_date:
+# - 31/12/2015
+# - 31/12/2023
+# train_start_date:
+# - 01/01/1980
+# - 01/01/2020
+#
+# validation_end_date: 31/12/2018
+# validation_start_date: 01/01/2017
+#
+# test_end_date: 31/12/2018
+# test_start_date: 01/01/2017
+
 tester_skip_obs_all_nan: True
 
 # data_dir: ~/nh-data/data/Caravan-multimet
