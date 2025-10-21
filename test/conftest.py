@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from pathlib import Path
-from typing import Union, Dict, Callable
+from typing import Union, Callable
 
 import pytest
 
@@ -112,12 +112,12 @@ def forecast_model(request) -> str:
                         (['daymet',
                           'nldas'], ['prcp(mm/day)_daymet', 'tmax(C)_daymet', 'PRCP(mm/day)_nldas', 'Tmax(C)_nldas'])],
                 ids=lambda param: str(param[0]))
-def single_timescale_forcings(request) -> Dict[str, Union[str, list[str]]]:
+def single_timescale_forcings(request) -> dict[str, Union[str, list[str]]]:
     """Fixture that provides daily forcings.
 
     Returns
     -------
-    Dict[str, Union[str, list[str]]]
+    dict[str, Union[str, list[str]]]
         Dictionary ``{'forcings': <name of the forcings set>, 'variables': <list of forcings variables>}``.
     """
     if request.config.getoption('--smoke-test') and 'daymet' not in request.param[0]:
@@ -138,12 +138,12 @@ def multi_timescale_model(request) -> str:
 
 
 @pytest.fixture(params=[('camels_us', ['QObs(mm/d)'])], ids=lambda param: param[0])
-def daily_dataset(request) -> Dict[str, list[str]]:
+def daily_dataset(request) -> dict[str, list[str]]:
     """Fixture that provides daily datasets.
 
     Returns
     -------
-    Dict[str, list[str]]
+    dict[str, list[str]]
         Dictionary ``{'dataset: <name of the dataset>, 'target': <list of target variables>}``.
     """
     if request.config.getoption('--smoke-test') and request.param[0] != 'camels_us':

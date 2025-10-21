@@ -15,7 +15,7 @@
 import subprocess
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Union
+from typing import Union
 
 import matplotlib as mpl
 import numpy as np
@@ -138,12 +138,12 @@ class Logger(object):
             for k, v in kwargs.items():
                 self.writer.add_scalar('/'.join([tag, k]), v, self.update)
 
-    def summarise(self) -> Union[float, Dict[str, float]]:
+    def summarise(self) -> Union[float, dict[str, float]]:
         """"Log the results of the entire training or validation epoch.
 
         Returns
         -------
-        Union[float, Dict[str, float]]
+        Union[float, dict[str, float]]
             Average loss if training is summarized, else a dict mapping metric names to median metric values.
         """
         value = {}

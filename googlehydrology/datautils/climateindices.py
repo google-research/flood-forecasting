@@ -16,7 +16,7 @@ import logging
 import pickle
 import sys
 from pathlib import Path
-from typing import Dict
+
 
 import numpy as np
 import pandas as pd
@@ -33,8 +33,8 @@ def calculate_camels_us_dyn_climate_indices(data_dir: Path,
                                          basins: list[str],
                                          window_length: int,
                                          forcings: str,
-                                         variable_names: Dict[str, str] = None,
-                                         output_file: Path = None) -> Dict[str, pd.DataFrame]:
+                                         variable_names: dict[str, str] = None,
+                                         output_file: Path = None) -> dict[str, pd.DataFrame]:
     """Calculate dynamic climate indices for the CAMELS US dataset.
     
     Compared to the long-term static climate indices included in the CAMELS US data set, this function computes the same
@@ -54,7 +54,7 @@ def calculate_camels_us_dyn_climate_indices(data_dir: Path,
         Look-back period to use to compute the climate indices.
     forcings : str
         Can be e.g. 'daymet' or 'nldas', etc. Must match the folder names in the 'basin_mean_forcing' directory.
-    variable_names : Dict[str, str], optional
+    variable_names : dict[str, str], optional
         Mapping of the forcings' variable names, needed if forcings other than DayMet, Maurer, or NLDAS are used.
         If provided, this must be a dictionary that maps the keys 'prcp', 'tmin', 'tmax', 'srad' to the forcings'
         respective variable names.
@@ -63,7 +63,7 @@ def calculate_camels_us_dyn_climate_indices(data_dir: Path,
 
     Returns
     -------
-    Dict[str, pd.DataFrame]
+    dict[str, pd.DataFrame]
         Dictionary with one time-indexed DataFrame per basin. By definition, the climate indices for a given day in the
         DataFrame are computed from the `window_length` previous time steps (including the given day).
     """

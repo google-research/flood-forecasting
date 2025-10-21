@@ -20,7 +20,7 @@ import warnings
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Optional, Tuple, Union
 
 import pandas as pd
 from ruamel.yaml import YAML
@@ -317,7 +317,7 @@ class Config(object):
         return self._cfg.get("allow_subsequent_nan_losses", 0)
 
     @property
-    def autoregressive_inputs(self) -> Union[list[str], Dict[str, list[str]]]:
+    def autoregressive_inputs(self) -> Union[list[str], dict[str, list[str]]]:
         return self._as_default_list(self._cfg.get("autoregressive_inputs", []))
 
     @property
@@ -449,7 +449,7 @@ class Config(object):
             return self._cfg["experiment_name"]
 
     @property
-    def finetune_modules(self) -> Union[list[str], Dict[str, str]]:
+    def finetune_modules(self) -> Union[list[str], dict[str, str]]:
         finetune_modules = self._cfg.get("finetune_modules", [])
         if finetune_modules is None:
             return []
@@ -536,11 +536,11 @@ class Config(object):
             return hindcast_inputs
 
     @property
-    def hidden_size(self) -> Union[int, Dict[str, int]]:
+    def hidden_size(self) -> Union[int, dict[str, int]]:
         return self._get_value_verbose("hidden_size")
 
     @property
-    def hindcast_hidden_size(self) -> Union[int, Dict[str, int]]:
+    def hindcast_hidden_size(self) -> Union[int, dict[str, int]]:
         return self._cfg.get("hindcast_hidden_size", self.hidden_size)
 
     @property
@@ -647,11 +647,11 @@ class Config(object):
         return self._cfg.get("mc_dropout", False)
 
     @property
-    def metrics(self) -> Union[list[str], Dict[str, list[str]]]:
+    def metrics(self) -> Union[list[str], dict[str, list[str]]]:
         return self._cfg.get("metrics", [])
 
     @metrics.setter
-    def metrics(self, metrics: Union[str, list[str], Dict[str, list[str]]]):
+    def metrics(self, metrics: Union[str, list[str], dict[str, list[str]]]):
         self._cfg["metrics"] = metrics
 
     @property
@@ -754,11 +754,11 @@ class Config(object):
         return self._cfg.get("per_basin_validation_periods_file", None)
 
     @property
-    def predict_last_n(self) -> Union[int, Dict[str, int]]:
+    def predict_last_n(self) -> Union[int, dict[str, int]]:
         return self._get_value_verbose("predict_last_n")
 
     @property
-    def random_holdout_from_dynamic_features(self) -> Dict[str, float]:
+    def random_holdout_from_dynamic_features(self) -> dict[str, float]:
         return self._as_default_dict(self._cfg.get("random_holdout_from_dynamic_features", {}))
 
     @property
@@ -837,7 +837,7 @@ class Config(object):
             raise RuntimeError("Seed was already specified and can't be replaced")
 
     @property
-    def seq_length(self) -> Union[int, Dict[str, int]]:
+    def seq_length(self) -> Union[int, dict[str, int]]:
         return self._get_value_verbose("seq_length")
 
     @property
@@ -895,7 +895,7 @@ class Config(object):
             raise ValueError("No target variables ('target_variables') defined in the config.")
 
     @property
-    def union_mapping(self) -> Dict[str, str] | None:
+    def union_mapping(self) -> dict[str, str] | None:
         return self._cfg.get("union_mapping", None)
 
     @property
@@ -947,7 +947,7 @@ class Config(object):
         return self._as_default_list(self._get_value_verbose("train_start_date"))
 
     @property
-    def transfer_mtslstm_states(self) -> Dict[str, str]:
+    def transfer_mtslstm_states(self) -> dict[str, str]:
         return self._cfg.get("transfer_mtslstm_states", {'h': 'linear', 'c': 'linear'})
 
     @property

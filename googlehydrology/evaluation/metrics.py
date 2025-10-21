@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import logging
-from typing import Dict, Tuple
+from typing import Tuple
 
 import numpy as np
 import pandas as pd
@@ -772,7 +772,7 @@ def mean_absolute_percentage_peak_error(obs: DataArray, sim: DataArray) -> float
 def calculate_all_metrics(obs: DataArray,
                           sim: DataArray,
                           resolution: str = "1D",
-                          datetime_coord: str = None) -> Dict[str, float]:
+                          datetime_coord: str = None) -> dict[str, float]:
     """Calculate all metrics with default values.
     
     Parameters
@@ -788,7 +788,7 @@ def calculate_all_metrics(obs: DataArray,
         
     Returns
     -------
-    Dict[str, float]
+    dict[str, float]
         Dictionary with keys corresponding to metric name and values corresponding to metric values.
 
     Raises
@@ -821,7 +821,7 @@ def calculate_metrics(obs: DataArray,
                       sim: DataArray,
                       metrics: list[str],
                       resolution: str = "1D",
-                      datetime_coord: str = None) -> Dict[str, float]:
+                      datetime_coord: str = None) -> dict[str, float]:
     """Calculate specific metrics with default values.
     
     Parameters
@@ -839,7 +839,7 @@ def calculate_metrics(obs: DataArray,
 
     Returns
     -------
-    Dict[str, float]
+    dict[str, float]
         Dictionary with keys corresponding to metric name and values corresponding to metric values.
 
     Raises

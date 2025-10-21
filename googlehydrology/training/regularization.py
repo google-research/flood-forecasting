@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict
+
 
 import torch
 
@@ -41,21 +41,21 @@ class BaseRegularization(torch.nn.Module):
         self.name = name
         self.weight = weight
 
-    def forward(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor],
-                other_model_data: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def forward(self, prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor],
+                other_model_data: dict[str, torch.Tensor]) -> torch.Tensor:
         """Calculate the regularization term.
 
         Parameters
         ----------
-        prediction : Dict[str, torch.Tensor]
+        prediction : dict[str, torch.Tensor]
             Dictionary of predicted variables for each frequency. If more than one frequency is predicted,
             the keys must have suffixes ``_{frequency}``. For the required keys, refer to the documentation
             of the concrete loss.
-        ground_truth : Dict[str, torch.Tensor]
+        ground_truth : dict[str, torch.Tensor]
             Dictionary of ground truth variables for each frequency. If more than one frequency is predicted,
             the keys must have suffixes ``_{frequency}``. For the required keys, refer to the documentation
             of the concrete loss.
-        other_model_data : Dict[str, torch.Tensor]
+        other_model_data : dict[str, torch.Tensor]
             Dictionary of all remaining keys-value pairs in the prediction dictionary that are not directly linked to 
             the model predictions but can be useful for regularization purposes, e.g. network internals, weights etc.
             
@@ -95,15 +95,15 @@ class TiedFrequencyMSERegularization(BaseRegularization):
         if len(self._frequencies) < 2:
             raise ValueError("TiedFrequencyMSERegularization needs at least two frequencies.")
 
-    def forward(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor],
+    def forward(self, prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor],
                 *args) -> torch.Tensor:
         """Calculate the sum of mean squared deviations between adjacent predicted frequencies.
 
         Parameters
         ----------
-        prediction : Dict[str, torch.Tensor]
+        prediction : dict[str, torch.Tensor]
             Dictionary containing ``y_hat_{frequency}`` for each frequency.
-        ground_truth : Dict[str, torch.Tensor]
+        ground_truth : dict[str, torch.Tensor]
             Dictionary continaing ``y_{frequency}`` for each frequency.
 
         Returns
@@ -137,19 +137,19 @@ class ForecastOverlapMSERegularization(BaseRegularization):
     def __init__(self, cfg: Config, weight: float = 1.0):
         super(ForecastOverlapMSERegularization, self).__init__(cfg, name='forecast_overlap', weight=weight)
 
-    def forward(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor],
-                other_model_output: Dict[str, Dict[str, torch.Tensor]]) -> torch.Tensor:
+    def forward(self, prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor],
+                other_model_output: dict[str, dict[str, torch.Tensor]]) -> torch.Tensor:
         """Calculate the squared difference between hindcast and forecast model during overlap.
 
         Does not work with multi-frequency models.
 
         Parameters
         ----------
-        prediction : Dict[str, torch.Tensor]
+        prediction : dict[str, torch.Tensor]
             Not used.
-        ground_truth : Dict[str, torch.Tensor]
+        ground_truth : dict[str, torch.Tensor]
             Not used.
-        other_model_output : Dict[str, Dict[str, torch.Tensor]]
+        other_model_output : dict[str, dict[str, torch.Tensor]]
             Dictionary containing ``y_forecast_overlap`` and ``y_hindcast_overlap``, which are
             both dictionaries containing keys to relevant model outputs.
 

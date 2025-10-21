@@ -14,7 +14,7 @@
 
 import warnings
 from datetime import datetime
-from typing import Dict, Tuple
+from typing import Tuple
 
 from dateutil.relativedelta import relativedelta
 
@@ -40,7 +40,7 @@ def get_available_signatures() -> list[str]:
     return signatures
 
 
-def calculate_all_signatures(da: DataArray, prcp: DataArray, datetime_coord: str = None) -> Dict[str, float]:
+def calculate_all_signatures(da: DataArray, prcp: DataArray, datetime_coord: str = None) -> dict[str, float]:
     """Calculate all signatures with default values.
 
     Parameters
@@ -54,7 +54,7 @@ def calculate_all_signatures(da: DataArray, prcp: DataArray, datetime_coord: str
 
     Returns
     -------
-    Dict[str, float]
+    dict[str, float]
         Dictionary with signature names as keys and signature values as values.
     """
     if datetime_coord is None:
@@ -81,7 +81,7 @@ def calculate_all_signatures(da: DataArray, prcp: DataArray, datetime_coord: str
 def calculate_signatures(da: DataArray,
                          signatures: list[str],
                          datetime_coord: str = None,
-                         prcp: DataArray = None) -> Dict[str, float]:
+                         prcp: DataArray = None) -> dict[str, float]:
     """Calculate the specified signatures with default values.
 
     Parameters
@@ -97,7 +97,7 @@ def calculate_signatures(da: DataArray,
 
     Returns
     -------
-    Dict[str, float]
+    dict[str, float]
         Dictionary with signature names as keys and signature values as values.
 
     Raises

@@ -270,8 +270,6 @@ files.
 
 .. code-block:: python
 
-    from typing import Dict
-
     import torch
 
     from googlehydrology.modelzoo.basemodel import BaseModel
@@ -300,7 +298,7 @@ files.
             # Create model parts here #
             ###########################
 
-        def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        def forward(self, data: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
             """Forward pass through the model
 
             By convention, each forward pass has to accept a dict of input tensors. Usually, this dict contains 'x_d' and,
@@ -312,7 +310,7 @@ files.
 
             Parameters
             ----------
-            data : Dict[str, torch.Tensor]
+            data : dict[str, torch.Tensor]
                  Dictionary with tensors
                     - x_d of shape [batch size, sequence length, features] containing the dynamic input data.
                     - x_s of shape [batch size, features] containing static input features. These are the concatenation
