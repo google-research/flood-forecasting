@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple
+
 
 import matplotlib as mpl
 # Must set before import pyplot import.
@@ -24,7 +24,7 @@ import numpy as np
 
 def percentile_plot(y: np.ndarray,
                     y_hat: np.ndarray,
-                    title: str = '') -> Tuple[mpl.figure.Figure, mpl.axes.Axes]:
+                    title: str = '') -> tuple[mpl.figure.Figure, mpl.axes.Axes]:
     """Plot the time series of observed values with 3 specific prediction intervals (i.e.: 25 to 75, 10 to 90, 5 to 95).
 
     Parameters
@@ -38,7 +38,7 @@ def percentile_plot(y: np.ndarray,
 
     Returns
     -------
-    Tuple[mpl.figure.Figure, mpl.axes.Axis]
+    tuple[mpl.figure.Figure, mpl.axes.Axis]
         The percentile plot.
     """
     fig, ax = plt.subplots()
@@ -66,7 +66,7 @@ def percentile_plot(y: np.ndarray,
 
 def regression_plot(y: np.ndarray,
                     y_hat: np.ndarray,
-                    title: str = '') -> Tuple[mpl.figure.Figure, mpl.axes.Axes]:
+                    title: str = '') -> tuple[mpl.figure.Figure, mpl.axes.Axes]:
     """Plot the time series of observed and simulated values.
 
     Parameters
@@ -80,7 +80,7 @@ def regression_plot(y: np.ndarray,
 
     Returns
     -------
-    Tuple[mpl.figure.Figure, mpl.axes.Axis]
+    tuple[mpl.figure.Figure, mpl.axes.Axis]
         The regression plot.
     """
 
@@ -97,7 +97,7 @@ def regression_plot(y: np.ndarray,
     return fig, ax
 
 
-def uncertainty_plot(y: np.ndarray, y_hat: np.ndarray, title: str = '') -> Tuple[mpl.figure.Figure, np.ndarray]:
+def uncertainty_plot(y: np.ndarray, y_hat: np.ndarray, title: str = '') -> tuple[mpl.figure.Figure, np.ndarray]:
     """Plots probability plot alongside a hydrograph with simulation percentiles.
     
     The probability plot itself is analogous to the calibration plot for classification tasks. The plot compares the 
@@ -118,7 +118,7 @@ def uncertainty_plot(y: np.ndarray, y_hat: np.ndarray, title: str = '') -> Tuple
 
     Returns
     -------
-    Tuple[mpl.figure.Figure, np.ndarray]
+    tuple[mpl.figure.Figure, np.ndarray]
         The uncertainty plot.
     """
 

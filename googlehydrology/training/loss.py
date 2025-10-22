@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from collections import defaultdict
-from typing import Tuple
+
 
 import numpy as np
 import torch
@@ -84,7 +84,7 @@ class BaseLoss(torch.nn.Module):
         self._target_weights = weights
 
     def forward(self, prediction: dict[str, torch.Tensor],
-                data: dict[str, torch.Tensor]) -> Tuple[torch.Tensor, dict[str, torch.Tensor]]:
+                data: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Calculate the loss.
 
         Parameters
@@ -149,14 +149,14 @@ class BaseLoss(torch.nn.Module):
 
     @staticmethod
     def _subset_in_time(prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor],
-                        predict_last_n: int) -> Tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+                        predict_last_n: int) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
         ground_truth_sub = {key: gt[:, -predict_last_n:, :] for key, gt in ground_truth.items()}
         prediction_sub = {key: pred[:, -predict_last_n:, :] for key, pred in prediction.items()}
 
         return prediction_sub, ground_truth_sub
 
     def _subset_target(self, prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor],
-                       n_target: int) -> Tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+                       n_target: int) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
         # determine which output neurons correspond to the n_target target variable
         start = n_target * self._output_size_per_target
         end = (n_target + 1) * self._output_size_per_target

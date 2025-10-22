@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Hashable, Tuple, Iterable, Union
+from typing import Hashable, Iterable, Union
 
 import logging
 import itertools
@@ -412,7 +412,7 @@ class Multimet(Dataset):
 
     def _get_period_dates(
         self, cfg: Config
-    ) -> Tuple[list[pd.Timestamp], list[pd.Timestamp]]:
+    ) -> tuple[list[pd.Timestamp], list[pd.Timestamp]]:
         if self._period == "train":
             start_dates, end_dates = cfg.train_start_date, cfg.train_end_date
         elif self._period == "test":

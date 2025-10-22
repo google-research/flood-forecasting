@@ -14,7 +14,7 @@
 
 import warnings
 from datetime import datetime
-from typing import Tuple
+
 
 from dateutil.relativedelta import relativedelta
 
@@ -477,7 +477,7 @@ def q_mean(da: DataArray) -> float:
 
 
 @njit
-def _baseflow_index_jit(streamflow: np.ndarray, alpha: float, warmup: int, n_passes: int) -> Tuple[float, np.ndarray]:
+def _baseflow_index_jit(streamflow: np.ndarray, alpha: float, warmup: int, n_passes: int) -> tuple[float, np.ndarray]:
     non_nan_indices = np.where(~np.isnan(streamflow))[0]
     non_nan_streamflow_runs = _split_list(non_nan_indices, min_length=warmup + 1)
     if len(non_nan_streamflow_runs) == 0:
@@ -521,7 +521,7 @@ def baseflow_index(da: DataArray,
                    alpha: float = 0.98,
                    warmup: int = 30,
                    n_passes: int = None,
-                   datetime_coord: str = None) -> Tuple[float, DataArray]:
+                   datetime_coord: str = None) -> tuple[float, DataArray]:
     """Calculate baseflow index.
 
     Ratio of mean baseflow to mean discharge [#]_. If `da` contains NaN values, the baseflow is calculated for each
@@ -544,7 +544,7 @@ def baseflow_index(da: DataArray,
 
     Returns
     -------
-    Tuple[float, DataArray]
+    tuple[float, DataArray]
         Baseflow index and baseflow array. The baseflow array contains NaNs wherever no baseflow was
         calculated due to NaNs in `da`.
 

@@ -14,7 +14,7 @@
 
 import itertools
 import logging
-from typing import Optional, Union, Tuple
+from typing import Optional, Union
 
 import torch
 import torch.nn as nn
@@ -163,7 +163,7 @@ class InputLayer(nn.Module):
         self.cfg = cfg
         
     @staticmethod
-    def _get_embedding_net(embedding_spec: Optional[dict], input_size: int, purpose: str) -> Tuple[nn.Module, int]:
+    def _get_embedding_net(embedding_spec: Optional[dict], input_size: int, purpose: str) -> tuple[nn.Module, int]:
         """Get an embedding net following the passed specifications.
 
         If the `embedding_spec` is None, the returned embedding net will be the identity function.
@@ -179,7 +179,7 @@ class InputLayer(nn.Module):
 
         Returns
         -------
-        Tuple[nn.Module, int]
+        tuple[nn.Module, int]
             The embedding net and its output size.
         """
         if embedding_spec is None:
@@ -203,7 +203,7 @@ class InputLayer(nn.Module):
         return emb_net, emb_net.output_size
 
     def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]], concatenate_output: bool = True) \
-            -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+            -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         """Perform a forward pass on the input layer.
 
         Parameters
@@ -216,7 +216,7 @@ class InputLayer(nn.Module):
 
         Returns
         -------
-        Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]
+        Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]
             If `concatenate_output` is True, a single tensor is returned. Else, a tuple with one tensor of dynamic
             inputs and one tensor of static inputs.
         """
