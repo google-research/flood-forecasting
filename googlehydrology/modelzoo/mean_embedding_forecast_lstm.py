@@ -291,6 +291,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
     def _calc_head(self, forecast: torch.Tensor) -> dict[str, torch.Tensor]:
         return self.head(self.dropout(forecast))
 
+
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class ConfigData:
     @classmethod
@@ -318,6 +319,7 @@ class ConfigData:
 
 def _filter_by_prefix(names: list[str], prefix: str) -> Tuple[str, ...]:
     return tuple(s for s in names if s.startswith(prefix))
+
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class ForwardData:
