@@ -57,7 +57,7 @@ def _main():
     config = Config(Path(args["config_file"] or Path(args["run_dir"]) / "config.yml"))
 
     if (args["run_dir"] is not None) and (args["mode"] in ["evaluate", "infer"]):
-        setup_logging(str(Path(args["run_dir"]) / "output.log"), config.logging_level)
+        setup_logging(str(Path(args["run_dir"]) / "output.log"), config.logging_level, config.print_warnings_once)
 
     torch.autograd.set_detect_anomaly(config.detect_anomaly)
 

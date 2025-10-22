@@ -14,6 +14,7 @@
 
 logging_level: INFO
 detect_anomaly: False
+print_warnings_once: False
 
 # --- Training Parameters -------------------------------------------------------
 
