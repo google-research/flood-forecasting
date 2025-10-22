@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import logging
-from typing import Tuple
+
 
 import numpy as np
 import pandas as pd
@@ -49,7 +49,7 @@ def _validate_inputs(obs: DataArray, sim: DataArray):
         raise RuntimeError("Metrics only defined for time series (1d or 2d with second dimension 1)")
 
 
-def _mask_valid(obs: DataArray, sim: DataArray) -> Tuple[DataArray, DataArray]:
+def _mask_valid(obs: DataArray, sim: DataArray) -> tuple[DataArray, DataArray]:
     # mask of invalid entries. NaNs in simulations can happen during validation/testing
     idx = (~sim.isnull()) & (~obs.isnull())
 

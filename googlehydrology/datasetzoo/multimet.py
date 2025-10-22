@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Hashable, Tuple, Iterable, Union
+from typing import Hashable, Iterable, Union
 
 import logging
 import itertools
@@ -412,7 +412,7 @@ class Multimet(Dataset):
 
     def _get_period_dates(
         self, cfg: Config
-    ) -> Tuple[list[pd.Timestamp], list[pd.Timestamp]]:
+    ) -> tuple[list[pd.Timestamp], list[pd.Timestamp]]:
         if self._period == "train":
             start_dates, end_dates = cfg.train_start_date, cfg.train_end_date
         elif self._period == "test":
@@ -704,15 +704,13 @@ def _assert_floats_are_float32(dataset: xr.Dataset):
 def _convert_to_tensor(key: str, value: np.ndarray) -> torch.Tensor | np.ndarray:
     if key in NUMPY_VARS:
         return value
-    elif key in TENSOR_VARS:
-        if isinstance(value, dict):
-            return {k: torch.from_numpy(v) for k, v in value.items()}
-        elif isinstance(value, np.ndarray):
-            return torch.from_numpy(value)
-        else:
-            raise ValueError(f"Unrecognized data type: {type(value)}")
-    else:
+    if key not in TENSOR_VARS:
         raise ValueError(f"Unrecognized data key: {key}")
+    if isinstance(value, dict):
+        return {k: torch.from_numpy(v) for k, v in value.items()}
+    if isinstance(value, np.ndarray):
+        return torch.from_numpy(value)
+    raise ValueError(f"Unrecognized data type: {type(value)}")
 
 
 def _open_zarr(path: Path) -> xr.Dataset:
