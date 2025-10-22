@@ -15,7 +15,7 @@
 """Utility script to generate config files from a base config and a defined set of variations"""
 import itertools
 from pathlib import Path
-
+from collections import defaultdict
 
 from googlehydrology.utils.config import Config
 
@@ -66,3 +66,15 @@ def flatten_feature_list(data: list[str] | list[list[str]] | dict[str, list[str]
     if isinstance(data, list) and isinstance(data[0], list):
         return list(itertools.chain.from_iterable(data))
     return list(data)
+
+
+def group_by_prefix(features: list[str]) -> dict[str, list[str]]:
+    """
+    Groups list of features according to the prefix of each feature.
+    Assumes the prefix is written with an underscore at the start of the feature name.
+    """
+    result = defaultdict(list)
+    for feature in features:
+        prefix = feature.split('_')[0]
+        result[prefix].append(feature)
+    return result
