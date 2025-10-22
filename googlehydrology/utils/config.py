@@ -281,6 +281,10 @@ class Config(object):
         return self._cfg.get("detect_anomaly", False)
 
     @property
+    def print_warnings_once(self) -> bool:
+        return self._cfg.get("print_warnings_once", False)
+
+    @property
     def tester_skip_obs_all_nan(self) -> bool:
         return self._cfg.get("tester_skip_obs_all_nan", False)
 

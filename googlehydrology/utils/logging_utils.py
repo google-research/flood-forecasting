@@ -38,7 +38,7 @@ class WarningOnceFilter(logging.Filter):
         return True  # First seen so printed
 
 
-def setup_logging(log_file: str, level: int):
+def setup_logging(log_file: str, level: int, print_warnings_once: bool):
     """Initialize logging to `log_file` and stdout.
 
     Parameters
@@ -47,9 +47,12 @@ def setup_logging(log_file: str, level: int):
         Name of the file that will be logged to.
     level : int
         Py logging level to print from from.
+    print_warnings_once : bool
+        Whether to filter warnings that same line type and msg.
     """
     logging.captureWarnings(True)
-    logging.getLogger('py.warnings').addFilter(WarningOnceFilter())
+    if print_warnings_once:
+        logging.getLogger('py.warnings').addFilter(WarningOnceFilter())
 
     file_handler = logging.FileHandler(filename=log_file)
     stdout_handler = logging.StreamHandler(sys.stdout)
