@@ -283,6 +283,8 @@ class BaseTrainer(object):
                     print_msg += ", ".join(f"{k}: {v:.5f}" for k, v in valid_metrics.items() if k != 'avg_total_loss')
                     LOGGER.info(print_msg)
 
+            self.experiment_logger.log_step(learning_rate = lr_scheduler.get_last_lr()[-1])
+
         # make sure to close tensorboard to avoid losing the last epoch
         if self.cfg.log_tensorboard:
             self.experiment_logger.stop_tb()
