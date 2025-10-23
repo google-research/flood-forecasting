@@ -156,6 +156,9 @@ class Multimet(Dataset):
         LOGGER.debug("validate all floats are float32")
         _assert_floats_are_float32(self._dataset)
 
+        LOGGER.debug("Compute static features")
+        self._static_data = self._dataset[self._static_features].compute()
+
         # Extract date ranges.
         # TODO (future) :: Make this work for non-continuous date ranges.
         # TODO (future) :: This only works for daily data.
@@ -233,14 +236,12 @@ class Multimet(Dataset):
         self._dataset = self.scaler.scale(self._dataset)
 
         # TODO: Optionally, optimize the data loader and trainer modules to work with chunked lazy data.
-        LOGGER.debug("materialize data (compute)")
+        LOGGER.debug("compute scaler")
         # We explicitly keep the self.scaler.scaler computation since trainer uses it directly
-        # create sample index does a compute on the data. We compute here prior to avoid recompute.
-        self._dataset, self.scaler.scaler = dask.compute(
-            self._dataset, self.scaler.scaler
-        )
+        (self.scaler.scaler,) = dask.compute(self.scaler.scaler)
 
         # Create sample index lookup table for `__getitem__`.
+        # TODO: create sample index still must compute the dataset on its own
         LOGGER.debug("create sample index")
         self._create_sample_index()
 
@@ -257,9 +258,9 @@ class Multimet(Dataset):
                 skipna=True,
             )
 
-        self._data_cache: dict[str, xr.DataArray] = {}
-
         LOGGER.debug("forecast dataset init complete")
+
+        self.seen=set()
 
     def __len__(self) -> int:
         return self._num_samples
@@ -311,6 +312,11 @@ class Multimet(Dataset):
         )
 
         # Return sample with various required formats.
+        import time
+        t=time.time()
+        (sample,) = dask.compute(dask.persist(sample)[0])
+        print(f'{time.time()-t} {item=} {"SEEN" if item in self.seen else "unseen"}')
+        self.seen.add(item)
         return {key: _convert_to_tensor(key, value) for key, value in sample.items()}
 
     def _calc_date_range(self, item: int, *, lead: bool = False) -> range:
@@ -327,10 +333,9 @@ class Multimet(Dataset):
         return features["date"]
 
     def _extract_statics(self, item: int) -> np.ndarray:
-        basin = self._sample_index[item]["basin"]
-        features = self._extract_dataset(
-            self._dataset, self._static_features, {"basin": basin}
-        )
+        basin_pos = self._sample_index[item]["basin"]
+        basin = self._dataset.coords["basin"].data[basin_pos]
+        features = self._static_data.sel(basin=basin)
         return np.stack([features[e] for e in self._static_features], axis=-1)
 
     def _extract_hindcasts(self, item: int) -> dict[str, np.ndarray]:
@@ -360,15 +365,18 @@ class Multimet(Dataset):
             dim_indexes_with_lead_time,
         )
 
-        return {name: np.expand_dims(feature, -1) for name, feature in features.items()}
+        return {name: dask.array.expand_dims(feature, -1) for name, feature in features.items()}
         # TODO (future) :: This adds a dimension to many features, as required by some models.
         # There is no need for this except that it is how basedataset works, and everything else expects
         # the trailing dim. Remove this dependency in the future.
 
     def _extract_forecasts(self, item: int) -> dict[str, np.ndarray]:
+        forecast_indexer = self._sample_index[item].copy()
+        forecast_indexer["lead_time"] = slice(MULTIMET_MINIMUM_LEAD_TIME, None)
         features = self._extract_dataset(
-            self._dataset, self._forecast_features, self._sample_index[item]
+            self._dataset, self._forecast_features, forecast_indexer
         )
+
         if self._forecast_overlap is not None and self._forecast_overlap > 0:
             dim_indexes = self._sample_index[item].copy()
             dim_indexes["date"] = range(
@@ -380,10 +388,10 @@ class Multimet(Dataset):
                 self._dataset, self._forecast_features, dim_indexes
             )
             features = {
-                name: np.concatenate([overlaps[name], feature])
+                name: dask.array.concatenate([overlaps[name], feature], axis=0)
                 for name, feature in features.items()
             }
-        return {name: np.expand_dims(feature, -1) for name, feature in features.items()}
+        return {name: dask.array.expand_dims(feature, axis=-1) for name, feature in features.items()}
         # TODO (future) :: This adds a dimension to many features, as required by some models.
         # There is no need for this except that it is how basedataset works, and everything else expects
         # the trailing dim. Remove this dependency in the future.
@@ -394,7 +402,7 @@ class Multimet(Dataset):
         features = self._extract_dataset(
             self._dataset, self._target_features, dim_indexes
         )
-        return np.stack([features[e] for e in self._target_features], axis=-1)
+        return dask.array.stack([features[e] for e in self._target_features], axis=-1)
 
     def _extract_per_basin_stds(self, item: int) -> np.ndarray:
         assert self._per_basin_target_stds is not None
@@ -403,8 +411,8 @@ class Multimet(Dataset):
             self._target_features,
             {"basin": self._sample_index[item]["basin"]},
         )
-        return np.expand_dims(
-            np.stack([features[e] for e in self._target_features], axis=-1), axis=0
+        return dask.array.expand_dims(
+            dask.array.stack([features[e] for e in self._target_features], axis=-1), axis=0
         )
         # TODO (future) :: This adds a dimension to many features, as required by some models.
         # There is no need for this except that it is how basedataset works, and everything else expects
@@ -505,16 +513,9 @@ class Multimet(Dataset):
         self,
         data: xr.Dataset,
         features: list[str],
-        indexers: dict[Hashable, int | range],
+        indexers: dict[Hashable, int | range | slice],
     ) -> dict[str, np.ndarray | np.float32]:
-        def extract(feature_name):
-            key = f"{id(data)}{feature_name}"
-            feature = self._data_cache.get(key)
-            if feature is None:
-                feature = self._data_cache[key] = data[feature_name]
-            return _extract_dataarray(feature, indexers)
-
-        return {feature_name: extract(feature_name) for feature_name in features}
+        return {k: _extract_dataarray(data[k], indexers) for k in features}
 
     def _load_data(self) -> xr.Dataset:
         """Main loading function for Caravan-Multimet.
@@ -572,11 +573,12 @@ class Multimet(Dataset):
             if "lead_time" in product_ds:
                 # The same product may be used both for forecast and hindcast features. For hindcast, we load it with the
                 # full lead_time similar to forecast, and filter the minimal lead_time values during sampling.
-                lead_times = [
-                    pd.Timedelta(days=i)
-                    for i in range(MULTIMET_MINIMUM_LEAD_TIME, self.lead_time + 1)
-                ]
-                product_ds = product_ds.sel(basin=self._basins, lead_time=lead_times)
+                start = pd.Timedelta(days=MULTIMET_MINIMUM_LEAD_TIME)
+                stop = pd.Timedelta(days=self.lead_time + 1)
+                product_ds = product_ds.sel(
+                    basin=self._basins,
+                    lead_time=slice(start, stop),
+                )
             else:
                 product_ds = product_ds.sel(basin=self._basins)
 
@@ -602,12 +604,6 @@ class Multimet(Dataset):
         # Initialize storage for product/band dataframes that will eventually be concatenated.
         product_dss = []
 
-        # Lead time array.
-        lead_times = [
-            pd.Timedelta(days=i)
-            for i in range(MULTIMET_MINIMUM_LEAD_TIME, self.lead_time + 1)
-        ]
-
         # Load data for the selected products, bands, and basins.
         for product, bands in product_bands.items():
             product_path = self._dynamics_data_path / product / "timeseries.zarr"
@@ -619,7 +615,13 @@ class Multimet(Dataset):
                     f"Lead times do not exist for forecast product ({product})."
                 )
 
-            product_ds = product_ds.sel(basin=self._basins, lead_time=lead_times)[bands]
+            start = pd.Timedelta(days=MULTIMET_MINIMUM_LEAD_TIME)
+            stop = pd.Timedelta(days=self.lead_time + 1)
+            product_ds = product_ds.sel(
+                basin=self._basins,
+                lead_time=slice(start, stop),
+            )[bands]
+
             product_dss.append(product_ds)
 
         return product_dss
@@ -681,14 +683,14 @@ class Multimet(Dataset):
 
 
 def _extract_dataarray(
-    data: xr.DataArray, indexers: dict[Hashable, int | range]
+    data: xr.DataArray, indexers: dict[Hashable, int | range | slice]
 ) -> np.ndarray | np.float32:
     """Returns the values in array according to dims given by indexers.
 
     This function replaces uses of `isel` with data and indexers.
     """
-    locators = (indexers[dim] if dim in indexers else slice(None) for dim in data.dims)
-    return data.data[tuple(locators)]
+    locators = tuple(indexers[dim] if dim in indexers else slice(None) for dim in data.dims)
+    return data[locators].data
 
 
 def _assert_floats_are_float32(dataset: xr.Dataset):
