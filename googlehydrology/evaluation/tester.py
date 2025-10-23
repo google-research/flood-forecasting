@@ -359,14 +359,14 @@ class BaseTester(object):
                 epoch=epoch,
             )
 
-            if metrics:
+            if metrics and not experiment_logger:
                 for freq, freq_metrics in results.items():
                     for name, metric in freq_metrics.items():
                         if name == 'xr':
                             continue
                         metrics_results.setdefault(freq, {}).setdefault(name, []).append(metric)
 
-        if metrics:
+        if metrics and not experiment_logger:
             for freq, freq_metrics in metrics_results.items():
                 for name, metric in freq_metrics.items():
                     median = np.median(metric)
