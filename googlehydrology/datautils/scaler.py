@@ -170,7 +170,7 @@ class Scaler():
     ) -> xr.Dataset:
         """Scale a data set with a precaculated_scaler.
         
-        $$ unscaled_dataset = (dataset - center) + scale $$
+        $$ unscaled_dataset = (dataset - center) / scale $$
 
         Applies a linear transformation to the features (data_vars) in an xr.Dataset.
         This transformation is the inverse of the one applied by self.unscale().
