@@ -47,7 +47,10 @@ class BaseModel(nn.Module):
             self.output_size *= 4 * cfg.n_distributions
         elif cfg.head.lower() == 'umal':
             self.output_size *= 2
-        self._scaler = Scaler(scaler_dir=self.cfg.run_dir, calculate_scaler=False)
+        self._scaler = Scaler(
+            scaler_dir=(cfg.base_run_dir if cfg.is_finetuning else cfg.run_dir),
+            calculate_scaler=False,
+        )
 
     def sample(self, data: dict[str, torch.Tensor], n_samples: int) -> dict[str, torch.Tensor]:
         """Provides point prediction samples from a probabilistic model.
