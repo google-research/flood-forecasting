@@ -40,7 +40,7 @@ metrics:
 - Missed-Peaks
 num_workers: 0  # Scalene profiler works only without multiprocessing (`0`)
 optimizer: Adam
-validate_every: 5
+validate_every: 2
 validate_n_random_basins: 300
 predict_last_n: 8
 log_n_figures: 5
@@ -165,7 +165,6 @@ negative_sample_handling: clip  # https://hess.copernicus.org/articles/26/1673/2
 
 hidden_size: 512
 initial_forget_bias: 3
-output_activation: linear
 output_dropout: 0.4
 timestep_counter: True
 run_dir: ~/nh-data/runs
