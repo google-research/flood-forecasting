@@ -1017,10 +1017,14 @@ class Config(object):
     def _get_embedding_spec(self, embedding_spec: dict | None) -> dict | None:
         if embedding_spec is None:
             return None
+        hiddens = self._as_default_list(embedding_spec.get('hiddens', []))
+        activation = embedding_spec.get('activation', 'tanh')
+        if not isinstance(activation, list):
+            activation = [activation] * len(hiddens)
         return {
             'type': embedding_spec.get('type', 'fc'),
-            'hiddens': self._as_default_list(embedding_spec.get('hiddens', [])),
-            'activation': self._as_default_list(embedding_spec.get('activation', ['tanh'])),
+            'hiddens': hiddens,
+            'activation': activation,
             'dropout': embedding_spec.get('dropout', 0.0)
         }
 
