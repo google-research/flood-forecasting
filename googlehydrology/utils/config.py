@@ -1019,7 +1019,9 @@ class Config(object):
             return None
         hiddens = self._as_default_list(embedding_spec.get('hiddens', []))
         activation = embedding_spec.get('activation', 'tanh')
-        if not isinstance(activation, list):
+        if isinstance(activation, list):
+            assert len(activation) == len(hiddens)
+        else:
             activation = [activation] * len(hiddens)
         return {
             'type': embedding_spec.get('type', 'fc'),
