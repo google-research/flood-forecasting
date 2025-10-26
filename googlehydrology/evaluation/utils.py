@@ -93,7 +93,7 @@ class BasinBatchSampler(BatchSampler):
         self,
         sample_index: dict[int, dict[str, int]],
         batch_size: int,
-        basins_indexes: set[int] = set(),
+        basins_indexes: set[int],
     ):
         super().__init__(SequentialSampler(range(len(sample_index))), batch_size, drop_last=False)
 
