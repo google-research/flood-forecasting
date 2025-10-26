@@ -369,7 +369,7 @@ class BaseTester(object):
         if metrics and not experiment_logger:
             for freq, freq_metrics in metrics_results.items():
                 for name, metric in freq_metrics.items():
-                    median = np.median(metric)
+                    median = np.nanmedian(metric)
                     LOGGER.info('%s %s median=%f', freq, name, median)
 
     def _calc_exclude_basins(self) -> Iterator[str]:
