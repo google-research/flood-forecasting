@@ -124,4 +124,4 @@ def test_sampler_with_batch_size_larger_than_samples():
 
     assert len(sampler) == 1
     assert len(batches) == 1
-    assert batches[0] == [0, 1]
+    assert batches[0] == (0, 1)
