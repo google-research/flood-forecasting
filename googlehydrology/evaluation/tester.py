@@ -225,6 +225,8 @@ class BaseTester(object):
 
         self._ensure_no_previous_results_saved(epoch)
 
+        metrics_results = {}
+
         for basin_data in pbar:
             results = {}
 
@@ -356,6 +358,19 @@ class BaseTester(object):
                 save_all_output=save_all_output,
                 epoch=epoch,
             )
+
+            if metrics and not experiment_logger:
+                for freq, freq_metrics in results.items():
+                    for name, metric in freq_metrics.items():
+                        if name == 'xr':
+                            continue
+                        metrics_results.setdefault(freq, {}).setdefault(name, []).append(metric)
+
+        if metrics and not experiment_logger:
+            for freq, freq_metrics in metrics_results.items():
+                for name, metric in freq_metrics.items():
+                    median = np.nanmedian(metric)
+                    LOGGER.info('%s %s median=%f', freq, name, median)
 
     def _calc_exclude_basins(self) -> Iterator[str]:
         if not self.cfg.tester_skip_obs_all_nan:

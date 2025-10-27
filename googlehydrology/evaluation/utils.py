@@ -85,7 +85,7 @@ def metrics_to_dataframe(results: dict, metrics: Iterable[str], targets: Iterabl
 
 class BasinBatchSampler(BatchSampler):
     """Groups samples by basin.
-    
+
     Maps every basin to samples for it, and on iterations chunks them by batch size.
     """
 
@@ -93,7 +93,7 @@ class BasinBatchSampler(BatchSampler):
         self,
         sample_index: dict[int, dict[str, int]],
         batch_size: int,
-        basins_indexes: set[int] = set(),
+        basins_indexes: set[int],
     ):
         super().__init__(SequentialSampler(range(len(sample_index))), batch_size, drop_last=False)
 
@@ -112,8 +112,7 @@ class BasinBatchSampler(BatchSampler):
 
     def __iter__(self):
         for indices in self._basin_indices.values():  # for every basin
-            for i in range(0, len(indices), self._batch_size):  # chunk into batches
-                yield indices[i:i + self._batch_size]  # batch
+            yield from itertools.batched(indices, self._batch_size)
 
     def __len__(self):
         return self._num_batches
