@@ -46,6 +46,8 @@ def get_optimizer(model: torch.nn.Module, cfg: Config, *, is_gpu: bool = False) 
         optimizer = torch.optim.Adam(model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu)
     elif cfg.optimizer.lower() == "adamw":
         optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu)
+    elif cfg.optimizer.lower() == "sgd":
+        optimizer = torch.optim.SGD(model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu)
     else:
         raise NotImplementedError(f"{cfg.optimizer} not implemented or not linked in `get_optimizer()`")
 
