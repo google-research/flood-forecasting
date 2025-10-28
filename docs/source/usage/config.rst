@@ -386,7 +386,7 @@ Training settings
 -----------------
 
 -  ``optimizer``: Specify which optimizer to use. Currently supported
-   are Adam and AdamW and SGD. New optimizers can be added
+   are Adam, AdamW, SGD, ASGD, RMSProp, AdaGrad, AdaDelta, AdaMax. New optimizers can be added
    :py:func:`here <googlehydrology.training.get_optimizer>`.
 
 -  ``loss``: Which loss to use. Currently supported are ``MSE``,
