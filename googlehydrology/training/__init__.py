@@ -49,15 +49,15 @@ def get_optimizer(model: torch.nn.Module, cfg: Config, *, is_gpu: bool = False) 
     elif cfg.optimizer.lower() == "sgd":
         optimizer = torch.optim.SGD(model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu)
     elif cfg.optimizer.lower() == "asgd":
-        optimizer = torch.optim.ASGD(model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu)
+        optimizer = torch.optim.ASGD(model.parameters(), lr=cfg.initial_learning_rate)
     elif cfg.optimizer.lower() == "rmsprop":
-        optimizer = torch.optim.RMSprop(model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu)
+        optimizer = torch.optim.RMSprop(model.parameters(), lr=cfg.initial_learning_rate)
     elif cfg.optimizer.lower() == "adagrad":
         optimizer = torch.optim.Adagrad(model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu)
     elif cfg.optimizer.lower() == "adadelta":
-        optimizer = torch.optim.Adadelta(model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu)
+        optimizer = torch.optim.Adadelta(model.parameters(), lr=cfg.initial_learning_rate,)
     elif cfg.optimizer.lower() == "adamax":
-        optimizer = torch.optim.Adamax(model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu)
+        optimizer = torch.optim.Adamax(model.parameters(), lr=cfg.initial_learning_rate)
     else:
         raise NotImplementedError(f"{cfg.optimizer} not implemented or not linked in `get_optimizer()`")
 
