@@ -46,7 +46,7 @@ predict_last_n: 8
 log_n_figures: 5
 log_loss_every_nth_update: 50
 allzero_samples_are_invalid: False
-use_xavier_init: False
+use_advanced_init: False
 
 # --- Dataset Parameters --------------------------------------------------------
 
