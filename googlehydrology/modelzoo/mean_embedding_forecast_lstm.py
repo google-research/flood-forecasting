@@ -349,12 +349,12 @@ class ForwardData:
         return ForwardData(
             static_attributes=data["x_s"],
             hindcast_data = {
-                name: _concat_tensors_from_dict(data["x_d_hindcast"], keys=keys)
-                for name, keys in config_data.hindcast_inputs_grouped.items()
+                name: _concat_tensors_from_dict(data["x_d_hindcast"], keys=features)
+                for name, features in config_data.hindcast_inputs_grouped.items()
             },
             forecast_data = {
-                name: _concat_tensors_from_dict(data["x_d_forecast"], keys=keys)
-                for name, keys in config_data.forecast_inputs_grouped.items()
+                name: _concat_tensors_from_dict(data["x_d_forecast"], keys=features)
+                for name, features in config_data.forecast_inputs_grouped.items()
             },
         )
 
