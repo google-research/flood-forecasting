@@ -26,7 +26,7 @@ from googlehydrology.modelzoo.head import get_head
 from googlehydrology.utils.config import Config, WeightInitOpt
 from googlehydrology.utils.configutils import group_by_prefix
 
-IH_XAVIER = WeightInitOpt.IH_XAVIER
+LSTM_IH_XAVIER = WeightInitOpt.LSTM_IH_XAVIER
 FC_XAVIER = WeightInitOpt.FC_XAVIER
 
 class MeanEmbeddingForecastLSTM(BaseModel):
@@ -161,7 +161,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         lstms = self.hindcast_lstm, self.forecast_lstm
         for name, param in flatten(e.named_parameters() for e in lstms):
-            if 'weight_ih' in name and IH_XAVIER in self.cfg.weight_init_opts:
+            if 'weight_ih' in name and LSTM_IH_XAVIER in self.cfg.weight_init_opts:
                 nn.init.xavier_uniform_(param)
 
     def forward(
