@@ -564,6 +564,10 @@ class Config(object):
         return self._cfg.get("initial_forget_bias", None)
 
     @property
+    def use_xavier_init(self) -> bool:
+        return self._cfg.get("use_xavier_init", False)
+
+    @property
     def is_continue_training(self) -> bool:
         return self._cfg.get("is_continue_training", False)
 

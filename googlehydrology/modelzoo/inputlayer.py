@@ -118,7 +118,7 @@ class InputLayer(nn.Module):
             statics_input_size += cfg.number_of_basins
 
         self.statics_embedding, self.statics_output_size = \
-            self._get_embedding_net(cfg.statics_embedding, statics_input_size, 'statics')
+            self._get_embedding_net(cfg.statics_embedding, statics_input_size, 'statics', cfg.use_xavier_init)
 
         self._pos_enc = None
         if cfg.nan_handling_pos_encoding_size > 0:
@@ -134,7 +134,8 @@ class InputLayer(nn.Module):
         for dynamics_input_size in dynamics_input_sizes:
             group_embedding, group_output_size = self._get_embedding_net(cfg.dynamics_embedding,
                                                                          dynamics_input_size,
-                                                                         'dynamics')
+                                                                         'dynamics',
+                                                                         cfg.use_xavier_init)
             dynamics_embeddings.append(group_embedding)
             dynamics_output_sizes.append(group_output_size)
         self.dynamics_embeddings = nn.ModuleList(dynamics_embeddings)
@@ -148,7 +149,8 @@ class InputLayer(nn.Module):
                     self._get_embedding_net(cfg.dynamics_embedding,
                                             (self.statics_output_size + len(self._dynamic_inputs)
                                              + cfg.nan_handling_pos_encoding_size),
-                                            'query')
+                                            'query',
+                                            cfg.use_xavier_init)
 
         if cfg.statics_embedding is None:
             self.statics_embedding_p_dropout = 0.0  # if net has no statics dropout we treat is as zero
@@ -163,7 +165,7 @@ class InputLayer(nn.Module):
         self.cfg = cfg
         
     @staticmethod
-    def _get_embedding_net(embedding_spec: Optional[dict], input_size: int, purpose: str) -> tuple[nn.Module, int]:
+    def _get_embedding_net(embedding_spec: Optional[dict], input_size: int, purpose: str, xavier: bool) -> tuple[nn.Module, int]:
         """Get an embedding net following the passed specifications.
 
         If the `embedding_spec` is None, the returned embedding net will be the identity function.
@@ -176,6 +178,8 @@ class InputLayer(nn.Module):
             Size of the inputs into the embedding network.
         purpose : str
             Purpose of the embedding network, used for error messages.
+        xavier : bool
+            Whether to init the FC with the xavier method.
 
         Returns
         -------
@@ -199,7 +203,7 @@ class InputLayer(nn.Module):
         dropout = embedding_spec['dropout']
         activation = embedding_spec['activation']
 
-        emb_net = FC(input_size=input_size, hidden_sizes=hiddens, activation=activation, dropout=dropout)
+        emb_net = FC(input_size=input_size, hidden_sizes=hiddens, activation=activation, dropout=dropout, xavier=xavier)
         return emb_net, emb_net.output_size
 
     def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]], concatenate_output: bool = True) \

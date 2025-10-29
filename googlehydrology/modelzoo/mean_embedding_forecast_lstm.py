@@ -102,6 +102,10 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             hidden_size=self.config_data.hidden_size,
             batch_first=True,
         )
+        if cfg.use_xavier_init:
+            for name, param in self.hindcast_lstm.named_parameters():
+                if 'weight' in name:
+                    nn.init.xavier_uniform_(param.data)
 
         # Forecast LSTM
         self.forecast_lstm = nn.LSTM(
@@ -110,6 +114,10 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             hidden_size=self.config_data.hidden_size,
             batch_first=True,
         )
+        if cfg.use_xavier_init:
+            for name, param in self.forecast_lstm.named_parameters():
+                if 'weight' in name:
+                    nn.init.xavier_uniform_(param.data)
 
         # Head
         self.dropout = nn.Dropout(p=cfg.output_dropout)
@@ -140,6 +148,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             hidden_sizes=hiddens,
             activation=activation,
             dropout=dropout,
+            xavier=self.cfg.use_xavier_init,
         )
 
     def _reset_parameters(self):
