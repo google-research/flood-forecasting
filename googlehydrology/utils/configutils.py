@@ -67,7 +67,7 @@ def flatten_feature_list(data: list[str] | list[list[str]] | dict[str, list[str]
     return list(data)
 
 
-def group_by_prefix(features: list[str]) -> dict[str, list[str]]:
+def group_by_prefix(features: list[str]) -> dict[str, set[str]]:
     """
     Groups list of features according to the prefix of each feature.
     Assumes the prefix is written with an underscore at the start of the feature name.
@@ -75,5 +75,5 @@ def group_by_prefix(features: list[str]) -> dict[str, list[str]]:
     result = {}
     for feature in features:
         prefix = feature.partition('_')[0]
-        result.setdefault(prefix, []).append(feature)
+        result.setdefault(prefix, set()).add(feature)
     return result
