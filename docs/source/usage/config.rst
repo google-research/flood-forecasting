@@ -147,8 +147,8 @@ General model configuration
 
 -  ``initial_forget_bias``: Initial value of the forget gate bias.
 
--  ``use_xavier_init``: Whether to use `torch.nn.init.xavier_uniform_` for FC networks, LSTMs, etc, instead
-   of a plain uniform or constant initial weights. Default is False.
+-  ``use_advanced_init``: Whether to use xavier as initial weights for FC networks, LSTMs, etc.
+   Default is False.
 
 -  ``output_dropout``: Dropout applied to the output of the LSTM
 
