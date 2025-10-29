@@ -147,8 +147,8 @@ General model configuration
 
 -  ``initial_forget_bias``: Initial value of the forget gate bias.
 
--  ``use_advanced_init``: Whether to use xavier as initial weights for FC networks, LSTMs, etc.
-   Default is False.
+-  ``weight_init_opts``: Non-default weight initializer list for FCs, LSTMs, etc.
+   Every item may be one of `WeightInitOpt`: ih-xavier, fc-xavier
 
 -  ``output_dropout``: Dropout applied to the output of the LSTM
 
