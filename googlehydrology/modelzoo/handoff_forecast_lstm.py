@@ -16,6 +16,7 @@
 
 import torch
 import torch.nn as nn
+from more_itertools import flatten
 
 from googlehydrology.utils.config import Config
 from googlehydrology.modelzoo.basemodel import BaseModel
@@ -97,14 +98,14 @@ class HandoffForecastLSTM(BaseModel):
             hidden_sizes=cfg.state_handoff_network['hiddens'],
             activation=cfg.state_handoff_network['activation'],
             dropout=cfg.state_handoff_network['dropout'],
-            xavier=cfg.use_xavier_init,
+            xavier=cfg.use_advanced_init,
         )
         self.handoff_linear = FC(
             input_size=cfg.state_handoff_network['hiddens'][-1],
             hidden_sizes=[self.forecast_hidden_size*2],
             activation='linear',
             dropout=0.0,
-            xavier=cfg.use_xavier_init,
+            xavier=cfg.use_advanced_init,
         )
 
         # Head layers.
@@ -117,16 +118,16 @@ class HandoffForecastLSTM(BaseModel):
 
     def _reset_parameters(self):
         """Special initialization of certain model weights."""
-        for name, param in self.hindcast_lstm.named_parameters():
-            if 'weight' in name and self.cfg.use_xavier_init:
-                nn.init.xavier_uniform_(param.data)
-            elif 'bias' in name and self.cfg.initial_forget_bias is not None:
-                nn.init.constant_(param.data, self.cfg.initial_forget_bias)
-        for name, param in self.forecast_lstm.named_parameters():
-            if 'weight' in name and self.cfg.use_xavier_init:
-                nn.init.xavier_uniform_(param.data)
-            elif 'bias' in name and self.cfg.initial_forget_bias is not None:
-                nn.init.constant_(param.data, self.cfg.initial_forget_bias)
+        if self.cfg.initial_forget_bias is not None:
+            self.hindcast_lstm.bias_hh_l0.data[
+                self.hindcast_hidden_size:2*self.hindcast_hidden_size] = self.cfg.initial_forget_bias
+            self.forecast_lstm.bias_hh_l0.data[
+                self.forecast_hidden_size:2*self.forecast_hidden_size] = self.cfg.initial_forget_bias
+
+        lstms = self.hindcast_lstm, self.forecast_lstm
+        for name, param in flatten(e.named_parameters() for e in lstms):
+            if 'weight_ih' in name and self.cfg.use_advanced_init:
+                nn.init.xavier_uniform_(param)
 
     def forward(
         self,

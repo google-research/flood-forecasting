@@ -18,6 +18,7 @@ import dataclasses
 import numpy as np
 import torch
 import torch.nn as nn
+from more_itertools import flatten
 
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.modelzoo.fc import FC
@@ -140,21 +141,23 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             hidden_sizes=hiddens,
             activation=activation,
             dropout=dropout,
-            xavier=self.cfg.use_xavier_init,
+            xavier=self.cfg.use_advanced_init,
         )
 
     def _reset_parameters(self):
         """Special initialization of certain model weights."""
-        for name, param in self.hindcast_lstm.named_parameters():
-            if 'weight' in name and self.cfg.use_xavier_init:
-                nn.init.xavier_uniform_(param.data)
-            elif 'bias' in name and self.cfg.initial_forget_bias is not None:
-                nn.init.constant_(param.data, self.cfg.initial_forget_bias)
-        for name, param in self.forecast_lstm.named_parameters():
-            if 'weight' in name and self.cfg.use_xavier_init:
-                nn.init.xavier_uniform_(param.data)
-            elif 'bias' in name and self.cfg.initial_forget_bias is not None:
-                nn.init.constant_(param.data, self.cfg.initial_forget_bias)
+        if self.cfg.initial_forget_bias is not None:
+            self.hindcast_lstm.bias_hh_l0.data[
+                self.config_data.hidden_size : 2 * self.config_data.hidden_size
+            ] = self.cfg.initial_forget_bias
+            self.forecast_lstm.bias_hh_l0.data[
+                self.config_data.hidden_size : 2 * self.config_data.hidden_size
+            ] = self.cfg.initial_forget_bias
+
+        lstms = self.hindcast_lstm, self.forecast_lstm
+        for name, param in flatten(e.named_parameters() for e in lstms):
+            if 'weight_ih' in name and self.cfg.use_advanced_init:
+                nn.init.xavier_uniform_(param)
 
     def forward(
         self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]
