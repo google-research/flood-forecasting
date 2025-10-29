@@ -30,7 +30,7 @@ from ruamel.yaml import YAML
 class WeightInitOpt(str, enum.Enum):
     """Opts for the weight_init_opts flag."""
 
-    IH_XAVIER = "ih-xavier"
+    LSTM_IH_XAVIER = "lstm-ih-xavier"
     FC_XAVIER = "fc-xavier"
 
 class Config(object):
