@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import enum
 import logging
 import itertools
 import random
@@ -25,6 +26,12 @@ from typing import Any, Optional, Union
 import pandas as pd
 from ruamel.yaml import YAML
 
+@enum.unique
+class WeightInitOpt(str, enum.Enum):
+    """Opts for the weight_init_opts flag."""
+
+    IH_XAVIER = "ih-xavier"
+    FC_XAVIER = "fc-xavier"
 
 class Config(object):
     """Read run configuration from the specified path or dictionary and parse it into a configuration object.
@@ -564,8 +571,11 @@ class Config(object):
         return self._cfg.get("initial_forget_bias", None)
 
     @property
-    def use_advanced_init(self) -> bool:
-        return self._cfg.get("use_advanced_init", False)
+    def weight_init_opts(self) -> set[WeightInitOpt]:
+        res = set(self._as_default_list(self._cfg.get("weight_init_opts", [])))
+        bad_keys = res.difference(e.value for e in WeightInitOpt)
+        assert not bad_keys, f'unsupported weight_init_opts: {bad_keys}'
+        return res
 
     @property
     def is_continue_training(self) -> bool:

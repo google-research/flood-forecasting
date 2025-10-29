@@ -18,12 +18,14 @@ import torch
 import torch.nn as nn
 from more_itertools import flatten
 
-from googlehydrology.utils.config import Config
+from googlehydrology.utils.config import Config, WeightInitOpt
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.modelzoo.fc import FC
 from googlehydrology.modelzoo.head import get_head
 from googlehydrology.modelzoo.inputlayer import InputLayer
 
+IH_XAVIER = WeightInitOpt.IH_XAVIER
+FC_XAVIER = WeightInitOpt.FC_XAVIER
 
 class HandoffForecastLSTM(BaseModel):
     """An encoder/decoder LSTM model class used for forecasting.
@@ -98,14 +100,14 @@ class HandoffForecastLSTM(BaseModel):
             hidden_sizes=cfg.state_handoff_network['hiddens'],
             activation=cfg.state_handoff_network['activation'],
             dropout=cfg.state_handoff_network['dropout'],
-            advanced=cfg.use_advanced_init,
+            fc_xavier=FC_XAVIER in cfg.weight_init_opts,
         )
         self.handoff_linear = FC(
             input_size=cfg.state_handoff_network['hiddens'][-1],
             hidden_sizes=[self.forecast_hidden_size*2],
             activation='linear',
             dropout=0.0,
-            advanced=cfg.use_advanced_init,
+            fc_xavier=FC_XAVIER in cfg.weight_init_opts,
         )
 
         # Head layers.
@@ -126,7 +128,7 @@ class HandoffForecastLSTM(BaseModel):
 
         lstms = self.hindcast_lstm, self.forecast_lstm
         for name, param in flatten(e.named_parameters() for e in lstms):
-            if 'weight_ih' in name and self.cfg.use_advanced_init:
+            if 'weight_ih' in name and IH_XAVIER in self.cfg.weight_init_opts:
                 nn.init.xavier_uniform_(param)
 
     def forward(

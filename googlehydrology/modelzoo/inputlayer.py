@@ -21,7 +21,7 @@ import torch.nn as nn
 
 from googlehydrology.modelzoo.fc import FC
 from googlehydrology.modelzoo.positional_encoding import PositionalEncoding
-from googlehydrology.utils.config import Config
+from googlehydrology.utils.config import Config, WeightInitOpt
 
 LOGGER = logging.getLogger(__name__)
 
@@ -117,8 +117,10 @@ class InputLayer(nn.Module):
         if cfg.use_basin_id_encoding:
             statics_input_size += cfg.number_of_basins
 
+        fc_xavier = WeightInitOpt.FC_XAVIER in cfg.weight_init_opts
+
         self.statics_embedding, self.statics_output_size = \
-            self._get_embedding_net(cfg.statics_embedding, statics_input_size, 'statics', cfg.use_advanced_init)
+            self._get_embedding_net(cfg.statics_embedding, statics_input_size, 'statics', fc_xavier)
 
         self._pos_enc = None
         if cfg.nan_handling_pos_encoding_size > 0:
@@ -135,7 +137,7 @@ class InputLayer(nn.Module):
             group_embedding, group_output_size = self._get_embedding_net(cfg.dynamics_embedding,
                                                                          dynamics_input_size,
                                                                          'dynamics',
-                                                                         cfg.use_advanced_init)
+                                                                         fc_xavier)
             dynamics_embeddings.append(group_embedding)
             dynamics_output_sizes.append(group_output_size)
         self.dynamics_embeddings = nn.ModuleList(dynamics_embeddings)
@@ -150,7 +152,7 @@ class InputLayer(nn.Module):
                                             (self.statics_output_size + len(self._dynamic_inputs)
                                              + cfg.nan_handling_pos_encoding_size),
                                             'query',
-                                            cfg.use_advanced_init)
+                                            fc_xavier)
 
         if cfg.statics_embedding is None:
             self.statics_embedding_p_dropout = 0.0  # if net has no statics dropout we treat is as zero
@@ -165,7 +167,7 @@ class InputLayer(nn.Module):
         self.cfg = cfg
         
     @staticmethod
-    def _get_embedding_net(embedding_spec: Optional[dict], input_size: int, purpose: str, advanced: bool) -> tuple[nn.Module, int]:
+    def _get_embedding_net(embedding_spec: Optional[dict], input_size: int, purpose: str, fc_xavier: bool) -> tuple[nn.Module, int]:
         """Get an embedding net following the passed specifications.
 
         If the `embedding_spec` is None, the returned embedding net will be the identity function.
@@ -178,7 +180,7 @@ class InputLayer(nn.Module):
             Size of the inputs into the embedding network.
         purpose : str
             Purpose of the embedding network, used for error messages.
-        advanced : bool
+        fc_xavier : bool
             Whether to init the FC with the xavier method.
 
         Returns
@@ -203,7 +205,7 @@ class InputLayer(nn.Module):
         dropout = embedding_spec['dropout']
         activation = embedding_spec['activation']
 
-        emb_net = FC(input_size=input_size, hidden_sizes=hiddens, activation=activation, dropout=dropout, advanced=advanced)
+        emb_net = FC(input_size=input_size, hidden_sizes=hiddens, activation=activation, dropout=dropout, fc_xavier=fc_xavier)
         return emb_net, emb_net.output_size
 
     def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]], concatenate_output: bool = True) \

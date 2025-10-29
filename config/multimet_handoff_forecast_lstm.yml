@@ -41,7 +41,7 @@ predict_last_n: 8
 regularization:
 - forecast_overlap
 log_loss_every_nth_update: 8
-use_advanced_init: False
+weight_init_opts:
  
 # --- Dataset Parameters --------------------------------------------------------
 train_basin_file: ~/flood-forecasting/config/basins/caravan_3_basins.txt
