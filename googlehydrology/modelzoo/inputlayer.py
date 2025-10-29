@@ -165,7 +165,7 @@ class InputLayer(nn.Module):
         self.cfg = cfg
         
     @staticmethod
-    def _get_embedding_net(embedding_spec: Optional[dict], input_size: int, purpose: str, xavier: bool) -> tuple[nn.Module, int]:
+    def _get_embedding_net(embedding_spec: Optional[dict], input_size: int, purpose: str, advanced: bool) -> tuple[nn.Module, int]:
         """Get an embedding net following the passed specifications.
 
         If the `embedding_spec` is None, the returned embedding net will be the identity function.
@@ -178,7 +178,7 @@ class InputLayer(nn.Module):
             Size of the inputs into the embedding network.
         purpose : str
             Purpose of the embedding network, used for error messages.
-        xavier : bool
+        advanced : bool
             Whether to init the FC with the xavier method.
 
         Returns
@@ -203,7 +203,7 @@ class InputLayer(nn.Module):
         dropout = embedding_spec['dropout']
         activation = embedding_spec['activation']
 
-        emb_net = FC(input_size=input_size, hidden_sizes=hiddens, activation=activation, dropout=dropout, xavier=xavier)
+        emb_net = FC(input_size=input_size, hidden_sizes=hiddens, activation=activation, dropout=dropout, advanced=advanced)
         return emb_net, emb_net.output_size
 
     def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]], concatenate_output: bool = True) \
