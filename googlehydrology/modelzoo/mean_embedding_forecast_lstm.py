@@ -102,10 +102,6 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             hidden_size=self.config_data.hidden_size,
             batch_first=True,
         )
-        if cfg.use_xavier_init:
-            for name, param in self.hindcast_lstm.named_parameters():
-                if 'weight' in name:
-                    nn.init.xavier_uniform_(param.data)
 
         # Forecast LSTM
         self.forecast_lstm = nn.LSTM(
@@ -114,10 +110,6 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             hidden_size=self.config_data.hidden_size,
             batch_first=True,
         )
-        if cfg.use_xavier_init:
-            for name, param in self.forecast_lstm.named_parameters():
-                if 'weight' in name:
-                    nn.init.xavier_uniform_(param.data)
 
         # Head
         self.dropout = nn.Dropout(p=cfg.output_dropout)
@@ -153,13 +145,16 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
     def _reset_parameters(self):
         """Special initialization of certain model weights."""
-        if self.cfg.initial_forget_bias is not None:
-            self.hindcast_lstm.bias_hh_l0.data[
-                self.config_data.hidden_size : 2 * self.config_data.hidden_size
-            ] = self.cfg.initial_forget_bias
-            self.forecast_lstm.bias_hh_l0.data[
-                self.config_data.hidden_size : 2 * self.config_data.hidden_size
-            ] = self.cfg.initial_forget_bias
+        for name, param in self.hindcast_lstm.named_parameters():
+            if 'weight' in name and self.cfg.use_xavier_init:
+                nn.init.xavier_uniform_(param.data)
+            elif 'bias' in name and self.cfg.initial_forget_bias is not None:
+                nn.init.constant_(param.data, self.cfg.initial_forget_bias)
+        for name, param in self.forecast_lstm.named_parameters():
+            if 'weight' in name and self.cfg.use_xavier_init:
+                nn.init.xavier_uniform_(param.data)
+            elif 'bias' in name and self.cfg.initial_forget_bias is not None:
+                nn.init.constant_(param.data, self.cfg.initial_forget_bias)
 
     def forward(
         self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]
