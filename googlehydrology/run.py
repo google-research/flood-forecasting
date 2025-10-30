@@ -18,9 +18,7 @@ import os
 import sys
 from pathlib import Path
 
-import cachey
 import dask
-import dask.cache
 import torch
 
 # make sure code directory is in path, even if the package is not installed using the setup.py
