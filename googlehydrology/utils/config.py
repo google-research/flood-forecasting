@@ -440,10 +440,7 @@ class Config(object):
 
     @property
     def dynamics_embedding(self) -> EmbeddingsDict | None:
-        data = self._cfg.get("dynamics_embedding", None)
-        if data is None:
-            return None
-        return self._get_embedding_spec(data)
+        return self._get_embedding_spec(self._cfg.get('dynamics_embedding'))
 
     @property
     def epochs(self) -> int:
@@ -480,10 +477,7 @@ class Config(object):
 
     @property
     def forecast_network(self) -> EmbeddingsDict | None:
-        data = self._cfg.get("forecast_network", None)
-        if data is None:
-            return None
-        return self._get_embedding_spec(data)
+        return self._get_embedding_spec(self._cfg.get('forecast_network'))
 
     @property
     def forecast_hidden_size(self) -> int:
@@ -523,10 +517,7 @@ class Config(object):
 
     @property
     def state_handoff_network(self) -> EmbeddingsDict | None:
-        data = self._cfg.get("state_handoff_network", None)
-        if data is None:
-            return None
-        return self._get_embedding_spec(data)
+        return self._get_embedding_spec(self._cfg.get('state_handoff_network'))
 
     @property
     def head(self) -> str:
@@ -880,24 +871,15 @@ class Config(object):
 
     @property
     def statics_embedding(self) -> EmbeddingsDict | None:
-        data = self._cfg.get('statics_embedding', None)
-        if data is None:
-            return None
-        return self._get_embedding_spec(data)
+        return self._get_embedding_spec(self._cfg.get('statics_embedding'))
 
     @property
     def hindcast_embedding(self) -> EmbeddingsDict | None:
-        data = self._cfg.get('hindcast_embedding', None)
-        if data is None:
-            return None
-        return self._get_embedding_spec(data)
+        return self._get_embedding_spec(self._cfg.get('hindcast_embedding'))
 
     @property
     def forecast_embedding(self) -> EmbeddingsDict | None:
-        data = self._cfg.get('forecast_embedding', None)
-        if data is None:
-            return None
-        return self._get_embedding_spec(data)
+        return self._get_embedding_spec(self._cfg.get('forecast_embedding'))
 
     @property
     def target_loss_weights(self) -> list[float]:
@@ -1036,7 +1018,9 @@ class Config(object):
         """
         return self._cfg.get("verbose", 1)
 
-    def _get_embedding_spec(self, embedding_spec: dict) -> EmbeddingsDict:
+    def _get_embedding_spec(self, embedding_spec: dict | None) -> EmbeddingsDict | None:
+        if embedding_spec is None:
+            return None
         # TODO(future) : this impl may utilize the validator first.
         hiddens = self._as_default_list(embedding_spec.get('hiddens', []))
         activation = embedding_spec.get('activation', 'tanh')
