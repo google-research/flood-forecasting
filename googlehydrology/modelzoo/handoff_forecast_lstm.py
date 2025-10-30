@@ -17,12 +17,14 @@
 import torch
 import torch.nn as nn
 
-from googlehydrology.utils.config import Config
+from googlehydrology.utils.config import Config, WeightInitOpt
+from googlehydrology.utils.lstm_utils import lstm_init
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.modelzoo.fc import FC
 from googlehydrology.modelzoo.head import get_head
 from googlehydrology.modelzoo.inputlayer import InputLayer
 
+FC_XAVIER = WeightInitOpt.FC_XAVIER
 
 class HandoffForecastLSTM(BaseModel):
     """An encoder/decoder LSTM model class used for forecasting.
@@ -94,15 +96,17 @@ class HandoffForecastLSTM(BaseModel):
         # State handoff layer.
         self.handoff_net = FC(
             input_size=self.hindcast_hidden_size*2,
-            hidden_sizes=cfg.state_handoff_network['hiddens'],
-            activation=cfg.state_handoff_network['activation'],
-            dropout=cfg.state_handoff_network['dropout']
+            hidden_sizes=cfg.state_handoff_network.hiddens,
+            activation=cfg.state_handoff_network.activation,
+            dropout=cfg.state_handoff_network.dropout,
+            xavier_init=FC_XAVIER in cfg.weight_init_opts,
         )
         self.handoff_linear = FC(
-            input_size=cfg.state_handoff_network['hiddens'][-1],
+            input_size=cfg.state_handoff_network.hiddens[-1],
             hidden_sizes=[self.forecast_hidden_size*2],
             activation='linear',
-            dropout=0.0
+            dropout=0.0,
+            xavier_init=FC_XAVIER in cfg.weight_init_opts,
         )
 
         # Head layers.
@@ -110,16 +114,11 @@ class HandoffForecastLSTM(BaseModel):
         self.hindcast_head = get_head(cfg=cfg, n_in=self.hindcast_hidden_size, n_out=self.output_size)
         self.forecast_head = get_head(cfg=cfg, n_in=self.forecast_hidden_size, n_out=self.output_size)
 
-        # Set parameters that require specialized initializations.
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-        """Special initialization of certain model weights."""
-        if self.cfg.initial_forget_bias is not None:
-            self.hindcast_lstm.bias_hh_l0.data[
-                self.hindcast_hidden_size:2*self.hindcast_hidden_size] = self.cfg.initial_forget_bias
-            self.forecast_lstm.bias_hh_l0.data[
-                self.forecast_hidden_size:2*self.forecast_hidden_size] = self.cfg.initial_forget_bias
+        lstm_init(
+            lstms=[self.hindcast_lstm, self.forecast_lstm],
+            forget_bias=cfg.initial_forget_bias,
+            weight_opts=cfg.weight_init_opts,
+        )
 
     def forward(
         self,

@@ -147,6 +147,9 @@ General model configuration
 
 -  ``initial_forget_bias``: Initial value of the forget gate bias.
 
+-  ``weight_init_opts``: Non-default weight initializer list for FCs, LSTMs, etc.
+   Every item may be one of `WeightInitOpt`: lstm-ih-xavier, fc-xavier
+
 -  ``output_dropout``: Dropout applied to the output of the LSTM
 
 Regression head
@@ -386,7 +389,7 @@ Training settings
 -----------------
 
 -  ``optimizer``: Specify which optimizer to use. Currently supported
-   are Adam and AdamW. New optimizers can be added
+   are Adam, AdamW, SGD, ASGD, RMSProp, AdaGrad, AdaDelta, AdaMax. New optimizers can be added
    :py:func:`here <googlehydrology.training.get_optimizer>`.
 
 -  ``loss``: Which loss to use. Currently supported are ``MSE``,

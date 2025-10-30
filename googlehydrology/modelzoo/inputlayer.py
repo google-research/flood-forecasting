@@ -21,7 +21,7 @@ import torch.nn as nn
 
 from googlehydrology.modelzoo.fc import FC
 from googlehydrology.modelzoo.positional_encoding import PositionalEncoding
-from googlehydrology.utils.config import Config
+from googlehydrology.utils.config import Config, WeightInitOpt, EmbeddingSpec
 
 LOGGER = logging.getLogger(__name__)
 
@@ -117,8 +117,10 @@ class InputLayer(nn.Module):
         if cfg.use_basin_id_encoding:
             statics_input_size += cfg.number_of_basins
 
+        xavier_init = WeightInitOpt.FC_XAVIER in cfg.weight_init_opts
+
         self.statics_embedding, self.statics_output_size = \
-            self._get_embedding_net(cfg.statics_embedding, statics_input_size, 'statics')
+            self._get_embedding_net(cfg.statics_embedding, statics_input_size, 'statics', xavier_init)
 
         self._pos_enc = None
         if cfg.nan_handling_pos_encoding_size > 0:
@@ -134,7 +136,8 @@ class InputLayer(nn.Module):
         for dynamics_input_size in dynamics_input_sizes:
             group_embedding, group_output_size = self._get_embedding_net(cfg.dynamics_embedding,
                                                                          dynamics_input_size,
-                                                                         'dynamics')
+                                                                         'dynamics',
+                                                                         xavier_init)
             dynamics_embeddings.append(group_embedding)
             dynamics_output_sizes.append(group_output_size)
         self.dynamics_embeddings = nn.ModuleList(dynamics_embeddings)
@@ -148,22 +151,23 @@ class InputLayer(nn.Module):
                     self._get_embedding_net(cfg.dynamics_embedding,
                                             (self.statics_output_size + len(self._dynamic_inputs)
                                              + cfg.nan_handling_pos_encoding_size),
-                                            'query')
+                                            'query',
+                                            xavier_init)
 
         if cfg.statics_embedding is None:
             self.statics_embedding_p_dropout = 0.0  # if net has no statics dropout we treat is as zero
         else:
-            self.statics_embedding_p_dropout = cfg.statics_embedding['dropout']
+            self.statics_embedding_p_dropout = cfg.statics_embedding.dropout
         if cfg.dynamics_embedding is None:
             self.dynamics_embedding_p_dropout = 0.0  # if net has no dynamics dropout we treat is as zero
         else:
-            self.dynamics_embedding_p_dropout = cfg.dynamics_embedding['dropout']
+            self.dynamics_embedding_p_dropout = cfg.dynamics_embedding.dropout
 
         self.output_size = self.dynamics_output_size + self.statics_output_size + self._num_autoregression_inputs
         self.cfg = cfg
         
     @staticmethod
-    def _get_embedding_net(embedding_spec: Optional[dict], input_size: int, purpose: str) -> tuple[nn.Module, int]:
+    def _get_embedding_net(embedding_spec: Optional[EmbeddingSpec], input_size: int, purpose: str, xavier_init: bool) -> tuple[nn.Module, int]:
         """Get an embedding net following the passed specifications.
 
         If the `embedding_spec` is None, the returned embedding net will be the identity function.
@@ -176,6 +180,8 @@ class InputLayer(nn.Module):
             Size of the inputs into the embedding network.
         purpose : str
             Purpose of the embedding network, used for error messages.
+        xavier_init : bool
+            Whether to init the FC with the xavier method.
 
         Returns
         -------
@@ -188,18 +194,18 @@ class InputLayer(nn.Module):
         if input_size == 0:
             raise ValueError(f'Cannot create {purpose} embedding layer with input size 0')
 
-        emb_type = embedding_spec['type'].lower()
+        emb_type = embedding_spec.type.lower()
         if emb_type != 'fc':
             raise ValueError(f'{purpose} embedding type {emb_type} not supported.')
 
-        hiddens = embedding_spec['hiddens']
+        hiddens = embedding_spec.hiddens
         if len(hiddens) == 0:
             raise ValueError(f'{purpose} embedding "hiddens" must be a list of hidden sizes with at least one entry')
 
-        dropout = embedding_spec['dropout']
-        activation = embedding_spec['activation']
+        dropout = embedding_spec.dropout
+        activation = embedding_spec.activation
 
-        emb_net = FC(input_size=input_size, hidden_sizes=hiddens, activation=activation, dropout=dropout)
+        emb_net = FC(input_size=input_size, hidden_sizes=hiddens, activation=activation, dropout=dropout, xavier_init=xavier_init)
         return emb_net, emb_net.output_size
 
     def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]], concatenate_output: bool = True) \

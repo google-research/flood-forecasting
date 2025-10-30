@@ -22,8 +22,11 @@ import torch.nn as nn
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.modelzoo.fc import FC
 from googlehydrology.modelzoo.head import get_head
-from googlehydrology.utils.config import Config
+from googlehydrology.utils.config import Config, WeightInitOpt, EmbeddingSpec
+from googlehydrology.utils.lstm_utils import lstm_init
+from googlehydrology.utils.configutils import group_by_prefix
 
+FC_XAVIER = WeightInitOpt.FC_XAVIER
 
 class MeanEmbeddingForecastLSTM(BaseModel):
     """A forecasting model using mean embedding and LSTMs for hindcast and forecast.
@@ -36,14 +39,13 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
     # Specify submodules of the model that can later be used for finetuning. Names must match class attributes.
     module_parts = [
-        "static_attributes_fc",
-        "cpc_input_fc",
-        "imerg_input_fc",
-        "hres_input_fc",
-        "graphcast_input_fc",
-        "hindcast_lstm",
-        "forecast_lstm",
-        "head",
+        'static_attributes_fc',
+        'hindcast_embeddings_fc',
+        'forecast_embeddings_fc',
+        'shared_embeddings_fc',
+        'hindcast_lstm',
+        'forecast_lstm',
+        'head',
     ]
 
     def __init__(self, cfg: Config):
@@ -56,56 +58,60 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         # Static attributes
         self.static_attributes_fc = self._create_fc(
-            embedding_spec = cfg.statics_embedding,
+            embedding_spec = self.config_data.statics_embedding,
             input_size=len(self.config_data.static_attributes_names),
         )
 
-        # CPC
-        self.cpc_input_fc = self._create_fc(
-            embedding_spec=cfg.hindcast_embedding,
-            input_size=(
-                len(self.config_data.cpc_attributes_names)
-                + self.static_attributes_fc.output_size
-            ),
-        )
-
-        # IMERG
-        self.imerg_input_fc = self._create_fc(
-            embedding_spec=cfg.hindcast_embedding,
-            input_size=(
-                len(self.config_data.imerg_attributes_names)
-                + self.static_attributes_fc.output_size
-            ),
-        )
-
-        # HRES
-        self.hres_input_fc = self._create_fc(
-            embedding_spec=cfg.forecast_embedding,
-            input_size=(
-                len(self.config_data.hres_attributes_names)
-                + self.static_attributes_fc.output_size
-            ),
-        )
-
-        # GraphCast
-        self.graphcast_input_fc = self._create_fc(
-            embedding_spec=cfg.forecast_embedding,
-            input_size=(
-                len(self.config_data.graphcast_attributes_names)
-                + self.static_attributes_fc.output_size
-            ),
-        )
+        # Hindcast embedding networks
+        self.hindcast_embeddings_fc = {
+            name: self._create_fc(
+                embedding_spec=self.config_data.hindcast_embedding,
+                input_size=(
+                    len(self.config_data.hindcast_inputs_grouped[name])
+                    + self.static_attributes_fc.output_size
+                ),
+            )
+            for name in set(
+                self.config_data.hindcast_inputs_grouped.keys()
+            ).difference(self.config_data.shared_groups)
+        }
+        # Forecast embedding networks
+        self.forecast_embeddings_fc = {
+            name: self._create_fc(
+                embedding_spec=self.config_data.forecast_embedding,
+                input_size=(
+                    len(self.config_data.forecast_inputs_grouped[name])
+                    + self.static_attributes_fc.output_size
+                ),
+            )
+            for name in set(
+                self.config_data.forecast_inputs_grouped.keys()
+            ).difference(self.config_data.shared_groups)
+        }
+        # Shared embedding networks (between hindcast and forecast LSTMs)
+        self.shared_embeddings_fc = {
+            name: self._create_fc(
+                embedding_spec=self.config_data.forecast_embedding,
+                input_size=(
+                    len(self.config_data.forecast_inputs_grouped[name])
+                    + self.static_attributes_fc.output_size
+                ),
+            )
+            for name in self.config_data.shared_groups
+        }
 
         # Hindcast LSTM
         self.hindcast_lstm = nn.LSTM(
-            input_size=self.config_data.embedding_size * 2,
+            input_size=self.static_attributes_fc.output_size
+            + self.config_data.hindcast_embedding.hiddens[-1],
             hidden_size=self.config_data.hidden_size,
             batch_first=True,
         )
 
         # Forecast LSTM
         self.forecast_lstm = nn.LSTM(
-            input_size=self.config_data.embedding_size * 2
+            input_size=self.static_attributes_fc.output_size
+            + self.config_data.forecast_embedding.hiddens[-1]
             + self.config_data.hidden_size,
             hidden_size=self.config_data.hidden_size,
             batch_first=True,
@@ -117,40 +123,35 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             self.cfg, n_in=self.config_data.hidden_size, n_out=3 * 4, n_hidden=100
         )
 
-        self._reset_parameters()
+        lstm_init(
+            lstms=[self.hindcast_lstm, self.forecast_lstm],
+            forget_bias=cfg.initial_forget_bias,
+            weight_opts=cfg.weight_init_opts,
+        )
 
-    def _create_fc(self, embedding_spec: dict | None, input_size: int) -> FC:
+    def _create_fc(self, embedding_spec: EmbeddingSpec, input_size: int) -> FC:
         assert input_size > 0, 'Cannot create embedding layer with input size 0'
 
-        emb_type = embedding_spec['type'].lower()
+        emb_type = embedding_spec.type.lower()
         assert emb_type == 'fc', f'{emb_type=} not supported'
 
-        hiddens = embedding_spec['hiddens']
+        hiddens = embedding_spec.hiddens
         assert len(hiddens) > 0, 'hiddens must have at least one entry'
 
-        activation = embedding_spec['activation']
+        activation = embedding_spec.activation
         assert len(activation) == len(hiddens), (
             'hiddens and activation layers must match'
         )
 
-        dropout = float(embedding_spec['dropout'])
+        dropout = float(embedding_spec.dropout)
 
         return FC(
             input_size=input_size,
             hidden_sizes=hiddens,
             activation=activation,
             dropout=dropout,
+            xavier_init=FC_XAVIER in self.cfg.weight_init_opts,
         )
-
-    def _reset_parameters(self):
-        """Special initialization of certain model weights."""
-        if self.cfg.initial_forget_bias is not None:
-            self.hindcast_lstm.bias_hh_l0.data[
-                self.config_data.hidden_size : 2 * self.config_data.hidden_size
-            ] = self.cfg.initial_forget_bias
-            self.forecast_lstm.bias_hh_l0.data[
-                self.config_data.hidden_size : 2 * self.config_data.hidden_size
-            ] = self.cfg.initial_forget_bias
 
     def forward(
         self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]
@@ -171,35 +172,43 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         static_attributes = self._calc_static_attributes(forward_data)
 
-        cpc = self._calc_dynamic_embedding(
-            embedding_network=self.cpc_input_fc,
-            dynamic_data=forward_data.cpc_data,
-            static_attributes=static_attributes,
-            append_nan=True)
-        imerg = self._calc_dynamic_embedding(
-            embedding_network=self.imerg_input_fc,
-            dynamic_data=forward_data.imerg_data,
-            static_attributes=static_attributes,
-            append_nan=True)
-        hres = self._calc_dynamic_embedding(
-            embedding_network=self.hres_input_fc,
-            dynamic_data=forward_data.hres_data,
-            static_attributes=static_attributes,
-            append_nan=False)
-        graphcast = self._calc_dynamic_embedding(
-            embedding_network=self.graphcast_input_fc,
-            dynamic_data=forward_data.graphcast_data,
-            static_attributes=static_attributes,
-            append_nan=False)
+        hindcast_embeddings = [
+            self._calc_dynamic_embedding(
+                embedding_network=fc,
+                dynamic_data=forward_data.hindcast_data[name],
+                static_attributes=static_attributes,
+                append_nan=True,
+            )
+            for name, fc in self.hindcast_embeddings_fc.items()
+        ]
+        forecast_embeddings = [
+            self._calc_dynamic_embedding(
+                embedding_network=fc,
+                dynamic_data=forward_data.forecast_data[name],
+                static_attributes=static_attributes,
+                append_nan=False,
+            )
+            for name, fc in self.forecast_embeddings_fc.items()
+        ]
+        # Shared embeddings are using the forecast data
+        shared_embeddings = [
+            self._calc_dynamic_embedding(
+                embedding_network=fc,
+                dynamic_data=forward_data.forecast_data[name],
+                static_attributes=static_attributes,
+                append_nan=False,
+            )
+            for name, fc in self.shared_embeddings_fc.items()
+        ]
 
         hindcast = self._calc_lstm(
             lstm=self.hindcast_lstm,
-            embeddings=[cpc, imerg, hres, graphcast],
+            embeddings=hindcast_embeddings + shared_embeddings,
             static_attributes=static_attributes,
         )
         forecast = self._calc_lstm(
             lstm=self.forecast_lstm,
-            embeddings=[hres, graphcast],
+            embeddings=forecast_embeddings + shared_embeddings,
             static_attributes=static_attributes,
             other_inputs=hindcast,
         )
@@ -295,30 +304,40 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class ConfigData:
     @classmethod
-    def from_config(cls, cfg: Config) -> "ConfigData":
+    def from_config(cls, cfg: Config) -> 'ConfigData':
+        assert (statics_embedding := cfg.statics_embedding) is not None
+        assert (hindcast_embedding := cfg.hindcast_embedding) is not None
+        assert (forecast_embedding := cfg.forecast_embedding) is not None
+
+        hindcast_inputs_grouped = group_by_prefix(cfg.hindcast_inputs)
+        forecast_inputs_grouped = group_by_prefix(cfg.forecast_inputs)
+        shared_groups = set(hindcast_inputs_grouped) & set(forecast_inputs_grouped)
+        for group in shared_groups:
+            assert (
+                hindcast_inputs_grouped[group] == forecast_inputs_grouped[group]
+            ), (
+                f'Same features must be defined in forecast and hindcast for {group=}'
+            )
+
         return ConfigData(
             hidden_size=cfg.hidden_size,
-            embedding_size=20,
+            statics_embedding=statics_embedding,
+            hindcast_embedding=hindcast_embedding,
+            forecast_embedding=forecast_embedding,
             static_attributes_names=tuple(cfg.static_attributes),
-            cpc_attributes_names=_filter_by_prefix(cfg.hindcast_inputs, "cpc_"),
-            imerg_attributes_names=_filter_by_prefix(cfg.hindcast_inputs, "imerg_"),
-            hres_attributes_names=_filter_by_prefix(cfg.forecast_inputs, "hres_"),
-            graphcast_attributes_names=_filter_by_prefix(
-                cfg.forecast_inputs, "graphcast_"
-            ),
+            hindcast_inputs_grouped=hindcast_inputs_grouped,
+            forecast_inputs_grouped=forecast_inputs_grouped,
+            shared_groups=shared_groups,
         )
 
     hidden_size: int
-    embedding_size: int
+    statics_embedding: EmbeddingSpec
+    hindcast_embedding: EmbeddingSpec
+    forecast_embedding: EmbeddingSpec
     static_attributes_names: tuple[str, ...]
-    cpc_attributes_names: tuple[str, ...]
-    imerg_attributes_names: tuple[str, ...]
-    hres_attributes_names: tuple[str, ...]
-    graphcast_attributes_names: tuple[str, ...]
-
-
-def _filter_by_prefix(names: list[str], prefix: str) -> tuple[str, ...]:
-    return tuple(s for s in names if s.startswith(prefix))
+    hindcast_inputs_grouped: dict[str, set[str]]
+    forecast_inputs_grouped: dict[str, set[str]]
+    shared_groups: set[str]
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -331,25 +350,19 @@ class ForwardData:
     ) -> "ForwardData":
         return ForwardData(
             static_attributes=data["x_s"],
-            cpc_data=_concat_tensors_from_dict(
-                data["x_d_hindcast"], keys=config_data.cpc_attributes_names
-            ),
-            imerg_data=_concat_tensors_from_dict(
-                data["x_d_hindcast"], keys=config_data.imerg_attributes_names
-            ),
-            hres_data=_concat_tensors_from_dict(
-                data["x_d_forecast"], keys=config_data.hres_attributes_names
-            ),
-            graphcast_data=_concat_tensors_from_dict(
-                data["x_d_forecast"], keys=config_data.graphcast_attributes_names
-            ),
+            hindcast_data = {
+                name: _concat_tensors_from_dict(data["x_d_hindcast"], keys=features)
+                for name, features in config_data.hindcast_inputs_grouped.items()
+            },
+            forecast_data = {
+                name: _concat_tensors_from_dict(data["x_d_forecast"], keys=features)
+                for name, features in config_data.forecast_inputs_grouped.items()
+            },
         )
 
     static_attributes: torch.Tensor
-    cpc_data: torch.Tensor
-    imerg_data: torch.Tensor
-    hres_data: torch.Tensor
-    graphcast_data: torch.Tensor
+    hindcast_data: dict[str, torch.Tensor]
+    forecast_data: dict[str, torch.Tensor]
 
 
 def _concat_tensors_from_dict(
