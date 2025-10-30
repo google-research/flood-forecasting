@@ -8,6 +8,7 @@ from torch import nn
 from googlehydrology.utils.config import WeightInitOpt
 
 LSTM_IH_XAVIER = WeightInitOpt.LSTM_IH_XAVIER
+LSTM_HH_ORTHOGONAL = WeightInitOpt.LSTM_HH_ORTHOGONAL
 FC_XAVIER = WeightInitOpt.FC_XAVIER
 
 
@@ -26,6 +27,8 @@ def lstm_init(
             for name, param in lstm.named_parameters():
                 if 'weight_ih' in name and LSTM_IH_XAVIER in weight_opts:
                     nn.init.xavier_uniform_(param)
+                elif 'weight_hh' in name and LSTM_HH_ORTHOGONAL in weight_opts:
+                    nn.init.orthogonal_(param)
 
 
 def _forget_gate_slice(lstm: nn.LSTM) -> slice:
