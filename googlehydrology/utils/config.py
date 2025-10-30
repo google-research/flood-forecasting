@@ -14,11 +14,13 @@
 
 import enum
 import logging
+import pydantic
 import itertools
 import random
 import re
 import warnings
 from collections import OrderedDict
+from typing_extensions import TypedDict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -32,6 +34,12 @@ class WeightInitOpt(str, enum.Enum):
 
     LSTM_IH_XAVIER = "lstm-ih-xavier"
     FC_XAVIER = "fc-xavier"
+
+class EmbeddingsDict(TypedDict):
+    hiddens: list[int]
+    type: str
+    activation: list[str]
+    dropout: float
 
 class Config(object):
     """Read run configuration from the specified path or dictionary and parse it into a configuration object.
@@ -431,12 +439,11 @@ class Config(object):
             return dynamic_inputs
 
     @property
-    def dynamics_embedding(self) -> dict:
-        embedding_spec = self._cfg.get("dynamics_embedding", None)
-
-        if embedding_spec is None:
+    def dynamics_embedding(self) -> EmbeddingsDict | None:
+        data = self._cfg.get("dynamics_embedding", None)
+        if data is None:
             return None
-        return self._get_embedding_spec(embedding_spec)
+        return self._get_embedding_spec(data)
 
     @property
     def epochs(self) -> int:
@@ -472,12 +479,11 @@ class Config(object):
             raise ValueError(f"Unknown data type {type(finetune_modules)} for 'finetune_modules' argument.")
 
     @property
-    def forecast_network(self) -> dict:
-        embedding_spec = self._cfg.get("forecast_network", None)
-
-        if embedding_spec is None:
+    def forecast_network(self) -> EmbeddingsDict | None:
+        data = self._cfg.get("forecast_network", None)
+        if data is None:
             return None
-        return self._get_embedding_spec(embedding_spec)
+        return self._get_embedding_spec(data)
 
     @property
     def forecast_hidden_size(self) -> int:
@@ -516,12 +522,11 @@ class Config(object):
         return self._cfg.get('save_git_diff', False)
 
     @property
-    def state_handoff_network(self) -> dict:
-        embedding_spec = self._cfg.get("state_handoff_network", None)
-
-        if embedding_spec is None:
+    def state_handoff_network(self) -> EmbeddingsDict | None:
+        data = self._cfg.get("state_handoff_network", None)
+        if data is None:
             return None
-        return self._get_embedding_spec(embedding_spec)
+        return self._get_embedding_spec(data)
 
     @property
     def head(self) -> str:
@@ -874,22 +879,25 @@ class Config(object):
             return []
 
     @property
-    def statics_embedding(self) -> dict | None:
-        return self._get_embedding_spec(
-            self._cfg.get('statics_embedding', None)
-        )
+    def statics_embedding(self) -> EmbeddingsDict | None:
+        data = self._cfg.get('statics_embedding', None)
+        if data is None:
+            return None
+        return self._get_embedding_spec(data)
 
     @property
-    def hindcast_embedding(self) -> dict | None:
-        return self._get_embedding_spec(
-            self._cfg.get('hindcast_embedding', None)
-        )
+    def hindcast_embedding(self) -> EmbeddingsDict | None:
+        data = self._cfg.get('hindcast_embedding', None)
+        if data is None:
+            return None
+        return self._get_embedding_spec(data)
 
     @property
-    def forecast_embedding(self) -> dict | None:
-        return self._get_embedding_spec(
-            self._cfg.get('forecast_embedding', None)
-        )
+    def forecast_embedding(self) -> EmbeddingsDict | None:
+        data = self._cfg.get('forecast_embedding', None)
+        if data is None:
+            return None
+        return self._get_embedding_spec(data)
 
     @property
     def target_loss_weights(self) -> list[float]:
@@ -1028,21 +1036,20 @@ class Config(object):
         """
         return self._cfg.get("verbose", 1)
 
-    def _get_embedding_spec(self, embedding_spec: dict | None) -> dict | None:
-        if embedding_spec is None:
-            return None
+    def _get_embedding_spec(self, embedding_spec: dict) -> EmbeddingsDict:
+        # TODO(future) : this impl may utilize the validator first.
         hiddens = self._as_default_list(embedding_spec.get('hiddens', []))
         activation = embedding_spec.get('activation', 'tanh')
         if isinstance(activation, list):
             assert len(activation) == len(hiddens)
         else:
             activation = [activation] * len(hiddens)
-        return {
+        return pydantic.TypeAdapter(EmbeddingsDict).validate_python({
             'type': embedding_spec.get('type', 'fc'),
             'hiddens': hiddens,
             'activation': activation,
             'dropout': embedding_spec.get('dropout', 0.0)
-        }
+        })
 
 
 def create_random_name():

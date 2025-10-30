@@ -23,7 +23,7 @@ from more_itertools import flatten
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.modelzoo.fc import FC
 from googlehydrology.modelzoo.head import get_head
-from googlehydrology.utils.config import Config, WeightInitOpt
+from googlehydrology.utils.config import Config, WeightInitOpt, EmbeddingsDict
 from googlehydrology.utils.configutils import group_by_prefix
 
 LSTM_IH_XAVIER = WeightInitOpt.LSTM_IH_XAVIER
@@ -126,7 +126,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         self._reset_parameters()
 
-    def _create_fc(self, embedding_spec: dict, input_size: int) -> FC:
+    def _create_fc(self, embedding_spec: EmbeddingsDict, input_size: int) -> FC:
         assert input_size > 0, 'Cannot create embedding layer with input size 0'
 
         emb_type = embedding_spec['type'].lower()
@@ -344,8 +344,8 @@ class ConfigData:
 
     hidden_size: int
     statics_embedding: dict
-    hindcast_embedding: dict
-    forecast_embedding: dict
+    hindcast_embedding: EmbeddingsDict
+    forecast_embedding: EmbeddingsDict
     static_attributes_names: tuple[str, ...]
     hindcast_inputs_grouped: dict[str, set[str]]
     forecast_inputs_grouped: dict[str, set[str]]
