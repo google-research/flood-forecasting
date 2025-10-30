@@ -58,6 +58,10 @@ General experiment configurations
    even in case of a single period per basin (see example below). Then use the
    pickle library, to store this dictionary to disk and use the path to this
    pickle file as the value for this config argument.
+-  ``lazy_memory``: a key-value object that controls whether data is loaded lazily
+   or all in-memory. The latter has much faster runtime.
+   Key ``enabled`` (``bool``): whether to employ lazy memory operability. Default `False`.
+   Key ``cache_bytes`` (``int``): how many bytes to use for a central opportunistic cache. Default 8GB.
 
 .. code-block::
 
