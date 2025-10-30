@@ -1021,7 +1021,6 @@ class Config(object):
     def _get_embedding_spec(self, embedding_spec: dict | None) -> EmbeddingsDict | None:
         if embedding_spec is None:
             return None
-        # TODO(future) : this impl may utilize the validator first.
         hiddens = self._as_default_list(embedding_spec.get('hiddens', []))
         activation = embedding_spec.get('activation', 'tanh')
         if isinstance(activation, list):
