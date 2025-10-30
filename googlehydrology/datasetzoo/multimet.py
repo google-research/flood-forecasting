@@ -85,6 +85,7 @@ class Multimet(Dataset):
         compute_scaler: bool = True,
     ):
         self._lazy = cfg.lazy_memory  # Instantiate the cache if enabled
+        self._comp = dask.array if self._lazy.enabled else np
 
         # Sequence length parameters.
         # TODO (future) :: Remove all old forecast functionality from basedataset.
@@ -270,7 +271,6 @@ class Multimet(Dataset):
         self, item: int
     ) -> dict[str, torch.Tensor | np.ndarray | dict[str, torch.Tensor]]:
         """Retrieves a sample by integer index."""
-
         # Stop iteration.
         if item >= self._num_samples:
             raise IndexError(
@@ -312,9 +312,8 @@ class Multimet(Dataset):
             self._sample_index[item]["basin"], dtype=np.int16
         )
 
-        # Compute() when in lazy mode fetches data, while in non-lazy mode
-        # it's required for typing for converting to tensors.
-        (sample,) = dask.compute(sample, scheduler='single-threaded')
+        if self._lazy.enabled:
+            (sample,) = dask.compute(sample, scheduler='single-threaded')
 
         # Return sample with various required formats.
         return {key: _convert_to_tensor(key, value) for key, value in sample.items()}
@@ -366,7 +365,7 @@ class Multimet(Dataset):
             dim_indexes_with_lead_time,
         )
 
-        return {name: dask.array.expand_dims(feature, -1) for name, feature in features.items()}
+        return {name: self._comp.expand_dims(feature, -1) for name, feature in features.items()}
         # TODO (future) :: This adds a dimension to many features, as required by some models.
         # There is no need for this except that it is how basedataset works, and everything else expects
         # the trailing dim. Remove this dependency in the future.
@@ -389,10 +388,10 @@ class Multimet(Dataset):
                 self._dataset, self._forecast_features, dim_indexes
             )
             features = {
-                name: dask.array.concatenate([overlaps[name], feature], axis=0)
+                name: self._comp.concatenate([overlaps[name], feature], axis=0)
                 for name, feature in features.items()
             }
-        return {name: dask.array.expand_dims(feature, axis=-1) for name, feature in features.items()}
+        return {name: self._comp.expand_dims(feature, axis=-1) for name, feature in features.items()}
         # TODO (future) :: This adds a dimension to many features, as required by some models.
         # There is no need for this except that it is how basedataset works, and everything else expects
         # the trailing dim. Remove this dependency in the future.
@@ -403,7 +402,7 @@ class Multimet(Dataset):
         features = self._extract_dataset(
             self._dataset, self._target_features, dim_indexes
         )
-        return dask.array.stack([features[e] for e in self._target_features], axis=-1)
+        return self._comp.stack([features[e] for e in self._target_features], axis=-1)
 
     def _extract_per_basin_stds(self, item: int) -> np.ndarray:
         assert self._per_basin_target_stds is not None
@@ -412,8 +411,8 @@ class Multimet(Dataset):
             self._target_features,
             {"basin": self._sample_index[item]["basin"]},
         )
-        return dask.array.expand_dims(
-            dask.array.stack([features[e] for e in self._target_features], axis=-1), axis=0
+        return self._comp.expand_dims(
+            self._comp.stack([features[e] for e in self._target_features], axis=-1), axis=0
         )
         # TODO (future) :: This adds a dimension to many features, as required by some models.
         # There is no need for this except that it is how basedataset works, and everything else expects
