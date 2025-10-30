@@ -18,15 +18,14 @@ import dataclasses
 import numpy as np
 import torch
 import torch.nn as nn
-from more_itertools import flatten
 
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.modelzoo.fc import FC
 from googlehydrology.modelzoo.head import get_head
 from googlehydrology.utils.config import Config, WeightInitOpt, EmbeddingSpec
+from googlehydrology.utils.lstm_utils import lstm_init
 from googlehydrology.utils.configutils import group_by_prefix
 
-LSTM_IH_XAVIER = WeightInitOpt.LSTM_IH_XAVIER
 FC_XAVIER = WeightInitOpt.FC_XAVIER
 
 class MeanEmbeddingForecastLSTM(BaseModel):
@@ -124,7 +123,11 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             self.cfg, n_in=self.config_data.hidden_size, n_out=3 * 4, n_hidden=100
         )
 
-        self._reset_parameters()
+        lstm_init(
+            lstms=[self.hindcast_lstm, self.forecast_lstm],
+            forget_bias=cfg.initial_forget_bias,
+            weight_opts=cfg.weight_init_opts,
+        )
 
     def _create_fc(self, embedding_spec: EmbeddingSpec, input_size: int) -> FC:
         assert input_size > 0, 'Cannot create embedding layer with input size 0'
@@ -149,21 +152,6 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             dropout=dropout,
             xavier_init=FC_XAVIER in self.cfg.weight_init_opts,
         )
-
-    def _reset_parameters(self):
-        """Special initialization of certain model weights."""
-        if self.cfg.initial_forget_bias is not None:
-            self.hindcast_lstm.bias_hh_l0.data[
-                self.config_data.hidden_size : 2 * self.config_data.hidden_size
-            ] = self.cfg.initial_forget_bias
-            self.forecast_lstm.bias_hh_l0.data[
-                self.config_data.hidden_size : 2 * self.config_data.hidden_size
-            ] = self.cfg.initial_forget_bias
-
-        lstms = self.hindcast_lstm, self.forecast_lstm
-        for name, param in flatten(e.named_parameters() for e in lstms):
-            if 'weight_ih' in name and LSTM_IH_XAVIER in self.cfg.weight_init_opts:
-                nn.init.xavier_uniform_(param)
 
     def forward(
         self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]
