@@ -343,7 +343,7 @@ class ConfigData:
         )
 
     hidden_size: int
-    statics_embedding: dict
+    statics_embedding: EmbeddingSpec
     hindcast_embedding: EmbeddingSpec
     forecast_embedding: EmbeddingSpec
     static_attributes_names: tuple[str, ...]
