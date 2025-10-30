@@ -262,6 +262,8 @@ class Multimet(Dataset):
                 skipna=True,
             )
 
+        self._data_cache: dict[str, xr.DataArray] = {}
+
         LOGGER.debug("forecast dataset init complete")
 
     def __len__(self) -> int:
@@ -515,7 +517,14 @@ class Multimet(Dataset):
         features: list[str],
         indexers: dict[Hashable, int | range | slice],
     ) -> dict[str, np.ndarray | np.float32]:
-        return {k: _extract_dataarray(data[k], indexers) for k in features}
+        def extract(feature_name: str):
+            key = f"{id(data)}{feature_name}"
+            feature = self._data_cache.get(key)
+            if feature is None:
+                feature = self._data_cache[key] = data[feature_name]
+            return _extract_dataarray(feature, indexers)
+
+        return {feature_name: extract(feature_name) for feature_name in features}
 
     def _load_data(self) -> xr.Dataset:
         """Main loading function for Caravan-Multimet.
