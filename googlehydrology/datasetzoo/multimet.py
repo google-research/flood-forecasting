@@ -158,10 +158,6 @@ class Multimet(Dataset):
         LOGGER.debug("validate all floats are float32")
         _assert_floats_are_float32(self._dataset)
 
-        LOGGER.debug("Compute static features")
-        self._static_data = self._dataset[self._static_features].compute()
-        self._dataset = self._dataset.drop_vars(self._static_features)
-
         # Extract date ranges.
         # TODO (future) :: Make this work for non-continuous date ranges.
         # TODO (future) :: This only works for daily data.
@@ -337,9 +333,10 @@ class Multimet(Dataset):
         return features["date"]
 
     def _extract_statics(self, item: int) -> np.ndarray:
-        basin_pos = self._sample_index[item]["basin"]
-        basin = self._dataset.coords["basin"].data[basin_pos]
-        features = self._static_data.sel(basin=basin)
+        basin = self._sample_index[item]["basin"]
+        features = self._extract_dataset(
+            self._dataset, self._static_features, {"basin": basin}
+        )
         return np.stack([features[e] for e in self._static_features], axis=-1)
 
     def _extract_hindcasts(self, item: int) -> dict[str, np.ndarray]:
