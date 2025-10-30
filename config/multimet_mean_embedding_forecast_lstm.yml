@@ -29,7 +29,7 @@ initial_learning_rate: 0.0005
 learning_rate_drop_factor: 0.5
 learning_rate_epochs_drop: 5
 # max_updates_per_epoch:
-max_updates_per_epoch: 3
+max_updates_per_epoch: 2000
 metrics:
 - NSE
 - KGE
@@ -54,11 +54,11 @@ train_basin_file: ~/flood-forecasting/config/basins/caravan/camels.txt
 validation_basin_file: ~/flood-forecasting/config/basins/caravan/camels.txt
 test_basin_file: ~/flood-forecasting/config/basins/caravan/camels.txt
 
-train_end_date: 31/12/2013
-train_start_date: 01/01/2010
+train_end_date: 31/12/2020
+train_start_date: 01/01/2016
 
-validation_end_date: 31/12/2014
-validation_start_date: 01/01/2014
+validation_end_date: 31/12/2025
+validation_start_date: 01/01/2021
 
 test_end_date: 31/12/2025
 test_start_date: 01/01/2021
