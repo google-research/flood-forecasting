@@ -55,10 +55,12 @@ train_basin_file: ~/flood-forecasting/config/basins/caravan_3_basins.txt
 validation_basin_file: ~/flood-forecasting/config/basins/caravan_3_basins.txt
 test_basin_file: ~/flood-forecasting/config/basins/caravan_3_basins.txt
 
+train_end_date: 30/09/2017
 train_start_date: 01/10/2012
 validation_end_date: 30/09/2022
 validation_start_date: 01/10/2017
 test_end_date: 30/09/2022
+test_start_date: 01/10/2017
 
 targets_data_dir: ~/nh-data/data/Caravan-nc # Point to your local path. Must be read locally.
 statics_data_dir: ~/nh-data/data/Caravan-nc # Point to your local path. Must be read locally.
