@@ -689,8 +689,9 @@ def _extract_dataarray(
 
     This function replaces uses of `isel` with data and indexers.
     """
-    locators = tuple(indexers[dim] if dim in indexers else slice(None) for dim in data.dims)
-    return data[locators].data
+    locs = (indexers[dim] if dim in indexers else slice(None) for dim in data.dims)
+    locs = (list(loc) if isinstance(loc, range) else loc for loc in locs)
+    return data.data[tuple(locs)]
 
 
 def _assert_floats_are_float32(dataset: xr.Dataset):
