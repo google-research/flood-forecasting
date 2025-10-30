@@ -14,6 +14,8 @@
 
 import enum
 import logging
+import pydantic
+import pydantic.dataclasses
 import itertools
 import random
 import re
@@ -32,6 +34,13 @@ class WeightInitOpt(str, enum.Enum):
 
     LSTM_IH_XAVIER = "lstm-ih-xavier"
     FC_XAVIER = "fc-xavier"
+
+@pydantic.dataclasses.dataclass(frozen=True, kw_only=True)
+class EmbeddingSpec:
+    hiddens: list[int]
+    type: str
+    activation: list[str]
+    dropout: float
 
 class Config(object):
     """Read run configuration from the specified path or dictionary and parse it into a configuration object.
@@ -431,12 +440,8 @@ class Config(object):
             return dynamic_inputs
 
     @property
-    def dynamics_embedding(self) -> dict:
-        embedding_spec = self._cfg.get("dynamics_embedding", None)
-
-        if embedding_spec is None:
-            return None
-        return self._get_embedding_spec(embedding_spec)
+    def dynamics_embedding(self) -> EmbeddingSpec | None:
+        return self._get_embedding_spec(self._cfg.get('dynamics_embedding'))
 
     @property
     def epochs(self) -> int:
@@ -472,12 +477,8 @@ class Config(object):
             raise ValueError(f"Unknown data type {type(finetune_modules)} for 'finetune_modules' argument.")
 
     @property
-    def forecast_network(self) -> dict:
-        embedding_spec = self._cfg.get("forecast_network", None)
-
-        if embedding_spec is None:
-            return None
-        return self._get_embedding_spec(embedding_spec)
+    def forecast_network(self) -> EmbeddingSpec | None:
+        return self._get_embedding_spec(self._cfg.get('forecast_network'))
 
     @property
     def forecast_hidden_size(self) -> int:
@@ -516,12 +517,8 @@ class Config(object):
         return self._cfg.get('save_git_diff', False)
 
     @property
-    def state_handoff_network(self) -> dict:
-        embedding_spec = self._cfg.get("state_handoff_network", None)
-
-        if embedding_spec is None:
-            return None
-        return self._get_embedding_spec(embedding_spec)
+    def state_handoff_network(self) -> EmbeddingSpec | None:
+        return self._get_embedding_spec(self._cfg.get('state_handoff_network'))
 
     @property
     def head(self) -> str:
@@ -874,22 +871,16 @@ class Config(object):
             return []
 
     @property
-    def statics_embedding(self) -> dict | None:
-        return self._get_embedding_spec(
-            self._cfg.get('statics_embedding', None)
-        )
+    def statics_embedding(self) -> EmbeddingSpec | None:
+        return self._get_embedding_spec(self._cfg.get('statics_embedding'))
 
     @property
-    def hindcast_embedding(self) -> dict | None:
-        return self._get_embedding_spec(
-            self._cfg.get('hindcast_embedding', None)
-        )
+    def hindcast_embedding(self) -> EmbeddingSpec | None:
+        return self._get_embedding_spec(self._cfg.get('hindcast_embedding'))
 
     @property
-    def forecast_embedding(self) -> dict | None:
-        return self._get_embedding_spec(
-            self._cfg.get('forecast_embedding', None)
-        )
+    def forecast_embedding(self) -> EmbeddingSpec | None:
+        return self._get_embedding_spec(self._cfg.get('forecast_embedding'))
 
     @property
     def target_loss_weights(self) -> list[float]:
@@ -1028,7 +1019,7 @@ class Config(object):
         """
         return self._cfg.get("verbose", 1)
 
-    def _get_embedding_spec(self, embedding_spec: dict | None) -> dict | None:
+    def _get_embedding_spec(self, embedding_spec: dict | None) -> EmbeddingSpec | None:
         if embedding_spec is None:
             return None
         hiddens = self._as_default_list(embedding_spec.get('hiddens', []))
@@ -1037,12 +1028,12 @@ class Config(object):
             assert len(activation) == len(hiddens)
         else:
             activation = [activation] * len(hiddens)
-        return {
-            'type': embedding_spec.get('type', 'fc'),
-            'hiddens': hiddens,
-            'activation': activation,
-            'dropout': embedding_spec.get('dropout', 0.0)
-        }
+        return EmbeddingSpec(
+            type=embedding_spec.get('type', 'fc'),
+            hiddens=hiddens,
+            activation=activation,
+            dropout=embedding_spec.get('dropout', 0.0),
+        )
 
 
 def create_random_name():

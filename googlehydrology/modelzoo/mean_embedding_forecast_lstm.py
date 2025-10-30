@@ -23,7 +23,7 @@ from more_itertools import flatten
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.modelzoo.fc import FC
 from googlehydrology.modelzoo.head import get_head
-from googlehydrology.utils.config import Config, WeightInitOpt
+from googlehydrology.utils.config import Config, WeightInitOpt, EmbeddingSpec
 from googlehydrology.utils.configutils import group_by_prefix
 
 LSTM_IH_XAVIER = WeightInitOpt.LSTM_IH_XAVIER
@@ -104,7 +104,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         # Hindcast LSTM
         self.hindcast_lstm = nn.LSTM(
             input_size=self.static_attributes_fc.output_size
-            + self.config_data.hindcast_embedding['hiddens'][-1],
+            + self.config_data.hindcast_embedding.hiddens[-1],
             hidden_size=self.config_data.hidden_size,
             batch_first=True,
         )
@@ -112,7 +112,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         # Forecast LSTM
         self.forecast_lstm = nn.LSTM(
             input_size=self.static_attributes_fc.output_size
-            + self.config_data.forecast_embedding['hiddens'][-1]
+            + self.config_data.forecast_embedding.hiddens[-1]
             + self.config_data.hidden_size,
             hidden_size=self.config_data.hidden_size,
             batch_first=True,
@@ -126,21 +126,21 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         self._reset_parameters()
 
-    def _create_fc(self, embedding_spec: dict, input_size: int) -> FC:
+    def _create_fc(self, embedding_spec: EmbeddingSpec, input_size: int) -> FC:
         assert input_size > 0, 'Cannot create embedding layer with input size 0'
 
-        emb_type = embedding_spec['type'].lower()
+        emb_type = embedding_spec.type.lower()
         assert emb_type == 'fc', f'{emb_type=} not supported'
 
-        hiddens = embedding_spec['hiddens']
+        hiddens = embedding_spec.hiddens
         assert len(hiddens) > 0, 'hiddens must have at least one entry'
 
-        activation = embedding_spec['activation']
+        activation = embedding_spec.activation
         assert len(activation) == len(hiddens), (
             'hiddens and activation layers must match'
         )
 
-        dropout = float(embedding_spec['dropout'])
+        dropout = float(embedding_spec.dropout)
 
         return FC(
             input_size=input_size,
@@ -343,9 +343,9 @@ class ConfigData:
         )
 
     hidden_size: int
-    statics_embedding: dict
-    hindcast_embedding: dict
-    forecast_embedding: dict
+    statics_embedding: EmbeddingSpec
+    hindcast_embedding: EmbeddingSpec
+    forecast_embedding: EmbeddingSpec
     static_attributes_names: tuple[str, ...]
     hindcast_inputs_grouped: dict[str, set[str]]
     forecast_inputs_grouped: dict[str, set[str]]
