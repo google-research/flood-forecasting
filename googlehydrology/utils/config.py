@@ -15,6 +15,7 @@
 import enum
 import logging
 import pydantic
+import pydantic.dataclasses
 import itertools
 import random
 import re
@@ -22,7 +23,7 @@ import warnings
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional, Union, TypedDict
+from typing import Any, Optional, Union
 
 import pandas as pd
 from ruamel.yaml import YAML
@@ -34,7 +35,8 @@ class WeightInitOpt(str, enum.Enum):
     LSTM_IH_XAVIER = "lstm-ih-xavier"
     FC_XAVIER = "fc-xavier"
 
-class EmbeddingSpec(TypedDict):
+@pydantic.dataclasses.dataclass(frozen=True, kw_only=True)
+class EmbeddingSpec:
     hiddens: list[int]
     type: str
     activation: list[str]
@@ -1026,12 +1028,12 @@ class Config(object):
             assert len(activation) == len(hiddens)
         else:
             activation = [activation] * len(hiddens)
-        return pydantic.TypeAdapter(EmbeddingSpec).validate_python({
-            'type': embedding_spec.get('type', 'fc'),
-            'hiddens': hiddens,
-            'activation': activation,
-            'dropout': embedding_spec.get('dropout', 0.0)
-        })
+        return EmbeddingSpec(
+            type=embedding_spec.get('type', 'fc'),
+            hiddens=hiddens,
+            activation=activation,
+            dropout=embedding_spec.get('dropout', 0.0),
+        )
 
 
 def create_random_name():
