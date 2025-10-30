@@ -36,14 +36,14 @@ class FC(nn.Module):
         Activation function for intermediate layers, default tanh.
     dropout : float, optional
         Dropout rate in intermediate layers.
-    fc_xavier : bool, optional
+    xavier_init : bool, optional
         Whether to use xavier as init method.
     """
 
-    def __init__(self, input_size: int, hidden_sizes: list[int], activation: str | list[str] = 'tanh', dropout: float = 0.0, fc_xavier: bool = False):
+    def __init__(self, input_size: int, hidden_sizes: list[int], activation: str | list[str] = 'tanh', dropout: float = 0.0, xavier_init: bool = False):
         super(FC, self).__init__()
 
-        self._xavier = fc_xavier
+        self._xavier_init = xavier_init
 
         if len(hidden_sizes) == 0:
             raise ValueError('hidden_sizes must at least have one entry to create a fully-connected net.')
@@ -94,7 +94,7 @@ class FC(nn.Module):
             if isinstance(layer, nn.modules.linear.Linear):
                 n_in = layer.weight.shape[1]
                 gain = np.sqrt(3 / n_in)
-                if self._xavier:
+                if self._xavier_init:
                     nn.init.xavier_uniform_(layer.weight, gain)
                 else:
                     nn.init.uniform_(layer.weight, -gain, gain)

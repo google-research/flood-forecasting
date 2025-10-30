@@ -146,7 +146,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             hidden_sizes=hiddens,
             activation=activation,
             dropout=dropout,
-            fc_xavier=FC_XAVIER in self.cfg.weight_init_opts,
+            xavier_init=FC_XAVIER in self.cfg.weight_init_opts,
         )
 
     def _reset_parameters(self):

@@ -100,14 +100,14 @@ class HandoffForecastLSTM(BaseModel):
             hidden_sizes=cfg.state_handoff_network['hiddens'],
             activation=cfg.state_handoff_network['activation'],
             dropout=cfg.state_handoff_network['dropout'],
-            fc_xavier=FC_XAVIER in cfg.weight_init_opts,
+            xavier_init=FC_XAVIER in cfg.weight_init_opts,
         )
         self.handoff_linear = FC(
             input_size=cfg.state_handoff_network['hiddens'][-1],
             hidden_sizes=[self.forecast_hidden_size*2],
             activation='linear',
             dropout=0.0,
-            fc_xavier=FC_XAVIER in cfg.weight_init_opts,
+            xavier_init=FC_XAVIER in cfg.weight_init_opts,
         )
 
         # Head layers.
