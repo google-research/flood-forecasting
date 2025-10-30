@@ -34,7 +34,7 @@ class WeightInitOpt(str, enum.Enum):
     LSTM_IH_XAVIER = "lstm-ih-xavier"
     FC_XAVIER = "fc-xavier"
 
-class EmbeddingsDict(TypedDict):
+class EmbeddingSpec(TypedDict):
     hiddens: list[int]
     type: str
     activation: list[str]
@@ -438,7 +438,7 @@ class Config(object):
             return dynamic_inputs
 
     @property
-    def dynamics_embedding(self) -> EmbeddingsDict | None:
+    def dynamics_embedding(self) -> EmbeddingSpec | None:
         return self._get_embedding_spec(self._cfg.get('dynamics_embedding'))
 
     @property
@@ -475,7 +475,7 @@ class Config(object):
             raise ValueError(f"Unknown data type {type(finetune_modules)} for 'finetune_modules' argument.")
 
     @property
-    def forecast_network(self) -> EmbeddingsDict | None:
+    def forecast_network(self) -> EmbeddingSpec | None:
         return self._get_embedding_spec(self._cfg.get('forecast_network'))
 
     @property
@@ -515,7 +515,7 @@ class Config(object):
         return self._cfg.get('save_git_diff', False)
 
     @property
-    def state_handoff_network(self) -> EmbeddingsDict | None:
+    def state_handoff_network(self) -> EmbeddingSpec | None:
         return self._get_embedding_spec(self._cfg.get('state_handoff_network'))
 
     @property
@@ -869,15 +869,15 @@ class Config(object):
             return []
 
     @property
-    def statics_embedding(self) -> EmbeddingsDict | None:
+    def statics_embedding(self) -> EmbeddingSpec | None:
         return self._get_embedding_spec(self._cfg.get('statics_embedding'))
 
     @property
-    def hindcast_embedding(self) -> EmbeddingsDict | None:
+    def hindcast_embedding(self) -> EmbeddingSpec | None:
         return self._get_embedding_spec(self._cfg.get('hindcast_embedding'))
 
     @property
-    def forecast_embedding(self) -> EmbeddingsDict | None:
+    def forecast_embedding(self) -> EmbeddingSpec | None:
         return self._get_embedding_spec(self._cfg.get('forecast_embedding'))
 
     @property
@@ -1017,7 +1017,7 @@ class Config(object):
         """
         return self._cfg.get("verbose", 1)
 
-    def _get_embedding_spec(self, embedding_spec: dict | None) -> EmbeddingsDict | None:
+    def _get_embedding_spec(self, embedding_spec: dict | None) -> EmbeddingSpec | None:
         if embedding_spec is None:
             return None
         hiddens = self._as_default_list(embedding_spec.get('hiddens', []))
@@ -1026,7 +1026,7 @@ class Config(object):
             assert len(activation) == len(hiddens)
         else:
             activation = [activation] * len(hiddens)
-        return pydantic.TypeAdapter(EmbeddingsDict).validate_python({
+        return pydantic.TypeAdapter(EmbeddingSpec).validate_python({
             'type': embedding_spec.get('type', 'fc'),
             'hiddens': hiddens,
             'activation': activation,
