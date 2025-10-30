@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import cachey
+import dask
+import dask.cache
 import enum
 import logging
 import pydantic
@@ -28,6 +31,9 @@ from typing import Any, Optional, Union
 import pandas as pd
 from ruamel.yaml import YAML
 
+LOGGER = logging.getLogger(__name__)
+
+
 @enum.unique
 class WeightInitOpt(str, enum.Enum):
     """Opts for the weight_init_opts flag."""
@@ -42,6 +48,12 @@ class EmbeddingSpec:
     type: str
     activation: list[str]
     dropout: float
+
+@pydantic.dataclasses.dataclass(frozen=True, kw_only=True)
+class LazyMemory:
+    enabled: bool = False
+    cache_bytes: int = 16 * 10**9
+
 
 class Config(object):
     """Read run configuration from the specified path or dictionary and parse it into a configuration object.
@@ -74,6 +86,8 @@ class Config(object):
     _metadata_keys = ['package_version', 'commit_hash']
 
     def __init__(self, yml_path_or_dict: Union[Path, dict], dev_mode: bool = False):
+        self._cache: dask.cache.Cache | None = None
+
         if isinstance(yml_path_or_dict, Path):
             self._cfg = Config._read_and_parse_config(yml_path=yml_path_or_dict)
         elif isinstance(yml_path_or_dict, dict):
@@ -296,6 +310,20 @@ class Config(object):
     @property
     def detect_anomaly(self) -> bool:
         return self._cfg.get("detect_anomaly", False)
+
+    @property
+    def lazy_memory(self) -> LazyMemory:
+        data = self._cfg.get('lazy_memory', {})
+        data = pydantic.TypeAdapter(LazyMemory).validate_python(data)
+
+        if data.enabled and not self._cache:
+            LOGGER.info('Lazy Memory on with %d cache bytes', data.cache_bytes)
+            self._cache = dask.cache.Cache(
+                cachey.Cache(available_bytes=data.cache_bytes)
+            )
+            self._cache.register()
+
+        return data
 
     @property
     def print_warnings_once(self) -> bool:

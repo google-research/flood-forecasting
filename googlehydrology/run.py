@@ -65,9 +65,6 @@ def _main():
 
     dask.config.set(num_workers=os.cpu_count(), scheduler='threads')
 
-    cache = dask.cache.Cache(cachey.Cache(available_bytes=32e9))
-    cache.register()
-
     if args["mode"] == "train":
         start_run(config=config, gpu=args["gpu"])
     elif args["mode"] == "continue_training":

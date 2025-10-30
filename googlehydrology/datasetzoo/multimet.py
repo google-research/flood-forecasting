@@ -84,6 +84,8 @@ class Multimet(Dataset):
         basin: str = None,
         compute_scaler: bool = True,
     ):
+        self._lazy = cfg.lazy_memory  # Instantiate the cache if enabled
+
         # Sequence length parameters.
         # TODO (future) :: Remove all old forecast functionality from basedataset.
         self.lead_time = cfg.lead_time
@@ -158,6 +160,7 @@ class Multimet(Dataset):
 
         LOGGER.debug("Compute static features")
         self._static_data = self._dataset[self._static_features].compute()
+        self._dataset = self._dataset.drop_vars(self._static_features)
 
         # Extract date ranges.
         # TODO (future) :: Make this work for non-continuous date ranges.
@@ -236,9 +239,13 @@ class Multimet(Dataset):
         self._dataset = self.scaler.scale(self._dataset)
 
         # TODO: Optionally, optimize the data loader and trainer modules to work with chunked lazy data.
-        LOGGER.debug("compute scaler")
         # We explicitly keep the self.scaler.scaler computation since trainer uses it directly
-        (self.scaler.scaler,) = dask.compute(self.scaler.scaler)
+        if self._lazy.enabled:
+            LOGGER.debug("compute scaler")
+            (self.scaler.scaler,) = dask.compute(self.scaler.scaler)
+        else:
+            LOGGER.debug("compute scaler and dataset")
+            (self._dataset, self.scaler.scaler) = dask.compute(self._dataset, self.scaler.scaler)
 
         # Create sample index lookup table for `__getitem__`.
         # TODO: create sample index still must compute the dataset on its own
@@ -259,8 +266,6 @@ class Multimet(Dataset):
             )
 
         LOGGER.debug("forecast dataset init complete")
-
-        self.seen=set()
 
     def __len__(self) -> int:
         return self._num_samples
@@ -311,12 +316,11 @@ class Multimet(Dataset):
             self._sample_index[item]["basin"], dtype=np.int16
         )
 
+        # Compute() when in lazy mode fetches data, while in non-lazy mode
+        # it's required for typing for converting to tensors.
+        (sample,) = dask.compute(sample, scheduler='single-threaded')
+
         # Return sample with various required formats.
-        import time
-        t=time.time()
-        (sample,) = dask.compute(dask.persist(sample)[0])
-        print(f'{time.time()-t} {item=} {"SEEN" if item in self.seen else "unseen"}')
-        self.seen.add(item)
         return {key: _convert_to_tensor(key, value) for key, value in sample.items()}
 
     def _calc_date_range(self, item: int, *, lead: bool = False) -> range:

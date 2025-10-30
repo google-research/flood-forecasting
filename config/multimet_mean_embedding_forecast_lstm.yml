@@ -15,6 +15,9 @@
 logging_level: INFO
 detect_anomaly: False
 print_warnings_once: False
+lazy_memory:
+  enabled: False
+  cache_bytes: 16000000000
 
 # --- Training Parameters -------------------------------------------------------
 
