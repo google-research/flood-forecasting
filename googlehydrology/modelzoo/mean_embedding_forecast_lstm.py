@@ -39,7 +39,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
     # Specify submodules of the model that can later be used for finetuning. Names must match class attributes.
     module_parts = [
-        'static_attributes_fc',
+        'static_embedding_fc',
         'hindcast_embeddings_fc',
         'forecast_embeddings_fc',
         'shared_embeddings_fc',
@@ -56,10 +56,10 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         self.config_data = ConfigData.from_config(cfg)
 
-        # Static attributes
-        self.static_attributes_fc = self._create_fc(
+        # Static embedding
+        self.static_embedding_fc = self._create_fc(
             embedding_spec = self.config_data.statics_embedding,
-            input_size=len(self.config_data.static_attributes_names),
+            input_size=len(self.config_data.static_attributes),
         )
 
         # Hindcast embedding networks
@@ -68,7 +68,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
                 embedding_spec=self.config_data.hindcast_embedding,
                 input_size=(
                     len(self.config_data.hindcast_inputs_grouped[name])
-                    + self.static_attributes_fc.output_size
+                    + self.static_embedding_fc.output_size
                 ),
             )
             for name in set(
@@ -81,7 +81,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
                 embedding_spec=self.config_data.forecast_embedding,
                 input_size=(
                     len(self.config_data.forecast_inputs_grouped[name])
-                    + self.static_attributes_fc.output_size
+                    + self.static_embedding_fc.output_size
                 ),
             )
             for name in set(
@@ -94,7 +94,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
                 embedding_spec=self.config_data.forecast_embedding,
                 input_size=(
                     len(self.config_data.forecast_inputs_grouped[name])
-                    + self.static_attributes_fc.output_size
+                    + self.static_embedding_fc.output_size
                 ),
             )
             for name in self.config_data.shared_groups
@@ -102,7 +102,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         # Hindcast LSTM
         self.hindcast_lstm = nn.LSTM(
-            input_size=self.static_attributes_fc.output_size
+            input_size=self.static_embedding_fc.output_size
             + self.config_data.hindcast_embedding.hiddens[-1],
             hidden_size=self.config_data.hidden_size,
             batch_first=True,
@@ -110,7 +110,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         # Forecast LSTM
         self.forecast_lstm = nn.LSTM(
-            input_size=self.static_attributes_fc.output_size
+            input_size=self.static_embedding_fc.output_size
             + self.config_data.forecast_embedding.hiddens[-1]
             + self.config_data.hidden_size,
             hidden_size=self.config_data.hidden_size,
@@ -170,13 +170,13 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         """
         forward_data = ForwardData.from_forward_data(data, self.config_data)
 
-        static_attributes = self._calc_static_attributes(forward_data)
+        static_embedding = self._calc_static_embedding(forward_data)
 
         hindcast_embeddings = [
             self._calc_dynamic_embedding(
                 embedding_network=fc,
-                dynamic_data=forward_data.hindcast_data[name],
-                static_attributes=static_attributes,
+                dynamic_data=forward_data.hindcast_features[name],
+                static_embedding=static_embedding,
                 append_nan=True,
             )
             for name, fc in self.hindcast_embeddings_fc.items()
@@ -184,8 +184,8 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         forecast_embeddings = [
             self._calc_dynamic_embedding(
                 embedding_network=fc,
-                dynamic_data=forward_data.forecast_data[name],
-                static_attributes=static_attributes,
+                dynamic_data=forward_data.forecast_features[name],
+                static_embedding=static_embedding,
                 append_nan=False,
             )
             for name, fc in self.forecast_embeddings_fc.items()
@@ -194,34 +194,34 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         shared_embeddings = [
             self._calc_dynamic_embedding(
                 embedding_network=fc,
-                dynamic_data=forward_data.forecast_data[name],
-                static_attributes=static_attributes,
+                dynamic_data=forward_data.forecast_features[name],
+                static_embedding=static_embedding,
                 append_nan=False,
             )
             for name, fc in self.shared_embeddings_fc.items()
         ]
 
-        hindcast = self._calc_lstm(
+        hindcast_state = self._calc_lstm(
             lstm=self.hindcast_lstm,
             embeddings=hindcast_embeddings + shared_embeddings,
-            static_attributes=static_attributes,
+            static_embedding=static_embedding,
         )
-        forecast = self._calc_lstm(
+        forecast_state = self._calc_lstm(
             lstm=self.forecast_lstm,
             embeddings=forecast_embeddings + shared_embeddings,
-            static_attributes=static_attributes,
-            other_inputs=hindcast,
+            static_embedding=static_embedding,
+            other_inputs=hindcast_state,
         )
 
-        head = self._calc_head(forecast)
+        head = self._calc_head(forecast_state)
 
         return head
 
-    def _make_static_attributes_repeated(
-        self, time_length: int, static_attributes: torch.Tensor
+    def _make_static_embedding_repeated(
+        self, time_length: int, static_embedding: torch.Tensor
     ) -> torch.Tensor:
         """Returns the attributes repeated w.r.t the time length."""
-        return static_attributes.unsqueeze(1).repeat(1, time_length, 1)
+        return static_embedding.unsqueeze(1).repeat(1, time_length, 1)
 
     def _make_nan_padding(
         self, batch_size: int, nan_padding_length: int, embedding_size: int, device: str
@@ -231,16 +231,16 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             (batch_size, nan_padding_length, embedding_size), np.nan, device=device
         )
 
-    def _append_static_attributes(
-        self, embedding: torch.Tensor, static_attributes: torch.Tensor
+    def _append_static_embedding(
+        self, embedding: torch.Tensor, static_embedding: torch.Tensor
     ) -> torch.Tensor:
-        """Append static attributes embedding to another embedding tensor."""
+        """Append static embedding to another embedding tensor."""
         # Dimension 1 is the time dimension. Duplicate static embedding in all time series.
         time_length = embedding.shape[1]
-        static_attributes_repeated = self._make_static_attributes_repeated(
-            time_length, static_attributes
+        static_embedding_repeated = self._make_static_embedding_repeated(
+            time_length, static_embedding
         )
-        return torch.cat([embedding, static_attributes_repeated], dim=-1)
+        return torch.cat([embedding, static_embedding_repeated], dim=-1)
 
     def _add_nan_padding(self, embedding: torch.Tensor) -> torch.Tensor:
         """Pad the embedding tensor with nan value to timespan of hindcast and forecast."""
@@ -261,18 +261,18 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         merged = torch.cat([e.unsqueeze(-1) for e in tensors], dim=-1)
         return torch.nanmean(merged, dim=-1)
 
-    def _calc_static_attributes(self, forward_data: "ForwardData") -> torch.Tensor:
-        return self.static_attributes_fc(forward_data.static_attributes)
+    def _calc_static_embedding(self, forward_data: "ForwardData") -> torch.Tensor:
+        return self.static_embedding_fc(forward_data.static_features)
 
     def _calc_dynamic_embedding(
         self,
         embedding_network: FC,
         dynamic_data: torch.Tensor,
-        static_attributes: torch.Tensor,
+        static_embedding: torch.Tensor,
         append_nan: bool,
     ) -> torch.Tensor:
-        dynamic_data_concat = self._append_static_attributes(
-            dynamic_data, static_attributes
+        dynamic_data_concat = self._append_static_embedding(
+            dynamic_data, static_embedding
         )
         output = embedding_network(dynamic_data_concat)
         if append_nan:
@@ -283,7 +283,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         self,
         lstm: nn.LSTM,
         embeddings: Iterable[torch.Tensor],
-        static_attributes: torch.Tensor,
+        static_embedding: torch.Tensor,
         other_inputs: torch.Tensor | None = None,
     ) -> torch.Tensor:
         masked_mean_embeddings = self._masked_mean(embeddings)
@@ -291,14 +291,14 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             masked_mean_embeddings = torch.cat(
                 [masked_mean_embeddings, other_inputs], dim=-1
             )
-        lstm_inputs = self._append_static_attributes(
-            masked_mean_embeddings, static_attributes
+        lstm_inputs = self._append_static_embedding(
+            masked_mean_embeddings, static_embedding
         )
         output, _ = lstm(input=lstm_inputs)
         return output
 
-    def _calc_head(self, forecast: torch.Tensor) -> dict[str, torch.Tensor]:
-        return self.head(self.dropout(forecast))
+    def _calc_head(self, forecast_state: torch.Tensor) -> dict[str, torch.Tensor]:
+        return self.head(self.dropout(forecast_state))
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -324,7 +324,7 @@ class ConfigData:
             statics_embedding=statics_embedding,
             hindcast_embedding=hindcast_embedding,
             forecast_embedding=forecast_embedding,
-            static_attributes_names=tuple(cfg.static_attributes),
+            static_attributes=tuple(cfg.static_attributes),
             hindcast_inputs_grouped=hindcast_inputs_grouped,
             forecast_inputs_grouped=forecast_inputs_grouped,
             shared_groups=shared_groups,
@@ -334,7 +334,7 @@ class ConfigData:
     statics_embedding: EmbeddingSpec
     hindcast_embedding: EmbeddingSpec
     forecast_embedding: EmbeddingSpec
-    static_attributes_names: tuple[str, ...]
+    static_attributes: tuple[str, ...]
     hindcast_inputs_grouped: dict[str, set[str]]
     forecast_inputs_grouped: dict[str, set[str]]
     shared_groups: set[str]
@@ -349,20 +349,20 @@ class ForwardData:
         config_data: ConfigData,
     ) -> "ForwardData":
         return ForwardData(
-            static_attributes=data["x_s"],
-            hindcast_data = {
+            static_features=data["x_s"],
+            hindcast_features = {
                 name: _concat_tensors_from_dict(data["x_d_hindcast"], keys=features)
                 for name, features in config_data.hindcast_inputs_grouped.items()
             },
-            forecast_data = {
+            forecast_features = {
                 name: _concat_tensors_from_dict(data["x_d_forecast"], keys=features)
                 for name, features in config_data.forecast_inputs_grouped.items()
             },
         )
 
-    static_attributes: torch.Tensor
-    hindcast_data: dict[str, torch.Tensor]
-    forecast_data: dict[str, torch.Tensor]
+    static_features: torch.Tensor
+    hindcast_features: dict[str, torch.Tensor]
+    forecast_features: dict[str, torch.Tensor]
 
 
 def _concat_tensors_from_dict(
