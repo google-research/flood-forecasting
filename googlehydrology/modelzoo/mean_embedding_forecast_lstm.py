@@ -40,14 +40,13 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
     # Specify submodules of the model that can later be used for finetuning. Names must match class attributes.
     module_parts = [
-        "static_attributes_fc",
-        "cpc_input_fc",
-        "imerg_input_fc",
-        "hres_input_fc",
-        "graphcast_input_fc",
-        "hindcast_lstm",
-        "forecast_lstm",
-        "head",
+        'static_attributes_fc',
+        'hindcast_embeddings_fc',
+        'forecast_embeddings_fc',
+        'shared_embeddings_fc',
+        'hindcast_lstm',
+        'forecast_lstm',
+        'head',
     ]
 
     def __init__(self, cfg: Config):
@@ -60,14 +59,14 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         # Static attributes
         self.static_attributes_fc = self._create_fc(
-            embedding_spec = cfg.statics_embedding,
+            embedding_spec = self.config_data.statics_embedding,
             input_size=len(self.config_data.static_attributes_names),
         )
 
         # Hindcast embedding networks
         self.hindcast_embeddings_fc = {
             name: self._create_fc(
-                embedding_spec=cfg.hindcast_embedding,
+                embedding_spec=self.config_data.hindcast_embedding,
                 input_size=(
                     len(self.config_data.hindcast_inputs_grouped[name])
                     + self.static_attributes_fc.output_size
@@ -80,7 +79,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         # Forecast embedding networks
         self.forecast_embeddings_fc = {
             name: self._create_fc(
-                embedding_spec=cfg.forecast_embedding,
+                embedding_spec=self.config_data.forecast_embedding,
                 input_size=(
                     len(self.config_data.forecast_inputs_grouped[name])
                     + self.static_attributes_fc.output_size
@@ -93,7 +92,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         # Shared embedding networks (between hindcast and forecast LSTMs)
         self.shared_embeddings_fc = {
             name: self._create_fc(
-                embedding_spec=cfg.forecast_embedding,
+                embedding_spec=self.config_data.forecast_embedding,
                 input_size=(
                     len(self.config_data.forecast_inputs_grouped[name])
                     + self.static_attributes_fc.output_size
@@ -104,14 +103,16 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         # Hindcast LSTM
         self.hindcast_lstm = nn.LSTM(
-            input_size=self.config_data.embedding_size * 2,
+            input_size=self.static_attributes_fc.output_size
+            + self.config_data.hindcast_embedding['hiddens'][-1],
             hidden_size=self.config_data.hidden_size,
             batch_first=True,
         )
 
         # Forecast LSTM
         self.forecast_lstm = nn.LSTM(
-            input_size=self.config_data.embedding_size * 2
+            input_size=self.static_attributes_fc.output_size
+            + self.config_data.forecast_embedding['hiddens'][-1]
             + self.config_data.hidden_size,
             hidden_size=self.config_data.hidden_size,
             batch_first=True,
@@ -125,7 +126,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         self._reset_parameters()
 
-    def _create_fc(self, embedding_spec: dict | None, input_size: int) -> FC:
+    def _create_fc(self, embedding_spec: dict, input_size: int) -> FC:
         assert input_size > 0, 'Cannot create embedding layer with input size 0'
 
         emb_type = embedding_spec['type'].lower()
@@ -316,6 +317,10 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 class ConfigData:
     @classmethod
     def from_config(cls, cfg: Config) -> 'ConfigData':
+        assert (statics_embedding := cfg.statics_embedding) is not None
+        assert (hindcast_embedding := cfg.hindcast_embedding) is not None
+        assert (forecast_embedding := cfg.forecast_embedding) is not None
+
         hindcast_inputs_grouped = group_by_prefix(cfg.hindcast_inputs)
         forecast_inputs_grouped = group_by_prefix(cfg.forecast_inputs)
         shared_groups = set(hindcast_inputs_grouped) & set(forecast_inputs_grouped)
@@ -328,7 +333,9 @@ class ConfigData:
 
         return ConfigData(
             hidden_size=cfg.hidden_size,
-            embedding_size=20,
+            statics_embedding=statics_embedding,
+            hindcast_embedding=hindcast_embedding,
+            forecast_embedding=forecast_embedding,
             static_attributes_names=tuple(cfg.static_attributes),
             hindcast_inputs_grouped=hindcast_inputs_grouped,
             forecast_inputs_grouped=forecast_inputs_grouped,
@@ -336,7 +343,9 @@ class ConfigData:
         )
 
     hidden_size: int
-    embedding_size: int
+    statics_embedding: dict
+    hindcast_embedding: dict
+    forecast_embedding: dict
     static_attributes_names: tuple[str, ...]
     hindcast_inputs_grouped: dict[str, set[str]]
     forecast_inputs_grouped: dict[str, set[str]]
