@@ -318,14 +318,10 @@ class ConfigData:
     def from_config(cls, cfg: Config) -> 'ConfigData':
         hindcast_inputs_grouped = group_by_prefix(cfg.hindcast_inputs)
         forecast_inputs_grouped = group_by_prefix(cfg.forecast_inputs)
-        shared_groups = list(
-            set(hindcast_inputs_grouped.keys()).intersection(
-                forecast_inputs_grouped.keys()
-            )
-        )
+        shared_groups = set(hindcast_inputs_grouped) & set(forecast_inputs_grouped)
         for group in shared_groups:
-            assert set(hindcast_inputs_grouped[group]) == set(
-                forecast_inputs_grouped[group]
+            assert (
+                hindcast_inputs_grouped[group] == forecast_inputs_grouped[group]
             ), (
                 f'Same features must be defined in forecast and hindcast for {group=}'
             )
@@ -342,9 +338,9 @@ class ConfigData:
     hidden_size: int
     embedding_size: int
     static_attributes_names: tuple[str, ...]
-    hindcast_inputs_grouped: dict[str, list[str]]
-    forecast_inputs_grouped: dict[str, list[str]]
-    shared_groups: list[str]
+    hindcast_inputs_grouped: dict[str, set[str]]
+    forecast_inputs_grouped: dict[str, set[str]]
+    shared_groups: set[str]
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
