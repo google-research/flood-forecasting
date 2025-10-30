@@ -16,15 +16,14 @@
 
 import torch
 import torch.nn as nn
-from more_itertools import flatten
 
 from googlehydrology.utils.config import Config, WeightInitOpt
+from googlehydrology.utils.lstm_utils import lstm_init
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.modelzoo.fc import FC
 from googlehydrology.modelzoo.head import get_head
 from googlehydrology.modelzoo.inputlayer import InputLayer
 
-LSTM_IH_XAVIER = WeightInitOpt.LSTM_IH_XAVIER
 FC_XAVIER = WeightInitOpt.FC_XAVIER
 
 class HandoffForecastLSTM(BaseModel):
@@ -115,21 +114,11 @@ class HandoffForecastLSTM(BaseModel):
         self.hindcast_head = get_head(cfg=cfg, n_in=self.hindcast_hidden_size, n_out=self.output_size)
         self.forecast_head = get_head(cfg=cfg, n_in=self.forecast_hidden_size, n_out=self.output_size)
 
-        # Set parameters that require specialized initializations.
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-        """Special initialization of certain model weights."""
-        if self.cfg.initial_forget_bias is not None:
-            self.hindcast_lstm.bias_hh_l0.data[
-                self.hindcast_hidden_size:2*self.hindcast_hidden_size] = self.cfg.initial_forget_bias
-            self.forecast_lstm.bias_hh_l0.data[
-                self.forecast_hidden_size:2*self.forecast_hidden_size] = self.cfg.initial_forget_bias
-
-        lstms = self.hindcast_lstm, self.forecast_lstm
-        for name, param in flatten(e.named_parameters() for e in lstms):
-            if 'weight_ih' in name and LSTM_IH_XAVIER in self.cfg.weight_init_opts:
-                nn.init.xavier_uniform_(param)
+        lstm_init(
+            lstms=[self.hindcast_lstm, self.forecast_lstm],
+            forget_bias=cfg.initial_forget_bias,
+            weight_opts=cfg.weight_init_opts,
+        )
 
     def forward(
         self,
