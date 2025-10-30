@@ -32,8 +32,9 @@ from ruamel.yaml import YAML
 class WeightInitOpt(str, enum.Enum):
     """Opts for the weight_init_opts flag."""
 
-    LSTM_IH_XAVIER = "lstm-ih-xavier"
-    FC_XAVIER = "fc-xavier"
+    LSTM_IH_XAVIER = 'lstm-ih-xavier'
+    LSTM_HH_ORTHOGONAL = 'lstm-hh-orthogonal'
+    FC_XAVIER = 'fc-xavier'
 
 @pydantic.dataclasses.dataclass(frozen=True, kw_only=True)
 class EmbeddingSpec:
