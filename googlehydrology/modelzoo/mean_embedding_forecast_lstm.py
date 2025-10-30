@@ -18,13 +18,16 @@ import dataclasses
 import numpy as np
 import torch
 import torch.nn as nn
+from more_itertools import flatten
 
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.modelzoo.fc import FC
 from googlehydrology.modelzoo.head import get_head
-from googlehydrology.utils.config import Config
+from googlehydrology.utils.config import Config, WeightInitOpt
 from googlehydrology.utils.configutils import group_by_prefix
 
+LSTM_IH_XAVIER = WeightInitOpt.LSTM_IH_XAVIER
+FC_XAVIER = WeightInitOpt.FC_XAVIER
 
 class MeanEmbeddingForecastLSTM(BaseModel):
     """A forecasting model using mean embedding and LSTMs for hindcast and forecast.
@@ -143,6 +146,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             hidden_sizes=hiddens,
             activation=activation,
             dropout=dropout,
+            xavier_init=FC_XAVIER in self.cfg.weight_init_opts,
         )
 
     def _reset_parameters(self):
@@ -154,6 +158,11 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             self.forecast_lstm.bias_hh_l0.data[
                 self.config_data.hidden_size : 2 * self.config_data.hidden_size
             ] = self.cfg.initial_forget_bias
+
+        lstms = self.hindcast_lstm, self.forecast_lstm
+        for name, param in flatten(e.named_parameters() for e in lstms):
+            if 'weight_ih' in name and LSTM_IH_XAVIER in self.cfg.weight_init_opts:
+                nn.init.xavier_uniform_(param)
 
     def forward(
         self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]
