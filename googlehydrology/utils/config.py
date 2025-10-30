@@ -52,7 +52,7 @@ class EmbeddingSpec:
 @pydantic.dataclasses.dataclass(frozen=True, kw_only=True)
 class LazyMemory:
     enabled: bool = False
-    cache_bytes: int = 16 * 10**9
+    cache_bytes: int = 8 * 10**9  # 8 GB
 
 
 class Config(object):
