@@ -20,10 +20,9 @@ import random
 import re
 import warnings
 from collections import OrderedDict
-from typing_extensions import TypedDict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, TypedDict
 
 import pandas as pd
 from ruamel.yaml import YAML
