@@ -68,13 +68,23 @@ def flatten_feature_list(data: list[str] | list[list[str]] | dict[str, list[str]
     return list(data)
 
 
-def group_by_prefix(features: Iterable[str]) -> dict[str, set[str]]:
+def group_features_list(features: list[str] | list[list[str]] | dict[str, list[str]]) -> dict[str, set[str]]:
     """
     Groups list of features according to the prefix of each feature.
-    Assumes the prefix is written with an underscore at the start of the feature name.
+    For lists, assumes the prefix is written with an underscore for the first feature name.
     """
-    result = {}
-    for feature in features:
-        prefix = feature.partition('_')[0]
-        result.setdefault(prefix, set()).add(feature)
-    return result
+    if not features:
+        return {}
+    if isinstance(features, dict):
+        return {key: set(value) for key, value in features.items()}
+    if isinstance(features, list) and isinstance(features[0], list):
+        return {_prefix(sublist[0]): set(sublist) for sublist in features}
+    if isinstance(features, list) and all(isinstance(e, str) for e in features):
+        result = {}
+        for feature in features:
+            result.setdefault(_prefix(feature), set()).add(feature)
+        return result
+    raise ValueError(f"Unsupported type {features}")
+
+def _prefix(feature: str) -> str:
+    return feature.partition('_')[0]

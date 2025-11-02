@@ -24,7 +24,7 @@ from googlehydrology.modelzoo.fc import FC
 from googlehydrology.modelzoo.head import get_head
 from googlehydrology.utils.config import Config, WeightInitOpt, EmbeddingSpec
 from googlehydrology.utils.lstm_utils import lstm_init
-from googlehydrology.utils.configutils import group_by_prefix
+from googlehydrology.utils.configutils import group_features_list
 
 FC_XAVIER = WeightInitOpt.FC_XAVIER
 
@@ -309,8 +309,8 @@ class ConfigData:
         assert (hindcast_embedding := cfg.hindcast_embedding) is not None
         assert (forecast_embedding := cfg.forecast_embedding) is not None
 
-        hindcast_inputs_grouped = group_by_prefix(cfg.hindcast_inputs)
-        forecast_inputs_grouped = group_by_prefix(cfg.forecast_inputs)
+        hindcast_inputs_grouped = group_features_list(cfg.hindcast_inputs)
+        forecast_inputs_grouped = group_features_list(cfg.forecast_inputs)
         shared_groups = set(hindcast_inputs_grouped) & set(forecast_inputs_grouped)
         for group in shared_groups:
             assert (
