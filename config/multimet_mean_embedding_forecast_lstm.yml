@@ -81,6 +81,7 @@ test_start_date: 01/01/2021
 # test_start_date: 01/01/2017
 
 tester_skip_obs_all_nan: True
+tester_sample_reduction: mean
 
 # data_dir: ~/nh-data/data/Caravan-multimet
 targets_data_dir: ~/nh-data/data/Caravan-nc

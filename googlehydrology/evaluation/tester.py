@@ -42,7 +42,7 @@ from googlehydrology.modelzoo import get_model
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.training import get_loss_obj, get_regularization_obj
 from googlehydrology.training.logger import Logger, do_log_figures
-from googlehydrology.utils.config import Config
+from googlehydrology.utils.config import Config, TesterSamplesReduction
 from googlehydrology.utils.errors import AllNaNError, NoEvaluationDataError
 
 LOGGER = logging.getLogger(__name__)
@@ -322,7 +322,14 @@ class BaseTester(object):
                                 sim = xarray.where(sim < 0, 0, sim)
 
                             if 'samples' in sim.dims:
-                                sim = sim.mean(dim='samples')
+                                match self.cfg.tester_sample_reduction:
+                                    case TesterSamplesReduction.MEAN:
+                                        sim = sim.mean(dim='samples')
+                                    case TesterSamplesReduction.MEDIAN:
+                                        sim = sim.median(dim='samples')
+                                    case _:
+                                        msg = f'Supported {self.cfg.tester_sample_reduction=}'
+                                        raise KeyError(msg)
 
                             var_metrics = metrics if isinstance(metrics, list) else metrics[target_variable]
                             if 'all' in var_metrics:
