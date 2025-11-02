@@ -73,6 +73,7 @@ def group_features_list(features: list[str] | list[list[str]] | dict[str, list[s
     Groups list of features according to the prefix of each feature.
     For lists, assumes the prefix is written with an underscore for the first feature name.
     """
+    # TODO (future) :: Simplify types to only dict.
     if not features:
         return {}
     if isinstance(features, dict):
