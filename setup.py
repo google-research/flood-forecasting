@@ -56,18 +56,7 @@ setup(
         ]
     },
     python_requires='>=3.12',
-    install_requires=[
-        'matplotlib',
-        'numba',
-        'numpy',
-        'pandas',
-        'ruamel.yaml',
-        'torch',
-        'scipy',
-        'tensorboard',
-        'tqdm',
-        'xarray',
-    ],
+    install_requires=[],
     classifiers=[
         'Programming Language :: Python :: 3',
         'Operating System :: OS Independent',
