@@ -36,6 +36,13 @@ class WeightInitOpt(str, enum.Enum):
     LSTM_HH_ORTHOGONAL = 'lstm-hh-orthogonal'
     FC_XAVIER = 'fc-xavier'
 
+@enum.unique
+class TesterSamplesReduction(str, enum.Enum):
+    """Opts for sample reduction in tester."""
+
+    MEAN = 'mean'
+    MEDIAN = 'median'
+
 @pydantic.dataclasses.dataclass(frozen=True, kw_only=True)
 class EmbeddingSpec:
     hiddens: list[int]
@@ -574,6 +581,10 @@ class Config(object):
         bad_keys = res.difference(e.value for e in WeightInitOpt)
         assert not bad_keys, f'unsupported weight_init_opts: {bad_keys}'
         return res
+
+    @property
+    def tester_sample_reduction(self) -> TesterSamplesReduction:
+        return self._cfg.get("tester_sample_reduction", TesterSamplesReduction.MEAN)
 
     @property
     def is_continue_training(self) -> bool:

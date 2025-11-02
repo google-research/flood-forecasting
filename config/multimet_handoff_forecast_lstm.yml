@@ -59,6 +59,9 @@ targets_data_dir: ~/nh-data/data/Caravan-nc # Point to your local path. Must be 
 statics_data_dir: ~/nh-data/data/Caravan-nc # Point to your local path. Must be read locally.
 dynamics_data_dir: ~/nh-data/data/Caravan-multimet  # Can read directly from the Cloud bucket, if you have cloud access.
 
+tester_skip_obs_all_nan: False
+tester_sample_reduction: mean
+
 dataset: multimet
 seq_length: 365
 lead_time: 7
