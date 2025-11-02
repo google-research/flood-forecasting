@@ -15,7 +15,7 @@
 # How to install:
 # conda env create -f environments/environment_cuda11_8.yml
 
-name: googlehydrology1
+name: googlehydrology
 channels:
   - pytorch
   - nvidia
