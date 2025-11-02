@@ -43,7 +43,7 @@ setup(
         'Source': 'https://github.com/googlehydrology/googlehydrology',
         'Research Blog': 'https://googlehydrology.github.io/',
     },
-    author='Frederik Kratzert, Daniel Klotz, Martin Gauch',
+    author='Amit Markel, Frederik Kratzert, Grey Nearing, Martin Gauch, Omri Shefi',
     author_email='googlehydrology@googlegroups.com',
     description='Library for training deep learning models with environmental focus',
     long_description=long_description,
