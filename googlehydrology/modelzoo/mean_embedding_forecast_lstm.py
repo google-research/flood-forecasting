@@ -63,7 +63,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         )
 
         # Hindcast embedding networks
-        self.hindcast_embeddings_fc = {
+        self.hindcast_embeddings_fc = nn.ModuleDict({
             name: self._create_fc(
                 embedding_spec=self.config_data.hindcast_embedding,
                 input_size=(
@@ -74,9 +74,9 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             for name in set(
                 self.config_data.hindcast_inputs_grouped.keys()
             ).difference(self.config_data.shared_groups)
-        }
+        })
         # Forecast embedding networks
-        self.forecast_embeddings_fc = {
+        self.forecast_embeddings_fc = nn.ModuleDict({
             name: self._create_fc(
                 embedding_spec=self.config_data.forecast_embedding,
                 input_size=(
@@ -87,9 +87,9 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             for name in set(
                 self.config_data.forecast_inputs_grouped.keys()
             ).difference(self.config_data.shared_groups)
-        }
+        })
         # Shared embedding networks (between hindcast and forecast LSTMs)
-        self.shared_embeddings_fc = {
+        self.shared_embeddings_fc = nn.ModuleDict({
             name: self._create_fc(
                 embedding_spec=self.config_data.forecast_embedding,
                 input_size=(
@@ -98,7 +98,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
                 ),
             )
             for name in self.config_data.shared_groups
-        }
+        })
 
         # Hindcast LSTM
         self.hindcast_lstm = nn.LSTM(
@@ -266,7 +266,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
     def _calc_dynamic_embedding(
         self,
-        embedding_network: FC,
+        embedding_network: nn.Module,
         dynamic_data: torch.Tensor,
         static_embedding: torch.Tensor,
         append_nan: bool,
