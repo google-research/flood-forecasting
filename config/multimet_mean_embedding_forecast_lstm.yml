@@ -91,23 +91,29 @@ dataset: multimet
 seq_length: 365
 lead_time: 7
 forecast_inputs:
-- hres_surface_net_solar_radiation
-- hres_surface_net_thermal_radiation
-- hres_surface_pressure
-- hres_temperature_2m
-- hres_total_precipitation
-- graphcast_temperature_2m
-- graphcast_total_precipitation
+  hres:
+    - hres_surface_net_solar_radiation
+    - hres_surface_net_thermal_radiation
+    - hres_surface_pressure
+    - hres_temperature_2m
+    - hres_total_precipitation
+  graphcast:
+    - graphcast_temperature_2m
+    - graphcast_total_precipitation
 hindcast_inputs:
-- hres_surface_net_solar_radiation
-- hres_surface_net_thermal_radiation
-- hres_surface_pressure
-- hres_temperature_2m
-- hres_total_precipitation
-- graphcast_temperature_2m
-- graphcast_total_precipitation
-- imerg_precipitation
-- cpc_precipitation
+  hres:
+    - hres_surface_net_solar_radiation
+    - hres_surface_net_thermal_radiation
+    - hres_surface_pressure
+    - hres_temperature_2m
+    - hres_total_precipitation
+  graphcast:
+    - graphcast_temperature_2m
+    - graphcast_total_precipitation
+  imerg:
+    - imerg_precipitation
+  cpc:
+    - cpc_precipitation
 static_attributes:
 - area
 - p_mean
