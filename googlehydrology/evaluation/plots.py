@@ -43,6 +43,8 @@ def percentile_plot(y: np.ndarray,
     """
     fig, ax = plt.subplots()
 
+    y_mean = np.mean(y_hat, axis=-1).flatten()
+
     y_median = np.median(y_hat, axis=-1).flatten()
     y_25 = np.percentile(y_hat, 25, axis=-1).flatten()
     y_75 = np.percentile(y_hat, 75, axis=-1).flatten()
@@ -56,6 +58,7 @@ def percentile_plot(y: np.ndarray,
     ax.fill_between(x, y_05, y_95, color='#35B779', label='05-95 PI')
     ax.fill_between(x, y_10, y_90, color='#31688E', label='10-90 PI')
     ax.fill_between(x, y_25, y_75, color="#440154", label='25-75 PI')
+    ax.plot(y_mean, '-', color='cyan', label='mean')
     ax.plot(y_median, '-', color='red', label="median")
     ax.plot(y.flatten(), '--', color='black', label="observed")
     ax.legend()
@@ -150,9 +153,14 @@ def uncertainty_plot(y: np.ndarray, y_hat: np.ndarray, title: str = '') -> tuple
                                 color=labels_and_colors['colors'][idx],
                                 label=labels_and_colors['labels'][idx])
 
+    y_mean = np.mean(y_hat_long, axis=-1).flatten()
+    axs[1].plot(x_bnd, y_mean[x_bnd], '-', color='cyan', label='mean')
+
     y_median = np.median(y_hat_long, axis=-1).flatten()
     axs[1].plot(x_bnd, y_median[x_bnd], '-', color='red', label="median")
-    axs[1].plot(x_bnd, y_long[x_bnd], '--', color='black', label="observed")
+
+    axs[1].plot(x_bnd, y_long[x_bnd], '--', color='black', label='observed')
+
     axs[1].legend(prop={'size': 5})
     axs[1].set_ylabel("value")
     axs[1].set_xlabel("time index")

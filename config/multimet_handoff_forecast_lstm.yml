@@ -37,6 +37,7 @@ num_workers: 2
 optimizer: Adam
 validate_every: 1
 validate_n_random_basins: -1
+log_n_figures: 3
 predict_last_n: 8
 regularization:
 - forecast_overlap
