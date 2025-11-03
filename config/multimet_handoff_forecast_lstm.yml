@@ -45,7 +45,7 @@ log_loss_every_nth_update: 8
 weight_init_opts:
 cache:
   enabled: False
-  byte_limit: 2 * 10**9  # in GB
+  byte_limit: 2000000000  # in GB
  
 # --- Dataset Parameters --------------------------------------------------------
 train_basin_file: ~/flood-forecasting/config/basins/caravan_3_basins.txt
