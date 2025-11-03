@@ -41,7 +41,7 @@ metrics:
 num_workers: 0  # Scalene profiler works only without multiprocessing (`0`)
 optimizer: Adam
 validate_every: 1
-validate_n_random_basins: 300
+validate_n_random_basins: -1
 predict_last_n: 8
 log_n_figures: 5
 log_loss_every_nth_update: 50
