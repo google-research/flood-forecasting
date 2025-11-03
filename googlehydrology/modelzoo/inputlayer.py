@@ -14,7 +14,7 @@
 
 import itertools
 import logging
-from typing import Optional, Union
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -209,7 +209,7 @@ class InputLayer(nn.Module):
         return emb_net, emb_net.output_size
 
     def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]], concatenate_output: bool = True) \
-            -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+            -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Perform a forward pass on the input layer.
 
         Parameters
@@ -222,7 +222,7 @@ class InputLayer(nn.Module):
 
         Returns
         -------
-        Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]
+        torch.Tensor | tuple[torch.Tensor, torch.Tensor]
             If `concatenate_output` is True, a single tensor is returned. Else, a tuple with one tensor of dynamic
             inputs and one tensor of static inputs.
         """

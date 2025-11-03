@@ -21,7 +21,7 @@ import shutil
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional, Union, Iterator
+from typing import Optional, Iterator
 
 import numpy as np
 import pandas as pd
@@ -161,7 +161,7 @@ class BaseTester(object):
                  epoch: int = None,
                  save_results: bool = True,
                  save_all_output: bool = False,
-                 metrics: Union[list, dict] = [],
+                 metrics: list | dict = [],
                  model: torch.nn.Module = None,
                  experiment_logger: Logger = None) -> dict:
         """Evaluate the model.
@@ -174,7 +174,7 @@ class BaseTester(object):
             If True, stores the evaluation results in the run directory. By default, True.
         save_all_output : bool, optional
             If True, stores all of the model output in the run directory. By default, False.
-        metrics : Union[list, dict], optional
+        metrics : list | dict, optional
             List of metrics to compute during evaluation. Can also be a dict that specifies per-target metrics
         model : torch.nn.Module, optional
             If a model is passed, this is used for validation.

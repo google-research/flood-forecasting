@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Hashable, Iterable, Union
+from typing import Hashable, Iterable
 
 import logging
 import itertools
@@ -654,9 +654,9 @@ class Multimet(Dataset):
     @staticmethod
     def collate_fn(
         samples: list[
-            dict[str, Union[torch.Tensor, np.ndarray, dict[str, torch.Tensor]]]
+            dict[str, torch.Tensor | np.ndarray, dict[str, torch.Tensor]]
         ],
-    ) -> dict[str, Union[torch.Tensor, np.ndarray, dict[str, torch.Tensor]]]:
+    ) -> dict[str, torch.Tensor | np.ndarray, dict[str, torch.Tensor]]:
         batch = {}
         if not samples:
             return batch

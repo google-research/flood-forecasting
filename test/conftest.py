@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from pathlib import Path
-from typing import Union, Callable
+from typing import Callable
 
 import pytest
 
@@ -112,12 +112,12 @@ def forecast_model(request) -> str:
                         (['daymet',
                           'nldas'], ['prcp(mm/day)_daymet', 'tmax(C)_daymet', 'PRCP(mm/day)_nldas', 'Tmax(C)_nldas'])],
                 ids=lambda param: str(param[0]))
-def single_timescale_forcings(request) -> dict[str, Union[str, list[str]]]:
+def single_timescale_forcings(request) -> dict[str, str | list[str]]:
     """Fixture that provides daily forcings.
 
     Returns
     -------
-    dict[str, Union[str, list[str]]]
+    dict[str, str | list[str]]
         Dictionary ``{'forcings': <name of the forcings set>, 'variables': <list of forcings variables>}``.
     """
     if request.config.getoption('--smoke-test') and 'daymet' not in request.param[0]:
