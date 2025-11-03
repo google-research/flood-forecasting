@@ -18,7 +18,9 @@ import os
 import sys
 from pathlib import Path
 
+import cachey
 import dask
+import dask.cache
 import torch
 
 # make sure code directory is in path, even if the package is not installed using the setup.py
@@ -62,6 +64,9 @@ def _main():
     torch.autograd.set_detect_anomaly(config.detect_anomaly)
 
     dask.config.set(num_workers=os.cpu_count(), scheduler='threads')
+
+    if config.cache.enabled:
+        dask.cache.Cache(cachey.Cache(config.cache.byte_limit)).register()
 
     if args["mode"] == "train":
         start_run(config=config, gpu=args["gpu"])
