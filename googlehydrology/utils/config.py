@@ -206,7 +206,7 @@ class Config(object):
 
         self._cfg.update(new_config.as_dict())
 
-    def _get_value_verbose(self, key: str) -> float | int, str, list, dict, Path, pd.Timestamp:
+    def _get_value_verbose(self, key: str) -> float | int | str | list | dict | Path| pd.Timestamp:
         """Use this function internally to return attributes of the config that are mandatory"""
         if key not in self._cfg.keys():
             raise ValueError(f"{key} is not specified in the config (.yml).")
