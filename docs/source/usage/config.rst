@@ -58,6 +58,10 @@ General experiment configurations
    even in case of a single period per basin (see example below). Then use the
    pickle library, to store this dictionary to disk and use the path to this
    pickle file as the value for this config argument.
+-  ``cache``: a key-value object that controls whether intermediate data is stored
+   in an opportunistic cache:
+   Key ``enabled`` (``bool``): Default `False`.
+   Key ``byte_limit`` (``int``): Byte limit to use. Default 2GB.
 
 .. code-block::
 

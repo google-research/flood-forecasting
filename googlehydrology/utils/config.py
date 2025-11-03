@@ -50,6 +50,12 @@ class EmbeddingSpec:
     activation: list[str]
     dropout: float
 
+@pydantic.dataclasses.dataclass(frozen=True, kw_only=True)
+class Cache:
+    enabled: bool = False
+    byte_limit: int = 2 * 10**9  # in GB
+
+
 class Config(object):
     """Read run configuration from the specified path or dictionary and parse it into a configuration object.
 
@@ -303,6 +309,11 @@ class Config(object):
     @property
     def detect_anomaly(self) -> bool:
         return self._cfg.get("detect_anomaly", False)
+
+    @property
+    def cache(self) -> Cache:
+        data = self._cfg.get('cache', {})
+        return pydantic.TypeAdapter(Cache).validate_python(data)
 
     @property
     def print_warnings_once(self) -> bool:
