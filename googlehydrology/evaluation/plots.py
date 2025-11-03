@@ -58,7 +58,7 @@ def percentile_plot(y: np.ndarray,
     ax.fill_between(x, y_05, y_95, color='#35B779', label='05-95 PI')
     ax.fill_between(x, y_10, y_90, color='#31688E', label='10-90 PI')
     ax.fill_between(x, y_25, y_75, color="#440154", label='25-75 PI')
-    ax.plot(y_mean, '-', color='cyan', label='median')
+    ax.plot(y_mean, '-', color='cyan', label='mean')
     ax.plot(y_median, '-', color='red', label="median")
     ax.plot(y.flatten(), '--', color='black', label="observed")
     ax.legend()
