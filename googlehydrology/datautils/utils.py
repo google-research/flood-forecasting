@@ -97,12 +97,12 @@ def sort_frequencies(frequencies: list[str]) -> list[str]:
     return sorted(frequencies, key=functools.cmp_to_key(compare_frequencies))
 
 
-def infer_frequency(index: Union[pd.DatetimeIndex, np.ndarray]) -> str:
+def infer_frequency(index: pd.DatetimeIndex | np.ndarray) -> str:
     """Infer the frequency of an index of a pandas DataFrame/Series or xarray DataArray.
 
     Parameters
     ----------
-    index : Union[pd.DatetimeIndex, np.ndarray]
+    index : pd.DatetimeIndex | np.ndarray
         DatetimeIndex of a DataFrame/Series or array of datetime values.
 
     Returns
@@ -137,12 +137,12 @@ def infer_frequency(index: Union[pd.DatetimeIndex, np.ndarray]) -> str:
     return native_frequency
 
 
-def infer_datetime_coord(xr: Union[DataArray, Dataset]) -> str:
+def infer_datetime_coord(xr: DataArray | Dataset) -> str:
     """Checks for coordinate with 'date' in its name and returns the name.
     
     Parameters
     ----------
-    xr : Union[DataArray, Dataset]
+    xr : DataArray | Dataset
         Array to infer coordinate name of.
         
     Returns

@@ -23,7 +23,7 @@ import warnings
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 import pandas as pd
 from ruamel.yaml import YAML
@@ -64,7 +64,7 @@ class Config(object):
 
     Parameters
     ----------
-    yml_path_or_dict : Union[Path, dict]
+    yml_path_or_dict : Path | dict
         Either a path to the config file or a dictionary of configuration values.
     dev_mode : bool, optional
         If dev_mode is off, the config creation will fail if there are unrecognized keys in the passed config
@@ -86,7 +86,7 @@ class Config(object):
     ]
     _metadata_keys = ['package_version', 'commit_hash']
 
-    def __init__(self, yml_path_or_dict: Union[Path, dict], dev_mode: bool = False):
+    def __init__(self, yml_path_or_dict: Path | dict, dev_mode: bool = False):
         if isinstance(yml_path_or_dict, Path):
             self._cfg = Config._read_and_parse_config(yml_path=yml_path_or_dict)
         elif isinstance(yml_path_or_dict, dict):
@@ -180,7 +180,7 @@ class Config(object):
         else:
             raise FileExistsError(yml_path)
 
-    def update_config(self, yml_path_or_dict: Union[Path, dict], dev_mode: bool = False):
+    def update_config(self, yml_path_or_dict: Path | dict, dev_mode: bool = False):
         """Update config arguments.
         
         Useful e.g. in the context of fine-tuning or when continuing to train from a checkpoint to adapt for example the
@@ -188,7 +188,7 @@ class Config(object):
         
         Parameters
         ----------
-        yml_path_or_dict : Union[Path, dict]
+        yml_path_or_dict : Path | dict
             Either a path to the new config file or a dictionary of configuration values. Each argument specified in
             this file will overwrite the existing config argument.
         dev_mode : bool, optional
@@ -206,7 +206,7 @@ class Config(object):
 
         self._cfg.update(new_config.as_dict())
 
-    def _get_value_verbose(self, key: str) -> Union[float, int, str, list, dict, Path, pd.Timestamp]:
+    def _get_value_verbose(self, key: str) -> float | int | str | list | dict | Path| pd.Timestamp:
         """Use this function internally to return attributes of the config that are mandatory"""
         if key not in self._cfg.keys():
             raise ValueError(f"{key} is not specified in the config (.yml).")
@@ -356,7 +356,7 @@ class Config(object):
         return self._cfg.get("allow_subsequent_nan_losses", 0)
 
     @property
-    def autoregressive_inputs(self) -> Union[list[str], dict[str, list[str]]]:
+    def autoregressive_inputs(self) -> list[str] | dict[str, list[str]]:
         return self._as_default_list(self._cfg.get("autoregressive_inputs", []))
 
     @property
@@ -445,7 +445,7 @@ class Config(object):
         return self._cfg.get("warmup_period", 0)
 
     @property
-    def dynamic_inputs(self) -> Union[list[str], list[list[str]], dict[str, list[str]]]:
+    def dynamic_inputs(self) -> list[str] | list[list[str], dict[str, list[str]]]:
         return self._get_value_verbose("dynamic_inputs")
 
     @property
@@ -484,7 +484,7 @@ class Config(object):
             return self._cfg["experiment_name"]
 
     @property
-    def finetune_modules(self) -> Union[list[str], dict[str, str]]:
+    def finetune_modules(self) -> list[str] | dict[str, str]:
         finetune_modules = self._cfg.get("finetune_modules", [])
         if finetune_modules is None:
             return []
@@ -563,11 +563,11 @@ class Config(object):
             return hindcast_inputs
 
     @property
-    def hidden_size(self) -> Union[int, dict[str, int]]:
+    def hidden_size(self) -> int | dict[str, int]:
         return self._get_value_verbose("hidden_size")
 
     @property
-    def hindcast_hidden_size(self) -> Union[int, dict[str, int]]:
+    def hindcast_hidden_size(self) -> int | dict[str, int]:
         return self._cfg.get("hindcast_hidden_size", self.hidden_size)
 
     @property
@@ -685,11 +685,11 @@ class Config(object):
         return self._cfg.get("mc_dropout", False)
 
     @property
-    def metrics(self) -> Union[list[str], dict[str, list[str]]]:
+    def metrics(self) -> list[str] | dict[str, list[str]]:
         return self._cfg.get("metrics", [])
 
     @metrics.setter
-    def metrics(self, metrics: Union[str, list[str], dict[str, list[str]]]):
+    def metrics(self, metrics: str | list[str, dict[str, list[str]]]):
         self._cfg["metrics"] = metrics
 
     @property
@@ -792,7 +792,7 @@ class Config(object):
         return self._cfg.get("per_basin_validation_periods_file", None)
 
     @property
-    def predict_last_n(self) -> Union[int, dict[str, int]]:
+    def predict_last_n(self) -> int | dict[str, int]:
         return self._get_value_verbose("predict_last_n")
 
     @property
@@ -804,7 +804,7 @@ class Config(object):
         return self._get_value_verbose("rating_curve_file")
 
     @property
-    def regularization(self) -> list[Union[str, tuple[str, float]]]:
+    def regularization(self) -> list[str | tuple[str, float]]:
         return self._as_default_list(self._cfg.get("regularization", []))
 
     @property
@@ -875,7 +875,7 @@ class Config(object):
             raise RuntimeError("Seed was already specified and can't be replaced")
 
     @property
-    def seq_length(self) -> Union[int, dict[str, int]]:
+    def seq_length(self) -> int | dict[str, int]:
         return self._get_value_verbose("seq_length")
 
     @property

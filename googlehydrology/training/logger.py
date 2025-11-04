@@ -138,12 +138,12 @@ class Logger(object):
             for k, v in kwargs.items():
                 self.writer.add_scalar('/'.join([tag, k]), v, self.update)
 
-    def summarise(self) -> Union[float, dict[str, float]]:
+    def summarise(self) -> float | dict[str, float]:
         """"Log the results of the entire training or validation epoch.
 
         Returns
         -------
-        Union[float, dict[str, float]]
+        float | dict[str, float]
             Average loss if training is summarized, else a dict mapping metric names to median metric values.
         """
         value = {}
