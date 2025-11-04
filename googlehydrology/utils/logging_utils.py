@@ -16,7 +16,6 @@ import logging
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 LOGGER = logging.getLogger(__name__)
 
@@ -74,12 +73,12 @@ def setup_logging(log_file: str, level: int, print_warnings_once: bool):
     LOGGER.info(f"Logging to {log_file} initialized.")
 
 
-def get_git_hash() -> Optional[str]:
+def get_git_hash() -> str | None:
     """Get git commit hash of the project if it is a git repository.
 
     Returns
     -------
-    Optional[str]
+    str | None
         Git commit hash if project is a git repository, else None.
     """
     # get git commit hash if folder is a git repository

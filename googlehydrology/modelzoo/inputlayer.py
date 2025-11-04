@@ -14,7 +14,6 @@
 
 import itertools
 import logging
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -167,14 +166,14 @@ class InputLayer(nn.Module):
         self.cfg = cfg
         
     @staticmethod
-    def _get_embedding_net(embedding_spec: Optional[EmbeddingSpec], input_size: int, purpose: str, xavier_init: bool) -> tuple[nn.Module, int]:
+    def _get_embedding_net(embedding_spec: EmbeddingSpec | None, input_size: int, purpose: str, xavier_init: bool) -> tuple[nn.Module, int] | None:
         """Get an embedding net following the passed specifications.
 
         If the `embedding_spec` is None, the returned embedding net will be the identity function.
 
         Parameters
         ----------
-        embedding_spec : Optional[dict]
+        embedding_spec : dict | None
             Specification of the embedding net from the run configuration or None.
         input_size : int
             Size of the inputs into the embedding network.

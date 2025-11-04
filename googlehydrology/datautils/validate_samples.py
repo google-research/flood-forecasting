@@ -14,7 +14,6 @@
 
 import logging
 import itertools
-from typing import Optional
 
 import pandas as pd
 import xarray as xr
@@ -108,17 +107,17 @@ def validate_samples(
     is_train: bool,
     dataset: xr.Dataset,
     sample_dates: pd.DatetimeIndex,
-    nan_handling_method: Optional[str],
+    nan_handling_method: str | None,
     feature_groups: list[list[str]],
     lead_time: int = 0,   
-    seq_length: Optional[int] = None,
-    predict_last_n: Optional[int] = None,
-    forecast_overlap: Optional[int] = None,
-    min_lead_time: Optional[int] = None,
-    forecast_features: Optional[list[str]] = None,
-    hindcast_features: Optional[list[str]] = None,
-    target_features: Optional[list[str]] = None,
-    static_features: Optional[list[str]] = None,
+    seq_length: int | None = None,
+    predict_last_n: int | None = None,
+    forecast_overlap: int | None = None,
+    min_lead_time: int | None = None,
+    forecast_features: list[str] | None = None,
+    hindcast_features: list[str] | None = None,
+    target_features: list[str] | None = None,
+    static_features: list[str] | None = None,
     allzero_samples_are_invalid: bool = False,
 ) -> xr.DataArray:
     """Validates samples based on the NaN-handling method.
@@ -131,30 +130,30 @@ def validate_samples(
         Dataset with any combination of dims (basin, date, lead_time)
     sample_dates : pd.DatetimeIndex
         Sample dates.
-    nan_handling_method : Optional[str]
+    nan_handling_method : str | None
         Name of the NaN-handling method. This can be None, but we require that to be passed explicitly.
     feature_groups : list[list[str]]
         A list of feature groups where each group is a list of features. Used in certain types of NaN-handling.
     lead_time : int
         Sequence length for validating a look-ahead sequence of target variables. Defaults to nowcasts.
-    seq_length : Optional[int]
+    seq_length : int | None
         Sequence length for validating a look-back sequence of hindcast variables. Required if `hindcast_features`
         is not None.
-    predict_last_n : Optional[int]
+    predict_last_n : int | None
         Sequence length used for calculating loss function. At least one target data must be non-NaN in the last
         `predict_last_n` values of the target sequence. Required if `target_features` is not None.
-    forecast_overlap : Optional[int]
+    forecast_overlap : int | None
         Defines the look-back for forecast data.
-    min_lead_time : Optional[int]
+    min_lead_time : int | None
         Integer representing the minimum lead time in the forecast data as a number of timesteps.
         Required if forecast_overlap > 0.
-    forecast_features : Optional[list[str]]
+    forecast_features : list[str] | None
         List of forecast features to validate. Defaults to None. At least one feature list is required.
-    hindcast_features : Optional[list[str]]
+    hindcast_features : list[str] | None
         List of hindcast features to validate. Defaults to None. At least one feature list is required.
-    target_features : Optional[list[str]]
+    target_features : list[str] | None
         List of target features to validate. Defaults to None. At least one feature list is required.
-    static_features : Optional[list[str]]
+    static_features : list[str] | None
         List of static features to validate. Defaults to None. At least one feature list is required.
     allzero_samples_are_invalid : bool
         Whether to skip all-zero samples (via a mask).
@@ -282,7 +281,7 @@ def validate_samples(
 
 def validate_samples_for_nan_handling(
     dataset: xr.Dataset,
-    nan_handling_method: Optional[str],
+    nan_handling_method: str | None,
     feature_groups: list[list[str]]
 ) -> xr.DataArray:
     """Validates samples based on the NaN-handling method.
@@ -291,7 +290,7 @@ def validate_samples_for_nan_handling(
     ----------
     dataset : xarray.Dataset
         Dataset with any combination of dims (basin, date, lead_time)
-    nan_handling_method : Optional[str]
+    nan_handling_method : str | None 
         Name of the NaN-handling method. This can be None, but we require that to be passed explicitly.
     feature_groups : list[list[str]]
         A list of feature groups where each group is a list of features. Used in certain types of NaN-handling.
