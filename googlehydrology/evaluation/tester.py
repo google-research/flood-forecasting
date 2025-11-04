@@ -481,9 +481,9 @@ class BaseTester(object):
             ds = _ensure_unicode_or_bytes_are_strings(ds)
 
             if result_file.exists():
-                ds.to_zarr(result_file, append_dim='basin')
+                ds.to_zarr(result_file, append_dim='basin', consolidated=False)
             else:
-                ds.to_zarr(result_file, mode='w')
+                ds.to_zarr(result_file, mode='w', consolidated=False)
 
         # store all model output in a zarr store
         if (
@@ -503,9 +503,9 @@ class BaseTester(object):
             ds = _ensure_unicode_or_bytes_are_strings(ds)
 
             if result_file.exists():
-                ds.to_zarr(result_file, append_dim='basin')
+                ds.to_zarr(result_file, append_dim='basin', consolidated=False)
             else:
-                ds.to_zarr(result_file, mode='w')
+                ds.to_zarr(result_file, mode='w', consolidated=False)
 
     def _parent_directory_for_results(self, epoch: int | None = None):
         # determine parent directory name and create if needed
