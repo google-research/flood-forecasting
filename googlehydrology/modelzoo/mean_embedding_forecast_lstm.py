@@ -311,9 +311,9 @@ class ConfigData:
 
         hindcast_inputs_grouped = group_features_list(cfg.hindcast_inputs)
         forecast_inputs_grouped = group_features_list(cfg.forecast_inputs)
-        shared_groups = tuple(
+        shared_groups = [
             e for e in hindcast_inputs_grouped if e in forecast_inputs_grouped
-        )
+        ]
         for group in shared_groups:
             assert (
                 hindcast_inputs_grouped[group] == forecast_inputs_grouped[group]
@@ -337,9 +337,9 @@ class ConfigData:
     hindcast_embedding: EmbeddingSpec
     forecast_embedding: EmbeddingSpec
     static_attributes: tuple[str, ...]
-    hindcast_inputs_grouped: dict[str, tuple[str]]
-    forecast_inputs_grouped: dict[str, tuple[str]]
-    shared_groups: tuple[str]
+    hindcast_inputs_grouped: dict[str, list[str]]
+    forecast_inputs_grouped: dict[str, list[str]]
+    shared_groups: list[str]
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
