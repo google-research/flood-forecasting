@@ -14,7 +14,7 @@
 
 import os
 from pathlib import Path
-from typing import Optional, Iterator, Hashable
+from typing import Iterator, Hashable
 
 import dask
 import dask.array
@@ -73,7 +73,7 @@ class Scaler():
     custom_normalization : dict[str, dict[str, float]]
         Feature-specific scaling instructions as a mapping from feature name to centering and/or scaling type.
         See docs for a list of accepted types and their meaning.
-    dataset : Optional[xr.Dataset]
+    dataset : xr.Dataset | None
         Dataset to use for calculating a new scaler. Cannot be supplied if `calculate_scaler` is False.
 
     Raises
@@ -86,7 +86,7 @@ class Scaler():
         scaler_dir: Path,
         calculate_scaler,
         custom_normalization: dict[str, dict[str, float]] = {},
-        dataset: Optional[xr.Dataset] = None,
+        dataset: xr.Dataset | None = None,
     ):
         # Consistency check.
         if not calculate_scaler and dataset is not None:
