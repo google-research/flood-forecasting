@@ -17,6 +17,8 @@ import itertools
 from collections.abc import Iterable
 from pathlib import Path
 
+import more_itertools
+
 from googlehydrology.utils.config import Config
 
 
@@ -68,24 +70,30 @@ def flatten_feature_list(data: list[str] | list[list[str]] | dict[str, list[str]
     return list(data)
 
 
-def group_features_list(features: list[str] | list[list[str]] | dict[str, list[str]]) -> dict[str, set[str]]:
+def group_features_list(features: list[str] | list[list[str]] | dict[str, list[str]]) -> dict[str, list[str]]:
     """
     Groups list of features according to the prefix of each feature.
     For lists, assumes the prefix is written with an underscore for the first feature name.
     """
     # TODO (future) :: Simplify types to only dict.
+    # TODO (future) :: Simplify impl and make it more resilient (check all values etc)
     if not features:
         return {}
     if isinstance(features, dict):
-        return {key: set(value) for key, value in features.items()}
+        return {key: _unique(value) for key, value in features.items()}
     if isinstance(features, list) and isinstance(features[0], list):
-        return {_prefix(sublist[0]): set(sublist) for sublist in features}
+        return {_prefix(sublist[0]): _unique(sublist) for sublist in features}
     if isinstance(features, list) and all(isinstance(e, str) for e in features):
         result = {}
         for feature in features:
-            result.setdefault(_prefix(feature), set()).add(feature)
+            result.setdefault(_prefix(feature), []).append(feature)
+        for feature, items in result.items():
+            result[feature] = _unique(items)
         return result
     raise ValueError(f"Unsupported type {features}")
 
 def _prefix(feature: str) -> str:
     return feature.partition('_')[0]
+
+def _unique(features: list[str]) -> list[str]:
+    return list(more_itertools.unique_everseen(features))
