@@ -139,7 +139,9 @@ class BaseTester(object):
         weight_file = self._get_weight_file(epoch)
 
         LOGGER.info(f"Using the model weights from {weight_file}")
-        self.model.load_state_dict(torch.load(weight_file, map_location=self.device))
+        self.model.load_state_dict(
+            torch.load(weight_file, map_location=self.device, weights_only=True)
+        )
 
     def _get_dataset_all(self) -> Dataset:
         """Get dataset for all basin."""
