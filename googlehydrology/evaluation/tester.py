@@ -21,7 +21,7 @@ import shutil
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional, Iterator
+from typing import Iterator
 
 import numpy as np
 import pandas as pd
