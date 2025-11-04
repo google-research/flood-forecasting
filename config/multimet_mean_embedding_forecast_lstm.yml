@@ -47,6 +47,9 @@ log_n_figures: 5
 log_loss_every_nth_update: 50
 allzero_samples_are_invalid: False
 weight_init_opts:
+# - lstm-ih-xavier
+# - lstm-hh-orthogonal
+# - fc-xavier
 cache:
   enabled: False
   byte_limit: 2000000000  # in GB
