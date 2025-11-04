@@ -15,7 +15,6 @@
 import itertools
 import logging
 from pathlib import Path
-from typing import Optional
 
 import dask
 import dask.delayed
@@ -27,9 +26,9 @@ LOGGER = logging.getLogger(__name__)
 
 
 def load_caravan_attributes(data_dir: Path,
-                            basins: Optional[list[str]] = None,
-                            subdataset: Optional[str] = None,
-                            features: Optional[list[str]] = None) -> xarray.Dataset:
+                            basins: list[str] | None = None,
+                            subdataset: str | None = None,
+                            features: list[str] | None = None) -> xarray.Dataset:
     """Load the attributes of the Caravan dataset.
 
     Parameters

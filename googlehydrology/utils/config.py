@@ -23,7 +23,7 @@ import warnings
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import TypeVar, Optional
+from typing import TypeVar
 
 import pandas as pd
 from ruamel.yaml import YAML
@@ -405,7 +405,7 @@ class Config(object):
         return self._as_default_dict(self._cfg.get("custom_normalization", {}))
 
     @property
-    def data_dir(self) -> Optional[Path]:
+    def data_dir(self) -> Path | None:
         return self._cfg.get("data_dir", None)
 
     @property
@@ -678,7 +678,7 @@ class Config(object):
         return self._as_default_list(self._cfg.get("mass_inputs", []))
 
     @property
-    def max_updates_per_epoch(self) -> Optional[int]:
+    def max_updates_per_epoch(self) -> int | None:
         return self._cfg.get("max_updates_per_epoch")
 
     @property

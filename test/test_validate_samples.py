@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -48,7 +47,7 @@ def create_test_dataset(
     data_vars: dict,
     basins: list[str],
     dates: pd.DatetimeIndex,
-    lead_times: Optional[list[int]] = None
+    lead_times: list[int] | None = None
 ) -> xr.Dataset:
     """Helper to create a flexible xarray Dataset for testing."""
     coords = {'basin': basins, 'date': dates}

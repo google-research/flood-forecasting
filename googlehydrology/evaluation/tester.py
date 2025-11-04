@@ -21,7 +21,7 @@ import shutil
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional, Iterator
+from typing import Iterator
 
 import numpy as np
 import pandas as pd
@@ -139,7 +139,9 @@ class BaseTester(object):
         weight_file = self._get_weight_file(epoch)
 
         LOGGER.info(f"Using the model weights from {weight_file}")
-        self.model.load_state_dict(torch.load(weight_file, map_location=self.device))
+        self.model.load_state_dict(
+            torch.load(weight_file, map_location=self.device, weights_only=True)
+        )
 
     def _get_dataset_all(self) -> Dataset:
         """Get dataset for all basin."""
@@ -481,9 +483,9 @@ class BaseTester(object):
             ds = _ensure_unicode_or_bytes_are_strings(ds)
 
             if result_file.exists():
-                ds.to_zarr(result_file, append_dim='basin')
+                ds.to_zarr(result_file, append_dim='basin', consolidated=False)
             else:
-                ds.to_zarr(result_file, mode='w')
+                ds.to_zarr(result_file, mode='w', consolidated=False)
 
         # store all model output in a zarr store
         if (
@@ -503,9 +505,9 @@ class BaseTester(object):
             ds = _ensure_unicode_or_bytes_are_strings(ds)
 
             if result_file.exists():
-                ds.to_zarr(result_file, append_dim='basin')
+                ds.to_zarr(result_file, append_dim='basin', consolidated=False)
             else:
-                ds.to_zarr(result_file, mode='w')
+                ds.to_zarr(result_file, mode='w', consolidated=False)
 
     def _parent_directory_for_results(self, epoch: int | None = None):
         # determine parent directory name and create if needed
@@ -699,7 +701,7 @@ class UncertaintyTester(BaseTester):
 
 def _ensure_unicode_or_bytes_are_strings(ds: xarray.Dataset):
     updates = {
-        name: coord.astype(str)
+        name: coord.astype('O')
         for name, coord in ds.coords.items()
         if coord.dtype.kind in ('U', 'S')
     }
