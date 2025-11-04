@@ -699,7 +699,7 @@ class UncertaintyTester(BaseTester):
 
 def _ensure_unicode_or_bytes_are_strings(ds: xarray.Dataset):
     updates = {
-        name: coord.astype(str)
+        name: coord.astype('O')
         for name, coord in ds.coords.items()
         if coord.dtype.kind in ('U', 'S')
     }
