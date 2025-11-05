@@ -308,13 +308,13 @@ class BaseTester(object):
                 if metrics:
                     for target_variable in self.cfg.target_variables:
                         # stack dates and time_steps so we don't just evaluate every 24h when use_frequencies=[1D, 1h]
-                        obs = xr.isel(time_step=slice(-frequency_factor, None)) \
+                        obs = xr.isel(time_step=slice(-predict_last_n[freq], -predict_last_n[freq] + 1)) \
                             .stack(datetime=['date', 'time_step']) \
                             .drop_vars({'datetime', 'date', 'time_step'})[f"{target_variable}_obs"]
                         obs['datetime'] = freq_date_range
                         # check if there are observations for this period
                         if obs.notnull().any():
-                            sim = xr.isel(time_step=slice(-frequency_factor, None)) \
+                            sim = xr.isel(time_step=slice(-predict_last_n[freq], -predict_last_n[freq] + 1)) \
                                 .stack(datetime=['date', 'time_step']) \
                                 .drop_vars({'datetime', 'date', 'time_step'})[f"{target_variable}_sim"]
                             sim['datetime'] = freq_date_range
