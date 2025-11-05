@@ -23,10 +23,13 @@ import warnings
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TypeVar
 
 import pandas as pd
 from ruamel.yaml import YAML
+
+T = TypeVar('T')
+U = TypeVar('U')
 
 @enum.unique
 class WeightInitOpt(str, enum.Enum):
@@ -216,22 +219,20 @@ class Config(object):
             return self._cfg[key]
 
     @staticmethod
-    def _as_default_list(value: Any) -> list:
+    def _as_default_list(value: T | list[T] | None) -> list[T]:
         if value is None:
             return []
-        elif isinstance(value, list):
+        if isinstance(value, list):
             return value
-        else:
-            return [value]
+        return [value]
 
     @staticmethod
-    def _as_default_dict(value: Any) -> dict:
+    def _as_default_dict(value: T | dict[U, T] | None) -> dict[U, T]:
         if value is None:
             return {}
-        elif isinstance(value, dict):
+        if isinstance(value, dict):
             return value
-        else:
-            raise RuntimeError(f"Incompatible type {type(value)}. Expected `dict` or `None`.")
+        raise RuntimeError(f"Incompatible type {type(value)}. Expected `dict` or `None`.")
 
     @staticmethod
     def _check_cfg_keys(cfg: dict):
