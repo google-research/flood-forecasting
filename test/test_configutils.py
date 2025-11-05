@@ -64,8 +64,8 @@ def test_group_features_list_normal_case():
     """Tests a typical case with multiple groups and items."""
     features = ['temp_max', 'temp_min', 'wind_speed', 'wind_dir', 'temp_avg']
     expected = {
-        'temp': {'temp_max', 'temp_min', 'temp_avg'},
-        'wind': {'wind_speed', 'wind_dir'},
+        'temp': ['temp_max', 'temp_min', 'temp_avg'],
+        'wind': ['wind_speed', 'wind_dir'],
     }
     assert group_features_list(features) == expected
 
@@ -76,51 +76,58 @@ def test_group_features_list_empty_list():
 def test_group_features_list_single_item():
     """Tests a list with only one item."""
     features = ['pressure_sea']
-    expected = {'pressure': {'pressure_sea'}}
+    expected = {'pressure': ['pressure_sea']}
     assert group_features_list(features) == expected
 
 def test_group_features_list_all_same_prefix():
     """Tests when all items share the same prefix."""
     features = ['cloud_high', 'cloud_mid', 'cloud_low']
-    expected = {'cloud': {'cloud_high', 'cloud_mid', 'cloud_low'}}
+    expected = {'cloud': ['cloud_high', 'cloud_mid', 'cloud_low']}
     assert group_features_list(features) == expected
+
+def test_group_features_list_repeating_item():
+    """Tests a list with a repeating item."""
+    features = ['pressure_sea', 'pressure_sea']
+    expected = {'pressure': ['pressure_sea']}
+    assert group_features_list(features) == expected
+
 
 def test_group_features_list_no_underscores():
     """Tests features that do not contain an underscore. 
         The entire string should become the prefix."""
     features = ['temperature', 'wind', 'pressure']
     expected = {
-        'temperature': {'temperature'},
-        'wind': {'wind'},
-        'pressure': {'pressure'},
+        'temperature': ['temperature'],
+        'wind': ['wind'],
+        'pressure': ['pressure'],
     }
     assert group_features_list(features) == expected
 
 def test_group_features_list_multiple_underscores():
     """Tests that only the first part before the *first* underscore is used."""
     features = ['data_v1_max', 'data_v1_min', 'data_v2_mean']
-    expected = {'data': {'data_v1_max', 'data_v1_min', 'data_v2_mean'}}
+    expected = {'data': ['data_v1_max', 'data_v1_min', 'data_v2_mean']}
     assert group_features_list(features) == expected
 
 def test_group_features_list_nested_list_normal_case():
     """Tests a typical case with multiple groups and items."""
     features = [['temp_max', 'temp_min', 'temp_avg'], ['wind_speed', 'wind_dir']]
     expected = {
-        'temp': {'temp_max', 'temp_min', 'temp_avg'},
-        'wind': {'wind_speed', 'wind_dir'},
+        'temp': ['temp_max', 'temp_min', 'temp_avg'],
+        'wind': ['wind_speed', 'wind_dir'],
     }
     assert group_features_list(features) == expected
 
 def test_group_features_list_nested_list_repeating_item():
     """Tests a nested list with a repeating item."""
     features = [['pressure_sea', 'pressure_sea']]
-    expected = {'pressure': {'pressure_sea'}}
+    expected = {'pressure': ['pressure_sea']}
     assert group_features_list(features) == expected
 
 def test_group_features_list_nested_list_all_same_prefix():
     """Tests when all items share the same prefix."""
     features = [['cloud_high', 'cloud_mid', 'cloud_low']]
-    expected = {'cloud': {'cloud_high', 'cloud_mid', 'cloud_low'}}
+    expected = {'cloud': ['cloud_high', 'cloud_mid', 'cloud_low']}
     assert group_features_list(features) == expected
 
 def test_group_features_list_nested_list_no_underscores():
@@ -128,22 +135,22 @@ def test_group_features_list_nested_list_no_underscores():
         The entire first string should become the prefix."""
     features = [['temperature', 'wind', 'pressure']]
     expected = {
-        'temperature': {'temperature', 'wind', 'pressure'},
+        'temperature': ['temperature', 'wind', 'pressure'],
     }
     assert group_features_list(features) == expected
 
 def test_group_features_list_nested_list_multiple_underscores():
     """Tests that only the first part before the *first* underscore is used."""
     features = [['data_v1_max', 'data_v1_min', 'data_v2_mean']]
-    expected = {'data': {'data_v1_max', 'data_v1_min', 'data_v2_mean'}}
+    expected = {'data': ['data_v1_max', 'data_v1_min', 'data_v2_mean']}
     assert group_features_list(features) == expected
 
 def test_group_features_list_dict_normal_case():
     """Tests a typical case with multiple groups and items."""
     features = {'temp': ['temp_max', 'temp_min', 'temp_avg'], 'wind': ['wind_speed', 'wind_dir']}
     expected = {
-        'temp': {'temp_max', 'temp_min', 'temp_avg'},
-        'wind': {'wind_speed', 'wind_dir'},
+        'temp': ['temp_max', 'temp_min', 'temp_avg'],
+        'wind': ['wind_speed', 'wind_dir'],
     }
     assert group_features_list(features) == expected
 
@@ -154,18 +161,18 @@ def test_group_features_list_empty_dict():
 def test_group_features_list_dict_repeating_item():
     """Tests a dict with a repeating item."""
     features = {'group': ['pressure_sea', 'pressure_sea']}
-    expected = {'group': {'pressure_sea'}}
+    expected = {'group': ['pressure_sea']}
     assert group_features_list(features) == expected
 
 def test_group_features_list_dict_all_same_prefix():
     """Tests when all items share the same prefix."""
     features = {'cloud': ['cloud_high', 'cloud_mid', 'cloud_low']}
-    expected = {'cloud': {'cloud_high', 'cloud_mid', 'cloud_low'}}
+    expected = {'cloud': ['cloud_high', 'cloud_mid', 'cloud_low']}
     assert group_features_list(features) == expected
 
 def test_group_features_list_dict_no_underscores():
     """Tests features that do not contain an underscore. 
         The entire string should become the prefix."""
     features = {'group': ['temperature', 'wind', 'pressure']}
-    expected = {'group': {'temperature', 'wind', 'pressure'}}
+    expected = {'group': ['temperature', 'wind', 'pressure']}
     assert group_features_list(features) == expected
