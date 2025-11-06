@@ -25,11 +25,13 @@ from googlehydrology.utils.config import Config
 LOGGER = logging.getLogger(__name__)
 
 
-def get_optimizer(model: torch.nn.Module, cfg: Config, *, is_gpu: bool = False) -> torch.optim.Optimizer:
+def get_optimizer(
+    model: torch.nn.Module, cfg: Config, *, is_gpu: bool = False
+) -> torch.optim.Optimizer:
     """Get specific optimizer object, depending on the run configuration.
-    
+
     Currently only 'Adam' and 'AdamW' are supported.
-    
+
     Parameters
     ----------
     model : torch.nn.Module
@@ -42,33 +44,52 @@ def get_optimizer(model: torch.nn.Module, cfg: Config, *, is_gpu: bool = False) 
     torch.optim.Optimizer
         Optimizer object that can be used for model training.
     """
-    if cfg.optimizer.lower() == "adam":
-        optimizer = torch.optim.Adam(model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu)
-    elif cfg.optimizer.lower() == "adamw":
-        optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu)
-    elif cfg.optimizer.lower() == "sgd":
-        optimizer = torch.optim.SGD(model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu)
-    elif cfg.optimizer.lower() == "asgd":
-        optimizer = torch.optim.ASGD(model.parameters(), lr=cfg.initial_learning_rate)
-    elif cfg.optimizer.lower() == "rmsprop":
-        optimizer = torch.optim.RMSprop(model.parameters(), lr=cfg.initial_learning_rate)
-    elif cfg.optimizer.lower() == "adagrad":
-        optimizer = torch.optim.Adagrad(model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu)
-    elif cfg.optimizer.lower() == "adadelta":
-        optimizer = torch.optim.Adadelta(model.parameters(), lr=cfg.initial_learning_rate,)
-    elif cfg.optimizer.lower() == "adamax":
-        optimizer = torch.optim.Adamax(model.parameters(), lr=cfg.initial_learning_rate)
+    if cfg.optimizer.lower() == 'adam':
+        optimizer = torch.optim.Adam(
+            model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu
+        )
+    elif cfg.optimizer.lower() == 'adamw':
+        optimizer = torch.optim.AdamW(
+            model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu
+        )
+    elif cfg.optimizer.lower() == 'sgd':
+        optimizer = torch.optim.SGD(
+            model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu
+        )
+    elif cfg.optimizer.lower() == 'asgd':
+        optimizer = torch.optim.ASGD(
+            model.parameters(), lr=cfg.initial_learning_rate
+        )
+    elif cfg.optimizer.lower() == 'rmsprop':
+        optimizer = torch.optim.RMSprop(
+            model.parameters(), lr=cfg.initial_learning_rate
+        )
+    elif cfg.optimizer.lower() == 'adagrad':
+        optimizer = torch.optim.Adagrad(
+            model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu
+        )
+    elif cfg.optimizer.lower() == 'adadelta':
+        optimizer = torch.optim.Adadelta(
+            model.parameters(),
+            lr=cfg.initial_learning_rate,
+        )
+    elif cfg.optimizer.lower() == 'adamax':
+        optimizer = torch.optim.Adamax(
+            model.parameters(), lr=cfg.initial_learning_rate
+        )
     else:
-        raise NotImplementedError(f"{cfg.optimizer} not implemented or not linked in `get_optimizer()`")
+        raise NotImplementedError(
+            f'{cfg.optimizer} not implemented or not linked in `get_optimizer()`'
+        )
 
     return optimizer
 
 
 def get_loss_obj(cfg: Config) -> loss.BaseLoss:
     """Get loss object, depending on the run configuration.
-    
+
     Currently supported are 'MSE', 'NSE', 'RMSE', 'CMALLoss'.
-    
+
     Parameters
     ----------
     cfg : Config
@@ -77,31 +98,38 @@ def get_loss_obj(cfg: Config) -> loss.BaseLoss:
     Returns
     -------
     loss.BaseLoss
-        A new loss instance that implements the loss specified in the config or, if different, the loss required by the 
+        A new loss instance that implements the loss specified in the config or, if different, the loss required by the
         head.
     """
-    if cfg.loss.lower() == "mse":
+    if cfg.loss.lower() == 'mse':
         loss_obj = loss.MaskedMSELoss(cfg)
-    elif cfg.loss.lower() == "nse":
+    elif cfg.loss.lower() == 'nse':
         loss_obj = loss.MaskedNSELoss(cfg)
-    elif cfg.loss.lower() == "weightednse":
-        warnings.warn("'WeightedNSE loss has been removed. Use 'NSE' with 'target_loss_weights'", FutureWarning)
+    elif cfg.loss.lower() == 'weightednse':
+        warnings.warn(
+            "'WeightedNSE loss has been removed. Use 'NSE' with 'target_loss_weights'",
+            FutureWarning,
+        )
         loss_obj = loss.MaskedNSELoss(cfg)
-    elif cfg.loss.lower() == "rmse":
+    elif cfg.loss.lower() == 'rmse':
         loss_obj = loss.MaskedRMSELoss(cfg)
-    elif cfg.loss.lower() == "cmalloss":
+    elif cfg.loss.lower() == 'cmalloss':
         loss_obj = loss.MaskedCMALLoss(cfg)
     else:
-        raise NotImplementedError(f"{cfg.loss} not implemented or not linked in `get_loss()`")
+        raise NotImplementedError(
+            f'{cfg.loss} not implemented or not linked in `get_loss()`'
+        )
 
     return loss_obj
 
 
-def get_regularization_obj(cfg: Config) -> list[regularization.BaseRegularization]:
+def get_regularization_obj(
+    cfg: Config,
+) -> list[regularization.BaseRegularization]:
     """Get list of regularization objects.
-    
+
     Currently, only the 'tie_frequencies' regularization is implemented.
-    
+
     Parameters
     ----------
     cfg : Config
@@ -119,11 +147,21 @@ def get_regularization_obj(cfg: Config) -> list[regularization.BaseRegularizatio
             reg_weight = 1.0
         else:
             reg_name, reg_weight = reg_item
-        if reg_name == "tie_frequencies":
-            regularization_modules.append(regularization.TiedFrequencyMSERegularization(cfg=cfg, weight=reg_weight))
-        elif reg_name == "forecast_overlap":
-            regularization_modules.append(regularization.ForecastOverlapMSERegularization(cfg=cfg, weight=reg_weight))
+        if reg_name == 'tie_frequencies':
+            regularization_modules.append(
+                regularization.TiedFrequencyMSERegularization(
+                    cfg=cfg, weight=reg_weight
+                )
+            )
+        elif reg_name == 'forecast_overlap':
+            regularization_modules.append(
+                regularization.ForecastOverlapMSERegularization(
+                    cfg=cfg, weight=reg_weight
+                )
+            )
         else:
-            raise NotImplementedError(f"{reg_name} not implemented or not linked in `get_regularization_obj()`.")
+            raise NotImplementedError(
+                f'{reg_name} not implemented or not linked in `get_regularization_obj()`.'
+            )
 
     return regularization_modules

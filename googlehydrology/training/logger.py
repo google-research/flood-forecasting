@@ -49,7 +49,7 @@ class Logger(object):
             save_git_diff(cfg.run_dir)
 
         # Additionally, the package version is stored in the config
-        cfg.update_config({"package_version": __version__})
+        cfg.update_config({'package_version': __version__})
 
         # store a copy of the config into the run folder
         cfg.dump_config(folder=self.log_dir)
@@ -61,7 +61,7 @@ class Logger(object):
 
     @property
     def tag(self):
-        return "train" if self._train else "valid"
+        return 'train' if self._train else 'valid'
 
     def train(self) -> 'Logger':
         """Set logging to training period.
@@ -86,17 +86,24 @@ class Logger(object):
         return self
 
     def start_tb(self):
-        """ Start tensorboard logging. """
+        """Start tensorboard logging."""
         self.writer = SummaryWriter(log_dir=str(self.log_dir))
 
     def stop_tb(self):
-        """ Stop tensorboard logging. """
+        """Stop tensorboard logging."""
         if self.writer is not None:
             self.writer.flush()
             self.writer.close()
             self.writer = None
 
-    def log_figures(self, figures: list[mpl.figure.Figure], freq: str, preamble: str = "", period: str = "validation", suffix: str = ""):
+    def log_figures(
+        self,
+        figures: list[mpl.figure.Figure],
+        freq: str,
+        preamble: str = '',
+        period: str = 'validation',
+        suffix: str = '',
+    ):
         """Log matplotlib figures as to disk.
 
         Parameters
@@ -112,7 +119,16 @@ class Logger(object):
         suffix : str
             Appended to figure filenames
         """
-        do_log_figures(self.writer, self._img_log_dir, self.epoch, figures, freq, preamble, period, suffix)
+        do_log_figures(
+            self.writer,
+            self._img_log_dir,
+            self.epoch,
+            figures,
+            freq,
+            preamble,
+            period,
+            suffix,
+        )
 
     def log_step(self, **kwargs):
         """Log the results of a single step within an epoch.
@@ -139,7 +155,7 @@ class Logger(object):
                 self.writer.add_scalar('/'.join([tag, k]), v, self.update)
 
     def summarise(self) -> float | dict[str, float]:
-        """"Log the results of the entire training or validation epoch.
+        """ "Log the results of the entire training or validation epoch.
 
         Returns
         -------
@@ -157,7 +173,9 @@ class Logger(object):
                 value[f'avg_{k}'] = mean
 
                 if self.writer is not None:
-                    self.writer.add_scalar('/'.join([self.tag, f'avg_{k}']), mean, self.epoch)
+                    self.writer.add_scalar(
+                        '/'.join([self.tag, f'avg_{k}']), mean, self.epoch
+                    )
 
         # summarize validation
         else:
@@ -166,32 +184,69 @@ class Logger(object):
                     # The only tuple that is passed is the per basin validation loss, which is a list of tuples, where
                     # each element is defined as (basin loss, number of batches). The aggregate across basins is
                     # weighted by the number of batches per basin, to approximate the training loss computation.
-                    v_not_nan = [(loss, samples) for loss, samples in v if not np.isnan(loss)]
+                    v_not_nan = [
+                        (loss, samples)
+                        for loss, samples in v
+                        if not np.isnan(loss)
+                    ]
                     num_samples = sum(samples for _, samples in v_not_nan)
                     if num_samples > 0:
-                        weighted_loss = sum(loss * samples / num_samples for loss, samples in v_not_nan)
+                        weighted_loss = sum(
+                            loss * samples / num_samples
+                            for loss, samples in v_not_nan
+                        )
                     else:
                         weighted_loss = np.nan
                     value[f'avg_{k}'] = weighted_loss
                     if self.writer is not None:
-                        self.writer.add_scalar('/'.join([self.tag, f'avg_{k}']), weighted_loss, self.epoch)
+                        self.writer.add_scalar(
+                            '/'.join([self.tag, f'avg_{k}']),
+                            weighted_loss,
+                            self.epoch,
+                        )
                 else:
                     # All other metrics are lists of float values
                     means = np.nanmean(v) if v else np.nan
                     medians = np.nanmedian(v) if v else np.nan
                     value[k] = medians
                     if self.writer is not None:
-                        self.writer.add_scalar('/'.join([self.tag, f'mean_{k.lower()}']), means, self.epoch)
-                        self.writer.add_scalar('/'.join([self.tag, f'median_{k.lower()}']), medians, self.epoch)
+                        self.writer.add_scalar(
+                            '/'.join([self.tag, f'mean_{k.lower()}']),
+                            means,
+                            self.epoch,
+                        )
+                        self.writer.add_scalar(
+                            '/'.join([self.tag, f'median_{k.lower()}']),
+                            medians,
+                            self.epoch,
+                        )
 
         # clear buffer
         self._metrics = defaultdict(list)
 
         return value
 
-def do_log_figures(writer: SummaryWriter|None, img_log_dir: Path, epoch: int, figures: list[mpl.figure.Figure], freq: str, preamble: str = "", period: str = "validation", suffix: str = ""):
+
+def do_log_figures(
+    writer: SummaryWriter | None,
+    img_log_dir: Path,
+    epoch: int,
+    figures: list[mpl.figure.Figure],
+    freq: str,
+    preamble: str = '',
+    period: str = 'validation',
+    suffix: str = '',
+):
     if writer is not None:
-        writer.add_figure(f'{period}/timeseries/{freq}', figures, global_step=epoch)
+        writer.add_figure(
+            f'{period}/timeseries/{freq}', figures, global_step=epoch
+        )
 
     for figure in figures:
-        figure.savefig(Path(img_log_dir, preamble + f'_{period}_freq{freq}_epoch{epoch}_{suffix}'), dpi=300)
+        figure.savefig(
+            Path(
+                img_log_dir,
+                preamble + f'_{period}_freq{freq}_epoch{epoch}_{suffix}',
+            ),
+            dpi=300,
+        )
