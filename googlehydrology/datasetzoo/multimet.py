@@ -27,7 +27,10 @@ import torch
 from torch.utils.data import Dataset
 import xarray as xr
 
-from googlehydrology.datasetzoo.caravan import load_caravan_attributes, load_caravan_timeseries_together
+from googlehydrology.datasetzoo.caravan import (
+    load_caravan_attributes,
+    load_caravan_timeseries_together,
+)
 from googlehydrology.datautils.scaler import Scaler
 from googlehydrology.datautils.union_features import union_features
 from googlehydrology.datautils.utils import load_basin_file
@@ -39,15 +42,15 @@ from googlehydrology.utils.errors import NoTrainDataError, NoEvaluationDataError
 LOGGER = logging.getLogger(__name__)
 
 # Data types for all keys in the sample dictionary.
-NUMPY_VARS = ["date"]
+NUMPY_VARS = ['date']
 TENSOR_VARS = [
-    "x_s",
-    "x_d",
-    "x_d_hindcast",
-    "x_d_forecast",
-    "y",
-    "per_basin_target_stds",
-    "basin_index",
+    'x_s',
+    'x_d',
+    'x_d_hindcast',
+    'x_d_forecast',
+    'y',
+    'per_basin_target_stds',
+    'basin_index',
 ]
 MULTIMET_MINIMUM_LEAD_TIME = 1
 
@@ -104,7 +107,7 @@ class Multimet(Dataset):
             self._hindcast_features = flatten_feature_list(cfg.dynamic_inputs)
         else:
             raise ValueError(
-                "Either `hindcast_inputs` or `dynamic_inputs` must be supplied."
+                'Either `hindcast_inputs` or `dynamic_inputs` must be supplied.'
             )
         self._union_mapping = cfg.union_mapping
 
@@ -115,45 +118,54 @@ class Multimet(Dataset):
 
         # NaN-handling options are required to apply the correct sample validation algorithms.
         self._nan_handling_method = cfg.nan_handling_method
-        self._feature_groups = [self._hindcast_features, self._forecast_features]
+        self._feature_groups = [
+            self._hindcast_features,
+            self._forecast_features,
+        ]
         if (
             isinstance(self._hindcast_features[0], str)
             or isinstance(self._forecast_features[0], str)
-        ) and self._nan_handling_method in ["masked_mean", "attention", "unioning"]:
+        ) and self._nan_handling_method in [
+            'masked_mean',
+            'attention',
+            'unioning',
+        ]:
             raise ValueError(
-                f"Feature groups are required for {self._nan_handling_method} NaN-handling."
+                f'Feature groups are required for {self._nan_handling_method} NaN-handling.'
             )
 
         # Validating samples depends on whether we are training or testing.
         self.is_train = is_train
         # TODO (future) :: Necessary for tester. Remove dependency if possible.
-        self.frequencies = ["1D"]
+        self.frequencies = ['1D']
 
         self._period = period
-        if period not in ["train", "validation", "test"]:
-            raise ValueError("'period' must be one of 'train', 'validation' or 'test' ")
+        if period not in ['train', 'validation', 'test']:
+            raise ValueError(
+                "'period' must be one of 'train', 'validation' or 'test' "
+            )
 
-        if period in ["validation", "test"] or cfg.is_finetuning:
+        if period in ['validation', 'test'] or cfg.is_finetuning:
             if compute_scaler:
                 raise ValueError(
-                    "Scaler must be loaded (not computed) for validation, test, and finetuning."
+                    'Scaler must be loaded (not computed) for validation, test, and finetuning.'
                 )
 
         # TODO (future) :: Fix this broken functionality.
         if cfg.use_basin_id_encoding:
             raise ValueError(
-                "Forecast datasets do not currently support one-hot-encoding."
+                'Forecast datasets do not currently support one-hot-encoding.'
             )
 
         # TODO (future) :: Consolidate the basin list loading somewhere instead of in two different places.
         self._basins = [basin]
         if basin is None:
-            self._basins = load_basin_file(getattr(cfg, f"{period}_basin_file"))
+            self._basins = load_basin_file(getattr(cfg, f'{period}_basin_file'))
 
         # Load & preprocess the data.
-        LOGGER.debug("load data")
+        LOGGER.debug('load data')
         self._dataset = self._load_data()
-        LOGGER.debug("validate all floats are float32")
+        LOGGER.debug('validate all floats are float32')
         _assert_floats_are_float32(self._dataset)
 
         # Extract date ranges.
@@ -163,16 +175,18 @@ class Multimet(Dataset):
         self._lead_times = []
         if self._forecast_features:
             self._min_lead_time = int(
-                (self._dataset.lead_time.min() / np.timedelta64(1, "D")).item()
+                (self._dataset.lead_time.min() / np.timedelta64(1, 'D')).item()
             )
-            self._lead_times = list(range(self._min_lead_time, self.lead_time + 1))
+            self._lead_times = list(
+                range(self._min_lead_time, self.lead_time + 1)
+            )
 
         # Split hindcast features to groups with/without lead_time in the dataset.
         # These lists will be used for efficient data selection during sampling.
         self._hindcast_features_with_lead_time = [
             feature
             for feature in self._hindcast_features
-            if "lead_time" in self._dataset[feature].dims
+            if 'lead_time' in self._dataset[feature].dims
         ]
         self._hindcast_features_without_lead_time = [
             feature
@@ -192,10 +206,13 @@ class Multimet(Dataset):
             for start_date in start_dates
         ]
         extended_end_dates = [
-            end_date + pd.Timedelta(days=self.lead_time) for end_date in end_dates
+            end_date + pd.Timedelta(days=self.lead_time)
+            for end_date in end_dates
         ]
-        extended_dates = self._union_ranges(extended_start_dates, extended_end_dates)
-        LOGGER.debug("reindex data")
+        extended_dates = self._union_ranges(
+            extended_start_dates, extended_end_dates
+        )
+        LOGGER.debug('reindex data')
         self._dataset = self._dataset.reindex(date=extended_dates).sel(
             date=extended_dates
         )
@@ -218,22 +235,22 @@ class Multimet(Dataset):
         # Martin suggests doing this step prior to training models and then saving the unioned dataset locally.
         # If you do that, then remove this line.
         if self._union_mapping:
-            LOGGER.debug("union features")
+            LOGGER.debug('union features')
             self._dataset = union_features(self._dataset, self._union_mapping)
 
         # Scale the dataset AFTER cropping dates so that we do not calcualte scalers using test or eval data.
-        LOGGER.debug("init scaler")
+        LOGGER.debug('init scaler')
         self.scaler = Scaler(
             scaler_dir=(cfg.base_run_dir if cfg.is_finetuning else cfg.run_dir),
             calculate_scaler=compute_scaler,
             custom_normalization=cfg.custom_normalization,
             dataset=(self._dataset if compute_scaler else None),
         )
-        LOGGER.debug("scale data")
+        LOGGER.debug('scale data')
         self._dataset = self.scaler.scale(self._dataset)
 
         # TODO: Optionally, optimize the data loader and trainer modules to work with chunked lazy data.
-        LOGGER.debug("materialize data (compute)")
+        LOGGER.debug('materialize data (compute)')
         # We explicitly keep the self.scaler.scaler computation since trainer uses it directly
         # create sample index does a compute on the data. We compute here prior to avoid recompute.
         self._dataset, self.scaler.scaler = dask.compute(
@@ -241,25 +258,29 @@ class Multimet(Dataset):
         )
 
         # Create sample index lookup table for `__getitem__`.
-        LOGGER.debug("create sample index")
+        LOGGER.debug('create sample index')
         self._create_sample_index()
 
         # Compute stats for NSE-based loss functions.
         # TODO (future) :: Find a better way to decide whether to calculate these. At least keep a list of
         # losses that require them somewhere like `training.__init__.py`. Perhaps simply always calculate.
         self._per_basin_target_stds = None
-        if cfg.loss.lower() in ["nse", "weightednse"]:
-            LOGGER.debug("create per_basin_target_stds")
-            self._per_basin_target_stds = self._dataset[self._target_features].std(
+        if cfg.loss.lower() in ['nse', 'weightednse']:
+            LOGGER.debug('create per_basin_target_stds')
+            self._per_basin_target_stds = self._dataset[
+                self._target_features
+            ].std(
                 dim=[
-                    d for d in self._dataset[self._target_features].dims if d != "basin"
+                    d
+                    for d in self._dataset[self._target_features].dims
+                    if d != 'basin'
                 ],
                 skipna=True,
             )
 
         self._data_cache: dict[str, xr.DataArray] = {}
 
-        LOGGER.debug("forecast dataset init complete")
+        LOGGER.debug('forecast dataset init complete')
 
     def __len__(self) -> int:
         return self._num_samples
@@ -272,49 +293,51 @@ class Multimet(Dataset):
         # Stop iteration.
         if item >= self._num_samples:
             raise IndexError(
-                f"Requested index {item} > the total number of samples {self._num_samples}."
+                f'Requested index {item} > the total number of samples {self._num_samples}.'
             )
 
         # Negative and non-integer indexes raise an error instead of stop iterating.
         if item < 0:
-            raise ValueError(f"Requested index {item} < 0.")
+            raise ValueError(f'Requested index {item} < 0.')
         if item % 1 != 0:
-            raise ValueError(f"Requested index {item} is not an integer.")
+            raise ValueError(f'Requested index {item} is not an integer.')
 
         # TODO (future) :: Suggest remove outer keys and use only feature names. Major change required.
         sample = {
-            "date": self._extract_dates(item),
-            "x_s": self._extract_statics(item),
-            "x_d_hindcast": self._extract_hindcasts(item),
-            "x_d_forecast": self._extract_forecasts(item),
-            "y": self._extract_targets(item),
+            'date': self._extract_dates(item),
+            'x_s': self._extract_statics(item),
+            'x_d_hindcast': self._extract_hindcasts(item),
+            'x_d_forecast': self._extract_forecasts(item),
+            'y': self._extract_targets(item),
         }
         if self._per_basin_target_stds is not None:
-            sample["per_basin_target_stds"] = self._extract_per_basin_stds(item)
+            sample['per_basin_target_stds'] = self._extract_per_basin_stds(item)
         if self._hindcast_counter is not None:
-            sample["x_d_hindcast"]["hindcast_counter"] = np.expand_dims(
+            sample['x_d_hindcast']['hindcast_counter'] = np.expand_dims(
                 self._hindcast_counter, -1
             )
         if self._forecast_counter is not None:
-            sample["x_d_forecast"]["forecast_counter"] = np.expand_dims(
+            sample['x_d_forecast']['forecast_counter'] = np.expand_dims(
                 self._forecast_counter, -1
             )
 
         # Rename the hindcast data key if we are not doing forecasting.
         if not self._forecast_features:
-            sample["x_d"] = sample.pop("x_d_hindcast")
-            _ = sample.pop("x_d_forecast")
+            sample['x_d'] = sample.pop('x_d_hindcast')
+            _ = sample.pop('x_d_forecast')
 
         # Can't use strings. Torch does not support it in tensors.
-        sample["basin_index"] = np.array(
-            self._sample_index[item]["basin"], dtype=np.int16
+        sample['basin_index'] = np.array(
+            self._sample_index[item]['basin'], dtype=np.int16
         )
 
         # Return sample with various required formats.
-        return {key: _convert_to_tensor(key, value) for key, value in sample.items()}
+        return {
+            key: _convert_to_tensor(key, value) for key, value in sample.items()
+        }
 
     def _calc_date_range(self, item: int, *, lead: bool = False) -> range:
-        date = self._sample_index[item]["date"]
+        date = self._sample_index[item]['date']
         duration = self._seq_length - 1
         if not lead and not self._lead_times:
             return range(date - duration, date + 1)
@@ -323,22 +346,24 @@ class Multimet(Dataset):
 
     def _extract_dates(self, item: int) -> np.ndarray:
         date = self._calc_date_range(item)
-        features = self._extract_dataset(self._dataset, ["date"], {"date": date})
-        return features["date"]
+        features = self._extract_dataset(
+            self._dataset, ['date'], {'date': date}
+        )
+        return features['date']
 
     def _extract_statics(self, item: int) -> np.ndarray:
-        basin = self._sample_index[item]["basin"]
+        basin = self._sample_index[item]['basin']
         features = self._extract_dataset(
-            self._dataset, self._static_features, {"basin": basin}
+            self._dataset, self._static_features, {'basin': basin}
         )
         return np.stack([features[e] for e in self._static_features], axis=-1)
 
     def _extract_hindcasts(self, item: int) -> dict[str, np.ndarray]:
         # Extract hindcast features without lead_time.
         dim_indexes_without_lead_time = self._sample_index[item].copy()
-        dim_indexes_without_lead_time["date"] = range(
-            dim_indexes_without_lead_time["date"] - self._seq_length + 1,
-            dim_indexes_without_lead_time["date"] + 1,
+        dim_indexes_without_lead_time['date'] = range(
+            dim_indexes_without_lead_time['date'] - self._seq_length + 1,
+            dim_indexes_without_lead_time['date'] + 1,
         )
         features = self._extract_dataset(
             self._dataset,
@@ -349,10 +374,10 @@ class Multimet(Dataset):
         # Forecast features with lead_time may be used as hindcast features. In that case, we select
         # only the first lead_time value, and move selection period one day backwards.
         dim_indexes_with_lead_time = self._sample_index[item].copy()
-        dim_indexes_with_lead_time["lead_time"] = 0
-        dim_indexes_with_lead_time["date"] = range(
-            dim_indexes_with_lead_time["date"] - self._seq_length,
-            dim_indexes_with_lead_time["date"],
+        dim_indexes_with_lead_time['lead_time'] = 0
+        dim_indexes_with_lead_time['date'] = range(
+            dim_indexes_with_lead_time['date'] - self._seq_length,
+            dim_indexes_with_lead_time['date'],
         )
         features |= self._extract_dataset(
             self._dataset,
@@ -360,7 +385,10 @@ class Multimet(Dataset):
             dim_indexes_with_lead_time,
         )
 
-        return {name: np.expand_dims(feature, -1) for name, feature in features.items()}
+        return {
+            name: np.expand_dims(feature, -1)
+            for name, feature in features.items()
+        }
         # TODO (future) :: This adds a dimension to many features, as required by some models.
         # There is no need for this except that it is how basedataset works, and everything else expects
         # the trailing dim. Remove this dependency in the future.
@@ -371,11 +399,14 @@ class Multimet(Dataset):
         )
         if self._forecast_overlap is not None and self._forecast_overlap > 0:
             dim_indexes = self._sample_index[item].copy()
-            dim_indexes["date"] = range(
-                dim_indexes["date"] + 1 - self._min_lead_time - self._forecast_overlap,
-                dim_indexes["date"] + 1 - self._min_lead_time,
+            dim_indexes['date'] = range(
+                dim_indexes['date']
+                + 1
+                - self._min_lead_time
+                - self._forecast_overlap,
+                dim_indexes['date'] + 1 - self._min_lead_time,
             )
-            dim_indexes["lead_time"] = 0
+            dim_indexes['lead_time'] = 0
             overlaps = self._extract_dataset(
                 self._dataset, self._forecast_features, dim_indexes
             )
@@ -383,14 +414,17 @@ class Multimet(Dataset):
                 name: np.concatenate([overlaps[name], feature])
                 for name, feature in features.items()
             }
-        return {name: np.expand_dims(feature, -1) for name, feature in features.items()}
+        return {
+            name: np.expand_dims(feature, -1)
+            for name, feature in features.items()
+        }
         # TODO (future) :: This adds a dimension to many features, as required by some models.
         # There is no need for this except that it is how basedataset works, and everything else expects
         # the trailing dim. Remove this dependency in the future.
 
     def _extract_targets(self, item: int) -> np.ndarray:
         dim_indexes = self._sample_index[item].copy()
-        dim_indexes["date"] = self._calc_date_range(item, lead=True)
+        dim_indexes['date'] = self._calc_date_range(item, lead=True)
         features = self._extract_dataset(
             self._dataset, self._target_features, dim_indexes
         )
@@ -401,10 +435,11 @@ class Multimet(Dataset):
         features = self._extract_dataset(
             self._per_basin_target_stds,
             self._target_features,
-            {"basin": self._sample_index[item]["basin"]},
+            {'basin': self._sample_index[item]['basin']},
         )
         return np.expand_dims(
-            np.stack([features[e] for e in self._target_features], axis=-1), axis=0
+            np.stack([features[e] for e in self._target_features], axis=-1),
+            axis=0,
         )
         # TODO (future) :: This adds a dimension to many features, as required by some models.
         # There is no need for this except that it is how basedataset works, and everything else expects
@@ -413,21 +448,24 @@ class Multimet(Dataset):
     def _get_period_dates(
         self, cfg: Config
     ) -> tuple[list[pd.Timestamp], list[pd.Timestamp]]:
-        if self._period == "train":
+        if self._period == 'train':
             start_dates, end_dates = cfg.train_start_date, cfg.train_end_date
-        elif self._period == "test":
+        elif self._period == 'test':
             start_dates, end_dates = cfg.test_start_date, cfg.test_end_date
-        elif self._period == "validation":
-            start_dates, end_dates = cfg.validation_start_date, cfg.validation_end_date
+        elif self._period == 'validation':
+            start_dates, end_dates = (
+                cfg.validation_start_date,
+                cfg.validation_end_date,
+            )
         else:
-            raise ValueError(f"Unknown period {self._period}")
+            raise ValueError(f'Unknown period {self._period}')
         if len(start_dates) != len(end_dates):
             raise ValueError(
-                f"Start and end date lists for period {self._period} must have the same length."
+                f'Start and end date lists for period {self._period} must have the same length.'
             )
         if any(start >= end for start, end in zip(start_dates, end_dates)):
             raise ValueError(
-                f"Start dates {start_dates} are before matched end dates {end_dates}."
+                f'Start dates {start_dates} are before matched end dates {end_dates}.'
             )
         return start_dates, end_dates
 
@@ -435,7 +473,8 @@ class Multimet(Dataset):
         self, start_dates: list[pd.Timestamp], end_dates: list[pd.Timestamp]
     ) -> pd.DatetimeIndex:
         ranges = [
-            pd.date_range(start, end) for start, end in zip(start_dates, end_dates)
+            pd.date_range(start, end)
+            for start, end in zip(start_dates, end_dates)
         ]
         return functools.reduce(pd.Index.union, ranges)
 
@@ -464,7 +503,7 @@ class Multimet(Dataset):
             allzero_samples_are_invalid=self._allzero_samples_are_invalid,
         )[0]
 
-        LOGGER.debug("valid_sample_mask compute")
+        LOGGER.debug('valid_sample_mask compute')
         # Convert boolean valid sample mask into indexes of all samples. This retains
         # only the portion of the valid sample mask with True values.
         # Each element is a list of valid integer positions (indexers) for which
@@ -474,7 +513,7 @@ class Multimet(Dataset):
         # Count the number of valid samples.
         num_samples = len(indices[0]) if indices else 0
         if num_samples == 0:
-            if self._period == "train":
+            if self._period == 'train':
                 raise NoTrainDataError
             else:
                 raise NoEvaluationDataError
@@ -484,10 +523,10 @@ class Multimet(Dataset):
         vectorized_indices = {
             dim: indices[i]
             for i, dim in enumerate(valid_sample_mask.dims)
-            if dim != "sample"
+            if dim != 'sample'
         }
 
-        LOGGER.debug("sample_index")
+        LOGGER.debug('sample_index')
         # Reorg columns to rows, mapping sample index i [0, num_samples) to a dict that
         # maps an int position for that sample in each dim. E.g. {1: {'basin': 2, 'date': 3}}
         #
@@ -508,13 +547,15 @@ class Multimet(Dataset):
         indexers: dict[Hashable, int | range | slice],
     ) -> dict[str, np.ndarray | np.float32]:
         def extract(feature_name: str):
-            key = f"{id(data)}{feature_name}"
+            key = f'{id(data)}{feature_name}'
             feature = self._data_cache.get(key)
             if feature is None:
                 feature = self._data_cache[key] = data[feature_name]
             return _extract_dataarray(feature, indexers)
 
-        return {feature_name: extract(feature_name) for feature_name in features}
+        return {
+            feature_name: extract(feature_name) for feature_name in features
+        }
 
     def _load_data(self) -> xr.Dataset:
         """Main loading function for Caravan-Multimet.
@@ -529,20 +570,20 @@ class Multimet(Dataset):
         """
         datasets = []
         if self._static_features is not None:
-            LOGGER.debug("load attributes")
+            LOGGER.debug('load attributes')
             datasets.append(self._load_static_features())
         if self._hindcast_features is not None:
-            LOGGER.debug("load hindcast features")
+            LOGGER.debug('load hindcast features')
             datasets.extend(self._load_hindcast_features())
         if self._forecast_features is not None:
-            LOGGER.debug("load forecast features")
+            LOGGER.debug('load forecast features')
             datasets.extend(self._load_forecast_features())
         if self._target_features is not None:
-            LOGGER.debug("load target features")
+            LOGGER.debug('load target features')
             datasets.append(self._load_target_features())
         if not datasets:
-            raise ValueError("At least one type of data must be loaded.")
-        LOGGER.debug("merge")
+            raise ValueError('At least one type of data must be loaded.')
+        LOGGER.debug('merge')
         return xr.merge(datasets, join='outer')
 
     def _load_hindcast_features(self) -> list[xr.Dataset]:
@@ -559,17 +600,21 @@ class Multimet(Dataset):
         )
 
         # Separate products and bands for each product from feature names.
-        product_bands = _get_products_and_bands_from_feature_strings(features=features)
+        product_bands = _get_products_and_bands_from_feature_strings(
+            features=features
+        )
 
         # Initialize storage for product/band dataframes that will eventually be concatenated.
         product_dss = []
 
         # Load data for the selected products, bands, and basins.
         for product, bands in product_bands.items():
-            product_path = self._dynamics_data_path / product / "timeseries.zarr"
+            product_path = (
+                self._dynamics_data_path / product / 'timeseries.zarr'
+            )
             product_ds = _open_zarr(product_path)
 
-            if "lead_time" in product_ds:
+            if 'lead_time' in product_ds:
                 # The same product may be used both for forecast and hindcast features. For hindcast, we load it with the
                 # full lead_time similar to forecast, and filter the minimal lead_time values during sampling.
                 product_ds = product_ds.sel(
@@ -602,13 +647,15 @@ class Multimet(Dataset):
 
         # Load data for the selected products, bands, and basins.
         for product, bands in product_bands.items():
-            product_path = self._dynamics_data_path / product / "timeseries.zarr"
+            product_path = (
+                self._dynamics_data_path / product / 'timeseries.zarr'
+            )
             product_ds = _open_zarr(product_path)
 
             # If this is a forecast product, extract only leadtime 0 for hindcasts.
-            if "lead_time" not in product_ds:
+            if 'lead_time' not in product_ds:
                 raise ValueError(
-                    f"Lead times do not exist for forecast product ({product})."
+                    f'Lead times do not exist for forecast product ({product}).'
                 )
 
             product_ds = product_ds.sel(
@@ -662,15 +709,17 @@ class Multimet(Dataset):
             return batch
         features = list(samples[0].keys())
         for feature in features:
-            if feature.startswith("date"):
+            if feature.startswith('date'):
                 # Dates are stored as a numpy array of datetime64, which we maintain as numpy array.
                 batch[feature] = np.stack(
                     [sample[feature] for sample in samples], axis=0
                 )
-            elif feature.startswith("x_d"):
+            elif feature.startswith('x_d'):
                 # Dynamics are stored as dictionaries with feature names as keys.
                 batch[feature] = {
-                    k: torch.stack([sample[feature][k] for sample in samples], dim=0)
+                    k: torch.stack(
+                        [sample[feature][k] for sample in samples], dim=0
+                    )
                     for k in samples[0][feature]
                 }
             else:
@@ -688,7 +737,9 @@ def _extract_dataarray(
 
     This function replaces uses of `isel` with data and indexers.
     """
-    locators = (indexers[dim] if dim in indexers else slice(None) for dim in data.dims)
+    locators = (
+        indexers[dim] if dim in indexers else slice(None) for dim in data.dims
+    )
     return data.data[tuple(locators)]
 
 
@@ -698,25 +749,27 @@ def _assert_floats_are_float32(dataset: xr.Dataset):
         if np.issubdtype(data_array_or_coord.dtype, np.floating):
             assert data_array_or_coord.dtype == np.float32, (
                 f"Data variable or coord '{name}' is a float but not float32. "
-                f"Actual dtype: {data_array_or_coord.dtype}"
+                f'Actual dtype: {data_array_or_coord.dtype}'
             )
 
 
-def _convert_to_tensor(key: str, value: np.ndarray) -> torch.Tensor | np.ndarray:
+def _convert_to_tensor(
+    key: str, value: np.ndarray
+) -> torch.Tensor | np.ndarray:
     if key in NUMPY_VARS:
         return value
     if key not in TENSOR_VARS:
-        raise ValueError(f"Unrecognized data key: {key}")
+        raise ValueError(f'Unrecognized data key: {key}')
     if isinstance(value, dict):
         return {k: torch.from_numpy(v) for k, v in value.items()}
     if isinstance(value, np.ndarray):
         return torch.from_numpy(value)
-    raise ValueError(f"Unrecognized data type: {type(value)}")
+    raise ValueError(f'Unrecognized data type: {type(value)}')
 
 
 def _open_zarr(path: Path) -> xr.Dataset:
-    path = str(path).replace("gs:/", "gs://")
-    return xr.open_zarr(store=path, chunks="auto", decode_timedelta=True)
+    path = str(path).replace('gs:/', 'gs://')
+    return xr.open_zarr(store=path, chunks='auto', decode_timedelta=True)
 
 
 def _get_products_and_bands_from_feature_strings(
@@ -739,8 +792,8 @@ def _get_products_and_bands_from_feature_strings(
     """
     product_bands = {}
     for feature in features:
-        product = feature.split("_")[0].upper()
-        if product == "ERA5LAND":
-            product = "ERA5_LAND"
+        product = feature.split('_')[0].upper()
+        if product == 'ERA5LAND':
+            product = 'ERA5_LAND'
         product_bands.setdefault(product, []).append(feature)
     return product_bands
