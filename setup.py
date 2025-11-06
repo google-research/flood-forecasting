@@ -44,7 +44,7 @@ setup(
         'Research Blog': 'https://googlehydrology.github.io/',
     },
     author='Amit Markel, Frederik Kratzert, Grey Nearing, Martin Gauch, Omri Shefi',
-    author_email='googlehydrology@googlegroups.com',
+    author_email='flood-forecasting-open-source@google.com',
     description='Library for training deep learning models with environmental focus',
     long_description=long_description,
     long_description_content_type='text/markdown',
