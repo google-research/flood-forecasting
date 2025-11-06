@@ -48,18 +48,22 @@ class DatasetRegistry:
         Examples
         --------
         >>> registry = DatasetZooRegistry()
-        >>> registry.register_dataset_class("my_dataset", MyCustomDataset)
+        >>> registry.register_dataset_class('my_dataset', MyCustomDataset)
         """
         if not issubclass(new_class, Dataset):
-            raise TypeError(f"Class {type(new_class)} is not a subclass of Dataset.")
+            raise TypeError(
+                f'Class {type(new_class)} is not a subclass of Dataset.'
+            )
         self.__dataset_class[key] = new_class
 
-    def instantiate_dataset(self,
-                            cfg: Config,
-                            is_train: bool,
-                            period: str,
-                            basin: str = None,
-                            compute_scaler: bool = True) -> Dataset:
+    def instantiate_dataset(
+        self,
+        cfg: Config,
+        is_train: bool,
+        period: str,
+        basin: str = None,
+        compute_scaler: bool = True,
+    ) -> Dataset:
         """Creates and returns an instance of a dataset class based on the configuration.
 
         Parameters
@@ -68,7 +72,7 @@ class DatasetRegistry:
             The run configuration.
         is_train : bool
             Defines if the dataset is used for training or evaluating. If True (training), means/stds for each feature
-            are computed and stored to the run directory. If one-hot encoding is used, the mapping for the one-hot encoding 
+            are computed and stored to the run directory. If one-hot encoding is used, the mapping for the one-hot encoding
             is created and also stored to disk. If False, the scaler must be calculated (`compute_scaler` must be True).
         period : {'train', 'validation', 'test'}
             Defines the period for which the data will be loaded
@@ -92,10 +96,14 @@ class DatasetRegistry:
         dataset_key = cfg.dataset.lower()
         Dataset = self.__dataset_class.get(dataset_key, None)
         if Dataset is None:
-            raise NotImplementedError(f"No dataset class implemented for dataset {cfg.dataset}")
+            raise NotImplementedError(
+                f'No dataset class implemented for dataset {cfg.dataset}'
+            )
 
-        return Dataset(cfg=cfg,
-                       is_train=is_train,
-                       period=period,
-                       basin=basin,
-                       compute_scaler=compute_scaler)
+        return Dataset(
+            cfg=cfg,
+            is_train=is_train,
+            period=period,
+            basin=basin,
+            compute_scaler=compute_scaler,
+        )
