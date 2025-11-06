@@ -74,7 +74,8 @@ def _pdf(
     indicator = (x > mu).float()
     main_term = tau * tau_c / b  # scaled exp func
     exp_term = torch.exp(
-        -indicator * tau * (x - mu) / b - (1.0 - indicator) * tau_c * (mu - x) / b
+        -indicator * tau * (x - mu) / b
+        - (1.0 - indicator) * tau_c * (mu - x) / b
     )
     return main_term * exp_term
 
@@ -134,7 +135,9 @@ def _search_quantile(
     So f(x)  = mixture_cdf(x) - quantile
        f'(x) = CDF(x) dx = PDF(x)
     """
-    k = torch.mean(_ppf(quantile, mu, b, tau), dim=2, keepdim=True)  # initial point
+    k = torch.mean(
+        _ppf(quantile, mu, b, tau), dim=2, keepdim=True
+    )  # initial point
     epsilon = 1e-6  # to avoid zero values
 
     for _ in range(iterations):
@@ -162,4 +165,6 @@ def _mixture_params_to_quantiles(
         device=mu.device,
         dtype=mu.dtype,
     )
-    return _search_quantile(quantiles.view(1, 1, 1, -1), mu_exp, b_exp, tau_exp, pi_exp)
+    return _search_quantile(
+        quantiles.view(1, 1, 1, -1), mu_exp, b_exp, tau_exp, pi_exp
+    )
