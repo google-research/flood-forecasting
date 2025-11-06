@@ -13,7 +13,6 @@
 # limitations under the License.
 
 
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -40,13 +39,22 @@ class FC(nn.Module):
         Whether to use xavier as init method.
     """
 
-    def __init__(self, input_size: int, hidden_sizes: list[int], activation: str | list[str] = 'tanh', dropout: float = 0.0, xavier_init: bool = False):
+    def __init__(
+        self,
+        input_size: int,
+        hidden_sizes: list[int],
+        activation: str | list[str] = 'tanh',
+        dropout: float = 0.0,
+        xavier_init: bool = False,
+    ):
         super(FC, self).__init__()
 
         self._xavier_init = xavier_init
 
         if len(hidden_sizes) == 0:
-            raise ValueError('hidden_sizes must at least have one entry to create a fully-connected net.')
+            raise ValueError(
+                'hidden_sizes must at least have one entry to create a fully-connected net.'
+            )
 
         self.output_size = hidden_sizes[-1]
         hidden_sizes = hidden_sizes[:-1]
@@ -76,16 +84,18 @@ class FC(nn.Module):
         self._reset_parameters()
 
     def _get_activation(self, name: str) -> nn.Module:
-        if name.lower() == "tanh":
+        if name.lower() == 'tanh':
             activation = nn.Tanh()
-        elif name.lower() == "sigmoid":
+        elif name.lower() == 'sigmoid':
             activation = nn.Sigmoid()
-        elif name.lower() == "relu":
+        elif name.lower() == 'relu':
             activation = nn.ReLU()
-        elif name.lower() == "linear":
+        elif name.lower() == 'linear':
             activation = nn.Identity()
         else:
-            raise NotImplementedError(f"{name} currently not supported as activation in this class")
+            raise NotImplementedError(
+                f'{name} currently not supported as activation in this class'
+            )
         return activation
 
     def _reset_parameters(self):

@@ -16,16 +16,18 @@ import torch
 import torch.nn as nn
 
 from googlehydrology.modelzoo.handoff_forecast_lstm import HandoffForecastLSTM
-from googlehydrology.modelzoo.mean_embedding_forecast_lstm import MeanEmbeddingForecastLSTM
+from googlehydrology.modelzoo.mean_embedding_forecast_lstm import (
+    MeanEmbeddingForecastLSTM,
+)
 from googlehydrology.utils.config import Config
 
-SINGLE_FREQ_MODELS = ["handoff_forecast_lstm"]
+SINGLE_FREQ_MODELS = ['handoff_forecast_lstm']
 AUTOREGRESSIVE_MODELS = []
 
 
 def get_model(cfg: Config) -> nn.Module:
     """Get model object, depending on the run configuration.
-    
+
     Parameters
     ----------
     cfg : Config
@@ -37,19 +39,28 @@ def get_model(cfg: Config) -> nn.Module:
         A new model instance of the type specified in the config.
     """
     if cfg.model.lower() in SINGLE_FREQ_MODELS and len(cfg.use_frequencies) > 1:
-        raise ValueError(f"Model {cfg.model} does not support multiple frequencies.")
+        raise ValueError(
+            f'Model {cfg.model} does not support multiple frequencies.'
+        )
 
-    if cfg.model.lower() not in AUTOREGRESSIVE_MODELS and cfg.autoregressive_inputs:
-        raise ValueError(f"Model {cfg.model} does not support autoregression.")
+    if (
+        cfg.model.lower() not in AUTOREGRESSIVE_MODELS
+        and cfg.autoregressive_inputs
+    ):
+        raise ValueError(f'Model {cfg.model} does not support autoregression.')
 
     if cfg.mass_inputs:
-        raise ValueError(f"The use of 'mass_inputs' with {cfg.model} is not supported.")
+        raise ValueError(
+            f"The use of 'mass_inputs' with {cfg.model} is not supported."
+        )
 
-    if cfg.model.lower() == "handoff_forecast_lstm":
+    if cfg.model.lower() == 'handoff_forecast_lstm':
         model = HandoffForecastLSTM(cfg=cfg)
-    elif cfg.model.lower() == "mean_embedding_forecast_lstm":
+    elif cfg.model.lower() == 'mean_embedding_forecast_lstm':
         model = MeanEmbeddingForecastLSTM(cfg=cfg)
     else:
-        raise NotImplementedError(f"{cfg.model} not implemented or not linked in `get_model()`")
+        raise NotImplementedError(
+            f'{cfg.model} not implemented or not linked in `get_model()`'
+        )
 
-    return torch.compile(model, mode="max-autotune")
+    return torch.compile(model, mode='max-autotune')
