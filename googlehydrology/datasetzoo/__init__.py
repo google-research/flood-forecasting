@@ -21,11 +21,13 @@ from googlehydrology.utils.config import Config
 from googlehydrology.datasetzoo.datasetregistry import DatasetRegistry
 
 
-def get_dataset(cfg: Config,
-                is_train: bool,
-                period: str,
-                basin: str = None,
-                compute_scaler: bool = False) -> Dataset:
+def get_dataset(
+    cfg: Config,
+    is_train: bool,
+    period: str,
+    basin: str = None,
+    compute_scaler: bool = False,
+) -> Dataset:
     """Get data set instance, depending on the run configuration.
 
     Currently implemented datasets are 'multimet',
@@ -40,7 +42,7 @@ def get_dataset(cfg: Config,
         The run configuration.
     is_train : bool
         Defines if the dataset is used for training or evaluating. If True (training), means/stds for each feature
-        are computed and stored to the run directory. If one-hot encoding is used, the mapping for the one-hot encoding 
+        are computed and stored to the run directory. If one-hot encoding is used, the mapping for the one-hot encoding
         is created and also stored to disk. If False, the scaler must be calculated (`compute_scaler` must be True).
     period : {'train', 'validation', 'test'}
         Defines the period for which the data will be loaded
@@ -63,12 +65,14 @@ def get_dataset(cfg: Config,
     """
     global _datasetZooRegistry
 
-    return _datasetZooRegistry.instantiate_dataset(cfg, is_train, period, basin, compute_scaler)
+    return _datasetZooRegistry.instantiate_dataset(
+        cfg, is_train, period, basin, compute_scaler
+    )
 
 
 def register_dataset(key: str, new_class: Type):
     """Adds a dataset class to the dataset registry.
-    
+
     This class must derive from Dataset. New dataset class has to be added at the beginning of runtime.
 
     Parameters
@@ -94,4 +98,4 @@ def register_dataset(key: str, new_class: Type):
 
 _datasetZooRegistry: DatasetRegistry = DatasetRegistry()
 
-_datasetZooRegistry.register_dataset_class("multimet", Multimet)
+_datasetZooRegistry.register_dataset_class('multimet', Multimet)
