@@ -26,25 +26,29 @@ from torch.utils.data import SequentialSampler, BatchSampler
 
 
 def load_basin_id_encoding(run_dir: Path) -> dict[str, int]:
-    id_to_int_file = run_dir / "train_data" / "id_to_int.yml"
+    id_to_int_file = run_dir / 'train_data' / 'id_to_int.yml'
     if id_to_int_file.is_file():
-        with id_to_int_file.open("r") as fp:
-            yaml = YAML(typ="safe")
+        with id_to_int_file.open('r') as fp:
+            yaml = YAML(typ='safe')
             id_to_int = yaml.load(fp)
         return id_to_int
 
     else:
-        id_to_int_file = run_dir / "train_data" / "id_to_int.p"
+        id_to_int_file = run_dir / 'train_data' / 'id_to_int.p'
         if id_to_int_file.is_file():
-            with id_to_int_file.open("rb") as fp:
+            with id_to_int_file.open('rb') as fp:
                 id_to_int = pickle.load(fp)
             return id_to_int
         else:
-            raise FileNotFoundError(f"No id-to-int file found in {id_to_int_file.parent}. "
-                                    "Looked for (new) yaml file or (old) pickle file")
+            raise FileNotFoundError(
+                f'No id-to-int file found in {id_to_int_file.parent}. '
+                'Looked for (new) yaml file or (old) pickle file'
+            )
 
 
-def metrics_to_dataframe(results: dict, metrics: Iterable[str], targets: Iterable[str]) -> pd.DataFrame:
+def metrics_to_dataframe(
+    results: dict, metrics: Iterable[str], targets: Iterable[str]
+) -> pd.DataFrame:
     """Extract all metric values from result dictionary and convert to pandas.DataFrame
 
     Parameters
@@ -67,18 +71,18 @@ def metrics_to_dataframe(results: dict, metrics: Iterable[str], targets: Iterabl
             for target, metric in itertools.product(targets, metrics):
                 metric_key = metric
                 if len(targets) > 1:
-                    metric_key = f"{target}_{metric}"
+                    metric_key = f'{target}_{metric}'
                 if len(basin_data) > 1:
                     # For multi-frequency runs, metrics include a frequency suffix.
-                    metric_key = f"{metric_key}_{freq}"
+                    metric_key = f'{metric_key}_{freq}'
                 if metric_key in freq_results.keys():
                     metrics_dict[basin][metric_key] = freq_results[metric_key]
                 else:
                     # in case the current period has no valid samples, the result dict has no metric-key
                     metrics_dict[basin][metric_key] = np.nan
 
-    df = pd.DataFrame.from_dict(metrics_dict, orient="index")
-    df.index.name = "basin"
+    df = pd.DataFrame.from_dict(metrics_dict, orient='index')
+    df.index.name = 'basin'
 
     return df
 
@@ -95,7 +99,11 @@ class BasinBatchSampler(BatchSampler):
         batch_size: int,
         basins_indexes: set[int],
     ):
-        super().__init__(SequentialSampler(range(len(sample_index))), batch_size, drop_last=False)
+        super().__init__(
+            SequentialSampler(range(len(sample_index))),
+            batch_size,
+            drop_last=False,
+        )
 
         self._batch_size = batch_size
 
