@@ -18,6 +18,7 @@ import numpy as np
 import torch
 from torch import nn
 
+
 class PositionalEncoding(nn.Module):
     """Class to create a positional encoding vector for timeseries inputs to a model without an explicit time dimension.
 
@@ -40,7 +41,10 @@ class PositionalEncoding(nn.Module):
 
         pe = torch.zeros(max_len, int(np.ceil(embedding_dim / 2) * 2))
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, embedding_dim, 2).float() * (-math.log(max_len * 2) / embedding_dim))
+        div_term = torch.exp(
+            torch.arange(0, embedding_dim, 2).float()
+            * (-math.log(max_len * 2) / embedding_dim)
+        )
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe[:, :embedding_dim].unsqueeze(0).transpose(0, 1)
@@ -51,7 +55,9 @@ class PositionalEncoding(nn.Module):
         elif position_type.lower() == 'sum':
             self._concatenate = False
         else:
-            raise RuntimeError(f"Unrecognized positional encoding type: {position_type}")
+            raise RuntimeError(
+                f'Unrecognized positional encoding type: {position_type}'
+            )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass for positional encoding. Either concatenates or adds positional encoding to encoder input data.
@@ -73,7 +79,9 @@ class PositionalEncoding(nn.Module):
 
         """
         if self._concatenate:
-            x = torch.cat((x, self.pe[:x.size(0), :].repeat(1, x.size(1), 1)), 2)
+            x = torch.cat(
+                (x, self.pe[: x.size(0), :].repeat(1, x.size(1), 1)), 2
+            )
         else:
-            x = x + self.pe[:x.size(0), :]
+            x = x + self.pe[: x.size(0), :]
         return self.dropout(x)

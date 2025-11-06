@@ -13,10 +13,12 @@
 # limitations under the License.
 
 
-
 import torch
 
-from googlehydrology.datautils.utils import get_frequency_factor, sort_frequencies
+from googlehydrology.datautils.utils import (
+    get_frequency_factor,
+    sort_frequencies,
+)
 from googlehydrology.utils.config import Config
 
 
@@ -41,8 +43,12 @@ class BaseRegularization(torch.nn.Module):
         self.name = name
         self.weight = weight
 
-    def forward(self, prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor],
-                other_model_data: dict[str, torch.Tensor]) -> torch.Tensor:
+    def forward(
+        self,
+        prediction: dict[str, torch.Tensor],
+        ground_truth: dict[str, torch.Tensor],
+        other_model_data: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
         """Calculate the regularization term.
 
         Parameters
@@ -56,9 +62,9 @@ class BaseRegularization(torch.nn.Module):
             the keys must have suffixes ``_{frequency}``. For the required keys, refer to the documentation
             of the concrete loss.
         other_model_data : dict[str, torch.Tensor]
-            Dictionary of all remaining keys-value pairs in the prediction dictionary that are not directly linked to 
+            Dictionary of all remaining keys-value pairs in the prediction dictionary that are not directly linked to
             the model predictions but can be useful for regularization purposes, e.g. network internals, weights etc.
-            
+
         Returns
         -------
         torch.Tensor
@@ -88,15 +94,29 @@ class TiedFrequencyMSERegularization(BaseRegularization):
     """
 
     def __init__(self, cfg: Config, weight: float = 1.0):
-        super(TiedFrequencyMSERegularization, self).__init__(cfg, name='tie_frequencies', weight=weight)
+        super(TiedFrequencyMSERegularization, self).__init__(
+            cfg, name='tie_frequencies', weight=weight
+        )
         self._frequencies = sort_frequencies(
-            [f for f in cfg.use_frequencies if cfg.predict_last_n[f] > 0 and f not in cfg.no_loss_frequencies])
+            [
+                f
+                for f in cfg.use_frequencies
+                if cfg.predict_last_n[f] > 0
+                and f not in cfg.no_loss_frequencies
+            ]
+        )
 
         if len(self._frequencies) < 2:
-            raise ValueError("TiedFrequencyMSERegularization needs at least two frequencies.")
+            raise ValueError(
+                'TiedFrequencyMSERegularization needs at least two frequencies.'
+            )
 
-    def forward(self, prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor],
-                *args) -> torch.Tensor:
+    def forward(
+        self,
+        prediction: dict[str, torch.Tensor],
+        ground_truth: dict[str, torch.Tensor],
+        *args,
+    ) -> torch.Tensor:
         """Calculate the sum of mean squared deviations between adjacent predicted frequencies.
 
         Parameters
@@ -116,14 +136,23 @@ class TiedFrequencyMSERegularization(BaseRegularization):
         for idx, freq in enumerate(self._frequencies):
             if idx == 0:
                 continue
-            frequency_factor = int(get_frequency_factor(self._frequencies[idx - 1], freq))
+            frequency_factor = int(
+                get_frequency_factor(self._frequencies[idx - 1], freq)
+            )
             freq_pred = prediction[f'y_hat_{freq}']
-            mean_freq_pred = freq_pred.view(freq_pred.shape[0], freq_pred.shape[1] // frequency_factor,
-                                            frequency_factor, -1).mean(dim=2)
-            lower_freq_pred = prediction[f'y_hat_{self._frequencies[idx - 1]}'][:, -mean_freq_pred.shape[1]:]
-            loss = loss + torch.mean((lower_freq_pred - mean_freq_pred)**2)
+            mean_freq_pred = freq_pred.view(
+                freq_pred.shape[0],
+                freq_pred.shape[1] // frequency_factor,
+                frequency_factor,
+                -1,
+            ).mean(dim=2)
+            lower_freq_pred = prediction[f'y_hat_{self._frequencies[idx - 1]}'][
+                :, -mean_freq_pred.shape[1] :
+            ]
+            loss = loss + torch.mean((lower_freq_pred - mean_freq_pred) ** 2)
 
         return loss
+
 
 class ForecastOverlapMSERegularization(BaseRegularization):
     """Squared error regularization for penalizing differences between hindcast and forecast models.
@@ -135,10 +164,16 @@ class ForecastOverlapMSERegularization(BaseRegularization):
     """
 
     def __init__(self, cfg: Config, weight: float = 1.0):
-        super(ForecastOverlapMSERegularization, self).__init__(cfg, name='forecast_overlap', weight=weight)
+        super(ForecastOverlapMSERegularization, self).__init__(
+            cfg, name='forecast_overlap', weight=weight
+        )
 
-    def forward(self, prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor],
-                other_model_output: dict[str, dict[str, torch.Tensor]]) -> torch.Tensor:
+    def forward(
+        self,
+        prediction: dict[str, torch.Tensor],
+        ground_truth: dict[str, torch.Tensor],
+        other_model_output: dict[str, dict[str, torch.Tensor]],
+    ) -> torch.Tensor:
         """Calculate the squared difference between hindcast and forecast model during overlap.
 
         Does not work with multi-frequency models.
@@ -164,10 +199,14 @@ class ForecastOverlapMSERegularization(BaseRegularization):
         """
         loss = 0
         if 'y_hindcast_overlap' not in other_model_output:
-            raise ValueError('y_hindcast_overlap is not present in the model output.')
+            raise ValueError(
+                'y_hindcast_overlap is not present in the model output.'
+            )
         if 'y_forecast_overlap' not in other_model_output:
-            raise ValueError('y_forecast_overlap is not present in the model output.')
+            raise ValueError(
+                'y_forecast_overlap is not present in the model output.'
+            )
         hindcast = other_model_output['y_hindcast_overlap']
         forecast = other_model_output['y_forecast_overlap']
-        loss += torch.mean((hindcast - forecast)**2)
+        loss += torch.mean((hindcast - forecast) ** 2)
         return loss
