@@ -30,9 +30,9 @@ def _calc_stats(dataset: xr.Dataset, needed: set[str]):
     stats = {
         'mean': dataset.mean(skipna=True),
         'std': dataset.std(skipna=True),
-        'median': dataset.quantile(q=0.5, skipna=True)
-        if 'median' in needed
-        else None,
+        'median': (
+            dataset.quantile(q=0.5, skipna=True) if 'median' in needed else None
+        ),
         'min': dataset.min(skipna=True) if {'min', 'minmax'} & needed else None,
         'max': dataset.max(skipna=True) if {'max', 'minmax'} & needed else None,
     }
