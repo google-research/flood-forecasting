@@ -22,11 +22,13 @@ from test import Fixture
 
 
 def pytest_addoption(parser):
-    parser.addoption('--smoke-test',
-                     action='store_true',
-                     default=False,
-                     help='Skips some tests for faster execution. Out of the single-timescale '
-                     'models and forcings, only test cudalstm on forcings that include daymet.')
+    parser.addoption(
+        '--smoke-test',
+        action='store_true',
+        default=False,
+        help='Skips some tests for faster execution. Out of the single-timescale '
+        'models and forcings, only test cudalstm on forcings that include daymet.',
+    )
 
 
 @pytest.fixture
@@ -66,6 +68,7 @@ def forecast_config_updates() -> Fixture[Callable[[str], dict]]:
     Fixture[Callable[[str], dict]]
         Function that returns an update dict.
     """
+
     def _forecast_config_updates(forecast_model):
         update_dict = {'model': forecast_model.lower()}
         if forecast_model.lower() == 'stacked_forecast_lstm':
@@ -74,7 +77,7 @@ def forecast_config_updates() -> Fixture[Callable[[str], dict]]:
             update_dict['forecast_overlap'] = 10
             update_dict['regularization'] = ['forecast_overlap']
         return update_dict
-    
+
     return _forecast_config_updates
 
 
@@ -92,8 +95,14 @@ def single_timescale_model(request) -> str:
     return request.param
 
 
-@pytest.fixture(params=['handoff_forecast_lstm', 'sequential_forecast_lstm',
-                        'stacked_forecast_lstm', 'multihead_forecast_lstm'])
+@pytest.fixture(
+    params=[
+        'handoff_forecast_lstm',
+        'sequential_forecast_lstm',
+        'stacked_forecast_lstm',
+        'multihead_forecast_lstm',
+    ]
+)
 def forecast_model(request) -> str:
     """Fixture that provides models that support predicting only a single timescale.
 
@@ -102,16 +111,32 @@ def forecast_model(request) -> str:
     str
         Name of the single-timescale model.
     """
-    if request.config.getoption('--smoke-test') and request.param != 'handoff_forecast_lstm':
+    if (
+        request.config.getoption('--smoke-test')
+        and request.param != 'handoff_forecast_lstm'
+    ):
         pytest.skip('--smoke-test skips this test.')
     return request.param
 
 
-@pytest.fixture(params=[('daymet', ['prcp(mm/day)', 'tmax(C)']), ('nldas', ['PRCP(mm/day)', 'Tmax(C)']),
-                        ('maurer', ['PRCP(mm/day)', 'Tmax(C)']), ('maurer_extended', ['prcp(mm/day)', 'tmax(C)']),
-                        (['daymet',
-                          'nldas'], ['prcp(mm/day)_daymet', 'tmax(C)_daymet', 'PRCP(mm/day)_nldas', 'Tmax(C)_nldas'])],
-                ids=lambda param: str(param[0]))
+@pytest.fixture(
+    params=[
+        ('daymet', ['prcp(mm/day)', 'tmax(C)']),
+        ('nldas', ['PRCP(mm/day)', 'Tmax(C)']),
+        ('maurer', ['PRCP(mm/day)', 'Tmax(C)']),
+        ('maurer_extended', ['prcp(mm/day)', 'tmax(C)']),
+        (
+            ['daymet', 'nldas'],
+            [
+                'prcp(mm/day)_daymet',
+                'tmax(C)_daymet',
+                'PRCP(mm/day)_nldas',
+                'Tmax(C)_nldas',
+            ],
+        ),
+    ],
+    ids=lambda param: str(param[0]),
+)
 def single_timescale_forcings(request) -> dict[str, str | list[str]]:
     """Fixture that provides daily forcings.
 
@@ -120,7 +145,10 @@ def single_timescale_forcings(request) -> dict[str, str | list[str]]:
     dict[str, str | list[str]]
         Dictionary ``{'forcings': <name of the forcings set>, 'variables': <list of forcings variables>}``.
     """
-    if request.config.getoption('--smoke-test') and 'daymet' not in request.param[0]:
+    if (
+        request.config.getoption('--smoke-test')
+        and 'daymet' not in request.param[0]
+    ):
         pytest.skip('--smoke-test skips this test.')
     return {'forcings': request.param[0], 'variables': request.param[1]}
 
@@ -137,7 +165,9 @@ def multi_timescale_model(request) -> str:
     return request.param
 
 
-@pytest.fixture(params=[('camels_us', ['QObs(mm/d)'])], ids=lambda param: param[0])
+@pytest.fixture(
+    params=[('camels_us', ['QObs(mm/d)'])], ids=lambda param: param[0]
+)
 def daily_dataset(request) -> dict[str, list[str]]:
     """Fixture that provides daily datasets.
 
@@ -146,12 +176,15 @@ def daily_dataset(request) -> dict[str, list[str]]:
     dict[str, list[str]]
         Dictionary ``{'dataset: <name of the dataset>, 'target': <list of target variables>}``.
     """
-    if request.config.getoption('--smoke-test') and request.param[0] != 'camels_us':
+    if (
+        request.config.getoption('--smoke-test')
+        and request.param[0] != 'camels_us'
+    ):
         pytest.skip('--smoke-test skips this test.')
     return {'dataset': request.param[0], 'target': request.param[1]}
 
 
-@pytest.fixture(params=["cudalstm"])
+@pytest.fixture(params=['cudalstm'])
 def custom_lstm_supported_models(request) -> str:
     """Fixture that provides the models that are supported to be copied into the `CustomLSTM`.
 
