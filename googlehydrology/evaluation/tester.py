@@ -34,10 +34,22 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from googlehydrology.datasetzoo import get_dataset
-from googlehydrology.datautils.utils import get_frequency_factor, load_basin_file, sort_frequencies
+from googlehydrology.datautils.utils import (
+    get_frequency_factor,
+    load_basin_file,
+    sort_frequencies,
+)
 from googlehydrology.evaluation import plots
-from googlehydrology.evaluation.metrics import calculate_metrics, get_available_metrics
-from googlehydrology.evaluation.utils import load_basin_id_encoding, metrics_to_dataframe, BasinBatchSampler, get_samples_indexes
+from googlehydrology.evaluation.metrics import (
+    calculate_metrics,
+    get_available_metrics,
+)
+from googlehydrology.evaluation.utils import (
+    load_basin_id_encoding,
+    metrics_to_dataframe,
+    BasinBatchSampler,
+    get_samples_indexes,
+)
 from googlehydrology.modelzoo import get_model
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.training import get_loss_obj, get_regularization_obj
@@ -66,14 +78,22 @@ class BaseTester(object):
         If True, the model weights will be initialized with the checkpoint from the last available epoch in `run_dir`.
     """
 
-    def __init__(self, cfg: Config, run_dir: Path, period: str = "test", init_model: bool = True):
+    def __init__(
+        self,
+        cfg: Config,
+        run_dir: Path,
+        period: str = 'test',
+        init_model: bool = True,
+    ):
         self.cfg = cfg
         self.run_dir = run_dir
         self.init_model = init_model
-        if period in ["train", "validation", "test"]:
+        if period in ['train', 'validation', 'test']:
             self.period = period
         else:
-            raise ValueError(f'Invalid period {period}. Must be one of ["train", "validation", "test"]')
+            raise ValueError(
+                f'Invalid period {period}. Must be one of ["train", "validation", "test"]'
+            )
 
         # determine device
         self._set_device()
@@ -88,7 +108,9 @@ class BaseTester(object):
 
         # initialize loss object to compute the loss of the evaluation data
         self.loss_obj = get_loss_obj(cfg)
-        self.loss_obj.set_regularization_terms(get_regularization_obj(cfg=self.cfg))
+        self.loss_obj.set_regularization_terms(
+            get_regularization_obj(cfg=self.cfg)
+        )
 
         self._load_run_data()
 
@@ -98,39 +120,43 @@ class BaseTester(object):
 
     def _set_device(self):
         if self.cfg.device is not None:
-            if self.cfg.device.startswith("cuda"):
+            if self.cfg.device.startswith('cuda'):
                 gpu_id = int(self.cfg.device.split(':')[-1])
                 if gpu_id > torch.cuda.device_count():
-                    raise RuntimeError(f"This machine does not have GPU #{gpu_id} ")
+                    raise RuntimeError(
+                        f'This machine does not have GPU #{gpu_id} '
+                    )
                 else:
                     self.device = torch.device(self.cfg.device)
-            elif self.cfg.device == "mps":
+            elif self.cfg.device == 'mps':
                 if torch.backends.mps.is_available():
-                    self.device = torch.device("mps")
+                    self.device = torch.device('mps')
                 else:
-                    raise RuntimeError("MPS device is not available.")
+                    raise RuntimeError('MPS device is not available.')
             else:
-                self.device = torch.device("cpu")
+                self.device = torch.device('cpu')
         else:
             if torch.cuda.is_available():
-                self.device = torch.device("cuda:0")
+                self.device = torch.device('cuda:0')
             elif torch.backends.mps.is_available():
-                self.device = torch.device("mps")
+                self.device = torch.device('mps')
             else:
-                self.device = torch.device("cpu")
+                self.device = torch.device('cpu')
 
     def _load_run_data(self):
         """Load run specific data from run directory"""
 
         # get list of basins
-        self.basins = load_basin_file(getattr(self.cfg, f"{self.period}_basin_file"))
+        self.basins = load_basin_file(
+            getattr(self.cfg, f'{self.period}_basin_file')
+        )
 
-    def _get_weight_file(self, epoch: int|None):
+    def _get_weight_file(self, epoch: int | None):
         """Get file path to weight file"""
         if epoch is None:
             weight_file = sorted(list(self.run_dir.glob('model_epoch*.pt')))[-1]
         else:
-            weight_file = self.run_dir / f"model_epoch{str(epoch).zfill(3)}.pt"
+            weight_file = self.run_dir / f'model_epoch{str(epoch).zfill(3)}.pt'
 
         return weight_file
 
@@ -138,36 +164,42 @@ class BaseTester(object):
         """Load weights of a certain (or the last) epoch into the model."""
         weight_file = self._get_weight_file(epoch)
 
-        LOGGER.info(f"Using the model weights from {weight_file}")
+        LOGGER.info(f'Using the model weights from {weight_file}')
         self.model.load_state_dict(
             torch.load(weight_file, map_location=self.device, weights_only=True)
         )
 
     def _get_dataset_all(self) -> Dataset:
         """Get dataset for all basin."""
-        return get_dataset(cfg=self.cfg,
-                         is_train=False,
-                         period=self.period,
-                         basin=None,
-                         compute_scaler=False)
+        return get_dataset(
+            cfg=self.cfg,
+            is_train=False,
+            period=self.period,
+            basin=None,
+            compute_scaler=False,
+        )
 
     def _get_dataset(self, basin: str) -> Dataset:
         """Get dataset for a single basin."""
-        return get_dataset(cfg=self.cfg,
-                         is_train=False,
-                         period=self.period,
-                         basin=basin,
-                         compute_scaler=False)
+        return get_dataset(
+            cfg=self.cfg,
+            is_train=False,
+            period=self.period,
+            basin=basin,
+            compute_scaler=False,
+        )
 
-    def evaluate(self,
-                 epoch: int = None,
-                 save_results: bool = True,
-                 save_all_output: bool = False,
-                 metrics: list | dict = [],
-                 model: torch.nn.Module = None,
-                 experiment_logger: Logger = None) -> dict:
+    def evaluate(
+        self,
+        epoch: int = None,
+        save_results: bool = True,
+        save_all_output: bool = False,
+        metrics: list | dict = [],
+        model: torch.nn.Module = None,
+        experiment_logger: Logger = None,
+    ) -> dict:
         """Evaluate the model.
-        
+
         Parameters
         ----------
         epoch : int, optional
@@ -188,13 +220,19 @@ class BaseTester(object):
                 self._load_weights(epoch=epoch)
                 model = self.model
             else:
-                raise RuntimeError("No model was initialized for the evaluation")
+                raise RuntimeError(
+                    'No model was initialized for the evaluation'
+                )
 
         # during validation, depending on settings, only evaluate on a random subset of basins
         basins = set(self.basins) - self.exclude_basins
-        if self.period == "validation":
+        if self.period == 'validation':
             if len(basins) > self.cfg.validate_n_random_basins:
-                basins = set(random.sample(list(basins), k=self.cfg.validate_n_random_basins))
+                basins = set(
+                    random.sample(
+                        list(basins), k=self.cfg.validate_n_random_basins
+                    )
+                )
 
         # force model to train-mode when doing mc-dropout evaluation
         if self.cfg.mc_dropout:
@@ -205,7 +243,9 @@ class BaseTester(object):
         batch_sampler = BasinBatchSampler(
             sample_index=self.dataset._sample_index,
             batch_size=self.cfg.batch_size,
-            basins_indexes=set(get_samples_indexes(self.basins, samples=list(basins))),
+            basins_indexes=set(
+                get_samples_indexes(self.basins, samples=list(basins))
+            ),
         )
         loader = DataLoader(
             self.dataset,
@@ -215,15 +255,28 @@ class BaseTester(object):
             pin_memory=True,  # avoid 1 of 2 mem copies to gpu
         )
 
-        max_figures = min(self.cfg.validate_n_random_basins, self.cfg.log_n_figures, len(basins))
+        max_figures = min(
+            self.cfg.validate_n_random_basins,
+            self.cfg.log_n_figures,
+            len(basins),
+        )
         basins_for_figures = random.sample(list(basins), k=max_figures)
 
-        eval_data_it = self._evaluate(model, loader, self.dataset.frequencies, save_all_output, basins)
-        pbar = tqdm(eval_data_it, file=sys.stdout, disable=self._disable_pbar, total=len(basins))
-        if self.period == "validation":
+        eval_data_it = self._evaluate(
+            model, loader, self.dataset.frequencies, save_all_output, basins
+        )
+        pbar = tqdm(
+            eval_data_it,
+            file=sys.stdout,
+            disable=self._disable_pbar,
+            total=len(basins),
+        )
+        if self.period == 'validation':
             pbar.set_description('# Validation')
         else:
-            pbar.set_description('# Inference' if self.cfg.inference_mode else '# Evaluation')
+            pbar.set_description(
+                '# Inference' if self.cfg.inference_mode else '# Evaluation'
+            )
 
         self._ensure_no_previous_results_saved(epoch)
 
@@ -243,7 +296,9 @@ class BaseTester(object):
 
             # log loss of this basin plus number of samples in the logger to compute epoch aggregates later
             if experiment_logger is not None:
-                experiment_logger.log_step(**{k: (v, len(loader)) for k, v in all_losses.items()})
+                experiment_logger.log_step(
+                    **{k: (v, len(loader)) for k, v in all_losses.items()}
+                )
 
             predict_last_n = self.cfg.predict_last_n
             seq_length = self.cfg.seq_length
@@ -272,51 +327,94 @@ class BaseTester(object):
                 # need to add the frequency factor and remove 1 (to start at zero). If this is a forecast model,
                 # `date` should refer to the issue dates and the `time_step` coordinates should be positive for
                 # positive lead times (negative for any lookback into the hindcast).
-                time_step_coords = ((dates[freq][0, :] - dates[freq][0, -1]) / pd.Timedelta(freq)).astype(
-                    np.int64) + frequency_factor - 1
+                time_step_coords = (
+                    (
+                        (dates[freq][0, :] - dates[freq][0, -1])
+                        / pd.Timedelta(freq)
+                    ).astype(np.int64)
+                    + frequency_factor
+                    - 1
+                )
                 date_coords = dates[lowest_freq][:, -1]
                 # TODO (future) : As in all of the forecast models (but not `Multimet`), this assumes
                 # that all lead times are present from 1 to `self.dataset.lead_time`.
-                if hasattr(self.dataset, 'lead_time') and self.dataset.lead_time:
+                if (
+                    hasattr(self.dataset, 'lead_time')
+                    and self.dataset.lead_time
+                ):
                     time_step_coords += self.dataset.lead_time
-                    date_coords = dates[lowest_freq][:, -self.dataset.lead_time-1]
-                coords = {
-                    'date': date_coords,
-                    'time_step': time_step_coords
-                }
+                    date_coords = dates[lowest_freq][
+                        :, -self.dataset.lead_time - 1
+                    ]
+                coords = {'date': date_coords, 'time_step': time_step_coords}
                 xr = xarray.Dataset(data_vars=data_vars, coords=coords)
-                xr = xr.reindex({
-                    'date':
-                        pd.DatetimeIndex(pd.date_range(xr["date"].values[0], xr["date"].values[-1], freq=lowest_freq),
-                                         name='date')
-                })
+                xr = xr.reindex(
+                    {
+                        'date': pd.DatetimeIndex(
+                            pd.date_range(
+                                xr['date'].values[0],
+                                xr['date'].values[-1],
+                                freq=lowest_freq,
+                            ),
+                            name='date',
+                        )
+                    }
+                )
                 xr = self.dataset.scaler.unscale(xr)
                 results[freq]['xr'] = xr
 
                 # create datetime range at the current frequency
-                freq_date_range = pd.date_range(start=dates[lowest_freq][0, -1], end=dates[freq][-1, -1], freq=freq)
+                freq_date_range = pd.date_range(
+                    start=dates[lowest_freq][0, -1],
+                    end=dates[freq][-1, -1],
+                    freq=freq,
+                )
                 # remove datetime steps that are not being predicted from the datetime range
                 mask = np.ones(frequency_factor).astype(bool)
-                mask[:-predict_last_n[freq]] = False
-                freq_date_range = freq_date_range[np.tile(mask, len(xr['date']))]
+                mask[: -predict_last_n[freq]] = False
+                freq_date_range = freq_date_range[
+                    np.tile(mask, len(xr['date']))
+                ]
 
                 # only warn once per freq
-                if frequency_factor < predict_last_n[freq] and basin == next(iter(basins)):
-                    tqdm.write(f'Metrics for {freq} are calculated over last {frequency_factor} elements only. '
-                               f'Ignoring {predict_last_n[freq] - frequency_factor} predictions per sequence.')
+                if frequency_factor < predict_last_n[freq] and basin == next(
+                    iter(basins)
+                ):
+                    tqdm.write(
+                        f'Metrics for {freq} are calculated over last {frequency_factor} elements only. '
+                        f'Ignoring {predict_last_n[freq] - frequency_factor} predictions per sequence.'
+                    )
 
                 if metrics:
                     for target_variable in self.cfg.target_variables:
                         # stack dates and time_steps so we don't just evaluate every 24h when use_frequencies=[1D, 1h]
-                        obs = xr.isel(time_step=slice(-predict_last_n[freq], -predict_last_n[freq] + 1)) \
-                            .stack(datetime=['date', 'time_step']) \
-                            .drop_vars({'datetime', 'date', 'time_step'})[f"{target_variable}_obs"]
+                        obs = (
+                            xr.isel(
+                                time_step=slice(
+                                    -predict_last_n[freq],
+                                    -predict_last_n[freq] + 1,
+                                )
+                            )
+                            .stack(datetime=['date', 'time_step'])
+                            .drop_vars({'datetime', 'date', 'time_step'})[
+                                f'{target_variable}_obs'
+                            ]
+                        )
                         obs['datetime'] = freq_date_range
                         # check if there are observations for this period
                         if obs.notnull().any():
-                            sim = xr.isel(time_step=slice(-predict_last_n[freq], -predict_last_n[freq] + 1)) \
-                                .stack(datetime=['date', 'time_step']) \
-                                .drop_vars({'datetime', 'date', 'time_step'})[f"{target_variable}_sim"]
+                            sim = (
+                                xr.isel(
+                                    time_step=slice(
+                                        -predict_last_n[freq],
+                                        -predict_last_n[freq] + 1,
+                                    )
+                                )
+                                .stack(datetime=['date', 'time_step'])
+                                .drop_vars({'datetime', 'date', 'time_step'})[
+                                    f'{target_variable}_sim'
+                                ]
+                            )
                             sim['datetime'] = freq_date_range
 
                             # clip negative predictions to zero, if variable is listed in config 'clip_target_to_zero'
@@ -333,31 +431,60 @@ class BaseTester(object):
                                         msg = f'Supported {self.cfg.tester_sample_reduction=}'
                                         raise KeyError(msg)
 
-                            var_metrics = metrics if isinstance(metrics, list) else metrics[target_variable]
+                            var_metrics = (
+                                metrics
+                                if isinstance(metrics, list)
+                                else metrics[target_variable]
+                            )
                             if 'all' in var_metrics:
                                 var_metrics = get_available_metrics()
                             try:
-                                values = calculate_metrics(obs, sim, metrics=var_metrics, resolution=freq)
+                                values = calculate_metrics(
+                                    obs,
+                                    sim,
+                                    metrics=var_metrics,
+                                    resolution=freq,
+                                )
                             except AllNaNError as err:
-                                msg = f'Basin {basin} ' \
-                                    + (f'{target_variable} ' if len(self.cfg.target_variables) > 1 else '') \
-                                    + (f'{freq} ' if len(self.dataset.frequencies) > 1 else '') \
+                                msg = (
+                                    f'Basin {basin} '
+                                    + (
+                                        f'{target_variable} '
+                                        if len(self.cfg.target_variables) > 1
+                                        else ''
+                                    )
+                                    + (
+                                        f'{freq} '
+                                        if len(self.dataset.frequencies) > 1
+                                        else ''
+                                    )
                                     + str(err)
+                                )
                                 LOGGER.warning(msg)
-                                values = {metric: np.nan for metric in var_metrics}
+                                values = {
+                                    metric: np.nan for metric in var_metrics
+                                }
 
                             # add variable identifier to metrics if needed
                             if len(self.cfg.target_variables) > 1:
-                                values = {f"{target_variable}_{key}": val for key, val in values.items()}
+                                values = {
+                                    f'{target_variable}_{key}': val
+                                    for key, val in values.items()
+                                }
                             # add frequency identifier to metrics if needed
                             if len(self.dataset.frequencies) > 1:
-                                values = {f"{key}_{freq}": val for key, val in values.items()}
+                                values = {
+                                    f'{key}_{freq}': val
+                                    for key, val in values.items()
+                                }
                             if experiment_logger is not None:
                                 experiment_logger.log_step(**values)
                             results[freq].update(values)
 
             if basin in basins_for_figures:
-                self._create_and_log_figures(basin, results, experiment_logger, epoch or -1)
+                self._create_and_log_figures(
+                    basin, results, experiment_logger, epoch or -1
+                )
 
             self._save_incremental_results(
                 basin,
@@ -373,7 +500,9 @@ class BaseTester(object):
                     for name, metric in freq_metrics.items():
                         if name == 'xr':
                             continue
-                        metrics_results.setdefault(freq, {}).setdefault(name, []).append(metric)
+                        metrics_results.setdefault(freq, {}).setdefault(
+                            name, []
+                        ).append(metric)
 
         if metrics and not experiment_logger:
             for freq, freq_metrics in metrics_results.items():
@@ -385,16 +514,24 @@ class BaseTester(object):
         if not self.cfg.tester_skip_obs_all_nan:
             return
 
-        period_start, period_end = self.cfg.test_start_date, self.cfg.test_end_date
+        period_start, period_end = (
+            self.cfg.test_start_date,
+            self.cfg.test_end_date,
+        )
         if self.period == 'validation':
-            period_start, period_end = self.cfg.validation_start_date, self.cfg.validation_end_date
+            period_start, period_end = (
+                self.cfg.validation_start_date,
+                self.cfg.validation_end_date,
+            )
 
         # TODO(future): this may be optimized to work vectorically via xarray on all
         # basins at once.
         for basin in self.basins:
             basin_ds = self.dataset._dataset.sel(basin=basin)
             # Calculate all-nan ranges
-            diffs = np.diff(basin_ds.streamflow.isnull(), prepend=[0], append=[0])
+            diffs = np.diff(
+                basin_ds.streamflow.isnull(), prepend=[0], append=[0]
+            )
             (starts,), (ends,) = np.where(diffs == 1), np.where(diffs == -1)
 
             nan_date_starts = basin_ds.date.data[starts]
@@ -403,25 +540,45 @@ class BaseTester(object):
                 if np.any((nan_date_starts <= start) & (nan_date_ends >= end)):
                     yield basin
 
-    def _create_and_log_figures(self, basin: str, results: dict, experiment_logger: Logger|None, epoch: int):
+    def _create_and_log_figures(
+        self,
+        basin: str,
+        results: dict,
+        experiment_logger: Logger | None,
+        epoch: int,
+    ):
         for target_var in self.cfg.target_variables:
             for freq in results:
                 xr = results[freq]['xr']
-                obs = xr[f"{target_var}_obs"].values
-                sim = xr[f"{target_var}_sim"].values
+                obs = xr[f'{target_var}_obs'].values
+                sim = xr[f'{target_var}_sim'].values
                 # clip negative predictions to zero, if variable is listed in config 'clip_target_to_zero'
                 if target_var in self.cfg.clip_targets_to_zero:
                     sim = xarray.where(sim < 0, 0, sim)
                 figures = [
                     self._get_plots(
-                        obs, sim, title=f"{target_var} - Basin {basin} - Epoch {epoch} - Frequency {freq}")[0],
+                        obs,
+                        sim,
+                        title=f'{target_var} - Basin {basin} - Epoch {epoch} - Frequency {freq}',
+                    )[0],
                 ]
                 # make sure the preamble is a valid file name
-                preamble = re.sub(r"[^A-Za-z0-9\._\-]+", "", target_var)
+                preamble = re.sub(r'[^A-Za-z0-9\._\-]+', '', target_var)
                 if experiment_logger:
-                    experiment_logger.log_figures(figures, freq, preamble, self.period, basin)
+                    experiment_logger.log_figures(
+                        figures, freq, preamble, self.period, basin
+                    )
                 else:
-                    do_log_figures(None, self.cfg.img_log_dir, epoch, figures, freq, preamble, self.period, basin)
+                    do_log_figures(
+                        None,
+                        self.cfg.img_log_dir,
+                        epoch,
+                        figures,
+                        freq,
+                        preamble,
+                        self.period,
+                        basin,
+                    )
 
     def _ensure_no_previous_results_saved(self, epoch: int | None = None):
         parent_directory = self._parent_directory_for_results(epoch)
@@ -448,7 +605,7 @@ class BaseTester(object):
         epoch: int | None,
     ):
         """Store results in various formats to disk.
-        
+
         Developer note: We cannot store the time series data (the xarray objects) as netCDF file but have to use
         pickle as a wrapper. The reason is that netCDF files have special constraints on the characters/symbols that can
         be used as variable names. However, for convenience we will store metrics, if calculated, in a separate csv-file.
@@ -460,9 +617,11 @@ class BaseTester(object):
             metrics_list = self.cfg.metrics
             if isinstance(metrics_list, dict):
                 metrics_list = list(set(metrics_list.values()))
-            if "all" in metrics_list:
+            if 'all' in metrics_list:
                 metrics_list = get_available_metrics()
-            df = metrics_to_dataframe({basin: results}, metrics_list, self.cfg.target_variables)
+            df = metrics_to_dataframe(
+                {basin: results}, metrics_list, self.cfg.target_variables
+            )
             metrics_file = parent_directory / f'{self.period}_metrics.csv'
             df.to_csv(metrics_file, mode='a', header=not metrics_file.exists())
 
@@ -516,13 +675,24 @@ class BaseTester(object):
         parent_directory.mkdir(parents=True, exist_ok=True)
         return parent_directory
 
-    def _evaluate(self, model: BaseModel, loader: DataLoader, frequencies: list[str], save_all_output: bool = False, basins: set[str] = set()):
+    def _evaluate(
+        self,
+        model: BaseModel,
+        loader: DataLoader,
+        frequencies: list[str],
+        save_all_output: bool = False,
+        basins: set[str] = set(),
+    ):
         predict_last_n = self.cfg.predict_last_n
         if isinstance(predict_last_n, int):
-            predict_last_n = {frequencies[0]: predict_last_n}  # if predict_last_n is int, there's only one frequency
+            predict_last_n = {
+                frequencies[0]: predict_last_n
+            }  # if predict_last_n is int, there's only one frequency
 
         with torch.inference_mode():
-            basin_samples = itertools.groupby(loader, lambda data: data['basin_index'][0].item())
+            basin_samples = itertools.groupby(
+                loader, lambda data: data['basin_index'][0].item()
+            )
             for basin_index, samples in basin_samples:
                 basin = loader.dataset._basins[basin_index]
                 if basin not in basins:
@@ -538,28 +708,47 @@ class BaseTester(object):
                 for data in samples:
                     for key in data:
                         if key.startswith('x_d'):
-                            data[key] = {k: v.to(self.device) for k, v in data[key].items()}
+                            data[key] = {
+                                k: v.to(self.device)
+                                for k, v in data[key].items()
+                            }
                         elif not key.startswith('date'):
                             data[key] = data[key].to(self.device)
 
-                    with autocast(self.device.type, enabled=(self.device.type == 'cuda')):
+                    with autocast(
+                        self.device.type, enabled=(self.device.type == 'cuda')
+                    ):
                         data = model.pre_model_hook(data, is_train=False)
-                        predictions, loss = self._get_predictions_and_loss(model, data)
+                        predictions, loss = self._get_predictions_and_loss(
+                            model, data
+                        )
 
                     if save_all_output:
                         for key, value in predictions.items():
                             if value is not None and type(value) != dict:
-                                all_output.setdefault(key, []).append(value.detach().to('cpu', non_blocking=True))
+                                all_output.setdefault(key, []).append(
+                                    value.detach().to('cpu', non_blocking=True)
+                                )
 
                     for freq in frequencies:
                         if predict_last_n[freq] == 0:
                             continue  # no predictions for this frequency
                         freq_key = '' if len(frequencies) == 1 else f'_{freq}'
-                        y_hat_sub, y_sub = self._subset_targets(model, data, predictions, predict_last_n[freq], freq_key)
+                        y_hat_sub, y_sub = self._subset_targets(
+                            model,
+                            data,
+                            predictions,
+                            predict_last_n[freq],
+                            freq_key,
+                        )
                         # Date subsetting is universal across all models and thus happens here.
-                        date_sub = data[f'date{freq_key}'][:, -predict_last_n[freq]:]
+                        date_sub = data[f'date{freq_key}'][
+                            :, -predict_last_n[freq] :
+                        ]
 
-                        y_hat_sub = y_hat_sub.detach().to('cpu', non_blocking=True)
+                        y_hat_sub = y_hat_sub.detach().to(
+                            'cpu', non_blocking=True
+                        )
                         y_sub = y_sub.detach().to('cpu', non_blocking=True)
 
                         if freq not in preds:
@@ -569,7 +758,9 @@ class BaseTester(object):
                         else:
                             preds[freq] = torch.cat((preds[freq], y_hat_sub), 0)
                             obs[freq] = torch.cat((obs[freq], y_sub), 0)
-                            dates[freq] = np.concatenate((dates[freq], date_sub), axis=0)
+                            dates[freq] = np.concatenate(
+                                (dates[freq], date_sub), axis=0
+                            )
 
                     losses.append(loss)
 
@@ -583,7 +774,11 @@ class BaseTester(object):
                 else:
                     for loss_name in losses[0].keys():
                         loss_values = [loss[loss_name] for loss in losses]
-                        mean_losses[loss_name] = np.nanmean(loss_values) if not np.all(np.isnan(loss_values)) else np.nan
+                        mean_losses[loss_name] = (
+                            np.nanmean(loss_values)
+                            if not np.all(np.isnan(loss_values))
+                            else np.nan
+                        )
 
                 yield {
                     'basin': basin,
@@ -595,13 +790,21 @@ class BaseTester(object):
                     'mean_losses': mean_losses,
                 }
 
-    def _get_predictions_and_loss(self, model: BaseModel, data: dict[str, torch.Tensor]) -> tuple[torch.Tensor, float]:
+    def _get_predictions_and_loss(
+        self, model: BaseModel, data: dict[str, torch.Tensor]
+    ) -> tuple[torch.Tensor, float]:
         predictions = model(data)
         _, all_losses = self.loss_obj(predictions, data)
         return predictions, {k: v.item() for k, v in all_losses.items()}
 
-    def _subset_targets(self, model: BaseModel, data: dict[str, torch.Tensor], predictions: np.ndarray,
-                        predict_last_n: int, freq: str):
+    def _subset_targets(
+        self,
+        model: BaseModel,
+        data: dict[str, torch.Tensor],
+        predictions: np.ndarray,
+        predict_last_n: int,
+        freq: str,
+    ):
         raise NotImplementedError
 
     def _create_xarray_data_vars(self, y_hat: np.ndarray, y: np.ndarray):
@@ -628,11 +831,23 @@ class RegressionTester(BaseTester):
         If True, the model weights will be initialized with the checkpoint from the last available epoch in `run_dir`.
     """
 
-    def __init__(self, cfg: Config, run_dir: Path, period: str = "test", init_model: bool = True):
+    def __init__(
+        self,
+        cfg: Config,
+        run_dir: Path,
+        period: str = 'test',
+        init_model: bool = True,
+    ):
         super(RegressionTester, self).__init__(cfg, run_dir, period, init_model)
 
-    def _subset_targets(self, model: BaseModel, data: dict[str, torch.Tensor], predictions: np.ndarray,
-                        predict_last_n: np.ndarray, freq: str):
+    def _subset_targets(
+        self,
+        model: BaseModel,
+        data: dict[str, torch.Tensor],
+        predictions: np.ndarray,
+        predict_last_n: np.ndarray,
+        freq: str,
+    ):
         y_hat_sub = predictions[f'y_hat{freq}'][:, -predict_last_n:, :]
         y_sub = data[f'y{freq}'][:, -predict_last_n:, :]
         return y_hat_sub, y_sub
@@ -640,8 +855,8 @@ class RegressionTester(BaseTester):
     def _create_xarray_data_vars(self, y_hat: np.ndarray, y: np.ndarray):
         data = {}
         for i, var in enumerate(self.cfg.target_variables):
-            data[f"{var}_obs"] = (('date', 'time_step'), y[:, :, i])
-            data[f"{var}_sim"] = (('date', 'time_step'), y_hat[:, :, i])
+            data[f'{var}_obs'] = (('date', 'time_step'), y[:, :, i])
+            data[f'{var}_sim'] = (('date', 'time_step'), y_hat[:, :, i])
         return data
 
     def _get_plots(self, qobs: np.ndarray, qsim: np.ndarray, title: str):
@@ -665,10 +880,20 @@ class UncertaintyTester(BaseTester):
         If True, the model weights will be initialized with the checkpoint from the last available epoch in `run_dir`.
     """
 
-    def __init__(self, cfg: Config, run_dir: Path, period: str = "test", init_model: bool = True):
-        super(UncertaintyTester, self).__init__(cfg, run_dir, period, init_model)
+    def __init__(
+        self,
+        cfg: Config,
+        run_dir: Path,
+        period: str = 'test',
+        init_model: bool = True,
+    ):
+        super(UncertaintyTester, self).__init__(
+            cfg, run_dir, period, init_model
+        )
 
-    def _get_predictions_and_loss(self, model: BaseModel, data: dict[str, torch.Tensor]) -> tuple[torch.Tensor, float]:
+    def _get_predictions_and_loss(
+        self, model: BaseModel, data: dict[str, torch.Tensor]
+    ) -> tuple[torch.Tensor, float]:
         LOGGER.debug('getting model outputs')
         outputs = model(data)
         LOGGER.debug('getting model losses')
@@ -679,12 +904,14 @@ class UncertaintyTester(BaseTester):
         model.eval()
         return predictions, {k: v.item() for k, v in all_losses.items()}
 
-    def _subset_targets(self,
-                        model: BaseModel,
-                        data: dict[str, torch.Tensor],
-                        predictions: np.ndarray,
-                        predict_last_n: int,
-                        freq: str = None):
+    def _subset_targets(
+        self,
+        model: BaseModel,
+        data: dict[str, torch.Tensor],
+        predictions: np.ndarray,
+        predict_last_n: int,
+        freq: str = None,
+    ):
         y_hat_sub = predictions[f'y_hat{freq}'][:, -predict_last_n:, :]
         y_sub = data[f'y{freq}'][:, -predict_last_n:, :]
         return y_hat_sub, y_sub
@@ -692,12 +919,16 @@ class UncertaintyTester(BaseTester):
     def _create_xarray_data_vars(self, y_hat: np.ndarray, y: np.ndarray):
         data = {}
         for i, var in enumerate(self.cfg.target_variables):
-            data[f"{var}_obs"] = (('date', 'time_step'), y[:, :, i])
-            data[f"{var}_sim"] = (('date', 'time_step', 'samples'), y_hat[:, :, i, :])
+            data[f'{var}_obs'] = (('date', 'time_step'), y[:, :, i])
+            data[f'{var}_sim'] = (
+                ('date', 'time_step', 'samples'),
+                y_hat[:, :, i, :],
+            )
         return data
 
     def _get_plots(self, qobs: np.ndarray, qsim: np.ndarray, title: str):
         return plots.uncertainty_plot(qobs, qsim, title)
+
 
 def _ensure_unicode_or_bytes_are_strings(ds: xarray.Dataset):
     updates = {
