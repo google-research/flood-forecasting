@@ -43,25 +43,32 @@ from absl import flags
 PATH = Path(os.path.dirname(__file__))  # Abs path for .../config/basins.
 
 NUM_BASINS = flags.DEFINE_multi_integer(
-    "basins",
+    'basins',
     default=None,
-    help="Number of basins files to genereate. Supply 0 to include all.",
+    help='Number of basins files to genereate. Supply 0 to include all.',
     required=True,
 )
 
 BATCH = flags.DEFINE_integer(
-    "batch", default=None, help="The batch number of the results.", required=True
+    'batch',
+    default=None,
+    help='The batch number of the results.',
+    required=True,
 )
 
 
 def main(unused_argv):
-    caravan = read_gauges(PATH / "caravan_gauges.txt")
-    multimet = read_gauges(PATH / "multimet_gauges.txt")
+    caravan = read_gauges(PATH / 'caravan_gauges.txt')
+    multimet = read_gauges(PATH / 'multimet_gauges.txt')
     all = sorted(caravan & multimet)
-    datasets = {k: tuple(v) for k, v in itertools.groupby(all, key=extract_dataset)}
+    datasets = {
+        k: tuple(v) for k, v in itertools.groupby(all, key=extract_dataset)
+    }
 
     for num_basins in NUM_BASINS.value:
-        with open(PATH / "intersections" / f"{num_basins}_{BATCH.value}.txt", "w") as f:
+        with open(
+            PATH / 'intersections' / f'{num_basins}_{BATCH.value}.txt', 'w'
+        ) as f:
             for basins in datasets.values():
                 # TODO: Divide dataset sizes correctly for the case requesting
                 #       a larger total than some datasets' size. Because then
@@ -70,7 +77,7 @@ def main(unused_argv):
                 #       For example, to generate 5000, need to input 12000.
                 k = min(len(basins), math.ceil(num_basins / len(datasets)))
                 res = random.sample(basins, k=k)
-                f.writelines(f"{e}\n" for e in res or basins)
+                f.writelines(f'{e}\n' for e in res or basins)
 
 
 def read_gauges(file: Path) -> set[str]:
@@ -79,8 +86,8 @@ def read_gauges(file: Path) -> set[str]:
 
 
 def extract_dataset(e: str) -> str:
-    return e.partition("_")[0]
+    return e.partition('_')[0]
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(main)
