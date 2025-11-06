@@ -13,7 +13,6 @@
 # limitations under the License.
 
 
-
 import torch
 import torch.nn as nn
 
@@ -26,6 +25,7 @@ from googlehydrology.modelzoo.inputlayer import InputLayer
 
 FC_XAVIER = WeightInitOpt.FC_XAVIER
 
+
 class HandoffForecastLSTM(BaseModel):
     """An encoder/decoder LSTM model class used for forecasting.
 
@@ -36,7 +36,7 @@ class HandoffForecastLSTM(BaseModel):
     new LSTM that rolls out over the forecast period. The handoff network is implemented as a custom FC
     network, which can have multiple layers. The handoff network is implemented using the
     ``state_handoff_network`` config parameter.
-    
+
     The hindcast and forecast LSTMs have different weights and biases, different heads, and can have
     different embedding networks, as defined by ``hindcast_embedding`` and ``forecast_embedding`` in the
     config. The hidden size of the hindcast LSTM is set using the ``hindcast_hidden_size`` config parameter
@@ -45,7 +45,7 @@ class HandoffForecastLSTM(BaseModel):
 
     The handoff forecast LSTM model can implement a delayed handoff, such that the handoff between the
     hindcast and forecast LSTM occurs prior to the forecast issue time. This is controlled by the
-    ``forecast_overlap`` parameter in the config file. The forecast and hindcast LSTMs run concurrently 
+    ``forecast_overlap`` parameter in the config file. The forecast and hindcast LSTMs run concurrently
     for the number of timesteps indicated by ``forecast_overlap``. We recommend using the
     ``ForecastOverlapMSERegularization`` regularization option to regularize the loss function by
     (dis)agreement between the overlapping portion of the hindcast and forecast LSTMs. This regularization
@@ -57,8 +57,17 @@ class HandoffForecastLSTM(BaseModel):
     cfg : Config
         The run configuration.
     """
+
     # Specify submodules of the model that can later be used for finetuning. Names must match class attributes.
-    module_parts = ['hindcast_embedding_net', 'forecast_embedding_net', 'hindcast_lstm', 'forecast_lstm', 'handoff_net', 'hindcast_head', 'forecast_head']
+    module_parts = [
+        'hindcast_embedding_net',
+        'forecast_embedding_net',
+        'hindcast_lstm',
+        'forecast_lstm',
+        'handoff_net',
+        'hindcast_head',
+        'forecast_head',
+    ]
 
     def __init__(self, cfg: Config):
         super(HandoffForecastLSTM, self).__init__(cfg=cfg)
@@ -78,10 +87,14 @@ class HandoffForecastLSTM(BaseModel):
         # Hidden sizes are necessary for setting initial forget gate biases.
         self.hindcast_hidden_size = cfg.hindcast_hidden_size
         self.forecast_hidden_size = cfg.forecast_hidden_size
-                
+
         # Input embedding layers.
-        self.forecast_embedding_net = InputLayer(cfg=cfg, embedding_type='forecast')
-        self.hindcast_embedding_net = InputLayer(cfg=cfg, embedding_type='hindcast')
+        self.forecast_embedding_net = InputLayer(
+            cfg=cfg, embedding_type='forecast'
+        )
+        self.hindcast_embedding_net = InputLayer(
+            cfg=cfg, embedding_type='hindcast'
+        )
 
         # Time series layers.
         self.hindcast_lstm = nn.LSTM(
@@ -95,7 +108,7 @@ class HandoffForecastLSTM(BaseModel):
 
         # State handoff layer.
         self.handoff_net = FC(
-            input_size=self.hindcast_hidden_size*2,
+            input_size=self.hindcast_hidden_size * 2,
             hidden_sizes=cfg.state_handoff_network.hiddens,
             activation=cfg.state_handoff_network.activation,
             dropout=cfg.state_handoff_network.dropout,
@@ -103,7 +116,7 @@ class HandoffForecastLSTM(BaseModel):
         )
         self.handoff_linear = FC(
             input_size=cfg.state_handoff_network.hiddens[-1],
-            hidden_sizes=[self.forecast_hidden_size*2],
+            hidden_sizes=[self.forecast_hidden_size * 2],
             activation='linear',
             dropout=0.0,
             xavier_init=FC_XAVIER in cfg.weight_init_opts,
@@ -111,8 +124,12 @@ class HandoffForecastLSTM(BaseModel):
 
         # Head layers.
         self.dropout = nn.Dropout(p=cfg.output_dropout)
-        self.hindcast_head = get_head(cfg=cfg, n_in=self.hindcast_hidden_size, n_out=self.output_size)
-        self.forecast_head = get_head(cfg=cfg, n_in=self.forecast_hidden_size, n_out=self.output_size)
+        self.hindcast_head = get_head(
+            cfg=cfg, n_in=self.hindcast_hidden_size, n_out=self.output_size
+        )
+        self.forecast_head = get_head(
+            cfg=cfg, n_in=self.forecast_hidden_size, n_out=self.output_size
+        )
 
         lstm_init(
             lstms=[self.hindcast_lstm, self.forecast_lstm],
@@ -120,10 +137,7 @@ class HandoffForecastLSTM(BaseModel):
             weight_opts=cfg.weight_init_opts,
         )
 
-    def forward(
-        self,
-        data: dict[str, torch.Tensor]
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, data: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         """Perform a forward pass on the EncoderDecoderForecastLSTM model.
 
         Parameters
@@ -136,24 +150,26 @@ class HandoffForecastLSTM(BaseModel):
         dict[str, torch.Tensor]
             Model outputs as a dictionary.
                 - `y_hat`: model predictions of shape [batch size, sequence length, number of target variables]..
-                - `y_hindcast_overlap`: Output sequence from hindcast model used for regularization 
+                - `y_hindcast_overlap`: Output sequence from hindcast model used for regularization
                     [batch size, overlap_sequence length, number of target variables].
                 - `y_forecast_overlap`: Output sequence from forecast model used for regularization
                     [batch size, overlap_sequence length, number of target variables].
         """
-       
+
         # Run the embedding layers.
         hindcast_embeddings = self.hindcast_embedding_net(data)
         forecast_embeddings = self.forecast_embedding_net(data)
-        
+
         # Run the hindcast LSTM. This happens in two parts. First, the true hindcast
         # or spin-up, then the part the overlaps with the forecast. This is necessary
         # to extract the hidden and cell states at the point of the handoff.
-        spinup_embeddings = hindcast_embeddings[:-self.overlap, ]
-        overlap_embeddings = hindcast_embeddings[-self.overlap:,]
+        spinup_embeddings = hindcast_embeddings[: -self.overlap,]
+        overlap_embeddings = hindcast_embeddings[-self.overlap :,]
         spinup, (h_hindcast, c_hindcast) = self.hindcast_lstm(spinup_embeddings)
-        hindcast_overlap, _ = self.hindcast_lstm(overlap_embeddings, (h_hindcast, c_hindcast))
-        
+        hindcast_overlap, _ = self.hindcast_lstm(
+            overlap_embeddings, (h_hindcast, c_hindcast)
+        )
+
         # Handoff from hindcast to forecast.
         x = self.handoff_net(torch.cat([h_hindcast, c_hindcast], -1))
         initial_state = self.handoff_linear(x)
@@ -161,17 +177,27 @@ class HandoffForecastLSTM(BaseModel):
         h_handoff, c_handoff = h_handoff.contiguous(), c_handoff.contiguous()
 
         # Run the forecast LSTM.
-        forecast, _ = self.forecast_lstm(forecast_embeddings, (h_handoff, c_handoff))
+        forecast, _ = self.forecast_lstm(
+            forecast_embeddings, (h_handoff, c_handoff)
+        )
 
         # Run head layers.
-        y_spinup = self.hindcast_head(self.dropout(spinup.transpose(0, 1)))['y_hat']
-        y_hindcast_overlap = self.hindcast_head(self.dropout(hindcast_overlap.transpose(0, 1)))['y_hat']
-        y_forecast = self.forecast_head(self.dropout(forecast.transpose(0, 1)))['y_hat']
-        y_forecast_overlap = y_forecast[:, :-self.lead_time, :]
-        y_true_forecast = y_forecast[:, -self.lead_time:, :]
-        
+        y_spinup = self.hindcast_head(self.dropout(spinup.transpose(0, 1)))[
+            'y_hat'
+        ]
+        y_hindcast_overlap = self.hindcast_head(
+            self.dropout(hindcast_overlap.transpose(0, 1))
+        )['y_hat']
+        y_forecast = self.forecast_head(self.dropout(forecast.transpose(0, 1)))[
+            'y_hat'
+        ]
+        y_forecast_overlap = y_forecast[:, : -self.lead_time, :]
+        y_true_forecast = y_forecast[:, -self.lead_time :, :]
+
         # Create the full prediction sequence, and only pull the last `seg_length` timesteps.
-        y = torch.cat([y_spinup, y_hindcast_overlap, y_true_forecast], dim=1)[:, -self.seq_length:, :]
+        y = torch.cat([y_spinup, y_hindcast_overlap, y_true_forecast], dim=1)[
+            :, -self.seq_length :, :
+        ]
         return {
             'y_hat': y,
             'y_hindcast_overlap': y_hindcast_overlap,
