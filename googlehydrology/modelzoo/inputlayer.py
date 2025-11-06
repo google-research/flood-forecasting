@@ -101,13 +101,6 @@ class InputLayer(nn.Module):
             else:
                 dynamics_input_sizes = [len(group) for group in self._dynamic_inputs]
 
-        if cfg.head.lower() == "umal":
-            dynamics_input_sizes = [size + 1 for size in dynamics_input_sizes]
-            if isinstance(self._dynamic_inputs, dict):
-                self._dynamic_inputs = {k: v + ['_tau'] for k, v in self._dynamic_inputs.items()}
-            else:
-                self._dynamic_inputs = [group + ['_tau'] for group in self._dynamic_inputs]
-
         self._num_autoregression_inputs = 0
         if cfg.autoregressive_inputs:
             self._num_autoregression_inputs = len(cfg.autoregressive_inputs)

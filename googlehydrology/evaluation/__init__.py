@@ -36,9 +36,9 @@ def get_tester(cfg: Config, run_dir: Path, period: str, init_model: bool) -> Bas
     -------
     BaseTester
         `RegressionTester` if the model head is 'regression'. `UncertaintyTester` if the model head is one of 
-        {'gmm', 'cmal', 'cmal_deterministic', 'umal'} or if the evaluation is run in MC-Dropout mode.
+        {'cmal', 'cmal_deterministic'} or if the evaluation is run in MC-Dropout mode.
     """
-    if cfg.mc_dropout or cfg.head.lower() in ["gmm", "cmal", "cmal_deterministic", "umal"]:
+    if cfg.mc_dropout or cfg.head.lower() in ["cmal", "cmal_deterministic"]:
         Tester = UncertaintyTester
     # MC-LSTM is a special case, where the head returns an empty string but the model is trained as regression model.
     elif cfg.head.lower() in ["regression", ""]:

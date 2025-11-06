@@ -142,7 +142,7 @@ General model configuration
    e.g., [``cudalstm``, ``ealstm``, ``mtslstm``]
 
 -  ``head``: The prediction head that is used on top of the output of
-   the model class. Currently supported are ``regression``, ``gmm``, ``cmal``, ``cmal_deterministic`` and ``umal``.
+   the model class. Currently supported are ``regression``, ``cmal``, ``cmal_deterministic``.
    Make sure to pass the necessary options depending on your
    choice of the head (see below).
 
@@ -166,23 +166,6 @@ Can be ignored if ``head != 'regression'``
 -  ``mc_dropout``: True/False. Wheter Monte-Carlo dropout is used to 
    sample during inference. 
    
-GMM head
-~~~~~~~~
-Can be ignored if ``head != 'gmm'``
-
--  ``n_distributions``: The number of distributions used for the GMM head. 
--  ``n_samples``: Number of samples generated  (per time-step) from GMM. 
--  ``negative_sample_handling``: How to account for negative samples. 
-   Possible values are ``none`` for doing nothing, ``clip`` for clipping 
-   the values at zero, and ``truncate`` for resampling values that
-   were drawn below zero. If the last option is chosen, the additional 
-   argument ``negative_sample_max_retries`` controls how often the values 
-   are resampled. 
--  ``negative_sample_max_retries``: The number of repeated samples for the 
-   ``truncate`` option of the ``negative_sample_max_retries`` argument.
--  ``mc_dropout``: True/False. Whether Monte-Carlo dropout is used to 
-   sample during inference. 
-
 CMAL head
 ~~~~~~~~~
 Can be ignored if ``head not in ['cmal', 'cmal_deterministic']``
@@ -206,32 +189,6 @@ Can be ignored if ``head not in ['cmal', 'cmal_deterministic']``
    The 10 points are:
    * a point that is the distribution's mean,
    * then 9 points that represent 9 quantiles (0.1 through 0.9).
-
-
-UMAL head
-~~~~~~~~~
-Can be ignored if ``head != 'umal'``
-
--  ``n_taus``: The number of taus sampled to approximate the 
-   uncountable distributions.
--  ``umal_extend_batch``: True/False. Whether the batches should be 
-   extended ``n_taus`` times, to account for a specific approximation 
-   density already during the training.
--  ``tau_down`` The lower sampling bound of asymmetry parameter (should be 
-   above 0, below 1 and smaller than ``tau_up``).
--  ``tau_up`` The upper sampling bound of asymmetry parameter (should be 
-   above 0, below 1 and larger than ``tau_down``).   
--  ``n_samples``: Number of samples generated  (per time-step) from UMAL. 
--  ``negative_sample_handling``: Approach for handling negative sampling. 
-   Possible values are ``none`` for doing nothing, ``clip`` for clipping 
-   the values at zero, and ``truncate`` for resampling values that
-   were drawn below zero. If the last option is chosen, the additional 
-   argument ``negative_sample_max_retries`` controls how often the values 
-   are resampled. 
--  ``negative_sample_max_retries``: The number of repeated samples for the 
-   ``truncate`` option of the ``negative_sample_max_retries`` argument.
--  ``mc_dropout``: True/False. Whether Monte-Carlo dropout is used to 
-   sample during inference. 
 
 Multi-timescale training settings
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -397,7 +354,7 @@ Training settings
    :py:func:`here <googlehydrology.training.get_optimizer>`.
 
 -  ``loss``: Which loss to use. Currently supported are ``MSE``,
-   ``NSE``, ``RMSE``, ``GMMLoss``, ``CMALLoss``, and ``UMALLoss``. New 
+   ``NSE``, ``RMSE``, ``CMALLoss``. New 
    losses can be added :py:mod:`here <googlehydrology.training.loss>`.
 
 - ``allow_subsequent_nan_losses``: Define a number of training steps for

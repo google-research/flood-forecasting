@@ -67,7 +67,7 @@ def get_optimizer(model: torch.nn.Module, cfg: Config, *, is_gpu: bool = False) 
 def get_loss_obj(cfg: Config) -> loss.BaseLoss:
     """Get loss object, depending on the run configuration.
     
-    Currently supported are 'MSE', 'NSE', 'RMSE', 'GMMLoss', 'CMALLoss', and 'UMALLoss'.
+    Currently supported are 'MSE', 'NSE', 'RMSE', 'CMALLoss'.
     
     Parameters
     ----------
@@ -89,12 +89,8 @@ def get_loss_obj(cfg: Config) -> loss.BaseLoss:
         loss_obj = loss.MaskedNSELoss(cfg)
     elif cfg.loss.lower() == "rmse":
         loss_obj = loss.MaskedRMSELoss(cfg)
-    elif cfg.loss.lower() == "gmmloss":
-        loss_obj = loss.MaskedGMMLoss(cfg)
     elif cfg.loss.lower() == "cmalloss":
         loss_obj = loss.MaskedCMALLoss(cfg)
-    elif cfg.loss.lower() == "umalloss":
-        loss_obj = loss.MaskedUMALLoss(cfg)
     else:
         raise NotImplementedError(f"{cfg.loss} not implemented or not linked in `get_loss()`")
 
