@@ -17,12 +17,12 @@ from pathlib import Path
 from setuptools import setup
 
 # read the description from the README.md
-readme_file = Path(__file__).absolute().parent / "README.md"
-with readme_file.open("r") as fp:
+readme_file = Path(__file__).absolute().parent / 'README.md'
+with readme_file.open('r') as fp:
     long_description = fp.read()
 
 about = {}
-with open("googlehydrology/__about__.py", "r") as fp:
+with open('googlehydrology/__about__.py', 'r') as fp:
     exec(fp.read(), about)
 
 setup(
