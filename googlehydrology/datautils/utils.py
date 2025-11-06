@@ -38,9 +38,9 @@ except ValueError:
 
 def load_basin_file(basin_file: Path) -> list[str]:
     """Load list of basins from text file.
-    
+
     Note: Basins names are not allowed to end with '_period*'
-    
+
     Parameters
     ----------
     basin_file : Path
@@ -50,7 +50,7 @@ def load_basin_file(basin_file: Path) -> list[str]:
     -------
     list[str]
         List of basin ids as strings.
-        
+
     Raises
     ------
     ValueError
@@ -60,13 +60,15 @@ def load_basin_file(basin_file: Path) -> list[str]:
         basins = sorted(basin.strip() for basin in fp if basin.strip())
 
     # sanity check basin names
-    problematic_basins = [basin for basin in basins if basin.split('_')[-1].startswith('period')]
+    problematic_basins = [
+        basin for basin in basins if basin.split('_')[-1].startswith('period')
+    ]
     if problematic_basins:
         msg = [
-            f"The following basin names are invalid {problematic_basins}. Check documentation of the ",
-            "'load_basin_file()' functions for details."
+            f'The following basin names are invalid {problematic_basins}. Check documentation of the ',
+            "'load_basin_file()' functions for details.",
         ]
-        raise ValueError(" ".join(msg))
+        raise ValueError(' '.join(msg))
 
     return basins
 
@@ -117,12 +119,18 @@ def infer_frequency(index: pd.DatetimeIndex | np.ndarray) -> str:
     """
     native_frequency = pd.infer_freq(index)
     if native_frequency is None:
-        raise ValueError(f'Cannot infer a legal frequency from dataset: {native_frequency}.')
-    if native_frequency[0] not in '0123456789':  # add a value to the unit so to_timedelta works
+        raise ValueError(
+            f'Cannot infer a legal frequency from dataset: {native_frequency}.'
+        )
+    if (
+        native_frequency[0] not in '0123456789'
+    ):  # add a value to the unit so to_timedelta works
         native_frequency = f'1{native_frequency}'
 
     # pd.Timedelta doesn't understand weekly (W) frequencies, so we convert them to the equivalent multiple of 7D.
-    weekly_freq = re.match(r'(\d+)W(-(MON|TUE|WED|THU|FRI|SAT|SUN))?$', native_frequency)
+    weekly_freq = re.match(
+        r'(\d+)W(-(MON|TUE|WED|THU|FRI|SAT|SUN))?$', native_frequency
+    )
     if weekly_freq is not None:
         n = int(weekly_freq[1]) * 7
         native_frequency = f'{n}D'
@@ -130,7 +138,9 @@ def infer_frequency(index: pd.DatetimeIndex | np.ndarray) -> str:
     # Assert that the frequency corresponds to a positive time delta. We first add one offset to the base datetime
     # to make sure it's aligned with the frequency. Otherwise, adding an offset of e.g. 0Y would round up to the
     # nearest year-end, so we'd incorrectly miss a frequency of zero.
-    base_datetime = pd.to_datetime('2001-01-01 00:00:00') + to_offset(native_frequency)
+    base_datetime = pd.to_datetime('2001-01-01 00:00:00') + to_offset(
+        native_frequency
+    )
     if base_datetime >= base_datetime + to_offset(native_frequency):
         raise ValueError('Inferred dataset frequency is zero or negative.')
     return native_frequency
@@ -138,27 +148,31 @@ def infer_frequency(index: pd.DatetimeIndex | np.ndarray) -> str:
 
 def infer_datetime_coord(xr: DataArray | Dataset) -> str:
     """Checks for coordinate with 'date' in its name and returns the name.
-    
+
     Parameters
     ----------
     xr : DataArray | Dataset
         Array to infer coordinate name of.
-        
+
     Returns
     -------
     str
         Name of datetime coordinate name.
-        
+
     Raises
     ------
     RuntimeError
         If none or multiple coordinates with 'date' in its name are found.
     """
-    candidates = [c for c in list(xr.coords) if "date" in c]
+    candidates = [c for c in list(xr.coords) if 'date' in c]
     if len(candidates) > 1:
-        raise RuntimeError("Found multiple coordinates with 'date' in its name.")
+        raise RuntimeError(
+            "Found multiple coordinates with 'date' in its name."
+        )
     if not candidates:
-        raise RuntimeError("Did not find any coordinate with 'date' in its name")
+        raise RuntimeError(
+            "Did not find any coordinate with 'date' in its name"
+        )
 
     return candidates[0]
 
@@ -236,33 +250,49 @@ def get_frequency_factor(freq_one: str, freq_two: str) -> float:
     # some simple hard-coded cases
     factor = None
     regex_month_or_day = '-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|MON|TUE|WED|THU|FRI|SAT|SUN)$'
-    for i, (one, two) in enumerate([(offset_one, offset_two), (offset_two, offset_one)]):
+    for i, (one, two) in enumerate(
+        [(offset_one, offset_two), (offset_two, offset_one)]
+    ):
         # the offset anchor is irrelevant for the ratio between the frequencies, so we remove it from the string
         name_one = re.sub(regex_month_or_day, '', one.name)
         name_two = re.sub(regex_month_or_day, '', two.name)
-        if (name_one in ['A', _YE_FREQ] and name_two == _ME_FREQ) or (name_one in ['AS', 'YS'] and name_two == 'MS'):
+        if (name_one in ['A', _YE_FREQ] and name_two == _ME_FREQ) or (
+            name_one in ['AS', 'YS'] and name_two == 'MS'
+        ):
             factor = 12 * one.n / two.n
-        if (name_one in ['A', _YE_FREQ] and name_two == _QE_FREQ) or (name_one in ['AS', 'YS'] and name_two == 'QS'):
+        if (name_one in ['A', _YE_FREQ] and name_two == _QE_FREQ) or (
+            name_one in ['AS', 'YS'] and name_two == 'QS'
+        ):
             factor = 4 * one.n / two.n
-        if (name_one == _QE_FREQ and name_two == _ME_FREQ) or (name_one == 'QS' and name_two == 'MS'):
+        if (name_one == _QE_FREQ and name_two == _ME_FREQ) or (
+            name_one == 'QS' and name_two == 'MS'
+        ):
             factor = 3 * one.n / two.n
         if name_one == 'W' and name_two == 'D':
             factor = 7 * one.n / two.n
 
         if factor is not None:
             if i == 1:
-                return 1 / factor  # `one` was `offset_two`, `two` was `offset_one`
+                return (
+                    1 / factor
+                )  # `one` was `offset_two`, `two` was `offset_one`
             return factor
 
     # If all other checks didn't match, we try to convert the frequencies to timedeltas. However, we first need to avoid
     # two cases: (1) pd.to_timedelta currently interprets 'M' as minutes, while it means months in to_offset.
     # (2) Using 'M', 'Y', and 'y' in pd.to_timedelta is deprecated and won't work in the future, so we don't allow it.
     if any(
-            re.sub(regex_month_or_day, '', offset.name) in ['M', 'Y', 'A', 'y', 'ME', 'YE']
-            for offset in [offset_one, offset_two]):
-        raise ValueError(f'Frequencies {freq_one} and/or {freq_two} are not comparable.')
+        re.sub(regex_month_or_day, '', offset.name)
+        in ['M', 'Y', 'A', 'y', 'ME', 'YE']
+        for offset in [offset_one, offset_two]
+    ):
+        raise ValueError(
+            f'Frequencies {freq_one} and/or {freq_two} are not comparable.'
+        )
     try:
         factor = pd.to_timedelta(freq_one) / pd.to_timedelta(freq_two)
     except ValueError as err:
-        raise ValueError(f'Frequencies {freq_one} and/or {freq_two} are not comparable.') from err
+        raise ValueError(
+            f'Frequencies {freq_one} and/or {freq_two} are not comparable.'
+        ) from err
     return factor
