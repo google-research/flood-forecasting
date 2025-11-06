@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Integration tests that perform full runs. """
+"""Integration tests that perform full runs."""
+
 import pickle
 from pathlib import Path
 from typing import Callable
@@ -30,8 +31,12 @@ from googlehydrology.utils.config import Config
 from test import Fixture
 
 
-def test_daily_regression(get_config: Fixture[Callable[[str], dict]], single_timescale_model: Fixture[str],
-                          daily_dataset: Fixture[str], single_timescale_forcings: Fixture[str]):
+def test_daily_regression(
+    get_config: Fixture[Callable[[str], dict]],
+    single_timescale_model: Fixture[str],
+    daily_dataset: Fixture[str],
+    single_timescale_forcings: Fixture[str],
+):
     """Test regression training and evaluation for daily predictions.
 
     Parameters
@@ -46,14 +51,16 @@ def test_daily_regression(get_config: Fixture[Callable[[str], dict]], single_tim
         Daily forcings set to use.
     """
     config = get_config('daily_regression')
-    config.update_config({
-        'model': single_timescale_model,
-        'dataset': daily_dataset['dataset'],
-        'data_dir': config.data_dir / daily_dataset['dataset'],
-        'target_variables': daily_dataset['target'],
-        'forcings': single_timescale_forcings['forcings'],
-        'dynamic_inputs': single_timescale_forcings['variables']
-    })
+    config.update_config(
+        {
+            'model': single_timescale_model,
+            'dataset': daily_dataset['dataset'],
+            'data_dir': config.data_dir / daily_dataset['dataset'],
+            'target_variables': daily_dataset['target'],
+            'forcings': single_timescale_forcings['forcings'],
+            'dynamic_inputs': single_timescale_forcings['variables'],
+        }
+    )
 
     start_training(config)
     start_evaluation(cfg=config, run_dir=config.run_dir, epoch=1, period='test')
@@ -61,7 +68,9 @@ def test_daily_regression(get_config: Fixture[Callable[[str], dict]], single_tim
     _check_results(config, '01022500')
 
 
-def test_daily_regression_additional_features(get_config: Fixture[Callable[[str], dict]]):
+def test_daily_regression_additional_features(
+    get_config: Fixture[Callable[[str], dict]],
+):
     """Tests #38 (training and testing with additional_features).
 
     Parameters
@@ -77,9 +86,11 @@ def test_daily_regression_additional_features(get_config: Fixture[Callable[[str]
     _check_results(config, '01022500')
 
 
-def test_autoregression_daily_regression(get_config: Fixture[Callable[[str], dict]],
-                                         daily_dataset: Fixture[str], single_timescale_forcings: Fixture[str]):
-
+def test_autoregression_daily_regression(
+    get_config: Fixture[Callable[[str], dict]],
+    daily_dataset: Fixture[str],
+    single_timescale_forcings: Fixture[str],
+):
     """Tests training and testing with arlstm.
 
     Parameters
@@ -92,14 +103,16 @@ def test_autoregression_daily_regression(get_config: Fixture[Callable[[str], dic
         Daily forcings set to use.
     """
     config = get_config('autoregression_daily_regression')
-    config.update_config({
-        'model': 'arlstm',
-        'dataset': daily_dataset['dataset'],
-        'data_dir': config.data_dir / daily_dataset['dataset'],
-        'target_variables': daily_dataset['target'],
-        'forcings': single_timescale_forcings['forcings'],
-        'dynamic_inputs': single_timescale_forcings['variables']
-    })
+    config.update_config(
+        {
+            'model': 'arlstm',
+            'dataset': daily_dataset['dataset'],
+            'data_dir': config.data_dir / daily_dataset['dataset'],
+            'target_variables': daily_dataset['target'],
+            'forcings': single_timescale_forcings['forcings'],
+            'dynamic_inputs': single_timescale_forcings['variables'],
+        }
+    )
 
     start_training(config)
     start_evaluation(cfg=config, run_dir=config.run_dir, epoch=1, period='test')
@@ -107,8 +120,10 @@ def test_autoregression_daily_regression(get_config: Fixture[Callable[[str], dic
     _check_results(config, '01022500')
 
 
-def test_daily_regression_with_embedding(get_config: Fixture[Callable[[str], dict]],
-                                         single_timescale_model: Fixture[str]):
+def test_daily_regression_with_embedding(
+    get_config: Fixture[Callable[[str], dict]],
+    single_timescale_model: Fixture[str],
+):
     """Tests training and testing with static and dynamic embedding network.
 
     Parameters
@@ -127,7 +142,9 @@ def test_daily_regression_with_embedding(get_config: Fixture[Callable[[str], dic
     _check_results(config, '01022500')
 
 
-def test_transformer_daily_regression(get_config: Fixture[Callable[[str], dict]]):
+def test_transformer_daily_regression(
+    get_config: Fixture[Callable[[str], dict]],
+):
     """Tests training and testing with a transformer model.
 
     Parameters
@@ -143,7 +160,10 @@ def test_transformer_daily_regression(get_config: Fixture[Callable[[str], dict]]
     _check_results(config, '01022500')
 
 
-def test_multi_timescale_regression(get_config: Fixture[Callable[[str], dict]], multi_timescale_model: Fixture[str]):
+def test_multi_timescale_regression(
+    get_config: Fixture[Callable[[str], dict]],
+    multi_timescale_model: Fixture[str],
+):
     """Test regression training and evaluation for multi-timescale predictions.
 
     Parameters
@@ -163,11 +183,16 @@ def test_multi_timescale_regression(get_config: Fixture[Callable[[str], dict]], 
     start_evaluation(cfg=config, run_dir=config.run_dir, epoch=1, period='test')
 
     results = get_basin_results(config.run_dir, 1)[basin]
-    discharge = hourlycamelsus.load_hourly_us_netcdf(config.data_dir, config.forcings[0]) \
-        .sel(basin=basin, date=slice(test_start_date, test_end_date))['qobs_mm_per_hour']
+    discharge = hourlycamelsus.load_hourly_us_netcdf(
+        config.data_dir, config.forcings[0]
+    ).sel(basin=basin, date=slice(test_start_date, test_end_date))[
+        'qobs_mm_per_hour'
+    ]
 
     hourly_results = results['1h']['xr'].to_dataframe().reset_index()
-    hourly_results.index = hourly_results['date'] + hourly_results['time_step'] * to_offset('h')
+    hourly_results.index = hourly_results['date'] + hourly_results[
+        'time_step'
+    ] * to_offset('h')
     assert (results['1h']['xr']['time_step'].values == list(range(24))).all()
     assert hourly_results.index[0] == test_start_date
     assert hourly_results.index[-1] == test_end_date.floor('h')
@@ -175,18 +200,24 @@ def test_multi_timescale_regression(get_config: Fixture[Callable[[str], dict]], 
     daily_results = results['1D']['xr']
     assert (results['1D']['xr']['time_step'].values == [0]).all()
     assert pd.to_datetime(daily_results['date'].values[0]) == test_start_date
-    assert pd.to_datetime(daily_results['date'].values[-1]) == test_end_date.floor('D')
+    assert pd.to_datetime(
+        daily_results['date'].values[-1]
+    ) == test_end_date.floor('D')
     assert len(daily_results['qobs_mm_per_hour_obs']) == len(discharge) // 24
 
     assert len(discharge) == len(hourly_results)
-    assert discharge.values == approx(hourly_results['qobs_mm_per_hour_obs'].values, nan_ok=True)
+    assert discharge.values == approx(
+        hourly_results['qobs_mm_per_hour_obs'].values, nan_ok=True
+    )
 
     # Hourly CAMELS forcings have no NaNs, so there should be no NaN predictions
     assert not pd.isna(hourly_results['qobs_mm_per_hour_sim']).any()
     assert not pd.isna(daily_results['qobs_mm_per_hour_sim'].values).any()
 
 
-def test_daily_regression_nan_targets(get_config: Fixture[Callable[[str], dict]]):
+def test_daily_regression_nan_targets(
+    get_config: Fixture[Callable[[str], dict]],
+):
     """Tests #112 (evaluation when target values are NaN).
 
     Parameters
@@ -199,17 +230,20 @@ def test_daily_regression_nan_targets(get_config: Fixture[Callable[[str], dict]]
     start_training(config)
     start_evaluation(cfg=config, run_dir=config.run_dir, epoch=1, period='test')
 
-
     # the fact that the targets are NaN should not lead the model to create NaN outputs.
     # however, we do need to pass discharge as an NaN series, because the camels discharge loader would return [],
     # as the test period is outside the part of the discharge time series that is stored on disk.
-    discharge = pd.Series(float('nan'), index=pd.date_range(*get_test_start_end_dates(config)))
+    discharge = pd.Series(
+        float('nan'), index=pd.date_range(*get_test_start_end_dates(config))
+    )
     _check_results(config, '01022500', discharge=discharge)
 
 
-def test_forecast_daily_regression(get_config: Fixture[Callable[[str], dict]],
-                                   forecast_model: Fixture[str],
-                                   forecast_config_updates: Fixture[Callable[[str], dict]]):
+def test_forecast_daily_regression(
+    get_config: Fixture[Callable[[str], dict]],
+    forecast_model: Fixture[str],
+    forecast_config_updates: Fixture[Callable[[str], dict]],
+):
     """Test regression training and evaluation for daily predictions.
 
     Parameters
@@ -228,8 +262,10 @@ def test_forecast_daily_regression(get_config: Fixture[Callable[[str], dict]],
     start_training(config)
     start_evaluation(cfg=config, run_dir=config.run_dir, epoch=1, period='test')
 
-    nan_discharge = pd.Series(float('nan'), index=pd.date_range(*get_test_start_end_dates(config)))
-    _check_results(config, 'camelsaus_102101A', nan_discharge) # No valid data.
+    nan_discharge = pd.Series(
+        float('nan'), index=pd.date_range(*get_test_start_end_dates(config))
+    )
+    _check_results(config, 'camelsaus_102101A', nan_discharge)  # No valid data.
     _check_results(config, 'lamah_1145')
     _check_results(config, 'hysets_01075000')
 
@@ -254,8 +290,12 @@ def _check_results(config: Config, basin: str, discharge: pd.Series = None):
 
     # TODO (current) :: Remove debugging comments.
     results = get_basin_results(config.run_dir, 1)[basin]['1D']['xr']
-    assert pd.to_datetime(results['date'].values[0]) == test_start_date.floor('D')
-    assert pd.to_datetime(results['date'].values[-1]) == test_end_date.floor('D')
+    assert pd.to_datetime(results['date'].values[0]) == test_start_date.floor(
+        'D'
+    )
+    assert pd.to_datetime(results['date'].values[-1]) == test_end_date.floor(
+        'D'
+    )
 
     if discharge is None:
         discharge = _get_discharge(config, basin)
@@ -266,22 +306,32 @@ def _check_results(config: Config, basin: str, discharge: pd.Series = None):
         results = results.isel(time_step=-1)
 
     results_array = results[f'{config.target_variables[0]}_obs'].values
-    discharge_array = np.array([v.item() for v in discharge.loc[test_start_date:test_end_date].values])   
+    discharge_array = np.array(
+        [v.item() for v in discharge.loc[test_start_date:test_end_date].values]
+    )
     assert discharge_array == approx(results_array, nan_ok=True)
 
     # CAMELS forcings have no NaNs, so there should be no NaN predictions
     assert not pd.isna(results[f'{config.target_variables[0]}_sim']).any()
 
 
-def get_test_start_end_dates(config: Config) -> tuple[pd.Timestamp, pd.Timestamp]:
-    test_start_date = pd.to_datetime(config.test_start_date[0], format='%d/%m/%Y')
-    test_end_date = pd.to_datetime(config.test_end_date[0], format='%d/%m/%Y') + pd.Timedelta(days=1, seconds=-1)
+def get_test_start_end_dates(
+    config: Config,
+) -> tuple[pd.Timestamp, pd.Timestamp]:
+    test_start_date = pd.to_datetime(
+        config.test_start_date[0], format='%d/%m/%Y'
+    )
+    test_end_date = pd.to_datetime(
+        config.test_end_date[0], format='%d/%m/%Y'
+    ) + pd.Timedelta(days=1, seconds=-1)
 
     return test_start_date, test_end_date
 
 
 def get_basin_results(run_dir: Path, epoch: int) -> dict:
-    results_file = list(run_dir.glob(f'test/model_epoch{str(epoch).zfill(3)}/test_results.p'))
+    results_file = list(
+        run_dir.glob(f'test/model_epoch{str(epoch).zfill(3)}/test_results.p')
+    )
     if len(results_file) != 1:
         pytest.fail('Results file not found.')
 
@@ -290,9 +340,13 @@ def get_basin_results(run_dir: Path, epoch: int) -> dict:
 
 def _get_discharge(config: Config, basin: str) -> pd.Series:
     if config.dataset == 'camels_us':
-        _, area = camelsus.load_camels_us_forcings(config.data_dir, basin, 'daymet')
+        _, area = camelsus.load_camels_us_forcings(
+            config.data_dir, basin, 'daymet'
+        )
         return camelsus.load_camels_us_discharge(config.data_dir, basin, area)
     if config.dataset in ['caravan', 'multimet']:
-        return caravan.load_caravan_timeseries(config.data_dir, basin).to_dataframe()[config.target_variables]        
+        return caravan.load_caravan_timeseries(
+            config.data_dir, basin
+        ).to_dataframe()[config.target_variables]
     else:
         raise NotImplementedError

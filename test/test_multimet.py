@@ -26,6 +26,7 @@ from googlehydrology.datasetzoo.multimet import Multimet
 from googlehydrology.utils.config import Config
 from googlehydrology.utils.errors import NoTrainDataError, NoEvaluationDataError
 
+
 # --- Helper for Config attributes ---
 def _get_default_config_attributes(**kwargs):
     """Returns a dictionary of default config attributes."""
@@ -59,7 +60,9 @@ def _get_default_config_attributes(**kwargs):
     defaults.update(kwargs)
     return defaults
 
+
 # --- Pytest Fixtures ---
+
 
 @pytest.fixture
 def get_config(tmp_path: Path) -> Callable[[str], Config]:
@@ -79,45 +82,55 @@ def get_config(tmp_path: Path) -> Callable[[str], Config]:
     Callable[[str], Config]
         Function that returns a run configuration.
     """
+
     def _get_config(name):
         # To satisfy Config's constructor which expects a file, we create a minimal dummy YAML file.
         # Its content will be immediately overridden by manual attribute setting.
-        dummy_config_path = tmp_path / f"{name}.yml"
-        dummy_config_path.write_text("dataset: dummy\n") # Minimal valid YAML content
+        dummy_config_path = tmp_path / f'{name}.yml'
+        dummy_config_path.write_text(
+            'dataset: dummy\n'
+        )  # Minimal valid YAML content
 
         config = Config(dummy_config_path)
-        
+
         # Manually set attributes, overriding any defaults loaded from the dummy file.
         attrs = _get_default_config_attributes(
-            base_run_dir=tmp_path / "run_base",
-            run_dir=tmp_path / "run",
-            train_basin_file=tmp_path / "train_basins.txt",
-            validation_basin_file=tmp_path / "validation_basins.txt",
-            test_basin_file=tmp_path / "test_basins.txt"
+            base_run_dir=tmp_path / 'run_base',
+            run_dir=tmp_path / 'run',
+            train_basin_file=tmp_path / 'train_basins.txt',
+            validation_basin_file=tmp_path / 'validation_basins.txt',
+            test_basin_file=tmp_path / 'test_basins.txt',
         )
         config.update_config(attrs)
 
         # Ensure run directories exist for Scaler
         config.base_run_dir.mkdir(parents=True, exist_ok=True)
         config.run_dir.mkdir(parents=True, exist_ok=True)
-        
+
         return config
 
     return _get_config
+
 
 @pytest.fixture
 def sample_basins():
     """Provides a list of sample basin IDs."""
     return ['basin_01', 'basin_02']
 
+
 @pytest.fixture
 def sample_dates(get_config):
     """Provides a date range for the dataset based on mock_config."""
-    cfg = get_config("default") # Get a default config
+    cfg = get_config('default')  # Get a default config
     # This range needs to be large enough to cover seq_length + sample_dates + lead_time
-    start_date = pd.to_datetime(cfg.train_start_date[0]) - pd.Timedelta(days=cfg.seq_length + cfg.lead_time)
-    end_date = pd.to_datetime(cfg.train_end_date[-1]) + pd.Timedelta(days=cfg.seq_length + cfg.lead_time)
+    start_date = pd.to_datetime(cfg.train_start_date[0]) - pd.Timedelta(
+        days=cfg.seq_length + cfg.lead_time
+    )
+    end_date = pd.to_datetime(cfg.train_end_date[-1]) + pd.Timedelta(
+        days=cfg.seq_length + cfg.lead_time
+    )
     return pd.date_range(start_date, end_date, freq='D')
+
 
 @pytest.fixture
 def mock_load_data_return(get_config, sample_basins, sample_dates):
@@ -125,7 +138,7 @@ def mock_load_data_return(get_config, sample_basins, sample_dates):
     Returns a mock xarray.Dataset that simulates the output of _load_data.
     This dataset is structured to satisfy the requirements of Scaler and validate_samples.
     """
-    cfg = get_config("default") # Get a default config
+    cfg = get_config('default')  # Get a default config
     data_vars = {}
     coords = {
         'basin': sample_basins,
@@ -134,20 +147,34 @@ def mock_load_data_return(get_config, sample_basins, sample_dates):
 
     # Add lead_time coordinate if forecast_inputs are present
     if cfg.forecast_inputs:
-        coords['lead_time'] = [np.timedelta64(t, 'D') for t in range(1, cfg.lead_time + 1)]
+        coords['lead_time'] = [
+            np.timedelta64(t, 'D') for t in range(1, cfg.lead_time + 1)
+        ]
 
     # Populate data variables based on cfg's feature lists
     for var in cfg.static_attributes:
         data_vars[var] = (('basin',), np.random.rand(len(sample_basins)))
     for var in cfg.hindcast_inputs:
-        data_vars[var] = (('basin', 'date'), np.random.rand(len(sample_basins), len(sample_dates)))
+        data_vars[var] = (
+            ('basin', 'date'),
+            np.random.rand(len(sample_basins), len(sample_dates)),
+        )
     for var in cfg.target_variables:
-        data_vars[var] = (('basin', 'date'), np.random.rand(len(sample_basins), len(sample_dates)))
+        data_vars[var] = (
+            ('basin', 'date'),
+            np.random.rand(len(sample_basins), len(sample_dates)),
+        )
 
     if cfg.forecast_inputs:
         for var in cfg.forecast_inputs:
-            data_vars[var] = (('basin', 'date', 'lead_time'), 
-                              np.random.rand(len(sample_basins), len(sample_dates), len(coords['lead_time'])))
+            data_vars[var] = (
+                ('basin', 'date', 'lead_time'),
+                np.random.rand(
+                    len(sample_basins),
+                    len(sample_dates),
+                    len(coords['lead_time']),
+                ),
+            )
 
     return xr.Dataset(data_vars, coords=coords).astype('float32')
 
@@ -157,12 +184,16 @@ def mock_load_data_return(get_config, sample_basins, sample_dates):
 
 # Patching `Multimet._load_data` because it's a NotImplementedError in the base class
 # and needs to return a concrete Dataset for the rest of __init__ to function.
-@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
-@patch.object(Multimet, "_load_data")
-@patch("googlehydrology.datasetzoo.multimet.Scaler")
+@patch('googlehydrology.datasetzoo.multimet.load_basin_file')
+@patch.object(Multimet, '_load_data')
+@patch('googlehydrology.datasetzoo.multimet.Scaler')
 def test_forecast_dataset_init_success(
-    mock_scaler, mock_load_data, mock_load_basin_file,
-    get_config, sample_basins, mock_load_data_return
+    mock_scaler,
+    mock_load_data,
+    mock_load_basin_file,
+    get_config,
+    sample_basins,
+    mock_load_data_return,
 ):
     """
     Tests successful initialization of Multimet.
@@ -172,14 +203,14 @@ def test_forecast_dataset_init_success(
     mock_load_data.return_value = mock_load_data_return
     # Configure the mock Scaler instance that Multimet will create
     mock_scaler_instance = MagicMock()
-    mock_scaler.return_value = mock_scaler_instance # When Scaler() is called, return this mock instance
+    mock_scaler.return_value = mock_scaler_instance  # When Scaler() is called, return this mock instance
     mock_scaler_instance.scale.return_value = mock_load_data_return
-    mock_scaler_instance.save.return_value = None # save() does nothing
+    mock_scaler_instance.save.return_value = None  # save() does nothing
 
-    cfg = get_config("default") # Get a default config
+    cfg = get_config('default')  # Get a default config
 
     # Instantiate the dataset
-    dataset = Multimet(cfg=cfg, is_train=True, period="train")
+    dataset = Multimet(cfg=cfg, is_train=True, period='train')
 
     # Assertions
     mock_load_basin_file.assert_called_once()
@@ -193,23 +224,29 @@ def test_forecast_dataset_init_success(
     assert dataset._period == 'train'
     assert dataset._basins == sample_basins
     assert hasattr(dataset, 'scaler')
-    assert dataset._num_samples > 0 # Should have samples if validate_samples works as expected
+    assert (
+        dataset._num_samples > 0
+    )  # Should have samples if validate_samples works as expected
     assert dataset._dataset is not None
 
 
-@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
-@patch.object(Multimet, "_load_data")
+@patch('googlehydrology.datasetzoo.multimet.load_basin_file')
+@patch.object(Multimet, '_load_data')
 def test_forecast_dataset_len(
-    mock_load_data, mock_load_basin_file, get_config, sample_basins, mock_load_data_return
+    mock_load_data,
+    mock_load_basin_file,
+    get_config,
+    sample_basins,
+    mock_load_data_return,
 ):
     """
     Tests the __len__ method of Multimet.
     """
-    cfg = get_config("default") # Get a default config
+    cfg = get_config('default')  # Get a default config
     mock_load_basin_file.return_value = sample_basins
     mock_load_data.return_value = mock_load_data_return
 
-    dataset = Multimet(cfg=cfg, is_train=True, period="train")
+    dataset = Multimet(cfg=cfg, is_train=True, period='train')
 
     # The exact number of samples depends on the dates, seq_length, etc.
     # We just need to ensure it's a positive integer.
@@ -217,19 +254,23 @@ def test_forecast_dataset_len(
     assert len(dataset) > 0
 
 
-@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
-@patch.object(Multimet, "_load_data")
+@patch('googlehydrology.datasetzoo.multimet.load_basin_file')
+@patch.object(Multimet, '_load_data')
 def test_forecast_dataset_getitem(
-    mock_load_data, mock_load_basin_file, get_config, sample_basins, mock_load_data_return
+    mock_load_data,
+    mock_load_basin_file,
+    get_config,
+    sample_basins,
+    mock_load_data_return,
 ):
     """
     Tests the __getitem__ method of Multimet.
     """
-    cfg = get_config("default") # Get a default config
+    cfg = get_config('default')  # Get a default config
     mock_load_basin_file.return_value = sample_basins
     mock_load_data.return_value = mock_load_data_return
 
-    dataset = Multimet(cfg=cfg, is_train=True, period="train")
+    dataset = Multimet(cfg=cfg, is_train=True, period='train')
 
     # Test valid index
     sample = dataset[0]
@@ -241,8 +282,11 @@ def test_forecast_dataset_getitem(
     assert 'y' in sample and isinstance(sample['y'], torch.Tensor)
 
     # Check shapes (basic check, more detailed checks can be added)
-    assert sample['x_s'].shape == (1,) # For a single static feature
-    assert sample['y'].shape == (cfg.seq_length, 1) # seq_length, num_target_features
+    assert sample['x_s'].shape == (1,)  # For a single static feature
+    assert sample['y'].shape == (
+        cfg.seq_length,
+        1,
+    )  # seq_length, num_target_features
     assert sample['x_d_hindcast']['hindcast_i1'].shape == (cfg.seq_length, 1)
     assert sample['x_d_forecast']['forecast_i1'].shape == (cfg.lead_time, 1)
 
@@ -259,75 +303,97 @@ def test_forecast_dataset_getitem(
         dataset[0.5]
 
 
-@patch("googlehydrology.datasetzoo.multimet.validate_samples")
-@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
-@patch.object(Multimet, "_load_data")
+@patch('googlehydrology.datasetzoo.multimet.validate_samples')
+@patch('googlehydrology.datasetzoo.multimet.load_basin_file')
+@patch.object(Multimet, '_load_data')
 def test_forecast_dataset_no_train_data_error(
-    mock_load_data, mock_load_basin_file, mock_validate_samples,
-    get_config, sample_basins, mock_load_data_return
+    mock_load_data,
+    mock_load_basin_file,
+    mock_validate_samples,
+    get_config,
+    sample_basins,
+    mock_load_data_return,
 ):
     """
     Tests that NoTrainDataError is raised when no valid training samples are found.
     This requires mocking `validate_samples` to return an empty mask.
     """
-    cfg = get_config("default") # Get a default config
+    cfg = get_config('default')  # Get a default config
     mock_load_basin_file.return_value = sample_basins
     mock_load_data.return_value = mock_load_data_return
     empty_mask = xr.DataArray(
-        np.full((len(sample_basins), len(mock_load_data_return['date'])), False),
-        coords={'basin': sample_basins, 'date': mock_load_data_return['date'].values},
-        dims=['basin', 'date']
+        np.full(
+            (len(sample_basins), len(mock_load_data_return['date'])), False
+        ),
+        coords={
+            'basin': sample_basins,
+            'date': mock_load_data_return['date'].values,
+        },
+        dims=['basin', 'date'],
     )
     mock_validate_samples.return_value = (empty_mask, {})
 
     with pytest.raises(NoTrainDataError):
-        Multimet(cfg=cfg, is_train=True, period="train")
+        Multimet(cfg=cfg, is_train=True, period='train')
 
 
-@patch("googlehydrology.datasetzoo.multimet.validate_samples")
-@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
-@patch("googlehydrology.datasetzoo.multimet.Scaler")
-@patch.object(Multimet, "_load_data")
+@patch('googlehydrology.datasetzoo.multimet.validate_samples')
+@patch('googlehydrology.datasetzoo.multimet.load_basin_file')
+@patch('googlehydrology.datasetzoo.multimet.Scaler')
+@patch.object(Multimet, '_load_data')
 def test_forecast_dataset_no_evaluation_data_error(
-    mock_load_data, mock_scaler, mock_load_basin_file, mock_validate_samples,
-    get_config, sample_basins, mock_load_data_return
+    mock_load_data,
+    mock_scaler,
+    mock_load_basin_file,
+    mock_validate_samples,
+    get_config,
+    sample_basins,
+    mock_load_data_return,
 ):
     """
     Tests that NoEvaluationDataError is raised when no valid evaluation samples are found.
     """
-    cfg = get_config("default")
+    cfg = get_config('default')
     mock_load_basin_file.return_value = sample_basins
     mock_load_data.return_value = mock_load_data_return
     empty_mask = xr.DataArray(
-        np.full((len(sample_basins), len(mock_load_data_return['date'])), False),
-        coords={'basin': sample_basins, 'date': mock_load_data_return['date'].values},
-        dims=['basin', 'date']
+        np.full(
+            (len(sample_basins), len(mock_load_data_return['date'])), False
+        ),
+        coords={
+            'basin': sample_basins,
+            'date': mock_load_data_return['date'].values,
+        },
+        dims=['basin', 'date'],
     )
     mock_validate_samples.return_value = (empty_mask, {})
     mock_scaler_instance = MagicMock()
-    mock_scaler.return_value = mock_scaler_instance # When Scaler() is called, return this mock instance
+    mock_scaler.return_value = mock_scaler_instance  # When Scaler() is called, return this mock instance
     mock_scaler_instance.scale.return_value = mock_load_data_return
-    mock_scaler_instance.save.return_value = None # save() does nothing
+    mock_scaler_instance.save.return_value = None  # save() does nothing
 
     with pytest.raises(NoEvaluationDataError):
-        Multimet(cfg=cfg, is_train=False, period="test", compute_scaler=False)
+        Multimet(cfg=cfg, is_train=False, period='test', compute_scaler=False)
 
 
-@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
-@patch.object(Multimet, "_load_data")
+@patch('googlehydrology.datasetzoo.multimet.load_basin_file')
+@patch.object(Multimet, '_load_data')
 def test_forecast_dataset_init_period_error(
     mock_load_data, mock_load_basin_file, get_config
 ):
     """
     Tests ValueError for invalid 'period' argument during initialization.
     """
-    cfg = get_config("default") # Get a default config
-    with pytest.raises(ValueError, match="'period' must be one of 'train', 'validation' or 'test'"):
-        Multimet(cfg=cfg, is_train=True, period="invalid_period")
+    cfg = get_config('default')  # Get a default config
+    with pytest.raises(
+        ValueError,
+        match="'period' must be one of 'train', 'validation' or 'test'",
+    ):
+        Multimet(cfg=cfg, is_train=True, period='invalid_period')
 
 
-@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
-@patch.object(Multimet, "_load_data")
+@patch('googlehydrology.datasetzoo.multimet.load_basin_file')
+@patch.object(Multimet, '_load_data')
 def test_forecast_dataset_init_forecast_hindcast_mismatch_error(
     mock_load_data, mock_load_basin_file, get_config
 ):
@@ -335,44 +401,74 @@ def test_forecast_dataset_init_forecast_hindcast_mismatch_error(
     Tests ValueError when only one of `forecast_inputs` or `hindcast_inputs` is supplied.
     """
     # Case 1: No inputs are supplied
-    cfg = get_config("default")
-    cfg.update_config({'hindcast_inputs': [], 'forecast_inputs': [], 'dynamic_inputs': []})
-    with pytest.raises(ValueError, match='Either `hindcast_inputs` or `dynamic_inputs` must be supplied.'):
-        Multimet(cfg=cfg, is_train=True, period="train")
+    cfg = get_config('default')
+    cfg.update_config(
+        {'hindcast_inputs': [], 'forecast_inputs': [], 'dynamic_inputs': []}
+    )
+    with pytest.raises(
+        ValueError,
+        match='Either `hindcast_inputs` or `dynamic_inputs` must be supplied.',
+    ):
+        Multimet(cfg=cfg, is_train=True, period='train')
 
     # Case 2: Neither dynamic_inputs nor hindcast_inputs are supplied
-    cfg = get_config("default")
+    cfg = get_config('default')
     cfg.update_config({'hindcast_inputs': [], 'dynamic_inputs': []})
-    with pytest.raises(ValueError, match='Either `hindcast_inputs` or `dynamic_inputs` must be supplied.'):
-        Multimet(cfg=cfg, is_train=True, period="train")
+    with pytest.raises(
+        ValueError,
+        match='Either `hindcast_inputs` or `dynamic_inputs` must be supplied.',
+    ):
+        Multimet(cfg=cfg, is_train=True, period='train')
 
 
-@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
-@patch.object(Multimet, "_load_data")
+@patch('googlehydrology.datasetzoo.multimet.load_basin_file')
+@patch.object(Multimet, '_load_data')
 def test_forecast_dataset_init_compute_scaler_error(
     mock_load_data, mock_load_basin_file, get_config
 ):
     """
     Tests ValueError when compute_scaler is True for validation/test/finetuning periods.
     """
-    cfg = get_config("default") # Get a default config
+    cfg = get_config('default')  # Get a default config
     # Validation period
-    with pytest.raises(ValueError, match=re.escape("Scaler must be loaded (not computed) for validation, test, and finetuning.")):
-        Multimet(cfg=cfg, is_train=False, period="validation", compute_scaler=True)
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            'Scaler must be loaded (not computed) for validation, test, and finetuning.'
+        ),
+    ):
+        Multimet(
+            cfg=cfg, is_train=False, period='validation', compute_scaler=True
+        )
 
     # Test period
-    with pytest.raises(ValueError, match=re.escape("Scaler must be loaded (not computed) for validation, test, and finetuning.")):
-        Multimet(cfg=cfg, is_train=False, period="test", compute_scaler=True)
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            'Scaler must be loaded (not computed) for validation, test, and finetuning.'
+        ),
+    ):
+        Multimet(cfg=cfg, is_train=False, period='test', compute_scaler=True)
 
     # Finetuning
-    cfg_finetuning = get_config("default")
-    cfg_finetuning.is_finetuning = True # Manually set attribute
-    with pytest.raises(ValueError, match=re.escape("Scaler must be loaded (not computed) for validation, test, and finetuning.")):
-        Multimet(cfg=cfg_finetuning, is_train=True, period="train", compute_scaler=True)
+    cfg_finetuning = get_config('default')
+    cfg_finetuning.is_finetuning = True  # Manually set attribute
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            'Scaler must be loaded (not computed) for validation, test, and finetuning.'
+        ),
+    ):
+        Multimet(
+            cfg=cfg_finetuning,
+            is_train=True,
+            period='train',
+            compute_scaler=True,
+        )
 
 
-@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
-@patch.object(Multimet, "_load_data")
+@patch('googlehydrology.datasetzoo.multimet.load_basin_file')
+@patch.object(Multimet, '_load_data')
 def test_forecast_dataset_nan_handling_method_error(
     mock_load_data, mock_load_basin_file, get_config
 ):
@@ -380,101 +476,147 @@ def test_forecast_dataset_nan_handling_method_error(
     Tests ValueError when feature groups are required but not supplied for nan_handling_method.
     """
     # Simulate a scenario where hindcast_inputs are strings, not lists of lists
-    cfg_nan_handling = get_config("default")
+    cfg_nan_handling = get_config('default')
     cfg_nan_handling.update_config({'hindcast_inputs': ['single_feature']})
-    cfg_nan_handling.update_config({'forecast_inputs': ['another_single_feature']})
+    cfg_nan_handling.update_config(
+        {'forecast_inputs': ['another_single_feature']}
+    )
     cfg_nan_handling.update_config({'nan_handling_method': 'masked_mean'})
-    with pytest.raises(ValueError, match='Feature groups are required for masked_mean NaN-handling.'):
-        Multimet(cfg=cfg_nan_handling, is_train=True, period="train")
+    with pytest.raises(
+        ValueError,
+        match='Feature groups are required for masked_mean NaN-handling.',
+    ):
+        Multimet(cfg=cfg_nan_handling, is_train=True, period='train')
 
-    cfg_nan_handling_attention = get_config("default")
-    cfg_nan_handling_attention.update_config({'hindcast_inputs': ['single_feature']})
-    cfg_nan_handling_attention.update_config({'forecast_inputs': ['another_single_feature']})
-    cfg_nan_handling_attention.update_config({'nan_handling_method': 'attention'})
-    with pytest.raises(ValueError, match='Feature groups are required for attention NaN-handling.'):
-        Multimet(cfg=cfg_nan_handling_attention, is_train=True, period="train")
+    cfg_nan_handling_attention = get_config('default')
+    cfg_nan_handling_attention.update_config(
+        {'hindcast_inputs': ['single_feature']}
+    )
+    cfg_nan_handling_attention.update_config(
+        {'forecast_inputs': ['another_single_feature']}
+    )
+    cfg_nan_handling_attention.update_config(
+        {'nan_handling_method': 'attention'}
+    )
+    with pytest.raises(
+        ValueError,
+        match='Feature groups are required for attention NaN-handling.',
+    ):
+        Multimet(cfg=cfg_nan_handling_attention, is_train=True, period='train')
 
-    cfg_nan_handling_unioning = get_config("default")
-    cfg_nan_handling_unioning.update_config({'hindcast_inputs': ['single_feature']})
-    cfg_nan_handling_unioning.update_config({'forecast_inputs': ['another_single_feature']})
+    cfg_nan_handling_unioning = get_config('default')
+    cfg_nan_handling_unioning.update_config(
+        {'hindcast_inputs': ['single_feature']}
+    )
+    cfg_nan_handling_unioning.update_config(
+        {'forecast_inputs': ['another_single_feature']}
+    )
     cfg_nan_handling_unioning.update_config({'nan_handling_method': 'unioning'})
-    with pytest.raises(ValueError, match='Feature groups are required for unioning NaN-handling.'):
-        Multimet(cfg=cfg_nan_handling_unioning, is_train=True, period="train")
+    with pytest.raises(
+        ValueError,
+        match='Feature groups are required for unioning NaN-handling.',
+    ):
+        Multimet(cfg=cfg_nan_handling_unioning, is_train=True, period='train')
 
 
-@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
-@patch.object(Multimet, "_load_data")
+@patch('googlehydrology.datasetzoo.multimet.load_basin_file')
+@patch.object(Multimet, '_load_data')
 def test_forecast_dataset_per_basin_target_stds(
-    mock_load_data, mock_load_basin_file, get_config, sample_basins, mock_load_data_return
+    mock_load_data,
+    mock_load_basin_file,
+    get_config,
+    sample_basins,
+    mock_load_data_return,
 ):
     """
     Tests that per_basin_target_stds is calculated when loss requires it.
     """
-    cfg = get_config("default") # Get a default config
+    cfg = get_config('default')  # Get a default config
     mock_load_basin_file.return_value = sample_basins
     mock_load_data.return_value = mock_load_data_return
 
-    cfg_nse = get_config("default")
-    cfg_nse.loss = 'nse' # Manually set attribute
-    dataset_nse = Multimet(cfg=cfg_nse, is_train=True, period="train")
+    cfg_nse = get_config('default')
+    cfg_nse.loss = 'nse'  # Manually set attribute
+    dataset_nse = Multimet(cfg=cfg_nse, is_train=True, period='train')
     sample_nse = dataset_nse[0]
     assert 'per_basin_target_stds' in sample_nse
     assert isinstance(sample_nse['per_basin_target_stds'], torch.Tensor)
-    assert sample_nse['per_basin_target_stds'].shape == (1, 1) # 1 basin, 1 target variable
+    assert sample_nse['per_basin_target_stds'].shape == (
+        1,
+        1,
+    )  # 1 basin, 1 target variable
 
-    cfg_weightednse = get_config("default")
-    cfg_weightednse.loss = 'weightednse' # Manually set attribute
-    dataset_weightednse = Multimet(cfg=cfg_weightednse, is_train=True, period="train")
+    cfg_weightednse = get_config('default')
+    cfg_weightednse.loss = 'weightednse'  # Manually set attribute
+    dataset_weightednse = Multimet(
+        cfg=cfg_weightednse, is_train=True, period='train'
+    )
     sample_weightednse = dataset_weightednse[0]
     assert 'per_basin_target_stds' in sample_weightednse
     assert isinstance(sample_weightednse['per_basin_target_stds'], torch.Tensor)
     assert sample_weightednse['per_basin_target_stds'].shape == (1, 1)
 
-    cfg_mse = get_config("default")
-    cfg_mse.loss = 'mse' # Manually set attribute
-    dataset_mse = Multimet(cfg=cfg_mse, is_train=True, period="train")
+    cfg_mse = get_config('default')
+    cfg_mse.loss = 'mse'  # Manually set attribute
+    dataset_mse = Multimet(cfg=cfg_mse, is_train=True, period='train')
     sample_mse = dataset_mse[0]
     assert 'per_basin_target_stds' not in sample_mse
 
 
-@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
-@patch.object(Multimet, "_load_data")
+@patch('googlehydrology.datasetzoo.multimet.load_basin_file')
+@patch.object(Multimet, '_load_data')
 def test_forecast_dataset_timestep_counter(
-    mock_load_data, mock_load_basin_file, get_config, sample_basins, mock_load_data_return
+    mock_load_data,
+    mock_load_basin_file,
+    get_config,
+    sample_basins,
+    mock_load_data_return,
 ):
     """
     Tests that timestep counters are added when cfg.timestep_counter is True.
     """
-    cfg = get_config("default") # Get a default config
+    cfg = get_config('default')  # Get a default config
     mock_load_basin_file.return_value = sample_basins
     mock_load_data.return_value = mock_load_data_return
 
-    cfg_with_counter = get_config("default")
-    cfg_with_counter.update_config({'timestep_counter': True}) # Manually set attribute
-    dataset = Multimet(cfg=cfg_with_counter, is_train=True, period="train")
+    cfg_with_counter = get_config('default')
+    cfg_with_counter.update_config(
+        {'timestep_counter': True}
+    )  # Manually set attribute
+    dataset = Multimet(cfg=cfg_with_counter, is_train=True, period='train')
     sample = dataset[0]
 
     assert 'hindcast_counter' in sample['x_d_hindcast']
     assert isinstance(sample['x_d_hindcast']['hindcast_counter'], torch.Tensor)
-    assert sample['x_d_hindcast']['hindcast_counter'].shape == (cfg_with_counter.seq_length, 1)
+    assert sample['x_d_hindcast']['hindcast_counter'].shape == (
+        cfg_with_counter.seq_length,
+        1,
+    )
 
     assert 'forecast_counter' in sample['x_d_forecast']
     assert isinstance(sample['x_d_forecast']['forecast_counter'], torch.Tensor)
-    assert sample['x_d_forecast']['forecast_counter'].shape == (cfg_with_counter.lead_time + cfg_with_counter.forecast_overlap, 1)
+    assert sample['x_d_forecast']['forecast_counter'].shape == (
+        cfg_with_counter.lead_time + cfg_with_counter.forecast_overlap,
+        1,
+    )
 
 
-@patch("googlehydrology.datasetzoo.multimet.load_basin_file")
-@patch.object(Multimet, "_load_data")
+@patch('googlehydrology.datasetzoo.multimet.load_basin_file')
+@patch.object(Multimet, '_load_data')
 def test_forecast_dataset_no_forecast_features_renames_key(
-    mock_load_data, mock_load_basin_file, get_config, sample_basins, mock_load_data_return
+    mock_load_data,
+    mock_load_basin_file,
+    get_config,
+    sample_basins,
+    mock_load_data_return,
 ):
     """
     Tests that 'x_d_hindcast' is renamed to 'x_d' if no forecast features are present.
     """
-    cfg = get_config("default") # Get a default config
+    cfg = get_config('default')  # Get a default config
     mock_load_basin_file.return_value = sample_basins
     # Create a config with no forecast inputs
-    cfg_no_forecast = get_config("default")
+    cfg_no_forecast = get_config('default')
     cfg_no_forecast.update_config({'forecast_inputs': []})
     cfg_no_forecast.update_config({'hindcast_inputs': ['hindcast_i1']})
 
@@ -487,13 +629,21 @@ def test_forecast_dataset_no_forecast_features_renames_key(
     for var in cfg_no_forecast.static_attributes:
         data_vars[var] = (('basin',), np.random.rand(len(sample_basins)))
     for var in cfg_no_forecast.hindcast_inputs:
-        data_vars[var] = (('basin', 'date'), np.random.rand(len(sample_basins), len(coords['date'])))
+        data_vars[var] = (
+            ('basin', 'date'),
+            np.random.rand(len(sample_basins), len(coords['date'])),
+        )
     for var in cfg_no_forecast.target_variables:
-        data_vars[var] = (('basin', 'date'), np.random.rand(len(sample_basins), len(coords['date'])))
+        data_vars[var] = (
+            ('basin', 'date'),
+            np.random.rand(len(sample_basins), len(coords['date'])),
+        )
 
-    mock_load_data.return_value = xr.Dataset(data_vars, coords=coords).astype('float32')
+    mock_load_data.return_value = xr.Dataset(data_vars, coords=coords).astype(
+        'float32'
+    )
 
-    dataset = Multimet(cfg=cfg_no_forecast, is_train=True, period="train")
+    dataset = Multimet(cfg=cfg_no_forecast, is_train=True, period='train')
     sample = dataset[0]
 
     assert 'x_d' in sample
