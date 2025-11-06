@@ -33,7 +33,11 @@ from googlehydrology.datautils.utils import load_basin_file
 from googlehydrology.evaluation import get_tester
 from googlehydrology.evaluation.tester import BaseTester
 from googlehydrology.modelzoo import get_model
-from googlehydrology.training import get_loss_obj, get_optimizer, get_regularization_obj
+from googlehydrology.training import (
+    get_loss_obj,
+    get_optimizer,
+    get_regularization_obj,
+)
 from googlehydrology.training.logger import Logger
 from googlehydrology.utils.config import Config
 from googlehydrology.utils.logging_utils import setup_logging
@@ -74,46 +78,70 @@ class BaseTrainer(object):
         self._epoch = self._get_start_epoch_number()
 
         self._create_folder_structure()
-        setup_logging(str(self.cfg.run_dir / "output.log"), cfg.logging_level, cfg.print_warnings_once)
-        LOGGER.info(f"### Folder structure created at {self.cfg.run_dir}")
+        setup_logging(
+            str(self.cfg.run_dir / 'output.log'),
+            cfg.logging_level,
+            cfg.print_warnings_once,
+        )
+        LOGGER.info(f'### Folder structure created at {self.cfg.run_dir}')
 
         if self.cfg.is_continue_training:
-            LOGGER.info(f"### Continue training of run stored in {self.cfg.base_run_dir}")
+            LOGGER.info(
+                f'### Continue training of run stored in {self.cfg.base_run_dir}'
+            )
 
         if self.cfg.is_finetuning:
-            LOGGER.info(f"### Start finetuning with pretrained model stored in {self.cfg.base_run_dir}")
+            LOGGER.info(
+                f'### Start finetuning with pretrained model stored in {self.cfg.base_run_dir}'
+            )
 
-        LOGGER.info(f"### Run configurations for {self.cfg.experiment_name}")
+        LOGGER.info(f'### Run configurations for {self.cfg.experiment_name}')
         for key, val in self.cfg.as_dict().items():
-            LOGGER.info(f"{key}: {val}")
+            LOGGER.info(f'{key}: {val}')
 
         self._set_random_seeds()
         self._set_device()
 
     def _get_dataset(self, compute_scaler: bool) -> Dataset:
-        return get_dataset(cfg=self.cfg, period="train", is_train=True, compute_scaler=compute_scaler)
+        return get_dataset(
+            cfg=self.cfg,
+            period='train',
+            is_train=True,
+            compute_scaler=compute_scaler,
+        )
 
     def _get_model(self) -> torch.nn.Module:
         return get_model(cfg=self.cfg)
 
     def _get_optimizer(self) -> torch.optim.Optimizer:
-        return get_optimizer(model=self.model, cfg=self.cfg, is_gpu=self.device.type == 'cuda')
+        return get_optimizer(
+            model=self.model, cfg=self.cfg, is_gpu=self.device.type == 'cuda'
+        )
 
     def _get_loss_obj(self) -> loss.BaseLoss:
         return get_loss_obj(cfg=self.cfg)
 
     def _set_regularization(self):
-        self.loss_obj.set_regularization_terms(get_regularization_obj(cfg=self.cfg))
+        self.loss_obj.set_regularization_terms(
+            get_regularization_obj(cfg=self.cfg)
+        )
 
     def _get_tester(self) -> BaseTester:
-        return get_tester(cfg=self.cfg, run_dir=self.cfg.run_dir, period="validation", init_model=False)
+        return get_tester(
+            cfg=self.cfg,
+            run_dir=self.cfg.run_dir,
+            period='validation',
+            init_model=False,
+        )
 
     def _get_data_loader(self, ds: Dataset) -> torch.utils.data.DataLoader:
-        return DataLoader(ds,
-                          batch_size=self.cfg.batch_size,
-                          shuffle=True,
-                          num_workers=self.cfg.num_workers,
-                          collate_fn=ds.collate_fn)
+        return DataLoader(
+            ds,
+            batch_size=self.cfg.batch_size,
+            shuffle=True,
+            num_workers=self.cfg.num_workers,
+            collate_fn=ds.collate_fn,
+        )
 
     def _freeze_model_parts(self):
         # freeze all model weights
@@ -144,7 +172,9 @@ class BaseTrainer(object):
                 else:
                     unresolved_modules.append(module_group)
         if unresolved_modules:
-            LOGGER.warning(f"Could not resolve the following module parts for finetuning: {unresolved_modules}")
+            LOGGER.warning(
+                f'Could not resolve the following module parts for finetuning: {unresolved_modules}'
+            )
 
     def initialize_training(self):
         """Initialize the training class.
@@ -156,14 +186,16 @@ class BaseTrainer(object):
         # Initialize dataset before the model is loaded.
         ds = self._get_dataset(compute_scaler=(not self.cfg.is_finetuning))
         if len(ds) == 0:
-            raise ValueError("Dataset contains no samples.")
+            raise ValueError('Dataset contains no samples.')
         self.loader = self._get_data_loader(ds=ds)
 
-        LOGGER.debug("init model")
+        LOGGER.debug('init model')
         self.model = self._get_model().to(self.device)
 
         if self.cfg.checkpoint_path is not None:
-            LOGGER.info(f"Starting training from Checkpoint {self.cfg.checkpoint_path}")
+            LOGGER.info(
+                f'Starting training from Checkpoint {self.cfg.checkpoint_path}'
+            )
             self.model.load_state_dict(
                 torch.load(
                     str(self.cfg.checkpoint_path),
@@ -173,8 +205,13 @@ class BaseTrainer(object):
             )
         elif self.cfg.checkpoint_path is None and self.cfg.is_finetuning:
             # the default for finetuning is the last model state
-            checkpoint_path = [x for x in sorted(list(self.cfg.base_run_dir.glob('model_epoch*.pt')))][-1]
-            LOGGER.info(f"Starting training from checkpoint {checkpoint_path}")
+            checkpoint_path = [
+                x
+                for x in sorted(
+                    list(self.cfg.base_run_dir.glob('model_epoch*.pt'))
+                )
+            ][-1]
+            LOGGER.info(f'Starting training from checkpoint {checkpoint_path}')
             self.model.load_state_dict(
                 torch.load(
                     str(checkpoint_path),
@@ -210,23 +247,31 @@ class BaseTrainer(object):
         if self.cfg.validate_every is not None:
             if self.cfg.validate_n_random_basins < 1:
                 warn_msg = [
-                    f"Validation set to validate every {self.cfg.validate_every} epoch(s), but ",
-                    "'validate_n_random_basins' not set or set to zero. Will validate on the entire validation set."
+                    f'Validation set to validate every {self.cfg.validate_every} epoch(s), but ',
+                    "'validate_n_random_basins' not set or set to zero. Will validate on the entire validation set.",
                 ]
-                LOGGER.warning("".join(warn_msg))
+                LOGGER.warning(''.join(warn_msg))
                 self.cfg.validate_n_random_basins = self.cfg.number_of_basins
             self.validator = self._get_tester()
 
         if self.cfg.target_noise_std is not None:
-            self.noise_sampler_y = torch.distributions.Normal(loc=0, scale=self.cfg.target_noise_std)
-            target_means = [ds.scaler.scaler.sel(parameter='mean')[feature].item() for feature in self.cfg.target_variables]
+            self.noise_sampler_y = torch.distributions.Normal(
+                loc=0, scale=self.cfg.target_noise_std
+            )
+            target_means = [
+                ds.scaler.scaler.sel(parameter='mean')[feature].item()
+                for feature in self.cfg.target_variables
+            ]
             self._target_mean = torch.tensor(target_means).to(self.device)
-            target_stds = [ds.scaler.scaler.sel(parameter='std')[feature].item() for feature in self.cfg.target_variables]
+            target_stds = [
+                ds.scaler.scaler.sel(parameter='std')[feature].item()
+                for feature in self.cfg.target_variables
+            ]
             self._target_std = torch.tensor(target_stds).to(self.device)
 
     def _create_lr_scheduler(self):
         match self.cfg.learning_rate_strategy:
-            case "ConstantLR":
+            case 'ConstantLR':
                 # Keep learning rate constant.
                 lr_scheduler = torch.optim.lr_scheduler.ConstantLR(
                     self.optimizer,
@@ -244,6 +289,7 @@ class BaseTrainer(object):
                     step_size=self.cfg.learning_rate_epochs_drop,
                     gamma=self.cfg.learning_rate_drop_factor,
                 )
+
                 def lr_step(loss: float):
                     lr_scheduler.step()
             case 'ReduceLROnPlateau':
@@ -253,10 +299,13 @@ class BaseTrainer(object):
                     factor=self.cfg.learning_rate_drop_factor,
                     patience=self.cfg.learning_rate_epochs_drop,
                 )
+
                 def lr_step(loss: float):
                     lr_scheduler.step(loss)
             case _:
-                raise ValueError(f'learning_rate_strategy unsupported: {self.cfg.learning_rate_strategy}')
+                raise ValueError(
+                    f'learning_rate_strategy unsupported: {self.cfg.learning_rate_strategy}'
+                )
         return lr_scheduler, lr_step
 
     def train_and_validate(self):
@@ -268,34 +317,46 @@ class BaseTrainer(object):
         lr_scheduler, lr_step = self._create_lr_scheduler()
 
         for epoch in range(self._epoch + 1, self._epoch + self.cfg.epochs + 1):
-            LOGGER.info(f"learning rate is {lr_scheduler.get_last_lr()}")
+            LOGGER.info(f'learning rate is {lr_scheduler.get_last_lr()}')
 
             self._train_epoch(epoch=epoch)
             avg_losses = self.experiment_logger.summarise()
             lr_step(avg_losses['avg_loss'])
 
-            loss_str = ", ".join(f"{k}: {v:.5f}" for k, v in avg_losses.items())
-            LOGGER.info(f"Epoch {epoch} average loss: {loss_str}")
+            loss_str = ', '.join(f'{k}: {v:.5f}' for k, v in avg_losses.items())
+            LOGGER.info(f'Epoch {epoch} average loss: {loss_str}')
 
             if epoch % self.cfg.save_weights_every == 0:
                 self._save_weights_and_optimizer(epoch)
 
-            if (self.validator is not None) and (epoch % self.cfg.validate_every == 0):
-                self.validator.evaluate(epoch=epoch,
-                                        save_results=self.cfg.save_validation_results,
-                                        save_all_output=self.cfg.save_all_output,
-                                        metrics=self.cfg.metrics,
-                                        model=self.model,
-                                        experiment_logger=self.experiment_logger.valid())
+            if (self.validator is not None) and (
+                epoch % self.cfg.validate_every == 0
+            ):
+                self.validator.evaluate(
+                    epoch=epoch,
+                    save_results=self.cfg.save_validation_results,
+                    save_all_output=self.cfg.save_all_output,
+                    metrics=self.cfg.metrics,
+                    model=self.model,
+                    experiment_logger=self.experiment_logger.valid(),
+                )
 
-                valid_metrics = {'avg_total_loss': math.nan} | self.experiment_logger.summarise() 
-                print_msg = f"Epoch {epoch} average validation loss: {valid_metrics['avg_total_loss']:.5f}"
+                valid_metrics = {
+                    'avg_total_loss': math.nan
+                } | self.experiment_logger.summarise()
+                print_msg = f'Epoch {epoch} average validation loss: {valid_metrics["avg_total_loss"]:.5f}'
                 if self.cfg.metrics:
-                    print_msg += f" -- Median validation metrics: "
-                    print_msg += ", ".join(f"{k}: {v:.5f}" for k, v in valid_metrics.items() if k != 'avg_total_loss')
+                    print_msg += f' -- Median validation metrics: '
+                    print_msg += ', '.join(
+                        f'{k}: {v:.5f}'
+                        for k, v in valid_metrics.items()
+                        if k != 'avg_total_loss'
+                    )
                     LOGGER.info(print_msg)
 
-            self.experiment_logger.log_step(learning_rate = lr_scheduler.get_last_lr()[-1])
+            self.experiment_logger.log_step(
+                learning_rate=lr_scheduler.get_last_lr()[-1]
+            )
 
         # make sure to close tensorboard to avoid losing the last epoch
         if self.cfg.log_tensorboard:
@@ -306,7 +367,12 @@ class BaseTrainer(object):
             if self.cfg.continue_from_epoch is not None:
                 epoch = self.cfg.continue_from_epoch
             else:
-                weight_path = [x for x in sorted(list(self.cfg.run_dir.glob('model_epoch*.pt')))][-1]
+                weight_path = [
+                    x
+                    for x in sorted(
+                        list(self.cfg.run_dir.glob('model_epoch*.pt'))
+                    )
+                ][-1]
                 epoch = weight_path.name[-6:-3]
         else:
             epoch = 0
@@ -314,15 +380,22 @@ class BaseTrainer(object):
 
     def _restore_training_state(self):
         if self.cfg.continue_from_epoch is not None:
-            epoch = f"{self.cfg.continue_from_epoch:03d}"
-            weight_path = self.cfg.base_run_dir / f"model_epoch{epoch}.pt"
+            epoch = f'{self.cfg.continue_from_epoch:03d}'
+            weight_path = self.cfg.base_run_dir / f'model_epoch{epoch}.pt'
         else:
-            weight_path = [x for x in sorted(list(self.cfg.base_run_dir.glob('model_epoch*.pt')))][-1]
+            weight_path = [
+                x
+                for x in sorted(
+                    list(self.cfg.base_run_dir.glob('model_epoch*.pt'))
+                )
+            ][-1]
             epoch = weight_path.name[-6:-3]
 
-        optimizer_path = self.cfg.base_run_dir / f"optimizer_state_epoch{epoch}.pt"
+        optimizer_path = (
+            self.cfg.base_run_dir / f'optimizer_state_epoch{epoch}.pt'
+        )
 
-        LOGGER.info(f"Continue training from epoch {int(epoch)}")
+        LOGGER.info(f'Continue training from epoch {int(epoch)}')
         self.model.load_state_dict(
             torch.load(weight_path, map_location=self.device, weights_only=True)
         )
@@ -333,10 +406,12 @@ class BaseTrainer(object):
         )
 
     def _save_weights_and_optimizer(self, epoch: int):
-        weight_path = self.cfg.run_dir / f"model_epoch{epoch:03d}.pt"
+        weight_path = self.cfg.run_dir / f'model_epoch{epoch:03d}.pt'
         torch.save(self.model.state_dict(), str(weight_path))
 
-        optimizer_path = self.cfg.run_dir / f"optimizer_state_epoch{epoch:03d}.pt"
+        optimizer_path = (
+            self.cfg.run_dir / f'optimizer_state_epoch{epoch:03d}.pt'
+        )
         torch.save(self.optimizer.state_dict(), str(optimizer_path))
 
     def _train_epoch(self, epoch: int):
@@ -344,23 +419,39 @@ class BaseTrainer(object):
         self.experiment_logger.train()
 
         # process bar handle
-        n_iter = min(self._max_updates_per_epoch, len(self.loader)) if self._max_updates_per_epoch is not None else None
-        pbar = tqdm(self.loader, file=sys.stdout, disable=self._disable_pbar, total=n_iter)
+        n_iter = (
+            min(self._max_updates_per_epoch, len(self.loader))
+            if self._max_updates_per_epoch is not None
+            else None
+        )
+        pbar = tqdm(
+            self.loader,
+            file=sys.stdout,
+            disable=self._disable_pbar,
+            total=n_iter,
+        )
         pbar.set_description(f'# Epoch {epoch}')
 
         # Iterate in batches over training set
         nan_count = 0
         for i, data in enumerate(pbar):
-            if self._max_updates_per_epoch is not None and i >= self._max_updates_per_epoch:
+            if (
+                self._max_updates_per_epoch is not None
+                and i >= self._max_updates_per_epoch
+            ):
                 break
 
             for key in data.keys():
                 if key.startswith('x_d'):
-                    data[key] = {k: v.to(self.device) for k, v in data[key].items()}
+                    data[key] = {
+                        k: v.to(self.device) for k, v in data[key].items()
+                    }
                 elif not key.startswith('date'):
                     data[key] = data[key].to(self.device)
 
-            with autocast(self.device.type, enabled=(self.device.type == 'cuda')):
+            with autocast(
+                self.device.type, enabled=(self.device.type == 'cuda')
+            ):
                 # apply possible pre-processing to the batch before the forward pass
                 data = self.model.pre_model_hook(data, is_train=True)
 
@@ -371,7 +462,9 @@ class BaseTrainer(object):
                     for key in filter(lambda k: 'y' in k, data.keys()):
                         noise = self.noise_sampler_y.sample(data[key].shape)
                         # make sure we add near-zero noise to originally near-zero targets
-                        data[key] += (data[key] + self._target_mean / self._target_std) * noise.to(self.device)
+                        data[key] += (
+                            data[key] + self._target_mean / self._target_std
+                        ) * noise.to(self.device)
 
                 loss, all_losses = self.loss_obj(predictions, data)
 
@@ -379,8 +472,12 @@ class BaseTrainer(object):
             if torch.isnan(loss):
                 nan_count += 1
                 if nan_count > self._allow_subsequent_nan_losses:
-                    raise RuntimeError(f"Loss was NaN for {nan_count} times in a row. Stopped training.")
-                LOGGER.warning(f"Loss is Nan; ignoring step. (#{nan_count}/{self._allow_subsequent_nan_losses})")
+                    raise RuntimeError(
+                        f'Loss was NaN for {nan_count} times in a row. Stopped training.'
+                    )
+                LOGGER.warning(
+                    f'Loss is Nan; ignoring step. (#{nan_count}/{self._allow_subsequent_nan_losses})'
+                )
             else:
                 nan_count = 0
 
@@ -392,7 +489,9 @@ class BaseTrainer(object):
 
                 if self.cfg.clip_gradient_norm is not None:
                     self.scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.clip_gradient_norm)
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(), self.cfg.clip_gradient_norm
+                    )
 
                 # update weights
                 self.scaler.step(self.optimizer)
@@ -401,8 +500,10 @@ class BaseTrainer(object):
 
             if i % self.cfg.log_loss_every_nth_update == 0 or i + 1 == n_iter:
                 # Report loss every nth update or finally
-                pbar.set_postfix_str(f"Loss: {loss.item():.4f}")
-                self.experiment_logger.log_step(**{k: v.item() for k, v in all_losses.items()})
+                pbar.set_postfix_str(f'Loss: {loss.item():.4f}')
+                self.experiment_logger.log_step(
+                    **{k: v.item() for k, v in all_losses.items()}
+                )
 
     def _set_random_seeds(self):
         if self.cfg.seed is None:
@@ -416,32 +517,34 @@ class BaseTrainer(object):
 
     def _set_device(self):
         if self.cfg.device is not None:
-            if self.cfg.device.startswith("cuda"):
+            if self.cfg.device.startswith('cuda'):
                 gpu_id = int(self.cfg.device.split(':')[-1])
                 if gpu_id > torch.cuda.device_count():
-                    raise RuntimeError(f"This machine does not have GPU #{gpu_id} ")
+                    raise RuntimeError(
+                        f'This machine does not have GPU #{gpu_id} '
+                    )
                 else:
                     self.device = torch.device(self.cfg.device)
-            elif self.cfg.device == "mps":
+            elif self.cfg.device == 'mps':
                 if torch.backends.mps.is_available():
-                    self.device = torch.device("mps")
+                    self.device = torch.device('mps')
                 else:
-                    raise RuntimeError("MPS device is not available.")
+                    raise RuntimeError('MPS device is not available.')
             else:
-                self.device = torch.device("cpu")
+                self.device = torch.device('cpu')
         else:
             if torch.cuda.is_available():
-                self.device = torch.device("cuda:0")
+                self.device = torch.device('cuda:0')
             elif torch.backends.mps.is_available():
-                self.device = torch.device("mps")
+                self.device = torch.device('mps')
             else:
-                self.device = torch.device("cpu")
-        LOGGER.info(f"### Device {self.device} will be used for training")
+                self.device = torch.device('cpu')
+        LOGGER.info(f'### Device {self.device} will be used for training')
 
     def _create_folder_structure(self):
         # create as subdirectory within run directory of base run
         if self.cfg.is_continue_training:
-            folder_name = f"continue_training_from_epoch{self._epoch:03d}"
+            folder_name = f'continue_training_from_epoch{self._epoch:03d}'
 
             # store dir of base run for easier access in weight loading
             self.cfg.base_run_dir = self.cfg.run_dir
@@ -450,25 +553,27 @@ class BaseTrainer(object):
         # create as new folder structure
         else:
             now = datetime.now()
-            day = f"{now.day}".zfill(2)
-            month = f"{now.month}".zfill(2)
-            hour = f"{now.hour}".zfill(2)
-            minute = f"{now.minute}".zfill(2)
-            second = f"{now.second}".zfill(2)
+            day = f'{now.day}'.zfill(2)
+            month = f'{now.month}'.zfill(2)
+            hour = f'{now.hour}'.zfill(2)
+            minute = f'{now.minute}'.zfill(2)
+            second = f'{now.second}'.zfill(2)
             run_name = f'{self.cfg.experiment_name}_{day}{month}_{hour}{minute}{second}'
 
             # if no directory for the runs is specified, a 'runs' folder will be created in the current working dir
             if self.cfg.run_dir is None:
-                self.cfg.run_dir = Path().cwd() / "runs" / run_name
+                self.cfg.run_dir = Path().cwd() / 'runs' / run_name
             else:
                 self.cfg.run_dir = self.cfg.run_dir / run_name
 
         # create folder + necessary subfolder
         if not self.cfg.run_dir.is_dir():
-            self.cfg.train_dir = self.cfg.run_dir / "train_data"
+            self.cfg.train_dir = self.cfg.run_dir / 'train_data'
             self.cfg.train_dir.mkdir(parents=True)
         else:
-            raise RuntimeError(f"There is already a folder at {self.cfg.run_dir}")
+            raise RuntimeError(
+                f'There is already a folder at {self.cfg.run_dir}'
+            )
         if self.cfg.log_n_figures is not None:
-            self.cfg.img_log_dir = self.cfg.run_dir / "img_log"
+            self.cfg.img_log_dir = self.cfg.run_dir / 'img_log'
             self.cfg.img_log_dir.mkdir(parents=True)
