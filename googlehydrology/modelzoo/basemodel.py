@@ -13,7 +13,6 @@
 # limitations under the License.
 
 
-
 import torch
 import torch.nn as nn
 
@@ -26,14 +25,15 @@ class BaseModel(nn.Module):
     """Abstract base model class, don't use this class for model training.
 
     Use subclasses of this class for training/evaluating different models, e.g. use `CudaLSTM` for training a standard
-    LSTM model or `EA-LSTM` for training an Entity-Aware-LSTM. Refer to  :doc:`Documentation/Modelzoo </usage/models>` 
-    for a full list of available models and how to integrate a new model. 
+    LSTM model or `EA-LSTM` for training an Entity-Aware-LSTM. Refer to  :doc:`Documentation/Modelzoo </usage/models>`
+    for a full list of available models and how to integrate a new model.
 
     Parameters
     ----------
     cfg : Config
         The run configuration.
     """
+
     # specify submodules of the model that can later be used for finetuning. Names must match class attributes
     module_parts = []
 
@@ -48,29 +48,33 @@ class BaseModel(nn.Module):
             calculate_scaler=False,
         )
 
-    def sample(self, data: dict[str, torch.Tensor], n_samples: int) -> dict[str, torch.Tensor]:
+    def sample(
+        self, data: dict[str, torch.Tensor], n_samples: int
+    ) -> dict[str, torch.Tensor]:
         """Provides point prediction samples from a probabilistic model.
-        
+
         This function wraps the `sample_pointpredictions` function, which provides different point sampling functions
-        for the different uncertainty estimation approaches. There are also options to handle negative point prediction 
-        samples that arise while sampling from the uncertainty estimates. They can be controlled via the configuration. 
-         
+        for the different uncertainty estimation approaches. There are also options to handle negative point prediction
+        samples that arise while sampling from the uncertainty estimates. They can be controlled via the configuration.
+
 
         Parameters
         ----------
         data : dict[str, torch.Tensor]
             Dictionary, containing input features as key-value pairs.
         n_samples : int
-            Number of point predictions that ought ot be sampled form the model. 
+            Number of point predictions that ought ot be sampled form the model.
 
         Returns
         -------
         dict[str, torch.Tensor]
-            Sampled point predictions 
+            Sampled point predictions
         """
         return sample_pointpredictions(self, data, n_samples, self._scaler)
 
-    def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
+    def forward(
+        self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]
+    ) -> dict[str, torch.Tensor]:
         """Perform a forward pass.
 
         Parameters
@@ -85,8 +89,10 @@ class BaseModel(nn.Module):
         """
         raise NotImplementedError
 
-    def pre_model_hook(self, data: dict[str, torch.Tensor], is_train: bool) -> dict[str, torch.Tensor]:
-        """A function to execute before the model in training, validation and test. 
+    def pre_model_hook(
+        self, data: dict[str, torch.Tensor], is_train: bool
+    ) -> dict[str, torch.Tensor]:
+        """A function to execute before the model in training, validation and test.
         The beahvior can be adapted depending on the run configuration and the provided arguments.
 
         Parameters
