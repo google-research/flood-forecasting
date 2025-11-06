@@ -25,22 +25,24 @@ import xarray
 LOGGER = logging.getLogger(__name__)
 
 
-def load_caravan_attributes(data_dir: Path,
-                            basins: list[str] | None = None,
-                            subdataset: str | None = None,
-                            features: list[str] | None = None) -> xarray.Dataset:
+def load_caravan_attributes(
+    data_dir: Path,
+    basins: list[str] | None = None,
+    subdataset: str | None = None,
+    features: list[str] | None = None,
+) -> xarray.Dataset:
     """Load the attributes of the Caravan dataset.
 
     Parameters
     ----------
     data_dir : Path
-        Path to the root directory of Caravan that has to include a sub-directory called 'attributes' which contain the 
+        Path to the root directory of Caravan that has to include a sub-directory called 'attributes' which contain the
         attributes of all sub-datasets in separate folders.
     basins : list[str], optional
-        If passed, returns only attributes for the basins specified in this list. Otherwise, the attributes of all 
+        If passed, returns only attributes for the basins specified in this list. Otherwise, the attributes of all
         basins are returned.
     subdataset : str, optional
-        If passed, returns only the attributes of one sub-dataset. Otherwise, the attributes of all sub-datasets are 
+        If passed, returns only the attributes of one sub-dataset. Otherwise, the attributes of all sub-datasets are
         loaded.
 
     Raises
@@ -48,7 +50,7 @@ def load_caravan_attributes(data_dir: Path,
     FileNotFoundError
         If the requested sub-dataset does not exist or any sub-dataset for the requested basins is missing.
     ValueError
-        If any of the requested basins does not exist in the attribute files or if both, basins and sub-dataset are 
+        If any of the requested basins does not exist in the attribute files or if both, basins and sub-dataset are
         passed but at least one of the basins is not part of the corresponding sub-dataset.
 
     Returns
@@ -58,13 +60,17 @@ def load_caravan_attributes(data_dir: Path,
     """
     LOGGER.debug('')
     if subdataset:
-        subdataset_dir = data_dir / "attributes" / subdataset
+        subdataset_dir = data_dir / 'attributes' / subdataset
         if not subdataset_dir.is_dir():
-            raise FileNotFoundError(f"No subdataset {subdataset} found at {subdataset_dir}.")
+            raise FileNotFoundError(
+                f'No subdataset {subdataset} found at {subdataset_dir}.'
+            )
         subdataset_dirs = [subdataset_dir]
 
     else:
-        subdataset_dirs = [d for d in (data_dir / "attributes").glob('*') if d.is_dir()]
+        subdataset_dirs = [
+            d for d in (data_dir / 'attributes').glob('*') if d.is_dir()
+        ]
 
     if basins:
         # Get list of unique sub datasets from the basin strings.
@@ -74,16 +80,26 @@ def load_caravan_attributes(data_dir: Path,
         if subdataset:
             # subdataset_names is only allowed to be size 1 in this case.
             if len(subdataset_names) > 1 or subdataset_names[0] != subdataset:
-                raise ValueError("At least one of the passed basins is not part of the passed subdataset.")
+                raise ValueError(
+                    'At least one of the passed basins is not part of the passed subdataset.'
+                )
         else:
             # Check if all subdatasets exist.
-            missing_subdatasets = [s for s in subdataset_names if not (data_dir / "attributes" / s).is_dir()]
+            missing_subdatasets = [
+                s
+                for s in subdataset_names
+                if not (data_dir / 'attributes' / s).is_dir()
+            ]
 
             if missing_subdatasets:
-                raise FileNotFoundError(f"Could not find subdataset directories for {missing_subdatasets}.")
+                raise FileNotFoundError(
+                    f'Could not find subdataset directories for {missing_subdatasets}.'
+                )
 
         # Subset subdataset_dirs to only the required subsets.
-        subdataset_dirs = [s for s in subdataset_dirs if s.name in subdataset_names]
+        subdataset_dirs = [
+            s for s in subdataset_dirs if s.name in subdataset_names
+        ]
 
     # Load all required attribute files.
     LOGGER.debug('load attribute files')
@@ -93,9 +109,11 @@ def load_caravan_attributes(data_dir: Path,
     if basins:
         LOGGER.debug('missing')
         # Check for any requested basins that are missing from the loaded data.
-        missing = set(basins).difference(ds.coords["basin"].data)
+        missing = set(basins).difference(ds.coords['basin'].data)
         if missing:
-            raise ValueError(f'{len(missing)} basins are missing static attributes: {", ".join(missing)}')
+            raise ValueError(
+                f'{len(missing)} basins are missing static attributes: {", ".join(missing)}'
+            )
 
         # Subset to only the requested basins.
         ds = ds.sel(basin=basins)
@@ -103,14 +121,16 @@ def load_caravan_attributes(data_dir: Path,
     return ds
 
 
-def load_caravan_timeseries(data_dir: Path, basin: str, filetype: str = "netcdf") -> pd.DataFrame|xarray.Dataset:
+def load_caravan_timeseries(
+    data_dir: Path, basin: str, filetype: str = 'netcdf'
+) -> pd.DataFrame | xarray.Dataset:
     """Loads the timeseries data of one basin from the Caravan dataset.
-    
+
     Parameters
     ----------
     data_dir : Path
-        Path to the root directory of Caravan that has to include a sub-directory called 'timeseries'. This 
-        sub-directory has to contain another sub-directory called either 'csv' or 'netcdf', depending on the choice 
+        Path to the root directory of Caravan that has to include a sub-directory called 'timeseries'. This
+        sub-directory has to contain another sub-directory called either 'csv' or 'netcdf', depending on the choice
         of the filetype argument. By default, netCDF files are loaded from the 'netcdf' subdirectory.
     basin : str
         The Caravan gauge id string in the form of {subdataset_name}_{gauge_id}.
@@ -128,18 +148,22 @@ def load_caravan_timeseries(data_dir: Path, basin: str, filetype: str = "netcdf"
     # Get the subdataset name from the basin string.
     subdataset_name = basin.split('_')[0]
 
-    if filetype == "netcdf":
-        filepath = data_dir / "timeseries" / "netcdf" / subdataset_name / f"{basin}.nc"
-    elif filetype == "csv":
-        filepath = data_dir / "timeseries" / "csv" / subdataset_name / f"{basin}.csv"
+    if filetype == 'netcdf':
+        filepath = (
+            data_dir / 'timeseries' / 'netcdf' / subdataset_name / f'{basin}.nc'
+        )
+    elif filetype == 'csv':
+        filepath = (
+            data_dir / 'timeseries' / 'csv' / subdataset_name / f'{basin}.csv'
+        )
     else:
         raise ValueError("filetype has to be either 'csv' or 'netcdf'.")
 
     if not filepath.is_file():
-        raise FileNotFoundError(f"No basin file found at {filepath}.")
+        raise FileNotFoundError(f'No basin file found at {filepath}.')
 
     # Load timeseries data.
-    if filetype == "netcdf":
+    if filetype == 'netcdf':
         return xarray.open_dataset(filepath)
     df = pd.read_csv(filepath, parse_dates=['date'])
     df = df.set_index('date')
@@ -169,10 +193,12 @@ def load_caravan_timeseries_together(
     """
 
     def basin_to_file_path(basin: str) -> Path:
-        subdataset_name = basin.split("_")[0]
-        filepath = data_dir / "timeseries" / "netcdf" / subdataset_name / f"{basin}.nc"
+        subdataset_name = basin.split('_')[0]
+        filepath = (
+            data_dir / 'timeseries' / 'netcdf' / subdataset_name / f'{basin}.nc'
+        )
         if not filepath.is_file():
-            raise FileNotFoundError(f"No basin file found at {filepath}.")
+            raise FileNotFoundError(f'No basin file found at {filepath}.')
         return filepath
 
     def preprocess(ds: xarray.Dataset):
@@ -181,16 +207,18 @@ def load_caravan_timeseries_together(
     ds = xarray.open_mfdataset(
         [basin_to_file_path(e) for e in basins],
         preprocess=preprocess,
-        combine="nested",
-        concat_dim="basin",
+        combine='nested',
+        concat_dim='basin',
         parallel=False,  # open_mfdataset has a bug (seg fault) when True
-        chunks={"date": "auto"},
+        chunks={'date': 'auto'},
         join='outer',
     )
     return ds.assign_coords(basin=basins)
 
 
-def _load_attribute_files_of_subdatasets(datasets: list[Path], features: list[str]) -> xarray.Dataset:
+def _load_attribute_files_of_subdatasets(
+    datasets: list[Path], features: list[str]
+) -> xarray.Dataset:
     """Loads all attribute CSV files, indexing gauge_id to basin.
 
     Converts float64 to float32.
@@ -198,15 +226,25 @@ def _load_attribute_files_of_subdatasets(datasets: list[Path], features: list[st
 
     @dask.delayed
     def process(csv_file: Path) -> xarray.Dataset:
-        df64 = pd.read_csv(csv_file, index_col="gauge_id")
+        df64 = pd.read_csv(csv_file, index_col='gauge_id')
         df = df64.astype(
-            {col: np.float32 for col in df64.select_dtypes(include=["float64"]).columns}
+            {
+                col: np.float32
+                for col in df64.select_dtypes(include=['float64']).columns
+            }
         )
-        df.rename_axis("basin", inplace=True)
-        df.drop(columns=(e for e in df.columns if e not in features), inplace=True)
-        return df.to_xarray().chunk('auto')  # Uses underlying numpy arrays in df
+        df.rename_axis('basin', inplace=True)
+        df.drop(
+            columns=(e for e in df.columns if e not in features), inplace=True
+        )
+        return df.to_xarray().chunk(
+            'auto'
+        )  # Uses underlying numpy arrays in df
 
-    dss = map(process, itertools.chain.from_iterable(e.glob("*.csv") for e in datasets))
+    dss = map(
+        process,
+        itertools.chain.from_iterable(e.glob('*.csv') for e in datasets),
+    )
     dss = dask.compute(*dss)
 
     return xarray.merge(dss, join='outer', compat='no_conflicts')
