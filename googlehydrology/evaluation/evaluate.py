@@ -18,7 +18,9 @@ from googlehydrology.evaluation import get_tester
 from googlehydrology.utils.config import Config
 
 
-def start_evaluation(cfg: Config, run_dir: Path, epoch: int = None, period: str = "test"):
+def start_evaluation(
+    cfg: Config, run_dir: Path, epoch: int = None, period: str = 'test'
+):
     """Start evaluation of a trained network
 
     Parameters
@@ -33,5 +35,12 @@ def start_evaluation(cfg: Config, run_dir: Path, epoch: int = None, period: str 
         The period to evaluate, by default 'test'.
 
     """
-    tester = get_tester(cfg=cfg, run_dir=run_dir, period=period, init_model=True)
-    tester.evaluate(epoch=epoch, save_results=True, save_all_output=cfg.save_all_output, metrics=cfg.metrics)
+    tester = get_tester(
+        cfg=cfg, run_dir=run_dir, period=period, init_model=True
+    )
+    tester.evaluate(
+        epoch=epoch,
+        save_results=True,
+        save_all_output=cfg.save_all_output,
+        metrics=cfg.metrics,
+    )
