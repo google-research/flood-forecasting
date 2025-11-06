@@ -19,7 +19,7 @@ import torch.nn as nn
 
 from googlehydrology.datautils.scaler import Scaler
 from googlehydrology.utils.config import Config
-from googlehydrology.utils.samplingutils import sample_pointpredictions, umal_extend_batch
+from googlehydrology.utils.samplingutils import sample_pointpredictions
 
 
 class BaseModel(nn.Module):
@@ -41,12 +41,8 @@ class BaseModel(nn.Module):
         super(BaseModel, self).__init__()
         self.cfg = cfg
         self.output_size = len(cfg.target_variables)
-        if cfg.head.lower() == 'gmm':
-            self.output_size *= 3 * cfg.n_distributions
-        elif cfg.head.lower() in ['cmal', 'cmal_deterministic']:
+        if cfg.head.lower() in ['cmal', 'cmal_deterministic']:
             self.output_size *= 4 * cfg.n_distributions
-        elif cfg.head.lower() == 'umal':
-            self.output_size *= 2
         self._scaler = Scaler(
             scaler_dir=(cfg.base_run_dir if cfg.is_finetuning else cfg.run_dir),
             calculate_scaler=False,
@@ -105,10 +101,5 @@ class BaseModel(nn.Module):
         data : dict[str, torch.Tensor]
             The modified (or unmodified) data that are used for the training or evaluation.
         """
-        if self.cfg.head.lower() == "umal":
-            data = umal_extend_batch(data, self.cfg, n_taus=self.cfg.n_taus, extend_y=True)
-        else:
-            # here one can implement additional pre model hooks
-            pass
-
+        # here one can implement additional pre model hooks e.g. based on head
         return data

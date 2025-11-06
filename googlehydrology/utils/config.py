@@ -710,10 +710,6 @@ class Config(object):
         return self._get_value_verbose("n_samples")
 
     @property
-    def n_taus(self) -> int:
-        return self._get_value_verbose("n_taus")
-
-    @property
     def nan_handling_method(self) -> str:
         method = self._cfg.get("nan_handling_method", None)
         if not method:
@@ -932,14 +928,6 @@ class Config(object):
         return self._cfg.get("union_mapping", None)
 
     @property
-    def tau_down(self) -> float:
-        return self._get_value_verbose("tau_down")
-
-    @property
-    def tau_up(self) -> float:
-        return self._get_value_verbose("tau_up")
-
-    @property
     def test_basin_file(self) -> Path:
         return self._get_value_verbose("test_basin_file")
 
@@ -982,10 +970,6 @@ class Config(object):
     @property
     def transfer_mtslstm_states(self) -> dict[str, str]:
         return self._cfg.get("transfer_mtslstm_states", {'h': 'linear', 'c': 'linear'})
-
-    @property
-    def umal_extend_batch(self) -> bool:
-        return self._cfg.get("umal_extend_batch", False)
 
     @property
     def use_basin_id_encoding(self) -> bool:

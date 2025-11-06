@@ -53,11 +53,6 @@ negative_sample_handling: # to be filled by conftest
 negative_sample_max_retries: # to be filled by conftest
 mc_dropout: # to be filled by conftest
 
-# Model parameters for UMAL head
-n_taus: # to be filled by conftest
-tau_down: # to be filled by conftest
-tau_up: # to be filled by conftest
-
 hidden_size: 16
 initial_forget_bias: 3
 output_dropout: 0.4

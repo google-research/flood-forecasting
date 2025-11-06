@@ -46,7 +46,7 @@ class BaseLoss(torch.nn.Module):
     output_size_per_target : int, optional
         Number of model outputs (per element in `prediction_keys`) connected to a single target variable, by default 1. 
         For example for regression, one output (last dimension in `y_hat`) maps to one target variable. For mixture 
-        models (e.g. GMM and CMAL) the number of outputs per target corresponds to the number of distributions 
+        models (e.g. CMAL) the number of outputs per target corresponds to the number of distributions 
         (`n_distributions`).
     """
 
@@ -276,52 +276,6 @@ class MaskedNSELoss(BaseLoss):
         return {key: value[:, :, n_target:n_target + 1] for key, value in additional_data.items()}
 
 
-class MaskedGMMLoss(BaseLoss):
-    """Average negative log-likelihood for a gaussian mixture model (GMM). 
-
-    This loss provides the negative log-likelihood for GMMs, which is their standard loss function. Our particular 
-    implementation is adapted from from [#]_.  
-
-    Parameters
-    ----------
-    cfg : Config
-        The run configuration.
-    eps : float, optional
-        Small constant for numeric stability.
-
-    References
-    ----------
-    .. [#] D. Ha: Mixture density networks with tensorflow. blog.otoro.net, 
-           URL: http://blog.otoro.net/2015/11/24/mixture-density-networks-with-tensorflow, 2015.
-    """
-
-    def __init__(self, cfg: Config, eps: float = 1e-10):
-        super(MaskedGMMLoss, self).__init__(cfg,
-                                            prediction_keys=['mu', 'sigma', 'pi'],
-                                            ground_truth_keys=['y'],
-                                            output_size_per_target=cfg.n_distributions)
-        self.eps = eps
-
-    @staticmethod
-    def _gaussian_distribution(mu: torch.Tensor, sigma: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        # make |mu|=K copies of y, subtract mu, divide by sigma
-        result = (y.expand_as(mu) - mu) * torch.reciprocal(sigma)
-        result = -0.5 * (result * result)
-        return (torch.exp(result) * torch.reciprocal(sigma)) * ONE_OVER_2PI_SQUARED
-
-    def _get_loss(self, prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor], **kwargs):
-        mask = ~torch.isnan(ground_truth['y']).any(1).any(1)
-        y = ground_truth['y'][mask]
-        m = prediction['mu'][mask]
-        s = prediction['sigma'][mask]
-        p = prediction['pi'][mask]
-
-        result = self._gaussian_distribution(m, s, y) * p
-        result = torch.sum(result, dim=-1)
-        result = -torch.log(result + self.eps)  # epsilon stability
-        return torch.mean(result)
-
-
 class MaskedCMALLoss(BaseLoss):
     """Average negative log-likelihood for a model that uses the CMAL head. 
     
@@ -356,48 +310,6 @@ class MaskedCMALLoss(BaseLoss):
         log_weights = torch.log(p + self.eps)
 
         result = torch.logsumexp(log_weights + log_like, dim=2)
-        result = -torch.mean(torch.sum(result, dim=1))
-        return result
-
-
-class MaskedUMALLoss(BaseLoss):
-    """Average negative log-likelihood for a model that uses the UMAL head. 
-
-    Parameters
-    ----------
-    cfg : Config
-        The run configuration.
-    eps : float, optional
-        Small constant for numeric stability.
-    """
-
-    def __init__(self, cfg, eps: float = 1e-5):
-        super(MaskedUMALLoss, self).__init__(cfg,
-                                             prediction_keys=['mu', 'b'],
-                                             ground_truth_keys=['y_extended', 'tau'],
-                                             output_size_per_target=2)
-        self.eps = eps
-        self._n_taus_count = cfg.n_taus
-        self._n_taus_log = torch.as_tensor(np.log(cfg.n_taus).astype('float32'))
-
-    def _get_loss(self, prediction: dict[str, torch.Tensor], ground_truth: dict[str, torch.Tensor], **kwargs):
-        mask = ~torch.isnan(ground_truth['y_extended']).any(1).any(1)
-        y = ground_truth['y_extended'][mask]
-        t = ground_truth['tau'][mask]
-        m = prediction['mu'][mask]
-        b = prediction['b'][mask]
-
-        # compute log likelihood
-        error = y - m
-        log_like = torch.log(t) + \
-                   torch.log(1.0 - t) - \
-                   torch.log(b) - \
-                   torch.max(t * error, (t - 1.0) * error) / b
-
-        original_batch_size = int(log_like.shape[0] / self._n_taus_count)
-        log_like_split = torch.cat(log_like[:, :, :].split(original_batch_size, 0), 2)
-
-        result = torch.logsumexp(log_like_split, dim=2) - self._n_taus_log
         result = -torch.mean(torch.sum(result, dim=1))
         return result
 

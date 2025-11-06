@@ -26,7 +26,7 @@ def start_training(cfg: Config):
 
     """
     # MC-LSTM is a special case, where the head returns an empty string but the model is trained as regression model.
-    if cfg.head.lower() in ['regression', 'gmm', 'umal', 'cmal', 'cmal_deterministic', '']:
+    if cfg.head.lower() in ['regression', 'cmal', 'cmal_deterministic', '']:
         trainer = BaseTrainer(cfg=cfg)
     else:
         raise ValueError(f"Unknown head {cfg.head}.")

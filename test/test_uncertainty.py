@@ -38,14 +38,6 @@ common_uncertainty_config = {
 
 # Head-specific configs (only fields that differ)
 head_configs = {
-    "umal": {
-        "head": "umal",
-        "loss": "UMALLoss",
-        "n_taus": 32,
-        "umal_extend_batch": True,
-        "tau_down": 0.1,
-        "tau_up": 0.9,
-    },
     "cmal": {
         "head": "cmal",
         "loss": "CMALLoss",
@@ -56,11 +48,6 @@ head_configs = {
         "loss": "CMALLoss",
         "n_distributions": 3,
     },
-    "gmm": {
-        "head": "gmm",
-        "loss": "GMMLoss",
-        "n_distributions": 3,
-    }
 }
 
 def build_full_config(head):
@@ -68,7 +55,7 @@ def build_full_config(head):
     config = head_configs[head].copy()
 
     # Only add common uncertainty fields if the head supports them
-    if head in ["umal", "cmal", "cmal_deterministic", "gmm"]:
+    if head in ["cmal", "cmal_deterministic"]:
         config.update(common_uncertainty_config)
     
     return config
@@ -76,7 +63,7 @@ def build_full_config(head):
 
 @pytest.mark.parametrize("mc_dropout", [False, True])
 @pytest.mark.parametrize("negative_sample_handling", ["none", "clip", "truncate"])
-@pytest.mark.parametrize("head", ["umal", "cmal", "cmal_deterministic", "gmm"])
+@pytest.mark.parametrize("head", ["cmal", "cmal_deterministic"])
 def test_daily_uncertainty(get_config: Fixture[Callable[[str], dict]],
                            daily_dataset: Fixture[str],
                            single_timescale_forcings: Fixture[str],
@@ -86,7 +73,7 @@ def test_daily_uncertainty(get_config: Fixture[Callable[[str], dict]],
     """Test probabilistic output consistency across different heads, dropout settings, and negative sample handling modes.
 
     This test verifies that training and evaluation produce valid uncertainty outputs
-    for UMAL, CMAL, and GMM heads under various negative sample handling strategies
+    for CMAL heads under various negative sample handling strategies
     ('none', 'clip', 'truncate') and with or without Monte Carlo dropout.
     """
     
