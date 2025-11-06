@@ -14,13 +14,19 @@
 
 from pathlib import Path
 
-from googlehydrology.evaluation.tester import BaseTester, RegressionTester, UncertaintyTester
+from googlehydrology.evaluation.tester import (
+    BaseTester,
+    RegressionTester,
+    UncertaintyTester,
+)
 from googlehydrology.utils.config import Config
 
 
-def get_tester(cfg: Config, run_dir: Path, period: str, init_model: bool) -> BaseTester:
+def get_tester(
+    cfg: Config, run_dir: Path, period: str, init_model: bool
+) -> BaseTester:
     """Get specific tester class objects depending on the model (head) type.
-    
+
     Parameters
     ----------
     cfg : Config
@@ -35,15 +41,19 @@ def get_tester(cfg: Config, run_dir: Path, period: str, init_model: bool) -> Bas
     Returns
     -------
     BaseTester
-        `RegressionTester` if the model head is 'regression'. `UncertaintyTester` if the model head is one of 
+        `RegressionTester` if the model head is 'regression'. `UncertaintyTester` if the model head is one of
         {'cmal', 'cmal_deterministic'} or if the evaluation is run in MC-Dropout mode.
     """
-    if cfg.mc_dropout or cfg.head.lower() in ["cmal", "cmal_deterministic"]:
+    if cfg.mc_dropout or cfg.head.lower() in ['cmal', 'cmal_deterministic']:
         Tester = UncertaintyTester
     # MC-LSTM is a special case, where the head returns an empty string but the model is trained as regression model.
-    elif cfg.head.lower() in ["regression", ""]:
+    elif cfg.head.lower() in ['regression', '']:
         Tester = RegressionTester
     else:
-        NotImplementedError(f"No evaluation method implemented for {cfg.head} head")
+        NotImplementedError(
+            f'No evaluation method implemented for {cfg.head} head'
+        )
 
-    return Tester(cfg=cfg, run_dir=run_dir, period=period, init_model=init_model)
+    return Tester(
+        cfg=cfg, run_dir=run_dir, period=period, init_model=init_model
+    )
