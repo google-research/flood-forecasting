@@ -28,13 +28,17 @@ SCALER_FILE_NAME = 'scaler.nc'
 
 def _calc_stats(dataset: xr.Dataset, needed: set[str]):
     stats = {
-        "mean": dataset.mean(skipna=True),
-        "std": dataset.std(skipna=True),
-        "median": dataset.quantile(q=0.5, skipna=True) if "median" in needed else None,
-        "min": dataset.min(skipna=True) if {"min", "minmax"} & needed else None,
-        "max": dataset.max(skipna=True) if {"max", "minmax"} & needed else None,
+        'mean': dataset.mean(skipna=True),
+        'std': dataset.std(skipna=True),
+        'median': dataset.quantile(q=0.5, skipna=True)
+        if 'median' in needed
+        else None,
+        'min': dataset.min(skipna=True) if {'min', 'minmax'} & needed else None,
+        'max': dataset.max(skipna=True) if {'max', 'minmax'} & needed else None,
     }
-    stats["minmax"] = stats["max"] - stats["min"] if "minmax" in needed else None
+    stats['minmax'] = (
+        stats['max'] - stats['min'] if 'minmax' in needed else None
+    )
     return stats
 
 
@@ -52,16 +56,16 @@ def _calc_types(
     """
     for feature in dataset.data_vars:
         a_type = types[feature].lower()  # Get stat type like 'mean' for feature
-        if a_type == "none":
+        if a_type == 'none':
             yield xr.DataArray(none_value, name=feature)
         else:
             try:
                 yield stats[a_type][feature]
             except KeyError:
-                raise ValueError(f"Unknown method {a_type}")
+                raise ValueError(f'Unknown method {a_type}')
 
 
-class Scaler():
+class Scaler:
     """Scaler for a dataset that contains multiple features.
 
     Parameters
@@ -90,7 +94,9 @@ class Scaler():
     ):
         # Consistency check.
         if not calculate_scaler and dataset is not None:
-            raise ValueError('Do not pass a dataset if you are loading a pre-calculated scaler.')
+            raise ValueError(
+                'Do not pass a dataset if you are loading a pre-calculated scaler.'
+            )
 
         # Load or calculate scaling parameters.
         self.scaler = None
@@ -109,7 +115,7 @@ class Scaler():
             with open(scaler_file, 'rb') as f:
                 self.scaler = xr.load_dataset(f)
         else:
-            raise ValueError("Old scaler files are unsupported")
+            raise ValueError('Old scaler files are unsupported')
 
     def save(self):
         _save(self.scaler_dir, self.scaler)
@@ -122,10 +128,10 @@ class Scaler():
         centering_types = {feature: 'mean' for feature in dataset.data_vars}
         scaling_types = {feature: 'std' for feature in dataset.data_vars}
         for feature, norm in self._custom_normalization.items():
-            if "centering" in norm:
-                centering_types[feature] = norm["centering"]
-            if "scaling" in norm:
-                scaling_types[feature] = norm["scaling"]
+            if 'centering' in norm:
+                centering_types[feature] = norm['centering']
+            if 'scaling' in norm:
+                scaling_types[feature] = norm['scaling']
 
         needed = set(centering_types.values()) | set(scaling_types.values())
         stats = _calc_stats(dataset, needed)
@@ -136,13 +142,17 @@ class Scaler():
 
         # Combine parameters into a single xarray.Dataset with a 'parameter' coordinate.
         scaler = xr.concat(
-            [center, scale, stats["mean"], stats["std"]],
-            dim=pd.Index(["center", "scale", "mean", "std"], name="parameter"),
+            [center, scale, stats['mean'], stats['std']],
+            dim=pd.Index(['center', 'scale', 'mean', 'std'], name='parameter'),
         )
 
         # Expand the scaler dataset to include 'obs' and 'sim' versions of all variables.
-        obs_scaler = scaler.rename({var: f"{var}_obs" for var in scaler.data_vars})
-        sim_scaler = scaler.rename({var: f"{var}_sim" for var in scaler.data_vars})
+        obs_scaler = scaler.rename(
+            {var: f'{var}_obs' for var in scaler.data_vars}
+        )
+        sim_scaler = scaler.rename(
+            {var: f'{var}_sim' for var in scaler.data_vars}
+        )
         scaler = xr.merge([scaler, obs_scaler, sim_scaler])
 
         # Handle cases where part of the scaler is already calculated. Simply add new features.
@@ -151,14 +161,18 @@ class Scaler():
         else:
             self.scaler = scaler
 
-        if not is_any_lazy(self.scaler):  # ensure allowing side-effects on compute
+        if not is_any_lazy(
+            self.scaler
+        ):  # ensure allowing side-effects on compute
             self.scaler = self.scaler.chunk('auto')
 
-        check_zero_scale_task = _check_zero_scale_task(self.scaler),
-        save_task = _save_task(self.scaler_dir, self.scaler),
-        [self.scaler] = dask.graph_manipulation.bind(  # https://docs.dask.org/en/stable/graph_manipulation.html
-            parents=[check_zero_scale_task, save_task],
-            children=[self.scaler],
+        check_zero_scale_task = (_check_zero_scale_task(self.scaler),)
+        save_task = (_save_task(self.scaler_dir, self.scaler),)
+        [self.scaler] = (
+            dask.graph_manipulation.bind(  # https://docs.dask.org/en/stable/graph_manipulation.html
+                parents=[check_zero_scale_task, save_task],
+                children=[self.scaler],
+            )
         )
 
     def _check_zero_scale(self):
@@ -169,89 +183,114 @@ class Scaler():
         dataset: xr.Dataset,
     ) -> xr.Dataset:
         """Scale a data set with a precaculated_scaler.
-        
+
         $$ unscaled_dataset = (dataset - center) / scale $$
 
         Applies a linear transformation to the features (data_vars) in an xr.Dataset.
         This transformation is the inverse of the one applied by self.unscale().
         Agnostic to the dimensions and coordinates of the dataset.
-        
+
         Parameters
         ----------
         dataset : xr.Dataset
             Dataset to be scaled.
-        
+
         Returns
         -------
         xr.Dataset
             The new dataset where all scalable features are scaled.
-        
+
         Raises
         ------
         ValueError if the dataset contains features that are not in the scaler parameters.
         """
-        missing_features = [feature for feature in dataset if feature not in self.scaler.data_vars]
+        missing_features = [
+            feature
+            for feature in dataset
+            if feature not in self.scaler.data_vars
+        ]
         if any(missing_features):
-            raise ValueError(f'Requesting to scale variables that are not part of the scaler: {missing_features}')
-        return (dataset - self.scaler.sel(parameter='center')) / self.scaler.sel(parameter='scale')
+            raise ValueError(
+                f'Requesting to scale variables that are not part of the scaler: {missing_features}'
+            )
+        return (
+            dataset - self.scaler.sel(parameter='center')
+        ) / self.scaler.sel(parameter='scale')
 
-    def unscale(
-        self,
-        dataset: xr.Dataset
-    ) -> xr.Dataset:
+    def unscale(self, dataset: xr.Dataset) -> xr.Dataset:
         """Un-scale a data set with a precalculated scaler.
-        
+
         $$ scaled_dataset = dataset * scale + center $$
-        
+
         Applies a linear transformation to the features (data_vars) in an xr.Dataset.
         This transformation is the inverse of the one applied by self.scale().
         Agnostic to the dimensions and coordinates of the dataset.
-        
+
         Parameters
         ----------
         dataset : xr.Dataset
             Dataset to be un-scaled.
-        
+
         Returns
         -------
         xr.Dataset
-            The new dataset where all scalable features are un-scaled. 
-        
+            The new dataset where all scalable features are un-scaled.
+
         Raises
         ------
         ValueError if the dataset contains features that are not in the scaler parameters.
         """
-        missing_features = [feature for feature in dataset if feature not in self.scaler.data_vars]
+        missing_features = [
+            feature
+            for feature in dataset
+            if feature not in self.scaler.data_vars
+        ]
         if any(missing_features):
-            raise ValueError(f'Requesting to unscale variables that are not part of the scaler: {missing_features}')
-        return dataset * self.scaler.sel(parameter='scale') + self.scaler.sel(parameter='center')
+            raise ValueError(
+                f'Requesting to unscale variables that are not part of the scaler: {missing_features}'
+            )
+        return dataset * self.scaler.sel(parameter='scale') + self.scaler.sel(
+            parameter='center'
+        )
+
 
 def _save(scaler_dir: Path, scaler: xr.Dataset):
     if scaler is None:
-        raise ValueError('You are trying to save a scaler that has not been computed.')
+        raise ValueError(
+            'You are trying to save a scaler that has not been computed.'
+        )
     os.makedirs(scaler_dir, exist_ok=True)
     scaler_file = scaler_dir / SCALER_FILE_NAME
     with open(scaler_file, 'wb') as f:
         scaler.to_netcdf(f)
 
+
 @dask.delayed
 def _save_task(scaler_dir: Path, scaler: xr.Dataset):
     return _save(scaler_dir, scaler)
+
 
 def _check_zero_scale(scaler: xr.Dataset):
     """Creates a dask task that throws if scale is zero for any feature.
 
     Zero-valued scale parameters cause NaNs.
     """
-    scales_to_check = scaler.sel(parameter=["scale", "std"])
-    is_zero_da = (scales_to_check == 0).any("parameter").to_dataarray()
-    features = is_zero_da["variable"][is_zero_da]
+    scales_to_check = scaler.sel(parameter=['scale', 'std'])
+    is_zero_da = (scales_to_check == 0).any('parameter').to_dataarray()
+    features = is_zero_da['variable'][is_zero_da]
     if any(features):
-        raise ValueError(f"Zero scale values found for features: {list(features)}.")
+        raise ValueError(
+            f'Zero scale values found for features: {list(features)}.'
+        )
+
 
 @dask.delayed
 def _check_zero_scale_task(scaler: xr.Dataset):
     return _check_zero_scale(scaler)
 
+
 def is_any_lazy(dataset: xr.Dataset) -> bool:
-    return any(isinstance(var.data, dask.array.Array) for var in dataset.data_vars.values())
+    return any(
+        isinstance(var.data, dask.array.Array)
+        for var in dataset.data_vars.values()
+    )
