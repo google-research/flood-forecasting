@@ -28,6 +28,7 @@ from googlehydrology.utils.configutils import group_features_list
 
 FC_XAVIER = WeightInitOpt.FC_XAVIER
 
+
 class MeanEmbeddingForecastLSTM(BaseModel):
     """A forecasting model using mean embedding and LSTMs for hindcast and forecast.
 
@@ -58,47 +59,53 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         # Static embedding
         self.static_embedding_fc = self._create_fc(
-            embedding_spec = self.config_data.statics_embedding,
+            embedding_spec=self.config_data.statics_embedding,
             input_size=len(self.config_data.static_attributes),
         )
 
         # Hindcast embedding networks
-        self.hindcast_embeddings_fc = nn.ModuleDict({
-            name: self._create_fc(
-                embedding_spec=self.config_data.hindcast_embedding,
-                input_size=(
-                    len(self.config_data.hindcast_inputs_grouped[name])
-                    + self.static_embedding_fc.output_size
-                ),
-            )
-            for name in set(
-                self.config_data.hindcast_inputs_grouped.keys()
-            ).difference(self.config_data.shared_groups)
-        })
+        self.hindcast_embeddings_fc = nn.ModuleDict(
+            {
+                name: self._create_fc(
+                    embedding_spec=self.config_data.hindcast_embedding,
+                    input_size=(
+                        len(self.config_data.hindcast_inputs_grouped[name])
+                        + self.static_embedding_fc.output_size
+                    ),
+                )
+                for name in set(
+                    self.config_data.hindcast_inputs_grouped.keys()
+                ).difference(self.config_data.shared_groups)
+            }
+        )
         # Forecast embedding networks
-        self.forecast_embeddings_fc = nn.ModuleDict({
-            name: self._create_fc(
-                embedding_spec=self.config_data.forecast_embedding,
-                input_size=(
-                    len(self.config_data.forecast_inputs_grouped[name])
-                    + self.static_embedding_fc.output_size
-                ),
-            )
-            for name in set(
-                self.config_data.forecast_inputs_grouped.keys()
-            ).difference(self.config_data.shared_groups)
-        })
+        self.forecast_embeddings_fc = nn.ModuleDict(
+            {
+                name: self._create_fc(
+                    embedding_spec=self.config_data.forecast_embedding,
+                    input_size=(
+                        len(self.config_data.forecast_inputs_grouped[name])
+                        + self.static_embedding_fc.output_size
+                    ),
+                )
+                for name in set(
+                    self.config_data.forecast_inputs_grouped.keys()
+                ).difference(self.config_data.shared_groups)
+            }
+        )
         # Shared embedding networks (between hindcast and forecast LSTMs)
-        self.shared_embeddings_fc = nn.ModuleDict({
-            name: self._create_fc(
-                embedding_spec=self.config_data.forecast_embedding,
-                input_size=(
-                    len(self.config_data.forecast_inputs_grouped[name])
-                    + self.static_embedding_fc.output_size
-                ),
-            )
-            for name in self.config_data.shared_groups
-        })
+        self.shared_embeddings_fc = nn.ModuleDict(
+            {
+                name: self._create_fc(
+                    embedding_spec=self.config_data.forecast_embedding,
+                    input_size=(
+                        len(self.config_data.forecast_inputs_grouped[name])
+                        + self.static_embedding_fc.output_size
+                    ),
+                )
+                for name in self.config_data.shared_groups
+            }
+        )
 
         # Hindcast LSTM
         self.hindcast_lstm = nn.LSTM(
@@ -120,7 +127,10 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         # Head
         self.dropout = nn.Dropout(p=cfg.output_dropout)
         self.head = get_head(
-            self.cfg, n_in=self.config_data.hidden_size, n_out=3 * 4, n_hidden=100
+            self.cfg,
+            n_in=self.config_data.hidden_size,
+            n_out=3 * 4,
+            n_hidden=100,
         )
 
         lstm_init(
@@ -224,11 +234,17 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         return static_embedding.unsqueeze(1).repeat(1, time_length, 1)
 
     def _make_nan_padding(
-        self, batch_size: int, nan_padding_length: int, embedding_size: int, device: str
+        self,
+        batch_size: int,
+        nan_padding_length: int,
+        embedding_size: int,
+        device: str,
     ) -> torch.Tensor:
         """Returns a nan-padding tensor."""
         return torch.full(
-            (batch_size, nan_padding_length, embedding_size), np.nan, device=device
+            (batch_size, nan_padding_length, embedding_size),
+            np.nan,
+            device=device,
         )
 
     def _append_static_embedding(
@@ -247,7 +263,9 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         # Dimension 0 is the batch size. Note the batch size may change during training.
         batch_size = embedding.shape[0]
         # Dimension 1 is the time dimension. Pad nan to the full sequence length plus lead time.
-        nan_padding_length = self.seq_length + self.lead_time - embedding.shape[1]
+        nan_padding_length = (
+            self.seq_length + self.lead_time - embedding.shape[1]
+        )
         # Dimension 2 is the length of embedding vector.
         embedding_size = embedding.shape[2]
         nan_padding = self._make_nan_padding(
@@ -261,7 +279,9 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         merged = torch.cat([e.unsqueeze(-1) for e in tensors], dim=-1)
         return torch.nanmean(merged, dim=-1)
 
-    def _calc_static_embedding(self, forward_data: "ForwardData") -> torch.Tensor:
+    def _calc_static_embedding(
+        self, forward_data: 'ForwardData'
+    ) -> torch.Tensor:
         return self.static_embedding_fc(forward_data.static_features)
 
     def _calc_dynamic_embedding(
@@ -297,7 +317,9 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         output, _ = lstm(input=lstm_inputs)
         return output
 
-    def _calc_head(self, forecast_state: torch.Tensor) -> dict[str, torch.Tensor]:
+    def _calc_head(
+        self, forecast_state: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
         return self.head(self.dropout(forecast_state))
 
 
@@ -349,15 +371,19 @@ class ForwardData:
         cls,
         data: dict[str, torch.Tensor | dict[str, torch.Tensor]],
         config_data: ConfigData,
-    ) -> "ForwardData":
+    ) -> 'ForwardData':
         return ForwardData(
-            static_features=data["x_s"],
-            hindcast_features = {
-                name: _concat_tensors_from_dict(data["x_d_hindcast"], keys=features)
+            static_features=data['x_s'],
+            hindcast_features={
+                name: _concat_tensors_from_dict(
+                    data['x_d_hindcast'], keys=features
+                )
                 for name, features in config_data.hindcast_inputs_grouped.items()
             },
-            forecast_features = {
-                name: _concat_tensors_from_dict(data["x_d_forecast"], keys=features)
+            forecast_features={
+                name: _concat_tensors_from_dict(
+                    data['x_d_forecast'], keys=features
+                )
                 for name, features in config_data.forecast_inputs_grouped.items()
             },
         )
