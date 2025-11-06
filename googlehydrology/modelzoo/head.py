@@ -23,7 +23,9 @@ from googlehydrology.utils.config import Config
 LOGGER = logging.getLogger(__name__)
 
 
-def get_head(cfg: Config, n_in: int, n_out: int, *, n_hidden: int = 100) -> nn.Module:
+def get_head(
+    cfg: Config, n_in: int, n_out: int, *, n_hidden: int = 100
+) -> nn.Module:
     """Get specific head module, depending on the run configuration.
 
     Parameters
@@ -42,21 +44,27 @@ def get_head(cfg: Config, n_in: int, n_out: int, *, n_hidden: int = 100) -> nn.M
     nn.Module
         The model head, as specified in the run configuration.
     """
-    if cfg.head.lower() == "regression":
-        head = Regression(n_in=n_in, n_out=n_out, activation=cfg.output_activation)
-    elif cfg.head.lower() in ["cmal", "cmal_deterministic"]:
+    if cfg.head.lower() == 'regression':
+        head = Regression(
+            n_in=n_in, n_out=n_out, activation=cfg.output_activation
+        )
+    elif cfg.head.lower() in ['cmal', 'cmal_deterministic']:
         head = CMAL(n_in=n_in, n_out=n_out, n_hidden=n_hidden)
-    elif cfg.head.lower() == "":
-        raise ValueError(f"No 'head' specified in the config but is required for {cfg.model}")
+    elif cfg.head.lower() == '':
+        raise ValueError(
+            f"No 'head' specified in the config but is required for {cfg.model}"
+        )
     else:
-        raise NotImplementedError(f"{cfg.head} not implemented or not linked in `get_head()`")
+        raise NotImplementedError(
+            f'{cfg.head} not implemented or not linked in `get_head()`'
+        )
 
     return head
 
 
 class Regression(nn.Module):
     """Single-layer regression head with different output activations.
-    
+
     Parameters
     ----------
     n_in : int
@@ -69,23 +77,25 @@ class Regression(nn.Module):
         default to 'linear' activation.
     """
 
-    def __init__(self, n_in: int, n_out: int, activation: str = "linear"):
+    def __init__(self, n_in: int, n_out: int, activation: str = 'linear'):
         super(Regression, self).__init__()
 
         # TODO: Add multi-layer support
         layers = [nn.Linear(n_in, n_out)]
-        if activation != "linear":
-            if activation.lower() == "relu":
+        if activation != 'linear':
+            if activation.lower() == 'relu':
                 layers.append(nn.ReLU())
-            elif activation.lower() == "softplus":
+            elif activation.lower() == 'softplus':
                 layers.append(nn.Softplus())
             else:
-                LOGGER.warning(f"## WARNING: Ignored output activation {activation} and used 'linear' instead.")
+                LOGGER.warning(
+                    f"## WARNING: Ignored output activation {activation} and used 'linear' instead."
+                )
         self.net = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         """Perform a forward pass on the Regression head.
-        
+
         Parameters
         ----------
         x : torch.Tensor
@@ -115,10 +125,10 @@ class CMAL(nn.Module):
         Number of output neurons. Corresponds to 4 times the number of components.
     n_hidden : int
         Size of the hidden layer.
-        
+
     References
     ----------
-    .. [#] D.Klotz, F. Kratzert, M. Gauch, A. K. Sampson, G. Klambauer, S. Hochreiter, and G. Nearing: 
+    .. [#] D.Klotz, F. Kratzert, M. Gauch, A. K. Sampson, G. Klambauer, S. Hochreiter, and G. Nearing:
         Uncertainty Estimation with Deep Learning for Rainfall-Runoff Modelling. arXiv preprint arXiv:2012.14295, 2020.
     """
 
@@ -151,8 +161,12 @@ class CMAL(nn.Module):
 
         # enforce properties on component parameters and weights:
         m = m_latent  # no restrictions (depending on setting m>0 might be useful)
-        b = self._softplus(b_latent) + self._eps  # scale > 0 (softplus was working good in tests)
+        b = (
+            self._softplus(b_latent) + self._eps
+        )  # scale > 0 (softplus was working good in tests)
         t = (1 - self._eps) * torch.sigmoid(t_latent) + self._eps  # 0 > tau > 1
-        p = (1 - self._eps) * torch.softmax(p_latent, dim=-1) + self._eps  # sum(pi) = 1 & pi > 0
+        p = (1 - self._eps) * torch.softmax(
+            p_latent, dim=-1
+        ) + self._eps  # sum(pi) = 1 & pi > 0
 
         return {'mu': m, 'b': b, 'tau': t, 'pi': p}
