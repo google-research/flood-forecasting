@@ -32,7 +32,7 @@ sys.path.insert(0, os.path.abspath('.'))
 sys.path.insert(0, os.path.abspath('../../'))
 # -- Project information -----------------------------------------------------
 about = {}
-with open('../../googlehydrology/__about__.py', "r") as fp:
+with open('../../googlehydrology/__about__.py', 'r') as fp:
     exec(fp.read(), about)
 
 project = 'GoogleHydrology'
@@ -40,7 +40,7 @@ copyright = f'{datetime.datetime.now().year}, Frederik Kratzert'
 author = 'Frederik Kratzert'
 
 # The full version, including alpha/beta/rc tags
-release = about["__version__"]
+release = about['__version__']
 
 # -- General configuration ---------------------------------------------------
 
@@ -52,7 +52,7 @@ extensions = [
     'sphinx.ext.napoleon',  # google and numpy doc string support
     'sphinx.ext.mathjax',  # latex rendering of equations using MathJax
     'nbsphinx',  # for direct embedding of jupyter notebooks into sphinx docs
-    'nbsphinx_link'  # to be able to include notebooks from outside of the docs folder
+    'nbsphinx_link',  # to be able to include notebooks from outside of the docs folder
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -67,7 +67,7 @@ suppress_warnings = [
     # Ignore new warning in Sphinx 7.3.0 while pickling environment:
     #   WARNING: cannot cache unpickable configuration value: 'sphinx_gallery_conf'
     # See also: https://github.com/sphinx-doc/sphinx/issues/12300
-    "config.cache",
+    'config.cache',
 ]
 
 # -- Options for HTML output -------------------------------------------------
