@@ -49,7 +49,11 @@ class BaseModel(nn.Module):
         )
 
     def sample(
-        self, data: dict[str, torch.Tensor], n_samples: int
+        self,
+        data: dict[str, torch.Tensor],
+        n_samples: int,
+        *,
+        outputs: dict[str, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
         """Provides point prediction samples from a probabilistic model.
 
@@ -64,13 +68,17 @@ class BaseModel(nn.Module):
             Dictionary, containing input features as key-value pairs.
         n_samples : int
             Number of point predictions that ought ot be sampled form the model.
+        outputs, optional
+            Model forward result
 
         Returns
         -------
         dict[str, torch.Tensor]
             Sampled point predictions
         """
-        return sample_pointpredictions(self, data, n_samples, self._scaler)
+        return sample_pointpredictions(
+            self, data, n_samples, self._scaler, outputs=outputs
+        )
 
     def forward(
         self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]
