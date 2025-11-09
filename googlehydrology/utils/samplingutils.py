@@ -80,9 +80,8 @@ def _subset_target(
 ) -> dict[str, torch.Tensor]:
     # determine which output neurons correspond to the n_target target variable
     start = n_target * steps
-    end = (n_target + 1) * steps
+    end = start + steps
     parameter_sub = parameter[:, :, start:end]
-
     return parameter_sub
 
 
