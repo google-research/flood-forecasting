@@ -60,5 +60,4 @@ dependencies:
   - torchvision
   - tqdm
   - xarray
-  - yapf
   - zarr
