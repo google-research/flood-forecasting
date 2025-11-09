@@ -95,9 +95,7 @@ def single_timescale_model(request) -> str:
     return request.param
 
 
-@pytest.fixture(
-    params=['handoff_forecast_lstm']
-)
+@pytest.fixture(params=['handoff_forecast_lstm'])
 def forecast_model(request) -> str:
     """Fixture that provides models that support predicting only a single timescale.
 

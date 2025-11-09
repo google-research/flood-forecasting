@@ -14,8 +14,6 @@
 
 """Integration tests that perform full runs."""
 
-
-import pickle
 from pathlib import Path
 from typing import Callable
 
