@@ -140,8 +140,8 @@ def _check_uncertainty_output(
         Strategy used to handle negative samples during training ("truncate" or "clip"),
         which determines whether non-negativity is strictly enforced in the output.
     """
-    results = get_basin_results(config.run_dir, 1)[basin]['1D']['xr'].isel(
-        time_step=-1
+    results = (
+        get_basin_results(config.run_dir, 1).sel(basin=basin).isel(time_step=-1)
     )
 
     sample_key = f'{config.target_variables[0]}_sim'

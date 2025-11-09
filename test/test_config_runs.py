@@ -14,14 +14,14 @@
 
 """Integration tests that perform full runs."""
 
-import pickle
 from pathlib import Path
 from typing import Callable
 
 import numpy as np
 import pandas as pd
-from pandas.tseries.frequencies import to_offset
 import pytest
+import xarray as xr
+from pandas.tseries.frequencies import to_offset
 from pytest import approx
 
 from googlehydrology.datasetzoo import caravan
@@ -182,7 +182,7 @@ def test_multi_timescale_regression(
     start_training(config)
     start_evaluation(cfg=config, run_dir=config.run_dir, epoch=1, period='test')
 
-    results = get_basin_results(config.run_dir, 1)[basin]
+    results = get_basin_results(config.run_dir, 1).sel(basin=basin)
     discharge = hourlycamelsus.load_hourly_us_netcdf(
         config.data_dir, config.forcings[0]
     ).sel(basin=basin, date=slice(test_start_date, test_end_date))[
@@ -289,7 +289,7 @@ def _check_results(config: Config, basin: str, discharge: pd.Series = None):
     test_start_date, test_end_date = get_test_start_end_dates(config)
 
     # TODO (current) :: Remove debugging comments.
-    results = get_basin_results(config.run_dir, 1)[basin]['1D']['xr']
+    results = get_basin_results(config.run_dir, 1).sel(basin=basin)
     assert pd.to_datetime(results['date'].values[0]) == test_start_date.floor(
         'D'
     )
@@ -328,14 +328,13 @@ def get_test_start_end_dates(
     return test_start_date, test_end_date
 
 
-def get_basin_results(run_dir: Path, epoch: int) -> dict:
+def get_basin_results(run_dir: Path, epoch: int) -> xr.Dataset:
     results_file = list(
-        run_dir.glob(f'test/model_epoch{str(epoch).zfill(3)}/test_results.p')
+        run_dir.glob(f'test/model_epoch{str(epoch).zfill(3)}/test_results.zarr')
     )
     if len(results_file) != 1:
         pytest.fail('Results file not found.')
-
-    return pickle.load(open(str(results_file[0]), 'rb'))
+    return xr.open_zarr(str(results_file[0]), consolidated=False)
 
 
 def _get_discharge(config: Config, basin: str) -> pd.Series:
