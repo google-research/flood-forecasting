@@ -767,6 +767,7 @@ def _convert_to_tensor(
     raise ValueError(f'Unrecognized data type: {type(value)}')
 
 
+@functools.cache
 def _open_zarr(path: Path) -> xr.Dataset:
     path = str(path).replace('gs:/', 'gs://')
     return xr.open_zarr(store=path, chunks='auto', decode_timedelta=True)
