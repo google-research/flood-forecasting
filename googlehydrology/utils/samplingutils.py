@@ -98,9 +98,10 @@ def _calc_normalized_zero_thresholds(
     Extract 'center' and 'scale' params for each target var from scaler
     and return -center/scale via tensors (gpu).
     """
-    centers = [scaler.scaler[e].sel(parameter='center').item() for e in targets]
+    parameter = ['center', 'scale']
+    params = [scaler.scaler[e].sel(parameter=parameter).values for e in targets]
+    centers, scales = zip(*params)
     centers = torch.tensor(centers, device=device, dtype=dtype)
-    scales = [scaler.scaler[e].sel(parameter='scale').item() for e in targets]
     scales = torch.tensor(scales, device=device, dtype=dtype)
     return -centers / scales
 
