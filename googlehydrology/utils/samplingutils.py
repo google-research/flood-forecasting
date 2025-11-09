@@ -163,7 +163,7 @@ def _sample_asymmetric_laplacians(
     m_sub_ids = m_sub[ids]
     # sample uniformly between zero and 1
     prob = torch.FloatTensor(m_sub_ids.shape).uniform_(0, 1).to(m_sub.device)
-    t_sub_ids = t_sub[ids]
+    t_sub_ids = torch.clamp(t_sub[ids], 1e-6, 1.0 - 1e-6)
     t_sub_ids_c = 1 - t_sub_ids
     b_sub_ids = b_sub[ids]
     values = torch.where(
