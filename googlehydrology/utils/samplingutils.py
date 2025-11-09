@@ -30,6 +30,8 @@ def sample_pointpredictions(
     data: dict[str, torch.Tensor],
     n_samples: int,
     scaler: Scaler,
+    *,
+    outputs: dict[str, torch.Tensor] | None = None,
 ) -> dict[str, torch.Tensor]:
     """Point prediction samplers for the different uncertainty estimation approaches.
 
@@ -51,6 +53,8 @@ def sample_pointpredictions(
         The number of point prediction samples that should be created.
     scaler : Scaler
         Scaler of the run.
+    outputs, optional
+        Model forward result
 
     Returns
     -------
@@ -60,13 +64,12 @@ def sample_pointpredictions(
     """
 
     if model.cfg.head.lower() == 'cmal':
-        samples = sample_cmal(model, data, n_samples, scaler)
+        samples = sample_cmal(model, data, n_samples, scaler, outputs=outputs)
     elif model.cfg.head.lower() == 'cmal_deterministic':
-        samples = sample_cmal_deterministic(model, data)
-    elif model.cfg.head.lower() == 'regression':
-        samples = sample_mcd(
-            model, data, n_samples, scaler
-        )  # regression head assumes mcd
+        samples = sample_cmal_deterministic(model, data, outputs=outputs)
+    elif model.cfg.head.lower() == 'regression':  # regression head assumes mcd
+        assert not outputs, 'regression self creates outputs'
+        samples = sample_mcd(model, data, n_samples, scaler)
     else:
         raise NotImplementedError(
             f'Sampling mode not supported for head {model.cfg.head.lower()}!'
@@ -370,7 +373,10 @@ def sample_mcd(
 
 
 def sample_cmal_deterministic(
-    model: 'BaseModel', data: dict[str, torch.Tensor]
+    model: 'BaseModel',
+    data: dict[str, torch.Tensor],
+    *,
+    outputs: dict[str, torch.Tensor] | None = None,
 ) -> dict[str, torch.Tensor]:
     """Sample 10 point predictions with the Countable Mixture of Asymmetric Laplacians (CMAL) head.
 
@@ -383,6 +389,8 @@ def sample_cmal_deterministic(
         A model with a CMAL head.
     data : dict[str, torch.Tensor]
         Dictionary, containing input features as key-value pairs.
+    outputs, optional
+        Model forward result
 
     Returns
     -------
@@ -399,7 +407,7 @@ def sample_cmal_deterministic(
 
     # Make predictions (forward pass). For CMAL head those are dist params and
     # not point predictions.
-    pred = model(data)
+    pred = outputs or model(data)
 
     # Map output frequencies to final sample tensors:
     samples = {}
@@ -429,6 +437,8 @@ def sample_cmal(
     data: dict[str, torch.Tensor],
     n_samples: int,
     scaler: Scaler,
+    *,
+    outputs: dict[str, torch.Tensor] | None = None,
 ) -> dict[str, torch.Tensor]:
     """Sample point predictions with the Countable Mixture of Asymmetric Laplacians (CMAL) head.
 
@@ -453,6 +463,8 @@ def sample_cmal(
         Number of samples to generate for each input sample.
     scaler : Scaler
         Scaler of the run.
+    outputs, optional
+        Model forward result
 
     Returns
     -------
@@ -475,7 +487,7 @@ def sample_cmal(
 
     # Make predictions (forward pass). For CMAL head those are dist params and
     # not point predictions.
-    pred = model(data)
+    pred = outputs or model(data)
 
     # Map output frequencies to final sample tensors:
     samples = {}
