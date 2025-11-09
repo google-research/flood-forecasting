@@ -41,7 +41,6 @@ dependencies:
   - numpy
   - pandas
   - parso
-  - pip
   - pydantic
   - pytest
   - pytest
