@@ -128,7 +128,9 @@ def _handle_negative_values(
         .sel(parameter='scale')
         .item()
     )
-    normalized_zero = torch.tensor(-center / scale, device=values.device)
+    normalized_zero = torch.tensor(
+        -center / scale, device=values.device, dtype=values.dtype
+    )
     if cfg.negative_sample_handling.lower() == 'clip':
         values = torch.clamp(values, min=normalized_zero)
     elif cfg.negative_sample_handling.lower() == 'truncate':
