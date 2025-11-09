@@ -129,28 +129,26 @@ def _handle_negative_values(
         .item()
     )
     normalized_zero = -torch.tensor(center / scale).to(values)
-    if cfg.negative_sample_handling.lower() == 'clip':
-        values = torch.clamp(values, min=normalized_zero)
-    elif cfg.negative_sample_handling.lower() == 'truncate':
-        values_smaller_zero = values < normalized_zero
-        try_count = 0
-        while torch.any(values_smaller_zero.flatten()):
-            values[values_smaller_zero] = sample_values(values_smaller_zero)
-            values_smaller_zero = values < normalized_zero
-            try_count += 1
-            if try_count >= cfg.negative_sample_max_retries:
-                break
-    elif (
-        cfg.negative_sample_handling is None
-        or cfg.negative_sample_handling.lower() == 'none'
-    ):
-        pass
-    else:
-        raise NotImplementedError(
-            f'The option {cfg.negative_sample_handling} is not supported for handling negative samples!'
-        )
 
-    return values
+    match (cfg.negative_sample_handling or '').lower():
+        case 'clip':
+            return torch.clamp(values, min=normalized_zero)
+        case 'truncate':
+            values_smaller_zero = values < normalized_zero
+            try_count = 0
+            while torch.any(values_smaller_zero.flatten()):
+                values[values_smaller_zero] = sample_values(values_smaller_zero)
+                values_smaller_zero = values < normalized_zero
+                try_count += 1
+                if try_count >= cfg.negative_sample_max_retries:
+                    break
+            return values
+        case '' | 'none':
+            return values
+        case _:
+            raise NotImplementedError(
+                f'The option {cfg.negative_sample_handling} is not supported for handling negative samples!'
+            )
 
 
 def _sample_asymmetric_laplacians(
