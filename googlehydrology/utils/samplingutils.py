@@ -593,7 +593,9 @@ def sample_cmal(
                 nth_target=nth_target,
             )
             # Swap [batch, sample, time] to [batch, time, sample]
-            values = values.permute(0, 2, 1).detach().cpu()
+            values = (
+                values.permute(0, 2, 1).detach().to('cpu', non_blocking=True)
+            )
             sample_points.append(values)
 
         # torch.stack results for all targets into a single tensor for this freq.
@@ -602,6 +604,9 @@ def sample_cmal(
         samples.update(
             {f'y_hat{freq_suffix}': torch.stack(sample_points, dim=2)}
         )
+
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
 
     return samples
 
