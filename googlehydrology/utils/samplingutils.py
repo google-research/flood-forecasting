@@ -158,17 +158,17 @@ def _sample_asymmetric_laplacians(
     t_sub: torch.Tensor,
 ) -> torch.Tensor:
     # The ids are used for location-specific resampling for 'truncation' in '_handle_negative_values'
-    prob = (
-        torch.FloatTensor(m_sub[ids].shape).uniform_(0, 1).to(m_sub.device)
-    )  # sample uniformly between zero and 1
+    m_sub_ids = m_sub[ids]
+    # sample uniformly between zero and 1
+    prob = torch.FloatTensor(m_sub_ids.shape).uniform_(0, 1).to(m_sub.device)
+    t_sub_ids = t_sub[ids]
+    t_sub_ids_c = 1 - t_sub_ids
+    b_sub_ids = b_sub[ids]
     values = torch.where(
-        prob < t_sub[ids],  # needs to be in accordance with the loss
-        m_sub[ids]
-        + ((b_sub[ids] * torch.log(prob / t_sub[ids])) / (1 - t_sub[ids])),
-        m_sub[ids]
-        - (
-            (b_sub[ids] * torch.log((1 - prob) / (1 - t_sub[ids]))) / t_sub[ids]
-        ),
+        prob < t_sub_ids,  # needs to be in accordance with the loss
+        m_sub_ids + ((b_sub_ids * torch.log(prob / t_sub_ids)) / t_sub_ids_c),
+        m_sub_ids
+        - ((b_sub_ids * torch.log((1 - prob) / t_sub_ids_c)) / t_sub_ids),
     )
     return values.flatten()
 
