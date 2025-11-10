@@ -102,7 +102,7 @@ def _calc_normalized_zero_thresholds(
     centers, scales = zip(*params)
     centers = torch.tensor(centers, device=device, dtype=dtype)
     scales = torch.tensor(scales, device=device, dtype=dtype)
-    return -centers / scales
+    return -(centers / scales)
 
 def _handle_negative_values(
     cfg: Config,
