@@ -127,7 +127,9 @@ def _handle_negative_values(
         .sel(parameter='scale')
         .item()
     )
-    normalized_zero = -torch.tensor(center / scale).to(values)
+    normalized_zero = torch.tensor(
+        -(center / scale), device=values.device, dtype=values.dtype
+    )
 
     match (cfg.negative_sample_handling or '').lower():
         case 'clip':
