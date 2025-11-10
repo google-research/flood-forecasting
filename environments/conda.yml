@@ -27,7 +27,6 @@ dependencies:
   - cachey
   - dask
   - gcsfs
-  - gprof2dot
   - h5py
   - hdf5
   - ipython
