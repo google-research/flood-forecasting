@@ -17,7 +17,6 @@ from typing import Callable
 import numpy as np
 import torch
 import torch.cuda
-from numba import njit
 from torch.distributions import Categorical
 
 from googlehydrology.datautils.scaler import Scaler
