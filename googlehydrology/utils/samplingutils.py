@@ -17,7 +17,6 @@ from typing import Callable
 import numpy as np
 import torch
 import torch.cuda
-from numba import njit
 from torch.distributions import Categorical
 
 from googlehydrology.datautils.scaler import Scaler
@@ -131,28 +130,26 @@ def _handle_negative_values(
     normalized_zero = torch.tensor(
         -center / scale, device=values.device, dtype=values.dtype
     )
-    if cfg.negative_sample_handling.lower() == 'clip':
-        values = torch.clamp(values, min=normalized_zero)
-    elif cfg.negative_sample_handling.lower() == 'truncate':
-        values_smaller_zero = values < normalized_zero
-        try_count = 0
-        while torch.any(values_smaller_zero.flatten()):
-            values[values_smaller_zero] = sample_values(values_smaller_zero)
-            values_smaller_zero = values < normalized_zero
-            try_count += 1
-            if try_count >= cfg.negative_sample_max_retries:
-                break
-    elif (
-        cfg.negative_sample_handling is None
-        or cfg.negative_sample_handling.lower() == 'none'
-    ):
-        pass
-    else:
-        raise NotImplementedError(
-            f'The option {cfg.negative_sample_handling} is not supported for handling negative samples!'
-        )
 
-    return values
+    match (cfg.negative_sample_handling or '').lower():
+        case 'clip':
+            return torch.clamp(values, min=normalized_zero)
+        case 'truncate':
+            values_smaller_zero = values < normalized_zero
+            try_count = 0
+            while torch.any(values_smaller_zero.flatten()):
+                values[values_smaller_zero] = sample_values(values_smaller_zero)
+                values_smaller_zero = values < normalized_zero
+                try_count += 1
+                if try_count >= cfg.negative_sample_max_retries:
+                    break
+            return values
+        case '' | 'none':
+            return values
+        case _:
+            raise NotImplementedError(
+                f'The option {cfg.negative_sample_handling} is not supported for handling negative samples!'
+            )
 
 
 def _sample_asymmetric_laplacians(
@@ -163,9 +160,8 @@ def _sample_asymmetric_laplacians(
 ) -> torch.Tensor:
     # The ids are used for location-specific resampling for 'truncation' in '_handle_negative_values'
     m_sub_ids = m_sub[ids]
-    # sample uniformly between zero and 1
-    prob = torch.FloatTensor(m_sub_ids.shape).uniform_(0, 1).to(m_sub.device)
-    t_sub_ids = t_sub[ids]
+    prob = torch.rand_like(m_sub_ids)  # sample uniformly in [0,1)
+    t_sub_ids = torch.clamp(t_sub[ids], 1e-6, 1.0 - 1e-6)
     t_sub_ids_c = 1 - t_sub_ids
     b_sub_ids = b_sub[ids]
     values = torch.where(

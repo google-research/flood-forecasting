@@ -95,7 +95,6 @@ html_theme_options = {'style_nav_header_background': '#175762'}
 # Allows to build the docs with a minimal environment without warnings about missing packages
 autodoc_mock_imports = [
     'matplotlib',
-    'numba',
     'pandas',
     'ruamel',
     'scipy',
