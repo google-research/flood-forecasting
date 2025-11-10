@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+set -o pipefail
+
+(conda list | grep memray > /dev/null) || (conda install memray)
+(conda list | grep memray > /dev/null) || (echo "memray is required" && exit -1)
+
 rm -f /tmp/memray_output.bin /tmp/memray_flamegraph.html
 
 echo Profiling...

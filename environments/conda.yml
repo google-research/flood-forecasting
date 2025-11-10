@@ -33,7 +33,6 @@ dependencies:
   - ipython
   - jupyter
   - matplotlib
-  - memray
   - more-itertools
   - nbsphinx
   - nbsphinx-link
