@@ -132,7 +132,6 @@ def _handle_negative_values(
     torch.Tensor
         Bound values according to user specifications.
     """
-
     match (cfg.negative_sample_handling or '').lower():
         case 'clip':
             return torch.clamp(values, min=normalized_zero)
