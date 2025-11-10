@@ -86,13 +86,29 @@ def _subset_target(
     parameter_sub = parameter[:, :, start:end]
     return parameter_sub
 
+def _calc_normalized_zero_thresholds(
+    scaler: Scaler,
+    targets: list[str],
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Calculate the normalized zero value threshold for target vars.
+
+    Extract 'center' and 'scale' params for each target var from scaler
+    and return -center/scale via tensors (gpu).
+    """
+    parameter = ['center', 'scale']
+    params = [scaler.scaler[e].sel(parameter=parameter).data for e in targets]
+    centers, scales = zip(*params)
+    centers = torch.tensor(centers, device=device, dtype=dtype)
+    scales = torch.tensor(scales, device=device, dtype=dtype)
+    return -(centers / scales)
 
 def _handle_negative_values(
     cfg: Config,
     values: torch.Tensor,
     sample_values: Callable,
-    scaler: Scaler,
-    nth_target: int,
+    normalized_zero: torch.Tensor,
 ) -> torch.Tensor:
     """Handle negative samples that arise while sampling from the uncertainty estimates.
 
@@ -107,30 +123,15 @@ def _handle_negative_values(
         Tensor with the sampled values.
     sample_values : Callable
         Sampling function to allow for repeated sampling in the case of truncation-handling.
-    scaler : Scaler
-        Scaler of the run.
-    nth_target : int
-        Index of the sampled target variable in cfg.target_variables.
+    normalized_zero : torch.Tensor
+        1D tensor of shape [cfg.target_variables] with normalized zero threshold
+        foreach target variable.
 
     Returns
     -------
     torch.Tensor
         Bound values according to user specifications.
     """
-    center = (
-        scaler.scaler[cfg.target_variables[nth_target]]
-        .sel(parameter='center')
-        .item()
-    )
-    scale = (
-        scaler.scaler[cfg.target_variables[nth_target]]
-        .sel(parameter='scale')
-        .item()
-    )
-    normalized_zero = torch.tensor(
-        -(center / scale), device=values.device, dtype=values.dtype
-    )
-
     match (cfg.negative_sample_handling or '').lower():
         case 'clip':
             return torch.clamp(values, min=normalized_zero)
@@ -490,6 +491,13 @@ def sample_cmal(
     # Map output frequencies to final sample tensors:
     samples = {}
 
+    normalized_zeros = _calc_normalized_zero_thresholds(
+        scaler=scaler,
+        targets=setup.cfg.target_variables,
+        device=next(model.parameters()).device,
+        dtype=next(model.parameters()).dtype,
+    )
+
     # Loop over all model output frequencies (e.g., 'daily', 'hourly').
     for freq_suffix in setup.freq_suffixes:
         # Get the number of time steps to predict for the current frequency
@@ -598,8 +606,7 @@ def sample_cmal(
                 setup.cfg,
                 values_unbound,
                 sample_values=sample_values,
-                scaler=scaler,
-                nth_target=nth_target,
+                normalized_zero=normalized_zeros[nth_target],
             )
             # Swap [batch, sample, time] to [batch, time, sample]
             values = (
