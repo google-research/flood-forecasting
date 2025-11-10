@@ -38,7 +38,6 @@ dependencies:
   - nbsphinx
   - nbsphinx-link
   - netcdf4
-  - numba
   - numpy
   - pandas
   - parso
