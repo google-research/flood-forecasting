@@ -14,11 +14,8 @@
 
 set -o pipefail
 
-(conda list | grep gprof2dot > /dev/null) || (conda install gprof2dot -c conda-forge)
-(conda list | grep gprof2dot > /dev/null) || (echo "gprof2dot is required" && exit -1)
-
-(conda list | grep graphviz > /dev/null) || (conda install graphviz -c conda-forge)
-(conda list | grep graphviz > /dev/null) || (echo "graphviz is required" && exit -1)
+(conda list | grep gprof2dot > /dev/null) || (conda install gprof2dot -c conda-forge --yes)
+(conda list | grep graphviz > /dev/null) || (conda install graphviz -c conda-forge --yes)
 
 rm -f /tmp/profile.pstats /tmp/profile.png
 python3 -m cProfile -o /tmp/profile.pstats $HOME/flood-forecasting/googlehydrology/run.py train --config-file $HOME/flood-forecasting/config/multimet_mean_embedding_forecast_lstm.yml
