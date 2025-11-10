@@ -14,8 +14,7 @@
 
 set -o pipefail
 
-(conda list | grep memray > /dev/null) || (conda install memray -c conda-forge)
-(conda list | grep memray > /dev/null) || (echo "memray is required" && exit -1)
+(conda list | grep memray > /dev/null) || (conda install memray -c conda-forge --yes)
 
 rm -f /tmp/memray_output.bin /tmp/memray_flamegraph.html
 

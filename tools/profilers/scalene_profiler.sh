@@ -14,8 +14,7 @@
 
 set -o pipefail
 
-(conda list | grep scalene > /dev/null) || (conda install scalene -c conda-forge)
-(conda list | grep scalene > /dev/null) || (echo "scalene is required" && exit -1)
+(conda list | grep scalene > /dev/null) || (conda install scalene -c conda-forge --yes)
 
 rm -f /tmp/scalene_output.html
 echo Be patient after done running.
