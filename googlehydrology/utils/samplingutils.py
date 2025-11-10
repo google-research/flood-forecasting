@@ -159,7 +159,7 @@ def _sample_asymmetric_laplacians(
     # The ids are used for location-specific resampling for 'truncation' in '_handle_negative_values'
     m_sub_ids = m_sub[ids]
     prob = torch.rand_like(m_sub_ids)  # sample uniformly in [0,1)
-    t_sub_ids = t_sub[ids]
+    t_sub_ids = torch.clamp(t_sub[ids], 1e-6, 1.0 - 1e-6)
     t_sub_ids_c = 1 - t_sub_ids
     b_sub_ids = b_sub[ids]
     values = torch.where(
