@@ -726,9 +726,7 @@ class BaseTester(object):
                     if save_all_output:
                         for key, value in predictions.items():
                             if value is not None and type(value) != dict:
-                                all_output.setdefault(key, []).append(
-                                    value.detach().to('cpu', non_blocking=True)
-                                )
+                                all_output.setdefault(key, []).append(value)
 
                     for freq in frequencies:
                         if predict_last_n[freq] == 0:
@@ -746,11 +744,6 @@ class BaseTester(object):
                             :, -predict_last_n[freq] :
                         ]
 
-                        y_hat_sub = y_hat_sub.detach().to(
-                            'cpu', non_blocking=True
-                        )
-                        y_sub = y_sub.detach().to('cpu', non_blocking=True)
-
                         if freq not in preds:
                             preds[freq] = y_hat_sub
                             obs[freq] = y_sub
@@ -762,11 +755,22 @@ class BaseTester(object):
                                 (dates[freq], date_sub), axis=0
                             )
 
+                        preds[freq] = (
+                            preds[freq].detach().to('cpu', non_blocking=True)
+                        )
+                        obs[freq] = (
+                            obs[freq].detach().to('cpu', non_blocking=True)
+                        )
+
                     losses.append(loss)
 
                 # concatenate all output variables (currently a dict-of-dicts) into a single-level dict
                 for key, list_of_data in all_output.items():
-                    all_output[key] = torch.concatenate(list_of_data, 0)
+                    all_output[key] = (
+                        torch.concatenate(list_of_data, 0)
+                        .detach()
+                        .to('cpu', non_blocking=True)
+                    )
 
                 # set to NaN explicitly if all losses are NaN to avoid RuntimeWarning
                 if len(losses) == 0:

@@ -420,10 +420,10 @@ def sample_cmal_deterministic(
 
         sample_points = [
             cmal_deterministic.generate_predictions(mu, b, tau, pi)
-            .detach()
-            .to('cpu', non_blocking=True)
         ]
-        samples.update({f'y_hat{freq_suffix}': torch.stack(sample_points, 2)})
+        samples[f'y_hat{freq_suffix}'] = (
+            torch.stack(sample_points, 2).detach().to('cpu', non_blocking=True)
+        )
 
     if torch.cuda.is_available():
         torch.cuda.synchronize()
@@ -609,16 +609,16 @@ def sample_cmal(
                 normalized_zero=normalized_zeros[nth_target],
             )
             # Swap [batch, sample, time] to [batch, time, sample]
-            values = (
-                values.permute(0, 2, 1).detach().to('cpu', non_blocking=True)
-            )
+            values = values.permute(0, 2, 1)
             sample_points.append(values)
 
         # torch.stack results for all targets into a single tensor for this freq.
         # It stacks into a new dim for the targets at dim 2, so shape should be
         # [batch, time, sample] -> [batch, time, target, sample].
-        samples.update(
-            {f'y_hat{freq_suffix}': torch.stack(sample_points, dim=2)}
+        samples[f'y_hat{freq_suffix}'] = (
+            torch.stack(sample_points, dim=2)
+            .detach()
+            .to('cpu', non_blocking=True)
         )
 
     if torch.cuda.is_available():
