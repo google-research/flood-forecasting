@@ -424,7 +424,7 @@ class BaseTester(object):
                             if 'samples' in sim.dims:
                                 match self.cfg.tester_sample_reduction:
                                     case TesterSamplesReduction.MEAN:
-                                        sim = sim.mean(dim='samples')
+                                        sim = sim.mean(dim="samples")
                                     case TesterSamplesReduction.MEDIAN:
                                         sim = sim.median(dim='samples')
                                     case _:
@@ -746,7 +746,7 @@ class BaseTester(object):
 
                         if freq not in preds:
                             preds[freq] = y_hat_sub
-                            obs[freq] = y_sub
+                            obs[freq] = y_sub.detach().to('cpu', non_blocking=False)
                             dates[freq] = date_sub
                         else:
                             preds[freq] = torch.cat((preds[freq], y_hat_sub), 0)
@@ -754,13 +754,6 @@ class BaseTester(object):
                             dates[freq] = np.concatenate(
                                 (dates[freq], date_sub), axis=0
                             )
-
-                        preds[freq] = (
-                            preds[freq].detach().to('cpu', non_blocking=True)
-                        )
-                        obs[freq] = (
-                            obs[freq].detach().to('cpu', non_blocking=True)
-                        )
 
                     losses.append(loss)
 
