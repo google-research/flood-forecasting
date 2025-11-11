@@ -76,6 +76,12 @@ def forecast_config_updates() -> Fixture[Callable[[str], dict]]:
         if forecast_model.lower() == 'handoff_forecast_lstm':
             update_dict['forecast_overlap'] = 10
             update_dict['regularization'] = ['forecast_overlap']
+        if forecast_model.lower() == 'mean_embedding_forecast_lstm':
+            update_dict['forecast_overlap'] = 30
+            update_dict['hindcast_inputs'] = [
+                'era5land_total_precipitation',
+                'graphcast_total_precipitation',
+            ]
         return update_dict
 
     return _forecast_config_updates
@@ -95,7 +101,9 @@ def single_timescale_model(request) -> str:
     return request.param
 
 
-@pytest.fixture(params=['handoff_forecast_lstm'])
+@pytest.fixture(
+    params=['handoff_forecast_lstm', 'mean_embedding_forecast_lstm']
+)
 def forecast_model(request) -> str:
     """Fixture that provides models that support predicting only a single timescale.
 
