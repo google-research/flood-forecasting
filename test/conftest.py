@@ -78,10 +78,6 @@ def forecast_config_updates() -> Fixture[Callable[[str], dict]]:
             update_dict['regularization'] = ['forecast_overlap']
         if forecast_model.lower() == 'mean_embedding_forecast_lstm':
             update_dict['forecast_overlap'] = 30
-            update_dict['loss'] = 'CMALLoss'
-            update_dict['head'] = 'cmal'
-            update_dict['n_distributions'] = 3
-            update_dict['n_samples'] = 10
             update_dict['hindcast_inputs'] = [
                 'era5land_total_precipitation',
                 'graphcast_total_precipitation',

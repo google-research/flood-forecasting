@@ -327,15 +327,12 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 class ConfigData:
     @classmethod
     def from_config(cls, cfg: Config) -> 'ConfigData':
-        assert (statics_embedding := cfg.statics_embedding) is not None
-        assert (
-            hindcast_embedding := cfg.hindcast_embedding
-            or cfg.dynamics_embedding
-        ) is not None
-        assert (
-            forecast_embedding := cfg.forecast_embedding
-            or cfg.dynamics_embedding
-        ) is not None
+        statics_embedding = cfg.statics_embedding
+        hindcast_embedding = cfg.hindcast_embedding or cfg.dynamics_embedding
+        forecast_embedding = cfg.forecast_embedding or cfg.dynamics_embedding
+        assert statics_embedding is not None
+        assert hindcast_embedding is not None
+        assert forecast_embedding is not None
 
         hindcast_inputs_grouped = group_features_list(cfg.hindcast_inputs)
         forecast_inputs_grouped = group_features_list(cfg.forecast_inputs)
