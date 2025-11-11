@@ -424,7 +424,7 @@ class BaseTester(object):
                             if 'samples' in sim.dims:
                                 match self.cfg.tester_sample_reduction:
                                     case TesterSamplesReduction.MEAN:
-                                        sim = sim.mean(dim="samples")
+                                        sim = sim.mean(dim='samples')
                                     case TesterSamplesReduction.MEDIAN:
                                         sim = sim.median(dim='samples')
                                     case _:
