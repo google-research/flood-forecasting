@@ -16,7 +16,6 @@ from typing import Callable
 
 import numpy as np
 import torch
-import torch.cuda
 from torch.distributions import Categorical
 
 from googlehydrology.datautils.scaler import Scaler
@@ -351,9 +350,7 @@ def sample_mcd(
                     value_buffer = prediction[f'y_hat{freq_suffix}'][
                         :, -frequency_last_n:, 0
                     ]
-                    target_values[ids, -frequency_last_n:, i] = (
-                        value_buffer.detach().cpu()
-                    )
+                    target_values[ids, -frequency_last_n:, i] = value_buffer
                 return target_values
 
             values = _sample_values(ids)
@@ -421,12 +418,7 @@ def sample_cmal_deterministic(
         sample_points = [
             cmal_deterministic.generate_predictions(mu, b, tau, pi)
         ]
-        samples[f'y_hat{freq_suffix}'] = (
-            torch.stack(sample_points, 2).detach().to('cpu', non_blocking=True)
-        )
-
-    if torch.cuda.is_available():
-        torch.cuda.synchronize()
+        samples[f'y_hat{freq_suffix}'] = torch.stack(sample_points, 2)
 
     return samples
 
@@ -615,14 +607,7 @@ def sample_cmal(
         # torch.stack results for all targets into a single tensor for this freq.
         # It stacks into a new dim for the targets at dim 2, so shape should be
         # [batch, time, sample] -> [batch, time, target, sample].
-        samples[f'y_hat{freq_suffix}'] = (
-            torch.stack(sample_points, dim=2)
-            .detach()
-            .to('cpu', non_blocking=True)
-        )
-
-    if torch.cuda.is_available():
-        torch.cuda.synchronize()
+        samples[f'y_hat{freq_suffix}'] = torch.stack(sample_points, dim=2)
 
     return samples
 
