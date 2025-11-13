@@ -50,6 +50,7 @@ def test_daily_uncertainty(
     ('none', 'clip', 'truncate') and with or without Monte Carlo dropout.
     """
 
+    # TODO (future) :: clip fails with CMAL-deterministic, should call _handle_negative_values
     config = get_config('forecast')
     updates = {
         'model': forecast_model,
