@@ -29,49 +29,16 @@ from test import Fixture
 from test.test_config_runs import get_test_start_end_dates, get_basin_results
 
 
-# Common to all uncertainty heads
-common_uncertainty_config = {
-    'n_samples': 10,
-    'negative_sample_handling': 'clip',
-    'negative_sample_max_retries': 1,
-    'mc_dropout': False,
-}
-
-# Head-specific configs (only fields that differ)
-head_configs = {
-    'cmal': {
-        'head': 'cmal',
-        'loss': 'CMALLoss',
-        'n_distributions': 3,
-    },
-    'cmal_deterministic': {
-        'head': 'cmal_deterministic',
-        'loss': 'CMALLoss',
-        'n_distributions': 3,
-    },
-}
-
-
-def build_full_config(head):
-    """Builds a full config dictionary for the given head."""
-    config = head_configs[head].copy()
-
-    # Only add common uncertainty fields if the head supports them
-    if head in ['cmal', 'cmal_deterministic']:
-        config.update(common_uncertainty_config)
-
-    return config
-
-
 @pytest.mark.parametrize('mc_dropout', [False, True])
 @pytest.mark.parametrize(
     'negative_sample_handling', ['none', 'clip', 'truncate']
 )
 @pytest.mark.parametrize('head', ['cmal', 'cmal_deterministic'])
+@pytest.mark.parametrize('forecast_model', ['mean_embedding_forecast_lstm'])
 def test_daily_uncertainty(
     get_config: Fixture[Callable[[str], dict]],
-    daily_dataset: Fixture[str],
-    single_timescale_forcings: Fixture[str],
+    forecast_config_updates: Fixture[Callable[[str], dict]],
+    forecast_model: str,
     head: str,
     negative_sample_handling: str,
     mc_dropout: bool,
@@ -83,36 +50,24 @@ def test_daily_uncertainty(
     ('none', 'clip', 'truncate') and with or without Monte Carlo dropout.
     """
 
-    config = get_config('daily_uncertainty')  # Load a generic daily config
-
-    basin = '01022500'
-
-    # Dynamically build the basic config
-    update_dict = {
+    config = get_config('forecast')
+    updates = {
+        'model': forecast_model,
         'head': head,
-        'dataset': daily_dataset['dataset'],
-        'data_dir': config.data_dir / daily_dataset['dataset'],
         'negative_sample_handling': negative_sample_handling,
         'mc_dropout': mc_dropout,
-        'target_variables': daily_dataset['target'],
-        'forcings': single_timescale_forcings['forcings'],
-        'dynamic_inputs': single_timescale_forcings['variables'],
+        'n_samples': 10,
+        'negative_sample_max_retries': 1,
+        'loss': 'CMALLoss',
+        'n_distributions': 3,
     }
+    updates.update(forecast_config_updates(forecast_model))
+    config.update_config(updates)
 
-    config.update_config(update_dict)
+    basin = 'hysets_01075000'
 
-    # Merge in the head-specific parameters dynamically
-    head_specific_config = build_full_config(head)
-    config.update_config(head_specific_config)
-
-    # Start training and evaluation
-    print(
-        f'\n[TEST] head={head}, loss={config.head}, neg_sample_handling={negative_sample_handling}'
-    )
     start_training(config)
     start_evaluation(cfg=config, run_dir=config.run_dir, epoch=1, period='test')
-
-    # Sanity check of uncertainty outputs
     _check_uncertainty_output(config, basin, negative_sample_handling)
 
 
@@ -154,8 +109,8 @@ def _check_uncertainty_output(
     )
 
     # Assert the number of samples in the output matches the config
-    assert results[sample_key].shape[1] == config.n_samples, (
-        f'Expected {config.n_samples} samples, got {results[sample_key].shape[0]}'
+    assert results[sample_key].shape[2] == config.n_samples, (
+        f'Expected {config.n_samples} samples, got {results[sample_key].shape[2]}'
     )
 
     # Check that the results file has the correct date range
