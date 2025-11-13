@@ -26,6 +26,7 @@ from typing import Iterator
 import numpy as np
 import pandas as pd
 import torch
+import torch.cuda
 from torch.utils.data import Dataset
 import torch.cuda
 from torch.amp import autocast
@@ -746,7 +747,7 @@ class BaseTester(object):
 
                         if freq not in preds:
                             preds[freq] = y_hat_sub
-                            obs[freq] = y_sub.detach().to('cpu', non_blocking=False)
+                            obs[freq] = y_sub
                             dates[freq] = date_sub
                         else:
                             preds[freq] = torch.cat((preds[freq], y_hat_sub), 0)
@@ -759,11 +760,7 @@ class BaseTester(object):
 
                 # concatenate all output variables (currently a dict-of-dicts) into a single-level dict
                 for key, list_of_data in all_output.items():
-                    all_output[key] = (
-                        torch.concatenate(list_of_data, 0)
-                        .detach()
-                        .to('cpu', non_blocking=True)
-                    )
+                    all_output[key] = torch.concatenate(list_of_data, 0)
 
                 # set to NaN explicitly if all losses are NaN to avoid RuntimeWarning
                 if len(losses) == 0:
@@ -777,15 +774,18 @@ class BaseTester(object):
                             else np.nan
                         )
 
-                yield {
+                res = {
                     'basin': basin,
-                    'preds': preds,
-                    'obs': obs,
+                    'preds': _values_to_cpu(preds),
+                    'obs': _values_to_cpu(obs),
                     'dates': dates,
-                    'all_output': all_output,
+                    'all_output': _values_to_cpu(all_output),
                     'losses': losses,
                     'mean_losses': mean_losses,
                 }
+                if torch.cuda.is_available():  # Await gpu to cpu copies
+                    torch.cuda.synchronize()
+                yield res
 
     def _get_predictions_and_loss(
         self, model: BaseModel, data: dict[str, torch.Tensor]
@@ -934,3 +934,7 @@ def _ensure_unicode_or_bytes_are_strings(ds: xarray.Dataset):
         if coord.dtype.kind in ('U', 'S')
     }
     return ds.assign_coords(updates)
+
+
+def _values_to_cpu(x: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    return {k: v.to('cpu', non_blocking=True) for k, v in x.items()}
