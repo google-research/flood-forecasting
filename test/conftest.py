@@ -71,8 +71,6 @@ def forecast_config_updates() -> Fixture[Callable[[str], dict]]:
 
     def _forecast_config_updates(forecast_model):
         update_dict = {'model': forecast_model.lower()}
-        if forecast_model.lower() == 'stacked_forecast_lstm':
-            update_dict['forecast_overlap'] = 20
         if forecast_model.lower() == 'handoff_forecast_lstm':
             update_dict['forecast_overlap'] = 10
             update_dict['regularization'] = ['forecast_overlap']
@@ -85,20 +83,6 @@ def forecast_config_updates() -> Fixture[Callable[[str], dict]]:
         return update_dict
 
     return _forecast_config_updates
-
-
-@pytest.fixture(params=['customlstm', 'ealstm', 'cudalstm', 'gru'])
-def single_timescale_model(request) -> str:
-    """Fixture that provides models that support predicting only a single timescale.
-
-    Returns
-    -------
-    str
-        Name of the single-timescale model.
-    """
-    if request.config.getoption('--smoke-test') and request.param != 'cudalstm':
-        pytest.skip('--smoke-test skips this test.')
-    return request.param
 
 
 @pytest.fixture(
@@ -154,18 +138,6 @@ def single_timescale_forcings(request) -> dict[str, str | list[str]]:
     return {'forcings': request.param[0], 'variables': request.param[1]}
 
 
-@pytest.fixture(params=['mtslstm', 'odelstm'])
-def multi_timescale_model(request) -> str:
-    """Fixture that provides multi-timescale models.
-
-    Returns
-    -------
-    str
-        Name of the multi-timescale model.
-    """
-    return request.param
-
-
 @pytest.fixture(
     params=[('camels_us', ['QObs(mm/d)'])], ids=lambda param: param[0]
 )
@@ -183,15 +155,3 @@ def daily_dataset(request) -> dict[str, list[str]]:
     ):
         pytest.skip('--smoke-test skips this test.')
     return {'dataset': request.param[0], 'target': request.param[1]}
-
-
-@pytest.fixture(params=['cudalstm'])
-def custom_lstm_supported_models(request) -> str:
-    """Fixture that provides the models that are supported to be copied into the `CustomLSTM`.
-
-    Returns
-    -------
-    str
-        Name of the model.
-    """
-    return request.param
