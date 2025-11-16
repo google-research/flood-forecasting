@@ -253,9 +253,14 @@ class Multimet(Dataset):
         LOGGER.debug('materialize data (compute)')
         # We explicitly keep the self.scaler.scaler computation since trainer uses it directly
         # create sample index does a compute on the data. We compute here prior to avoid recompute.
-        self._dataset, self.scaler.scaler = dask.compute(
-            self._dataset, self.scaler.scaler
+        self._dataset, self.scaler.scaler, self.scaler.is_zero = dask.compute(
+            self._dataset, self.scaler.scaler, self.scaler.is_zero
         )
+
+        LOGGER.debug('scaler check zero scale')
+        self.scaler.check_zero_scale()
+        LOGGER.debug('scaler save')
+        self.scaler.save()
 
         # Create sample index lookup table for `__getitem__`.
         LOGGER.debug('create sample index')
