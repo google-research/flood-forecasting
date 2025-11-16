@@ -169,6 +169,9 @@ class Scaler:
             raise ValueError(
                 'You are trying to save a scaler that has not been computed.'
             )
+        chunks = self.scaler.chunks
+        assert not chunks, f'`scaler` needs to be computed yet has {chunks=}'
+
         os.makedirs(self.scaler_dir, exist_ok=True)
         scaler_file = self.scaler_dir / SCALER_FILE_NAME
         with open(scaler_file, 'wb') as f:
@@ -179,6 +182,9 @@ class Scaler:
         self.is_zero = (scales_to_check == 0).any('parameter').to_dataarray()
 
     def check_zero_scale(self):
+        chunks = self.is_zero.chunks
+        assert not chunks, f'`is_zero` needs to be computed yet has {chunks=}'
+
         features = self.is_zero['variable'][self.is_zero]
         if any(features):
             raise ValueError(
