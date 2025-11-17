@@ -62,6 +62,8 @@ General experiment configurations
    in an opportunistic cache:
    Key ``enabled`` (``bool``): Default `False`.
    Key ``byte_limit`` (``int``): Byte limit to use. Default 2GB.
+-  ``use_swap_memory``: whether to enable ``distributed.p2p.storage.disk`` explicitly.
+   None-value results in ``dask``'s default.
 
 .. code-block::
 

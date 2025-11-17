@@ -90,7 +90,7 @@ def _main():
 
     dask.config.set(
         {
-            'distributed.p2p.storage.disk': False,
+            'distributed.p2p.storage.disk': config.use_swap_memory,
             'num_workers': os.cpu_count(),
             'scheduler': 'threads',
             'shuffle': 'p2p',
