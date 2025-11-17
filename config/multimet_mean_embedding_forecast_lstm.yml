@@ -53,6 +53,7 @@ weight_init_opts:
 cache:
   enabled: False
   byte_limit: 2000000000  # in GB
+use_swap_memory:
 
 # --- Dataset Parameters --------------------------------------------------------
 

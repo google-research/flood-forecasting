@@ -864,6 +864,10 @@ class Config(object):
         return self._cfg.get('per_basin_validation_periods_file', None)
 
     @property
+    def use_swap_memory(self) -> bool | None:
+        return self._cfg.get('use_swap_memory', None)
+
+    @property
     def predict_last_n(self) -> int | dict[str, int]:
         return self._get_value_verbose('predict_last_n')
 
