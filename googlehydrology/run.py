@@ -88,7 +88,13 @@ def _main():
 
     torch.autograd.set_detect_anomaly(config.detect_anomaly)
 
-    dask.config.set(num_workers=os.cpu_count(), scheduler='threads')
+    dask.config.set(
+        {
+            'num_workers': os.cpu_count(),
+            'scheduler': 'threads',
+            'shuffle': 'p2p',
+        }
+    )
 
     if config.cache.enabled:
         dask.cache.Cache(cachey.Cache(config.cache.byte_limit)).register()

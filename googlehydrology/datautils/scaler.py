@@ -18,8 +18,6 @@ from typing import Iterator, Hashable
 
 import dask
 import dask.array
-import dask.graph_manipulation
-import dask.delayed
 import pandas as pd
 import xarray as xr
 
@@ -103,7 +101,7 @@ class Scaler:
         self.scaler_dir = scaler_dir
         if not calculate_scaler:
             self.load()
-            self._check_zero_scale()
+            self.check_zero_scale()
         else:
             self._custom_normalization = custom_normalization
             if dataset is not None:
@@ -116,9 +114,6 @@ class Scaler:
                 self.scaler = xr.load_dataset(f)
         else:
             raise ValueError('Old scaler files are unsupported')
-
-    def save(self):
-        _save(self.scaler_dir, self.scaler)
 
     def calculate(
         self,
@@ -166,17 +161,28 @@ class Scaler:
         ):  # ensure allowing side-effects on compute
             self.scaler = self.scaler.chunk('auto')
 
-        check_zero_scale_task = (_check_zero_scale_task(self.scaler),)
-        save_task = (_save_task(self.scaler_dir, self.scaler),)
-        [self.scaler] = (
-            dask.graph_manipulation.bind(  # https://docs.dask.org/en/stable/graph_manipulation.html
-                parents=[check_zero_scale_task, save_task],
-                children=[self.scaler],
+    def save(self):
+        if self.scaler is None:
+            raise ValueError(
+                'You are trying to save a scaler that has not been computed.'
             )
-        )
+        _assert_computed(self.scaler)
 
-    def _check_zero_scale(self):
-        _check_zero_scale(self.scaler)
+        os.makedirs(self.scaler_dir, exist_ok=True)
+        scaler_file = self.scaler_dir / SCALER_FILE_NAME
+        with open(scaler_file, 'wb') as f:
+            self.scaler.to_netcdf(f)
+
+    def check_zero_scale(self):
+        _assert_computed(self.scaler)
+
+        scales_to_check = self.scaler.sel(parameter=['scale', 'std'])
+        is_zero = (scales_to_check == 0).any('parameter').to_dataarray()
+        features = is_zero['variable'][is_zero]
+        if any(features):
+            raise ValueError(
+                f'Zero scale values found for features: {list(features)}.'
+            )
 
     def scale(
         self,
@@ -254,43 +260,13 @@ class Scaler:
         )
 
 
-def _save(scaler_dir: Path, scaler: xr.Dataset):
-    if scaler is None:
-        raise ValueError(
-            'You are trying to save a scaler that has not been computed.'
-        )
-    os.makedirs(scaler_dir, exist_ok=True)
-    scaler_file = scaler_dir / SCALER_FILE_NAME
-    with open(scaler_file, 'wb') as f:
-        scaler.to_netcdf(f)
-
-
-@dask.delayed
-def _save_task(scaler_dir: Path, scaler: xr.Dataset):
-    return _save(scaler_dir, scaler)
-
-
-def _check_zero_scale(scaler: xr.Dataset):
-    """Creates a dask task that throws if scale is zero for any feature.
-
-    Zero-valued scale parameters cause NaNs.
-    """
-    scales_to_check = scaler.sel(parameter=['scale', 'std'])
-    is_zero_da = (scales_to_check == 0).any('parameter').to_dataarray()
-    features = is_zero_da['variable'][is_zero_da]
-    if any(features):
-        raise ValueError(
-            f'Zero scale values found for features: {list(features)}.'
-        )
-
-
-@dask.delayed
-def _check_zero_scale_task(scaler: xr.Dataset):
-    return _check_zero_scale(scaler)
-
-
 def is_any_lazy(dataset: xr.Dataset) -> bool:
     return any(
         isinstance(var.data, dask.array.Array)
         for var in dataset.data_vars.values()
     )
+
+def _assert_computed(da: xr.DataArray | xr.Dataset | None):
+    assert da is not None
+    chunks = da.chunks
+    assert not chunks, f'`scaler` needs to be computed yet has {chunks=}'
