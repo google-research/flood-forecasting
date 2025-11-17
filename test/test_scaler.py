@@ -332,7 +332,7 @@ def test_scaler_scale_raises_error_for_zero_scale(
         scaler_dir=tmp_scaler_dir, calculate_scaler=True, dataset=None
     )
     scaler.calculate(sample_dataset_with_constant_var)
-    (scaler.is_zero,) = dask.compute(scaler.is_zero)
+    scaler.scaler = scaler.scaler.compute()
     with pytest.raises(
         ValueError, match='Zero scale values found for features:'
     ):
@@ -355,8 +355,6 @@ def test_check_zero_scale_method_raises_error(tmp_scaler_dir):
         },
         coords={'parameter': ['center', 'scale', 'mean', 'std']},
     )
-    scaler._prepare_check_zero_scale_input()
-    (scaler.is_zero,) = dask.compute(scaler.is_zero)
     with pytest.raises(
         ValueError, match='Zero scale values found for features:'
     ):
@@ -375,7 +373,6 @@ def test_check_zero_scale_method_no_error_for_nonzero(tmp_scaler_dir):
         },
         coords={'parameter': ['center', 'scale', 'mean', 'std']},
     )
-    scaler._prepare_check_zero_scale_input()
     # Should not raise an error
     try:
         scaler.check_zero_scale()

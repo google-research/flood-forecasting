@@ -112,7 +112,6 @@ class Scaler:
         if os.path.exists(scaler_file):
             with open(scaler_file, 'rb') as f:
                 self.scaler = xr.load_dataset(f)
-                self._prepare_check_zero_scale_input()
         else:
             raise ValueError('Old scaler files are unsupported')
 
@@ -162,8 +161,6 @@ class Scaler:
         ):  # ensure allowing side-effects on compute
             self.scaler = self.scaler.chunk('auto')
 
-        self._prepare_check_zero_scale_input()
-
     def save(self):
         if self.scaler is None:
             raise ValueError(
@@ -177,15 +174,13 @@ class Scaler:
         with open(scaler_file, 'wb') as f:
             self.scaler.to_netcdf(f)
 
-    def _prepare_check_zero_scale_input(self):
-        scales_to_check = self.scaler.sel(parameter=['scale', 'std'])
-        self.is_zero = (scales_to_check == 0).any('parameter').to_dataarray()
-
     def check_zero_scale(self):
-        chunks = self.is_zero.chunks
-        assert not chunks, f'`is_zero` needs to be computed yet has {chunks=}'
+        chunks = self.scaler.chunks
+        assert not chunks, f'`scaler` needs to be computed yet has {chunks=}'
 
-        features = self.is_zero['variable'][self.is_zero]
+        scales_to_check = self.scaler.sel(parameter=['scale', 'std'])
+        is_zero = (scales_to_check == 0).any('parameter').to_dataarray()
+        features = is_zero['variable'][is_zero]
         if any(features):
             raise ValueError(
                 f'Zero scale values found for features: {list(features)}.'
