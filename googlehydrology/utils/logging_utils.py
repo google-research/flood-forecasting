@@ -73,6 +73,10 @@ def setup_logging(log_file: str, level: int, print_warnings_once: bool):
 
     LOGGER.info(f'Logging to {log_file} initialized.')
 
+    # Suppress DEBUG-level logging from these modules:
+    logging.getLogger('filelock').setLevel(logging.INFO)
+    logging.getLogger('matplotlib.font_manager').setLevel(logging.INFO)
+
 
 def get_git_hash() -> str | None:
     """Get git commit hash of the project if it is a git repository.
