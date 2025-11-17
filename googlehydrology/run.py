@@ -88,14 +88,14 @@ def _main():
 
     torch.autograd.set_detect_anomaly(config.detect_anomaly)
 
-    dask.config.set(
-        {
-            'distributed.p2p.storage.disk': config.use_swap_memory,
-            'num_workers': os.cpu_count(),
-            'scheduler': 'threads',
-            'shuffle': 'p2p',
-        }
-    )
+    dask_config = {
+        'num_workers': os.cpu_count(),
+        'scheduler': 'threads',
+        'shuffle': 'p2p',
+    }
+    if config.use_swap_memory is not None:
+        dask_config['distributed.p2p.storage.disk'] = config.use_swap_memory
+    dask.config.set(dask_config)
 
     if config.cache.enabled:
         dask.cache.Cache(cachey.Cache(config.cache.byte_limit)).register()
