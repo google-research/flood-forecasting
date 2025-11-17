@@ -588,8 +588,16 @@ class Multimet(Dataset):
             datasets.append(self._load_target_features())
         if not datasets:
             raise ValueError('At least one type of data must be loaded.')
+
         LOGGER.debug('merge')
-        return xr.merge(datasets, join='outer')
+        ds = xr.merge(datasets, join='outer')
+
+        LOGGER.debug('chunk')
+        ds = ds.chunk('auto')
+        LOGGER.debug('unify_chunks')
+        ds = ds.unify_chunks()
+
+        return ds
 
     def _load_hindcast_features(self) -> list[xr.Dataset]:
         """Load Caravan-Multimet data for hindcast features.
