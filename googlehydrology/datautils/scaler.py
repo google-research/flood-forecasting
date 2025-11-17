@@ -166,8 +166,7 @@ class Scaler:
             raise ValueError(
                 'You are trying to save a scaler that has not been computed.'
             )
-        chunks = self.scaler.chunks
-        assert not chunks, f'`scaler` needs to be computed yet has {chunks=}'
+        _assert_computed(self.scaler)
 
         os.makedirs(self.scaler_dir, exist_ok=True)
         scaler_file = self.scaler_dir / SCALER_FILE_NAME
@@ -175,8 +174,7 @@ class Scaler:
             self.scaler.to_netcdf(f)
 
     def check_zero_scale(self):
-        chunks = self.scaler.chunks
-        assert not chunks, f'`scaler` needs to be computed yet has {chunks=}'
+        _assert_computed(self.scaler)
 
         scales_to_check = self.scaler.sel(parameter=['scale', 'std'])
         is_zero = (scales_to_check == 0).any('parameter').to_dataarray()
@@ -267,3 +265,8 @@ def is_any_lazy(dataset: xr.Dataset) -> bool:
         isinstance(var.data, dask.array.Array)
         for var in dataset.data_vars.values()
     )
+
+def _assert_computed(da: xr.DataArray | xr.Dataset | None):
+    assert da is not None
+    chunks = da.chunks
+    assert not chunks, f'`scaler` needs to be computed yet has {chunks=}'
