@@ -322,23 +322,24 @@ def test_scaler_calculate_custom_normalization(
     )
 
 
-# --- MODIFIED TEST for `_check_zero_scale` being called by `calculate` ---
+# --- MODIFIED TEST for `check_zero_scale` being called by `calculate` ---
 def test_scaler_scale_raises_error_for_zero_scale(
     tmp_scaler_dir, sample_dataset_with_constant_var
 ):
     # `constant_val` has a standard deviation of 0.0.
-    # The scale method should now raise a ValueError due to _check_zero_scale().
+    # The scale method should now raise a ValueError due to check_zero_scale().
     scaler = Scaler(
         scaler_dir=tmp_scaler_dir, calculate_scaler=True, dataset=None
     )
     scaler.calculate(sample_dataset_with_constant_var)
+    scaler.scaler = scaler.scaler.compute()
     with pytest.raises(
         ValueError, match='Zero scale values found for features:'
     ):
-        dask.compute(scaler.scaler)
+        scaler.check_zero_scale()
 
 
-# --- NEW TEST: Direct test of _check_zero_scale ---
+# --- NEW TEST: Direct test of check_zero_scale ---
 def test_check_zero_scale_method_raises_error(tmp_scaler_dir):
     scaler = Scaler(
         scaler_dir=tmp_scaler_dir, calculate_scaler=True, dataset=None
@@ -357,7 +358,7 @@ def test_check_zero_scale_method_raises_error(tmp_scaler_dir):
     with pytest.raises(
         ValueError, match='Zero scale values found for features:'
     ):
-        scaler._check_zero_scale()
+        scaler.check_zero_scale()
 
 
 def test_check_zero_scale_method_no_error_for_nonzero(tmp_scaler_dir):
@@ -374,57 +375,14 @@ def test_check_zero_scale_method_no_error_for_nonzero(tmp_scaler_dir):
     )
     # Should not raise an error
     try:
-        scaler._check_zero_scale()
+        scaler.check_zero_scale()
     except ValueError:
         pytest.fail(
-            '`_check_zero_scale` raised ValueError unexpectedly for non-zero scale values.'
+            '`check_zero_scale` raised ValueError unexpectedly for non-zero scale values.'
         )
 
 
 # --- Test Scaler.scale ---
-
-
-def test_scaler_calculate_binds_save_when_calculated(sample_dataset_basic):
-    calls = []
-
-    def fake(*args, **kwargs):
-        calls.append(True)
-
-    with patch.object(scaler, '_save', side_effect=fake):
-        scaler_instance_calculated = Scaler(
-            scaler_dir=tmp_scaler_dir,
-            calculate_scaler=True,
-            dataset=sample_dataset_basic,
-        )
-
-        assert calls == []
-
-        dask.compute(scaler_instance_calculated.scaler)
-
-    assert calls == [True]
-
-
-def test_scaler_calculate_doesnt_bind_save_when_not_calculated(
-    tmp_scaler_dir, scaler_instance_calculated, sample_dataset_basic
-):
-    scaler_instance_calculated.save()
-    scaler_file_path = tmp_scaler_dir / SCALER_FILE_NAME
-    assert scaler_file_path.exists()
-
-    calls = []
-
-    def fake():
-        calls.append(True)
-
-    with patch.object(scaler, '_save', side_effect=fake):
-        loaded_scaler = Scaler(
-            scaler_dir=tmp_scaler_dir, calculate_scaler=False, dataset=None
-        )
-        loaded_scaler.scale(sample_dataset_basic)
-
-        dask.compute(loaded_scaler.scaler)
-
-    assert calls == []
 
 
 def test_scaler_scale_basic_functionality(
@@ -550,6 +508,9 @@ def test_scaler_unscale_raises_error_for_missing_features(
 def test_scaler_save_and_load(
     tmp_scaler_dir, scaler_instance_calculated, sample_dataset_basic
 ):
+    scaler_instance_calculated.scaler = (
+        scaler_instance_calculated.scaler.compute()
+    )
     scaler_instance_calculated.save()
     scaler_file_path = tmp_scaler_dir / SCALER_FILE_NAME
     assert scaler_file_path.exists()
@@ -588,7 +549,7 @@ def test_scaler_save_raises_error_if_not_calculated(tmp_scaler_dir):
         scaler.save()
 
 
-# --- NEW TESTS: `_check_zero_scale` interaction with `load` ---
+# --- NEW TESTS: `check_zero_scale` interaction with `load` ---
 
 
 def test_scaler_load_from_file_raises_error_for_zero_scale(tmp_scaler_dir):

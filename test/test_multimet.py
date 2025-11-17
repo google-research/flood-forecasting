@@ -19,7 +19,7 @@ import xarray as xr
 import torch
 import re
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 from typing import Callable
 
 from googlehydrology.datasetzoo.multimet import Multimet
@@ -205,6 +205,7 @@ def test_forecast_dataset_init_success(
     mock_scaler_instance = MagicMock()
     mock_scaler.return_value = mock_scaler_instance  # When Scaler() is called, return this mock instance
     mock_scaler_instance.scale.return_value = mock_load_data_return
+    mock_scaler_instance.check_zero_scale.return_value = None
     mock_scaler_instance.save.return_value = None  # save() does nothing
 
     cfg = get_config('default')  # Get a default config
@@ -216,9 +217,12 @@ def test_forecast_dataset_init_success(
     mock_load_basin_file.assert_called_once()
     mock_load_data.assert_called_once()
     mock_scaler_instance.scale.assert_called_once_with(mock_load_data_return)
+    mock_scaler_instance.save.assert_called_once()  # When compute_scaler=True
+    mock_scaler_instance.check_zero_scale.assert_called_once()
 
-    # scaler's scale() calls save.
-    # mock_scaler_instance.save.assert_called_once() # Called if compute_scaler is True
+    expected_call_order = ['scale', 'check_zero_scale', 'save']
+    actual_call_order = [e[0] for e in mock_scaler_instance.method_calls]
+    assert actual_call_order == expected_call_order
 
     assert dataset.is_train is True
     assert dataset._period == 'train'

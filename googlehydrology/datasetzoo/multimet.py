@@ -257,6 +257,11 @@ class Multimet(Dataset):
             self._dataset, self.scaler.scaler
         )
 
+        LOGGER.debug('scaler check zero scale')
+        self.scaler.check_zero_scale()
+        LOGGER.debug('scaler save')
+        self.scaler.save()
+
         # Create sample index lookup table for `__getitem__`.
         LOGGER.debug('create sample index')
         self._create_sample_index()
