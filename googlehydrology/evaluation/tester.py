@@ -286,9 +286,6 @@ class BaseTester(object):
         for basin_data in pbar:
             results = {}
 
-            if self.device.type == 'cuda':
-                torch.cuda.synchronize()
-
             basin = basin_data['basin']
             y_hat = basin_data['preds']
             y = basin_data['obs']
