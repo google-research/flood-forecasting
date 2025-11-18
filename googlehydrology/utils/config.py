@@ -868,6 +868,12 @@ class Config(object):
         return self._cfg.get('use_swap_memory', None)
 
     @property
+    def load_target_features_parallel_processes(self) -> int:
+        return max(
+            1, self._cfg.get('load_target_features_parallel_processes') or 1
+        )
+
+    @property
     def predict_last_n(self) -> int | dict[str, int]:
         return self._get_value_verbose('predict_last_n')
 

@@ -18,6 +18,9 @@ import logging
 import itertools
 import functools
 from pathlib import Path
+import pickle
+import subprocess
+import sys
 
 import dask
 import dask.array
@@ -87,6 +90,8 @@ class Multimet(Dataset):
         basin: str = None,
         compute_scaler: bool = True,
     ):
+        self._cfg = cfg
+
         # Sequence length parameters.
         # TODO (future) :: Remove all old forecast functionality from basedataset.
         self.lead_time = cfg.lead_time
@@ -686,9 +691,37 @@ class Multimet(Dataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, basin).
         """
-        return load_caravan_timeseries_together(
-            self._targets_data_path, self._basins, self._target_features
+        if self._cfg.load_target_features_parallel_processes < 2:
+            return load_caravan_timeseries_together(
+                self._targets_data_path, self._basins, self._target_features
+            )
+
+        def create_loader_process(basins: Iterable[str]) -> subprocess.Popen:
+            return subprocess.Popen(
+                [
+                    sys.executable,
+                    Path(__file__).parent / 'mfdata_loader.py',
+                    f'--data_dir={self._targets_data_path}',
+                    f'--basins={",".join(basins)}',
+                    f'--target_features={",".join(self._target_features)}',
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+        def wait_loader_result(process: subprocess.Popen) -> xr.Dataset:
+            stdout, stderr = process.communicate()
+            assert process.returncode == 0, f'mfdata_loader failure: {stderr}'
+            return pickle.loads(stdout)
+
+        batch_size = round(
+            len(self._basins)
+            / self._cfg.load_target_features_parallel_processes
         )
+        batches = itertools.batched(self._basins, batch_size)
+        processes = tuple(map(create_loader_process, batches))
+        results = tuple(map(wait_loader_result, processes))
+        return xr.concat(results, dim='basin', join='outer')
 
     def _load_static_features(self) -> xr.Dataset:
         """Load Caravan static attributes.
