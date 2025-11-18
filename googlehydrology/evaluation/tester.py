@@ -891,13 +891,9 @@ class UncertaintyTester(BaseTester):
     def _get_predictions_and_loss(
         self, model: BaseModel, data: dict[str, torch.Tensor]
     ) -> tuple[torch.Tensor, float]:
-        LOGGER.debug('getting model outputs')
         outputs = model(data)
-        LOGGER.debug('getting model losses')
         _, all_losses = self.loss_obj(outputs, data)
-        LOGGER.debug('getting model predictions (sample)')
         predictions = model.sample(data, self.cfg.n_samples, outputs=outputs)
-        LOGGER.debug('getting model eval')
         model.eval()
         return predictions, {k: v.item() for k, v in all_losses.items()}
 
