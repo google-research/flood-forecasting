@@ -712,6 +712,10 @@ class Config(object):
         return self._cfg.get('learning_rate_epochs_drop', 0)
 
     @property
+    def load_as_csv(self) -> bool:
+        return self._cfg.get('load_as_csv', False)
+        
+    @property
     def log_interval(self) -> int:
         return self._cfg.get('log_interval', 10)
 
