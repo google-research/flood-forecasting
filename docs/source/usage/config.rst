@@ -64,6 +64,9 @@ General experiment configurations
    Key ``byte_limit`` (``int``): Byte limit to use. Default 2GB.
 -  ``use_swap_memory``: whether to enable ``distributed.p2p.storage.disk`` explicitly.
    None-value results in ``dask``'s default.
+-  ``load_target_features_parallel_processes``: number of processes to use to load target
+   features' netcdf files in parallel. When smaller than 2, no processes are used. The
+   processes are entirely new processes and don't replicate the main program's memory.
 
 .. code-block::
 
