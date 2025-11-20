@@ -252,3 +252,4 @@ def _load_attribute_files_of_subdatasets(
     dss = dask.compute(*dss)
 
     return xarray.merge(dss, join='outer', compat='no_conflicts')
+
