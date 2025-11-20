@@ -847,6 +847,7 @@ class Multimet(Dataset):
                     f'--data_dir={self._targets_data_path}',
                     f'--basins={",".join(basins)}',
                     f'--target_features={",".join(self._target_features)}',
+                    f'--load_as_csv={self._load_as_csv}',
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
