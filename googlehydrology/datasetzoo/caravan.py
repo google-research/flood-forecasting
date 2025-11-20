@@ -17,7 +17,7 @@ import logging
 from pathlib import Path
 
 import dask
-from dask import delayed, compute
+import dask.delayed
 import numpy as np
 import pandas as pd
 import xarray
@@ -136,7 +136,8 @@ def load_csvs_as_ds(basin_to_file_path: dict[str, Path]) -> xarray.Dataset:
     xarray.Dataset
         A combined Dataset with 'basin' as the new dimension.
     """
-    @delayed
+
+    @dask.delayed
     def load_and_convert_to_ds(path: Path) -> xarray.Dataset:
         """
         Efficiently loads a single CSV file, converts to float32, and returns 
@@ -156,8 +157,8 @@ def load_csvs_as_ds(basin_to_file_path: dict[str, Path]) -> xarray.Dataset:
     for basin, path in basin_to_file_path.items():
         delayed_datasets.append(load_and_convert_to_ds(path))
         basin_coords.append(basin)
-    
-    dataset_list = compute(*delayed_datasets)
+
+    dataset_list = dask.compute(*delayed_datasets)
 
     return xarray.concat(
         dataset_list,
@@ -228,7 +229,7 @@ def _load_attribute_files_of_subdatasets(
     Converts float64 to float32.
     """
 
-    @delayed
+    @dask.delayed
     def process(csv_file: Path) -> xarray.Dataset:
         df64 = pd.read_csv(csv_file, index_col='gauge_id')
         df = df64.astype(
@@ -252,4 +253,3 @@ def _load_attribute_files_of_subdatasets(
     dss = dask.compute(*dss)
 
     return xarray.merge(dss, join='outer', compat='no_conflicts')
-
