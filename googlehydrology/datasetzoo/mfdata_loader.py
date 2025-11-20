@@ -29,10 +29,19 @@ TARGET_FEATURES = flags.DEFINE_list(
     required=True,
 )
 
+LOAD_AS_CSV = flags.DEFINE_bool(
+    'load_as_csv',
+    default=False,
+    help='Whether to load inputs as csv else as netcdf',
+)
+
 
 def main(unused_argv):
     dataset = load_caravan_timeseries_together(
-        Path(DATA_DIR.value), BASINS.value, TARGET_FEATURES.value
+        Path(DATA_DIR.value),
+        BASINS.value,
+        TARGET_FEATURES.value,
+        load_as_csv=LOAD_AS_CSV.value,
     )
     serialized = pickle.dumps(dataset)
     sys.stdout.buffer.write(serialized)
