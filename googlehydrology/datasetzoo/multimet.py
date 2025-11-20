@@ -99,6 +99,7 @@ class Multimet(Dataset):
         self._predict_last_n = cfg.predict_last_n
         self._forecast_overlap = cfg.forecast_overlap
         self._allzero_samples_are_invalid = cfg.allzero_samples_are_invalid
+        self._load_as_csv = cfg.load_as_csv
 
         # Feature lists by type.
         self._static_features = cfg.static_attributes
@@ -584,7 +585,7 @@ class Multimet(Dataset):
             datasets.append(self._load_static_features())
         if self._hindcast_features is not None:
             LOGGER.debug('load hindcast features')
-            datasets.extend(self._load_hindcast_features())
+            datasets.extend(self._load_hindcast_features(self._load_as_csv))
         if self._forecast_features is not None:
             LOGGER.debug('load forecast features')
             datasets.extend(self._load_forecast_features())
@@ -604,7 +605,7 @@ class Multimet(Dataset):
 
         return ds
 
-    def _load_hindcast_features(self) -> list[xr.Dataset]:
+    def _load_hindcast_features(self, load_as_csv: bool=False) -> list[xr.Dataset]:
         """Load Caravan-Multimet data for hindcast features.
 
         Returns
@@ -612,6 +613,12 @@ class Multimet(Dataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, basin).
         """
+        if load_as_csv:
+            return self._load_hindcast_as_csv()
+        else:
+            return self._load_hindcast_as_zarr()
+
+    def _load_hindcast_as_zarr(self) -> list[xr.Dataset]:
         # Prepare hindcast features to load, including the masks of union_mapping
         features = set(self._hindcast_features) | set(
             (self._union_mapping or {}).values()
@@ -631,7 +638,7 @@ class Multimet(Dataset):
                 self._dynamics_data_path / product / 'timeseries.zarr'
             )
             product_ds = _open_zarr(product_path)
-
+            
             if 'lead_time' in product_ds:
                 # The same product may be used both for forecast and hindcast features. For hindcast, we load it with the
                 # full lead_time similar to forecast, and filter the minimal lead_time values during sampling.
@@ -647,7 +654,143 @@ class Multimet(Dataset):
 
         return product_dss
 
+    def _load_hindcast_as_csv(self) -> list[xr.Dataset]:
+        ds = load_caravan_timeseries_together(
+            data_dir=self._dynamics_data_path,
+            basins=self._basins,
+            target_features=self._hindcast_features,
+            load_as_csv=True
+        )
+        return [ds]
+
+    def _load_forecast_as_csv(self) -> xr.Dataset:
+        """Load Caravan-Multimet data for forecast features with file fallback logic.
+
+        Tries to load {feature}_{basin}.csv (issue date=rows, lead time=columns).
+        If not found, tries to load {basin}.csv (issue date=rows, features=columns, lead_time=0).
+        If neither file is found, a ValueError is raised.
+        
+        Note: File loading and processing errors will now propagate as exceptions (e.g., FileNotFoundError, pandas errors).
+
+        Returns
+        -------
+        xr.Dataset
+            Dataset containing the loaded features with dimensions (date, lead_time, basin).
+        """
+        # Initialize storage for all DataArrays, which will be merged/combined
+        all_feature_das = []
+
+        # Base path for timeseries data
+        base_dir = self._dynamics_data_path / 'timeseries' / 'csv'
+        
+        # Cache for fallback files, loaded only once per basin for efficiency
+        basin_fallback_cache: Dict[str, pd.DataFrame] = {}
+
+        # Load data for the selected products, bands, and basins.
+        for basin in self._basins:
+            # subdataset_name is often the first part of the basin name (e.g., 'basinA' for 'basinA_sub1')
+            subdataset_name = basin.split('_')[0]
+            basin_dir = base_dir / subdataset_name
+
+            for feature in self._forecast_features:
+                
+                # --- 1. Try file with lead time (Structure: rows=date, cols=lead_time) ---
+                lead_time_file_path = basin_dir / f'{feature}_{basin}.csv'
+                da = None
+                
+                if lead_time_file_path.exists():
+                    
+                    # Load and set time column as index. Column names (lead times) become data.
+                    df = pd.read_csv(lead_time_file_path, index_col=0, parse_dates=True)
+                    df.index.name = 'date'
+                    
+                    # Melt lead times from columns into a new dimension/level
+                    # The column headers (lead times) are currently strings, e.g., '0', '1', '2'
+                    ds_melt = df.stack().to_frame(name=feature)
+                    ds_melt.index.names = ['date', 'lead_time']
+                    
+                    # Convert to xarray DataArray. lead_time will be coordinate.
+                    da = ds_melt[feature].to_xarray().to_dataset()
+                    
+                    # Convert lead_time from string/int to Timedelta for consistency.
+                    if 'lead_time' in da.coords:
+                        # Assuming the numbers in the column headers represent lead time in hours ('h').
+                        da['lead_time'] = pd.to_timedelta(da['lead_time'].astype(int), unit='h')
+                        da['lead_time'].attrs['units'] = 'timedelta (hours)'
+
+
+                # --- 2. Fallback to file without lead time (Structure: rows=date, cols=feature) ---
+                else:
+                    fallback_file_path = basin_dir / f'{basin}.csv'
+                    
+                    if basin not in basin_fallback_cache:
+                        if fallback_file_path.exists():
+                            # Load and set time column as index (only once per basin)
+                            df_fallback = pd.read_csv(fallback_file_path, index_col=0, parse_dates=True)
+                            df_fallback.index.name = 'date'
+                            basin_fallback_cache[basin] = df_fallback
+                        else:
+                            raise ValueError(
+                                f"Required data file not found for feature '{feature}' in basin '{basin}'. "
+                                f"Neither the primary file ({lead_time_file_path}) "
+                                f"nor the fallback file ({fallback_file_path}) exists."
+                            )
+                    
+                    # Use the cached DataFrame
+                    df = basin_fallback_cache[basin]
+                    
+                    if feature not in df.columns:
+                        raise ValueError(f"Feature '{feature}' not found in fallback file {fallback_file_path}.")
+
+                    # Select the required feature and assign lead_time = 0 as a Timedelta
+                    # Using .copy() here is necessary to avoid SettingWithCopyWarning
+                    df_feature = df[[feature]].copy() 
+                    df_feature['lead_time'] = pd.Timedelta(0) 
+                    
+                    # Set lead_time as a new index level to create a 2D structure (date, lead_time)
+                    da = df_feature.set_index('lead_time', append=True).to_xarray()
+                
+                # --- 3. Finalize and Store DataArray ---
+                if da is not None:
+                    # Add basin as a coordinate, which will be promoted to a dimension during merge
+                    da = da.expand_dims(basin=[basin])
+                    
+                    # Select/slice lead times 
+                    if hasattr(self, '_lead_time_slice') and callable(self._lead_time_slice):
+                        da = da.sel(lead_time=self._lead_time_slice())
+                    
+                    all_feature_das.append(da)
+        
+        # --- 4. Combine all loaded DataArrays ---
+        # Combine merges datasets along coordinates that differ (like basin),
+        # and combines variables that share coordinates (like features).
+        final_ds = xr.combine_by_coords(
+            all_feature_das, 
+            coords=['basin'], # Combine along the basin dimension
+            data_vars='all',   # Include all unique data variables (features)
+            compat='override'
+        )
+        
+        # Transpose to (date, lead_time, basin, ...)
+        final_ds = final_ds.transpose('date', 'lead_time', 'basin', ...)
+
+        import pdb; pdb.set_trace()
+        return [final_ds]
+
     def _load_forecast_features(self) -> list[xr.Dataset]:
+        """Load Caravan-Multimet data for forecast features.
+
+        Returns
+        -------
+        xr.Dataset
+            Dataset containing the loaded features with dimensions (date, lead_time, basin).
+        """
+        if self._load_as_csv:
+            return self._load_forecast_as_csv()
+        else:
+            return self._load_forecast_as_zarr()
+
+    def _load_forecast_as_zarr(self) -> list[xr.Dataset]:
         """Load Caravan-Multimet data for forecast features.
 
         Returns
@@ -693,7 +836,7 @@ class Multimet(Dataset):
         """
         if self._cfg.load_target_features_parallel_processes < 2:
             return load_caravan_timeseries_together(
-                self._targets_data_path, self._basins, self._target_features
+                self._targets_data_path, self._basins, self._target_features, self._load_as_csv
             )
 
         def create_loader_process(basins: Iterable[str]) -> subprocess.Popen:

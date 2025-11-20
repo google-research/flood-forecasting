@@ -17,7 +17,7 @@ import logging
 from pathlib import Path
 
 import dask
-import dask.delayed
+from dask import delayed, compute
 import numpy as np
 import pandas as pd
 import xarray
@@ -121,57 +121,52 @@ def load_caravan_attributes(
     return ds
 
 
-def load_caravan_timeseries(
-    data_dir: Path, basin: str, filetype: str = 'netcdf'
-) -> pd.DataFrame | xarray.Dataset:
-    """Loads the timeseries data of one basin from the Caravan dataset.
+def load_csvs_as_ds(basin_to_file_path: dict[str, Path]) -> xarray.Dataset:
+    """
+    Loads timeseries data from multiple CSV files into a single xarray Dataset
+    using Dask for parallel processing and direct float32 loading for efficiency.
 
     Parameters
     ----------
-    data_dir : Path
-        Path to the root directory of Caravan that has to include a sub-directory called 'timeseries'. This
-        sub-directory has to contain another sub-directory called either 'csv' or 'netcdf', depending on the choice
-        of the filetype argument. By default, netCDF files are loaded from the 'netcdf' subdirectory.
-    basin : str
-        The Caravan gauge id string in the form of {subdataset_name}_{gauge_id}.
-    filetype : str, optional
-        Can be either 'csv' or 'netcdf'. Depending on this value, this function will load the timeseries data from the
-        netcdf files (default) (xarray.Dataset) or csv files (pd.DataFrame).
-
-    Raises
-    ------
-    ValueError
-        If filetype is not in ['csv', 'netcdf'].
-    FileNotFoundError
-        If no timeseries file exists for the basin.
+    basin_to_file_path : dict[str, Path]
+        Mapping from basin ID to the CSV file path, one per basin.
+        
+    Returns
+    -------
+    xarray.Dataset
+        A combined Dataset with 'basin' as the new dimension.
     """
-    # Get the subdataset name from the basin string.
-    subdataset_name = basin.split('_')[0]
+    @delayed
+    def load_and_convert_to_ds(path: Path) -> xarray.Dataset:
+        """
+        Efficiently loads a single CSV file, converts to float32, and returns 
+        a single-basin xarray Dataset.
+        """
+        df = pd.read_csv(
+            path,
+            index_col='date',
+            parse_dates=['date'],
+            dtype='float32'
+        )        
+        return df.to_xarray()
 
-    if filetype == 'netcdf':
-        filepath = (
-            data_dir / 'timeseries' / 'netcdf' / subdataset_name / f'{basin}.nc'
-        )
-    elif filetype == 'csv':
-        filepath = (
-            data_dir / 'timeseries' / 'csv' / subdataset_name / f'{basin}.csv'
-        )
-    else:
-        raise ValueError("filetype has to be either 'csv' or 'netcdf'.")
+    delayed_datasets = []
+    basin_coords = []
+    
+    for basin, path in basin_to_file_path.items():
+        delayed_datasets.append(load_and_convert_to_ds(path))
+        basin_coords.append(basin)
+    
+    dataset_list = compute(*delayed_datasets)
 
-    if not filepath.is_file():
-        raise FileNotFoundError(f'No basin file found at {filepath}.')
-
-    # Load timeseries data.
-    if filetype == 'netcdf':
-        return xarray.open_dataset(filepath)
-    df = pd.read_csv(filepath, parse_dates=['date'])
-    df = df.set_index('date')
-    return df
+    return xarray.concat(
+        dataset_list,
+        dim=pd.Index(basin_coords, name='basin')
+    )
 
 
 def load_caravan_timeseries_together(
-    data_dir: Path, basins: list[str], target_features: list[str]
+    data_dir: Path, basins: list[str], target_features: list[str], load_as_csv: bool=False
 ) -> xarray.Dataset:
     """Loads the timeseries data of basins from the Caravan dataset.
 
@@ -194,9 +189,14 @@ def load_caravan_timeseries_together(
 
     def basin_to_file_path(basin: str) -> Path:
         subdataset_name = basin.split('_')[0]
-        filepath = (
-            data_dir / 'timeseries' / 'netcdf' / subdataset_name / f'{basin}.nc'
-        )
+        if not load_as_csv:
+            filepath = (
+                data_dir / 'timeseries' / 'netcdf' / subdataset_name / f'{basin}.nc'
+            )
+        else:
+            filepath = (
+                data_dir / 'timeseries' / 'csv' / subdataset_name / f'{basin}.csv'
+            )
         if not filepath.is_file():
             raise FileNotFoundError(f'No basin file found at {filepath}.')
         return filepath
@@ -204,17 +204,21 @@ def load_caravan_timeseries_together(
     def preprocess(ds: xarray.Dataset):
         return ds[target_features]
 
-    ds = xarray.open_mfdataset(
-        [basin_to_file_path(e) for e in basins],
-        preprocess=preprocess,
-        combine='nested',
-        concat_dim='basin',
-        parallel=False,  # open_mfdataset has a bug (seg fault) when True
-        chunks={'date': 'auto'},
-        join='outer',
-    )
-    return ds.assign_coords(basin=basins)
-
+    if not load_as_csv:
+        ds = xarray.open_mfdataset(
+            [basin_to_file_path(e) for e in basins],
+            preprocess=preprocess,
+            combine='nested',
+            concat_dim='basin',
+            parallel=False,  # open_mfdataset has a bug (seg fault) when True
+            chunks={'date': 'auto'},
+            join='outer',
+        )
+        return ds.assign_coords(basin=basins)
+    else:
+        ds = load_csvs_as_ds({e: basin_to_file_path(e) for e in basins})
+        return preprocess(ds)
+            
 
 def _load_attribute_files_of_subdatasets(
     datasets: list[Path], features: list[str]
@@ -224,7 +228,7 @@ def _load_attribute_files_of_subdatasets(
     Converts float64 to float32.
     """
 
-    @dask.delayed
+    @delayed
     def process(csv_file: Path) -> xarray.Dataset:
         df64 = pd.read_csv(csv_file, index_col='gauge_id')
         df = df64.astype(
@@ -248,3 +252,4 @@ def _load_attribute_files_of_subdatasets(
     dss = dask.compute(*dss)
 
     return xarray.merge(dss, join='outer', compat='no_conflicts')
+
