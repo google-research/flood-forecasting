@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 from typing import Hashable, Iterable
 
 import logging
@@ -857,7 +858,7 @@ class Multimet(Dataset):
             assert process.returncode == 0, f'mfdata_loader failure: {stderr}'
             return pickle.loads(stdout)
 
-        batch_size = round(
+        batch_size = math.ceil(
             len(self._basins)
             / self._cfg.load_target_features_parallel_processes
         )
