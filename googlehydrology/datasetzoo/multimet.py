@@ -100,7 +100,6 @@ class Multimet(Dataset):
         self._predict_last_n = cfg.predict_last_n
         self._forecast_overlap = cfg.forecast_overlap
         self._allzero_samples_are_invalid = cfg.allzero_samples_are_invalid
-        self._load_as_csv = cfg.load_as_csv
 
         # Feature lists by type.
         self._static_features = cfg.static_attributes
@@ -586,7 +585,7 @@ class Multimet(Dataset):
             datasets.append(self._load_static_features())
         if self._hindcast_features is not None:
             LOGGER.debug('load hindcast features')
-            datasets.extend(self._load_hindcast_features(self._load_as_csv))
+            datasets.extend(self._load_hindcast_features())
         if self._forecast_features is not None:
             LOGGER.debug('load forecast features')
             datasets.extend(self._load_forecast_features())
@@ -606,7 +605,7 @@ class Multimet(Dataset):
 
         return ds
 
-    def _load_hindcast_features(self, load_as_csv: bool=False) -> list[xr.Dataset]:
+    def _load_hindcast_features(self) -> list[xr.Dataset]:
         """Load Caravan-Multimet data for hindcast features.
 
         Returns
@@ -614,10 +613,9 @@ class Multimet(Dataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, basin).
         """
-        if load_as_csv:
-            return self._load_hindcast_as_csv()
-        else:
-            return self._load_hindcast_as_zarr()
+        if self._cfg.load_as_csv:
+            return [self._load_hindcast_as_csv()]
+        return self._load_hindcast_as_zarr()
 
     def _load_hindcast_as_zarr(self) -> list[xr.Dataset]:
         # Prepare hindcast features to load, including the masks of union_mapping
@@ -655,14 +653,13 @@ class Multimet(Dataset):
 
         return product_dss
 
-    def _load_hindcast_as_csv(self) -> list[xr.Dataset]:
-        ds = load_caravan_timeseries_together(
+    def _load_hindcast_as_csv(self) -> xr.Dataset:
+        return load_caravan_timeseries_together(
             data_dir=self._dynamics_data_path,
             basins=self._basins,
             target_features=self._hindcast_features,
-            load_as_csv=True
+            csv=True,
         )
-        return [ds]
 
     def _load_forecast_as_csv(self) -> xr.Dataset:
         """Load Caravan-Multimet data for forecast features with file fallback logic.
@@ -775,8 +772,7 @@ class Multimet(Dataset):
         # Transpose to (date, lead_time, basin, ...)
         final_ds = final_ds.transpose('date', 'lead_time', 'basin', ...)
 
-        import pdb; pdb.set_trace()
-        return [final_ds]
+        return final_ds
 
     def _load_forecast_features(self) -> list[xr.Dataset]:
         """Load Caravan-Multimet data for forecast features.
@@ -786,10 +782,9 @@ class Multimet(Dataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, lead_time, basin).
         """
-        if self._load_as_csv:
-            return self._load_forecast_as_csv()
-        else:
-            return self._load_forecast_as_zarr()
+        if self._cfg.load_as_csv:
+            return [self._load_forecast_as_csv()]
+        return self._load_forecast_as_zarr()
 
     def _load_forecast_as_zarr(self) -> list[xr.Dataset]:
         """Load Caravan-Multimet data for forecast features.
@@ -837,7 +832,10 @@ class Multimet(Dataset):
         """
         if self._cfg.load_target_features_parallel_processes < 2:
             return load_caravan_timeseries_together(
-                self._targets_data_path, self._basins, self._target_features, self._load_as_csv
+                self._targets_data_path,
+                self._basins,
+                self._target_features,
+                csv=self._cfg.load_as_csv,
             )
 
         def create_loader_process(basins: Iterable[str]) -> subprocess.Popen:
@@ -848,7 +846,7 @@ class Multimet(Dataset):
                     f'--data_dir={self._targets_data_path}',
                     f'--basins={",".join(basins)}',
                     f'--target_features={",".join(self._target_features)}',
-                    f'--load_as_csv={self._load_as_csv}',
+                    f'--csv={self._cfg.load_as_csv}',
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
