@@ -96,6 +96,7 @@ targets_data_dir: ~/nh-data/data/Caravan-nc
 statics_data_dir: ~/nh-data/data/Caravan-nc
 dynamics_data_dir: ~/nh-data/data/Caravan-multimet
 
+load_as_csv: False
 dataset: multimet
 seq_length: 365
 lead_time: 7
