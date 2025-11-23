@@ -774,8 +774,6 @@ class Multimet(Dataset):
         
         # Transpose to (date, lead_time, basin, ...)
         final_ds = final_ds.transpose('date', 'lead_time', 'basin', ...)
-
-        import pdb; pdb.set_trace()
         return [final_ds]
 
     def _load_forecast_features(self) -> list[xr.Dataset]:
