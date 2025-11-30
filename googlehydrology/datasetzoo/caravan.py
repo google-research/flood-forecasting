@@ -18,6 +18,7 @@ from pathlib import Path
 
 import dask
 import dask.delayed
+import dask.dataframe as dd
 import numpy as np
 import pandas as pd
 import xarray
@@ -121,49 +122,25 @@ def load_caravan_attributes(
     return ds
 
 
-def load_csvs_as_ds(basin_to_file_path: dict[str, Path]) -> xarray.Dataset:
-    """
-    Loads timeseries data from multiple CSV files into a single xarray Dataset
-    using Dask for parallel processing and direct float32 loading for efficiency.
+def load_csvs_as_ds(basin_to_path: dict[str, Path]) -> xarray.Dataset:
+    """Load timeseries data from CSV files into a single xarray Dataset.
 
     Parameters
     ----------
-    basin_to_file_path : dict[str, Path]
+    basin_to_path : dict[str, Path]
         Mapping from basin ID to the CSV file path, one per basin.
-        
+
     Returns
     -------
     xarray.Dataset
         A combined Dataset with 'basin' as the new dimension.
     """
-
-    @dask.delayed
-    def load_and_convert_to_ds(path: Path) -> xarray.Dataset:
-        """
-        Efficiently loads a single CSV file, converts to float32, and returns 
-        a single-basin xarray Dataset.
-        """
-        df = pd.read_csv(
-            path,
-            index_col='date',
-            parse_dates=['date'],
-            dtype='float32'
-        )        
-        return df.to_xarray()
-
-    delayed_datasets = []
-    basin_coords = []
-    
-    for basin, path in basin_to_file_path.items():
-        delayed_datasets.append(load_and_convert_to_ds(path))
-        basin_coords.append(basin)
-
-    dataset_list = dask.compute(*delayed_datasets)
-
-    return xarray.concat(
-        dataset_list,
-        dim=pd.Index(basin_coords, name='basin')
+    datas = (
+        dd.read_csv(path, parse_dates=['date'], dtype=np.float32)
+        for path in basin_to_path.values()
     )
+    datas = [df.assign(basin=basin) for basin, df in zip(basin_to_path, datas)]
+    return dd.concat(datas).compute().set_index(['basin', 'date']).to_xarray()
 
 
 def load_caravan_timeseries_together(
