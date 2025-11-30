@@ -63,4 +63,6 @@ def get_model(cfg: Config) -> nn.Module:
             f'{cfg.model} not implemented or not linked in `get_model()`'
         )
 
-    return torch.compile(model, mode='max-autotune')
+    if cfg.compile:
+        return torch.compile(model, mode='max-autotune')
+    return model

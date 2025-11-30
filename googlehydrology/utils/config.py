@@ -1141,6 +1141,10 @@ class Config(object):
         """
         return self._cfg.get('verbose', 1)
 
+    @property
+    def compile(self) -> bool:
+        return self._cfg.get('compile', True)
+
     def _get_embedding_spec(
         self, embedding_spec: dict | None
     ) -> EmbeddingSpec | None:

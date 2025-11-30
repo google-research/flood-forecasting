@@ -161,6 +161,8 @@ General model configuration
 
 -  ``output_dropout``: Dropout applied to the output of the LSTM
 
+-  ``compile``: Whether to compile the model for performance improvement, defaults to True.
+
 Regression head
 ~~~~~~~~~~~~~~~
 Can be ignored if ``head != 'regression'``
