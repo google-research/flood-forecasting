@@ -144,20 +144,28 @@ def load_csvs_as_ds(basin_to_path: dict[str, Path]) -> xarray.Dataset:
 
 
 def load_caravan_timeseries_together(
-    data_dir: Path, basins: list[str], target_features: list[str], load_as_csv: bool=False
+    data_dir: Path,
+    basins: list[str],
+    target_features: list[str],
+    *,
+    csv: bool,
 ) -> xarray.Dataset:
-    """Loads the timeseries data of basins from the Caravan dataset.
+    """Load the timeseries data of basins from the Caravan dataset.
 
     Parameters
     ----------
     data_dir : Path
-        Path to the root directory of Caravan that has to include a sub-directory called 'timeseries'. This
-        sub-directory has to contain another sub-directory called either 'csv' or 'netcdf', depending on the choice
-        of the filetype argument. By default, netCDF files are loaded from the 'netcdf' subdirectory.
+        Path to the root directory of Caravan that has to include a sub-directory
+        called 'timeseries'. This sub-directory has to contain another
+        sub-directory called either 'csv' or 'netcdf', depending on the choice
+        of the filetype argument. By default, netCDF files are loaded from the
+        'netcdf' subdirectory.
     basins : list[str]
         The Caravan gauge id strings in the form of {subdataset_name}_{gauge_id}.
     target_features : list[str]
         The target variables to select.
+    csv: bool
+        Whether to load CSV files instead of NC (netcdf) files.
 
     Raises
     ------
@@ -165,38 +173,31 @@ def load_caravan_timeseries_together(
         If no timeseries file exists for the basin.
     """
 
-    def basin_to_file_path(basin: str) -> Path:
-        subdataset_name = basin.split('_')[0]
-        if not load_as_csv:
-            filepath = (
-                data_dir / 'timeseries' / 'netcdf' / subdataset_name / f'{basin}.nc'
-            )
-        else:
-            filepath = (
-                data_dir / 'timeseries' / 'csv' / subdataset_name / f'{basin}.csv'
-            )
-        if not filepath.is_file():
-            raise FileNotFoundError(f'No basin file found at {filepath}.')
-        return filepath
+    def basin_to_path(basin: str) -> Path:
+        subdataset = basin.partition('_')[0]
+        kind = 'csv' if csv else 'netcdf'
+        ext = 'csv' if csv else 'nc'
+        path = data_dir / 'timeseries' / kind / subdataset / f'{basin}.{ext}'
+        if path.is_file():
+            return path
+        raise FileNotFoundError(f'No basin file found at {path}.')
 
-    def preprocess(ds: xarray.Dataset):
+    def select(ds: xarray.Dataset) -> xarray.Dataset:
         return ds[target_features]
 
-    if not load_as_csv:
-        ds = xarray.open_mfdataset(
-            [basin_to_file_path(e) for e in basins],
-            preprocess=preprocess,
-            combine='nested',
-            concat_dim='basin',
-            parallel=False,  # open_mfdataset has a bug (seg fault) when True
-            chunks={'date': 'auto'},
-            join='outer',
-        )
-        return ds.assign_coords(basin=basins)
-    else:
-        ds = load_csvs_as_ds({e: basin_to_file_path(e) for e in basins})
-        return preprocess(ds)
-            
+    if csv:
+        return select(load_csvs_as_ds({e: basin_to_path(e) for e in basins}))
+
+    return xarray.open_mfdataset(
+        [basin_to_path(e) for e in basins],
+        preprocess=select,
+        combine='nested',
+        concat_dim='basin',
+        parallel=False,  # open_mfdataset has a bug (seg fault) when True
+        chunks={'date': 'auto'},
+        join='outer',
+    ).assign_coords(basin=basins)
+
 
 def _load_attribute_files_of_subdatasets(
     datasets: list[Path], features: list[str]
