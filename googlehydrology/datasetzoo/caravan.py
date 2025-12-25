@@ -119,8 +119,7 @@ def load_caravan_attributes(
         # Subset to only the requested basins.
         ds = ds.sel(basin=basins)
 
-    ds = ds.astype(np.float32)
-    return ds
+    return ds.astype(np.float32)
 
 
 def load_csvs_as_ds(basin_to_path: dict[str, Path]) -> xarray.Dataset:
