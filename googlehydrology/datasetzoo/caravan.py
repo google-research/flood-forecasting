@@ -119,6 +119,7 @@ def load_caravan_attributes(
         # Subset to only the requested basins.
         ds = ds.sel(basin=basins)
 
+    ds = ds.astype(np.float32)
     return ds
 
 
