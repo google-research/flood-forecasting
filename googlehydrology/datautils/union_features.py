@@ -99,7 +99,7 @@ def union_features(
 
     Returns
     -------
-    Dataset of all features from the original dataset where the features that are keys in `union_feature_mapping'
+    Dataset of all features from the original dataset where the features that are keys in `union_feature_mapping`
         are masked by the features in their respective dictionary values.
 
     Raises

@@ -1,7 +1,7 @@
-run
-=======
+googlehydrology.run module
+==========================
 
 .. automodule:: googlehydrology.run
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

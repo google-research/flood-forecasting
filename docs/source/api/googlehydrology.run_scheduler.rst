@@ -1,7 +1,7 @@
-run\_scheduler
-==================
+googlehydrology.run\_scheduler module
+=====================================
 
 .. automodule:: googlehydrology.run_scheduler
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

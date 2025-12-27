@@ -1,7 +1,7 @@
-samplingutils
-=============
+googlehydrology.utils.samplingutils module
+==========================================
 
 .. automodule:: googlehydrology.utils.samplingutils
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

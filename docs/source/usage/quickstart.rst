@@ -1,37 +1,32 @@
 Quick Start
-============
+===========
 
 Prerequisites
 -------------
-As a first step you need a Python environment with all required dependencies. The recommended way is to use Mini-/Anaconda
-and to create a new environment using one of our predefined environment files in `environments/ <https://github.com/google-research/flood-forecasting/tree/master/environments>`__.
-Make sure to select the correct file, depending on your system.
+As a first step you need a Python environment with all required dependencies.
+The recommended way is to use Mini-/Anaconda and to create a new environment using the predefined environment file in environments/ <https://github.com/google-research/flood-forecasting/tree/master/environments>__.
 
-If you don't have a CUDA-capable GPU, or if you want to train on MacOS with Metal support, use:
+.. code-block:: bash
 
-.. code-block::
+    conda env create -f environments/conda.yml
+    conda activate googlehydrology
 
-    conda env create -f environments/environment_cpu.yml
-
-If you do have a CUDA-capable GPU, use ``environment_cuda11_8.yml``, depending on your hardware.
-
-If you prefer to not use Mini-/Anaconda, make sure you have a Python environment with Python >= 3.10 with all packages installed that are listed in 
-these environment files. 
-The next steps should be executed from within this Python environment.
+If you prefer to not use Mini-/Anaconda, make sure you have a Python environment with Python >= 3.12 with all packages installed that are listed in `rtd_requirements.txt`. The next steps should be executed from within this Python environment.
 
 Installation
 ------------
-There are two ways how you can install GoogleHydrology: Editable or non-editable.
-If all you want to do is run experiments with existing datasets and existing models, you can use the non-editable
-installation. To install the latest release from PyPI:
+There are two ways to install GoogleHydrology: Editable or non-editable.
 
-.. code-block::
+If you do not expect to edit the code or add your own models or datasets, you can use the non-editable installation.
+To install the latest release from PyPI:
+
+.. code-block:: bash
 
     pip install googlehydrology
 
 To install the package directly from the current master branch of this repository, including any changes that are not yet part of a release, run:
 
-.. code-block::
+.. code-block:: bash
 
     pip install git+https://github.com/google-research/flood-forecasting.git
 
@@ -39,70 +34,103 @@ If you want to try implementing your own models or datasets, you'll need an edit
 For this, start by downloading or cloning the repository to your local machine.
 If you use git, you can run:
 
-.. code-block::
+.. code-block:: bash
 
     git clone https://github.com/google-research/flood-forecasting.git
 
-If you don't know git, you can also download the code from `here <https://github.com/google-research/flood-forecasting/zipball/master>`__ and extract the zip-file.
-
-After you cloned or downloaded the zip-file, you'll end up with a directory called "googlehydrology" (or "googlehydrology-master").
+If you don't know git, you can also download the code from `here <https://github.com/google-research/flood-forecasting/zipball/master>` and extract the zip-file.
+After you cloned or downloaded the zip-file, you'll end up with a directory called "flood-forecasting". The source code for the model and all training and inference pipelines is in the `~/flood-forecasting/googlehydrology` subdirectory.
 Next, we'll go to that directory and install a local, editable copy of the package:
 
-.. code-block::
+.. code-block:: bash
 
     cd googlehydrology
     pip install -e .
 
-The installation procedure (both the editable and the non-editable version) adds the package to your Python environment and installs three bash scripts:
-`run`, `schedule-runs` and `results-ensemble`. For details, see below.
+The installation procedure (both the editable and the non-editable version) adds the package to your Python environment and installs three bash scripts: `run`, `schedule-runs` and `results-ensemble`.
 
 Data
 ----
-Training and evaluating models requires a dataset.
-If you're unsure where to start, a common dataset is CAMELS US, available at
-`CAMELS US (NCAR) <https://ral.ucar.edu/solutions/products/camels>`_.
-This dataset is used in all of our tutorials and we have a `dedicated tutorial <../tutorials/data-prerequisites.nblink>`_ with download instructions that you might want to look at.
-
+The model is configured to run with the Caravan dataset and the MultiMet extension. The original Caravan dataset provides static attributes and streamflow data, and the MultiMet dataset provides meteorological forcing data with forecast lead times. 
+The MultiMet dataset does NOT need to be downloaded -- it can be read directly
+from a Google Cloud Storage bucket here: gs://caravan-multimet/v1.1. 
+The Caravan dataset must be downloaded to your local machine. It can be downloaded from the Zenodo repository here: https://zenodo.org/records/15529786.
 
 Training a model
 ----------------
-To train a model, prepare a configuration file, then run::
+To train a model, first prepare a configuration file. An example configuration file is provided in the tutorial directory.
+Once you have a configuration file, run the training pipeline:
+
+.. code-block:: bash
 
     run train --config-file /path/to/config.yml
 
-If you want to train multiple models, you can make use of the ``schedule-runs`` command.
-Place all configs in a folder, then run::
+You can optionally specify a GPU to use (overriding the config file):
 
-    schedule-runs train --directory /path/to/config_dir/ --runs-per-gpu X --gpu-ids Y
+.. code-block:: bash
 
-With X, you can specify how many models should be trained on parallel on a single GPU.
-With Y, you can specify which GPUs to use for training (use the id as specified in ``nvidia-smi``).
+    run train --config-file /path/to/config.yml --gpu 0
 
+Continuing Training
+-------------------
+To resume a run that was interrupted or to continue training a model for more epochs:
+
+.. code-block:: bash
+
+    run continue_training --run-dir /path/to/run_dir/
+
+Fine-tuning
+-----------
+To fine-tune a pre-trained model on a new dataset or with different settings:
+
+.. code-block:: bash
+
+    run finetune --config-file /path/to/finetune_config.yml
+
+Note that the ``finetune_config.yml`` must contain the ``base_run_dir`` argument pointing to the pre-trained model and ``finetune_modules`` specifying which parts of the model to update. An example finetuning configuration file is provided in the tutorial directory.
 
 Evaluating a model
 ------------------
-To evaluate a trained model on the test set, run::
+To evaluate a trained model on the test set (calculating metrics and optionally saving results):
+
+.. code-block:: bash
 
     run evaluate --run-dir /path/to/run_dir/
 
-If the optional argument ``--epoch N`` (where N is the epoch to evaluate) is not specified,
-the weights of the last epoch are used.
+If the optional argument ``--epoch N`` (where N is the epoch to evaluate) is not specified, the weights of the last epoch are used.
 
-To evaluate all runs in a specific directory you can, similarly to training, run::
+Inference Mode
+--------------
+To run the model in inference mode (generating predictions without skipping NaN observations and saving all model outputs):
+
+.. code-block:: bash
+
+    run infer --run-dir /path/to/run_dir/
+
+Scheduling Multiple Runs
+------------------------
+If you want to train multiple models, you can make use of the ``schedule-runs`` command.
+Place all configs in a folder, then run:
+
+.. code-block:: bash
+
+    schedule-runs train --directory /path/to/config_dir/ --runs-per-gpu X --gpu-ids Y Z
+
+* ``X``: How many models should be trained in parallel on a single GPU.
+* ``Y Z``: Space-separated list of GPU IDs to use (e.g., ``0 1``).
+
+To evaluate all runs in a specific directory:
+
+.. code-block:: bash
 
     schedule-runs evaluate --directory /path/to/config_dir/ --runs-per-gpu X --gpu-ids Y
 
+Ensemble Results
+----------------
+To merge the predictions of a number of runs (stored in ``$DIR1``, ...) into one averaged ensemble, use the ``results-ensemble`` script:
 
-To merge the predictons of a number of runs (stored in ``$DIR1``, ...) into one averaged ensemble,
-use the ``results-ensemble`` script::
+.. code-block:: bash
 
     results-ensemble --run-dirs $DIR1 $DIR2 ... --output-dir /path/to/output/directory --metrics NSE MSE ...
 
-``--metrics`` specifies which metrics will be calculated for the averaged predictions.
-
-Running evaluate in inference mode; run::
-
-    run infer --run-dir /path/to/run_dir
-
-This mode runs evaluation but without saving extra data such as observed data nor models' outputs
-nor skipping all-nan observed data dates.
+``--metrics`` specifies which metrics will be calculated for the averaged predictions. A full list of metrics is in `~/flood-forecasting/googlehydrology/evaluation/metrics.py`.
