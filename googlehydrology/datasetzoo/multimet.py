@@ -105,16 +105,8 @@ class Multimet(Dataset):
         self._static_features = cfg.static_attributes
         self._target_features = cfg.target_variables
         self._forecast_features = []
-        if cfg.forecast_inputs:
-            self._forecast_features = flatten_feature_list(cfg.forecast_inputs)
-        if cfg.hindcast_inputs:
-            self._hindcast_features = flatten_feature_list(cfg.hindcast_inputs)
-        elif cfg.dynamic_inputs:
-            self._hindcast_features = flatten_feature_list(cfg.dynamic_inputs)
-        else:
-            raise ValueError(
-                'Either `hindcast_inputs` or `dynamic_inputs` must be supplied.'
-            )
+        self._forecast_features = flatten_feature_list(cfg.forecast_inputs)
+        self._hindcast_features = flatten_feature_list(cfg.hindcast_inputs)
         self._union_mapping = cfg.union_mapping
 
         # Feature data paths by type. This allows the option to load some data from cloud and some locally.
@@ -156,12 +148,6 @@ class Multimet(Dataset):
                 raise ValueError(
                     'Scaler must be loaded (not computed) for validation, test, and finetuning.'
                 )
-
-        # TODO (future) :: Fix this broken functionality.
-        if cfg.use_basin_id_encoding:
-            raise ValueError(
-                'Forecast datasets do not currently support one-hot-encoding.'
-            )
 
         # TODO (future) :: Consolidate the basin list loading somewhere instead of in two different places.
         self._basins = [basin]

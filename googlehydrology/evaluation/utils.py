@@ -21,29 +21,7 @@ from typing import Iterable
 
 import numpy as np
 import pandas as pd
-from ruamel.yaml import YAML
 from torch.utils.data import SequentialSampler, BatchSampler
-
-
-def load_basin_id_encoding(run_dir: Path) -> dict[str, int]:
-    id_to_int_file = run_dir / 'train_data' / 'id_to_int.yml'
-    if id_to_int_file.is_file():
-        with id_to_int_file.open('r') as fp:
-            yaml = YAML(typ='safe')
-            id_to_int = yaml.load(fp)
-        return id_to_int
-
-    else:
-        id_to_int_file = run_dir / 'train_data' / 'id_to_int.p'
-        if id_to_int_file.is_file():
-            with id_to_int_file.open('rb') as fp:
-                id_to_int = pickle.load(fp)
-            return id_to_int
-        else:
-            raise FileNotFoundError(
-                f'No id-to-int file found in {id_to_int_file.parent}. '
-                'Looked for (new) yaml file or (old) pickle file'
-            )
 
 
 def metrics_to_dataframe(
