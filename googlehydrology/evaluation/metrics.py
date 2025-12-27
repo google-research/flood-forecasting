@@ -14,10 +14,9 @@
 
 import logging
 
-
 import numpy as np
 import pandas as pd
-from scipy import stats, signal
+from scipy import signal, stats
 from xarray.core.dataarray import DataArray
 
 from googlehydrology.datautils import utils

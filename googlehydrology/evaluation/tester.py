@@ -14,12 +14,10 @@
 
 import itertools
 import logging
-import pickle
 import random
 import re
 import shutil
 import sys
-from collections import defaultdict
 from pathlib import Path
 from typing import Iterator
 
@@ -27,11 +25,9 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.cuda
-from torch.utils.data import Dataset
-import torch.cuda
-from torch.amp import autocast
 import xarray
-from torch.utils.data import DataLoader
+from torch.amp import autocast
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from googlehydrology.datasetzoo import get_dataset
@@ -46,17 +42,16 @@ from googlehydrology.evaluation.metrics import (
     get_available_metrics,
 )
 from googlehydrology.evaluation.utils import (
-    load_basin_id_encoding,
-    metrics_to_dataframe,
     BasinBatchSampler,
     get_samples_indexes,
+    metrics_to_dataframe,
 )
 from googlehydrology.modelzoo import get_model
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.training import get_loss_obj, get_regularization_obj
 from googlehydrology.training.logger import Logger, do_log_figures
 from googlehydrology.utils.config import Config, TesterSamplesReduction
-from googlehydrology.utils.errors import AllNaNError, NoEvaluationDataError
+from googlehydrology.utils.errors import AllNaNError
 
 LOGGER = logging.getLogger(__name__)
 

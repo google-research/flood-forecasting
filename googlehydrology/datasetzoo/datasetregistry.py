@@ -94,13 +94,13 @@ class DatasetRegistry:
             If no dataset class is implemented for the dataset specified in the configuration.
         """
         dataset_key = cfg.dataset.lower()
-        Dataset = self.__dataset_class.get(dataset_key, None)
-        if Dataset is None:
+        dataset = self.__dataset_class.get(dataset_key, None)
+        if dataset is None:
             raise NotImplementedError(
                 f'No dataset class implemented for dataset {cfg.dataset}'
             )
 
-        return Dataset(
+        return dataset(
             cfg=cfg,
             is_train=is_train,
             period=period,

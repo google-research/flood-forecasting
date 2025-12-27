@@ -13,18 +13,19 @@
 # limitations under the License.
 
 import enum
-import itertools
 import logging
+import pydantic
+import pydantic.dataclasses
+import itertools
 import random
 import re
+import warnings
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 from typing import TypeVar
 
 import pandas as pd
-import pydantic
-import pydantic.dataclasses
 from ruamel.yaml import YAML
 
 T = TypeVar('T')
@@ -86,6 +87,14 @@ class Config(object):
 
     # Lists of deprecated config keys and purely informational metadata keys, needed when checking for unrecognized
     # config keys since these keys are not properties of the Config class.
+    _deprecated_keys = [
+        'static_inputs',
+        'camels_attributes',
+        'target_variable',
+        'embedding_hiddens',
+        'embedding_activation',
+        'embedding_dropout',
+    ]
     _metadata_keys = ['package_version', 'commit_hash']
 
     def __init__(self, yml_path_or_dict: Path | dict, dev_mode: bool = False):
@@ -184,7 +193,9 @@ class Config(object):
                                 )
                             temp_cfg[key] = temp_list
                         else:
-                            temp_cfg[key] = val.strftime(format='%d/%m/%Y')
+                            # Ignore None's due to e.g. using a per_basin_period_file
+                            if isinstance(val, pd.Timestamp):
+                                temp_cfg[key] = val.strftime(format='%d/%m/%Y')
                     else:
                         temp_cfg[key] = val
 
@@ -261,6 +272,7 @@ class Config(object):
             k
             for k in cfg.keys()
             if k not in property_names
+            and k not in Config._deprecated_keys
             and k not in Config._metadata_keys
         ]
         if unknown_keys:
@@ -371,6 +383,12 @@ class Config(object):
                 raise ValueError(f'Invalid logging_level: {level}')
 
     @property
+    def additional_feature_files(self) -> list[Path]:
+        return self._as_default_list(
+            self._cfg.get('additional_feature_files', None)
+        )
+
+    @property
     def allow_subsequent_nan_losses(self) -> int:
         return self._cfg.get('allow_subsequent_nan_losses', 0)
 
@@ -385,6 +403,10 @@ class Config(object):
     @property
     def batch_size(self) -> int:
         return self._get_value_verbose('batch_size')
+
+    @property
+    def cache_validation_data(self) -> bool:
+        return self._cfg.get('cache_validation_data', True)
 
     @property
     def checkpoint_path(self) -> Path:
@@ -432,12 +454,47 @@ class Config(object):
             )
 
     @property
+    def duplicate_features(self) -> dict:
+        duplicate_features = self._cfg.get('duplicate_features', {})
+        if duplicate_features is None:
+            return {}
+        elif isinstance(duplicate_features, dict):
+            return duplicate_features
+        elif isinstance(duplicate_features, list):
+            return {feature: 1 for feature in duplicate_features}
+        elif isinstance(duplicate_features, str):
+            return {duplicate_features: 1}
+        else:
+            raise RuntimeError(
+                f"Unsupported type {type(duplicate_features)} for 'duplicate_features' argument."
+            )
+
+    @property
+    def dynamic_conceptual_inputs(self) -> list[str]:
+        return self._as_default_list(
+            self._cfg.get('dynamic_conceptual_inputs', [])
+        )
+
+    @property
     def dynamics_embedding(self) -> EmbeddingSpec | None:
         return self._get_embedding_spec(self._cfg.get('dynamics_embedding'))
 
     @property
     def epochs(self) -> int:
         return self._get_value_verbose('epochs')
+
+    @property
+    def evolving_attributes(self) -> list[str]:
+        if 'evolving_attributes' in self._cfg.keys():
+            return self._as_default_list(self._cfg['evolving_attributes'])
+        elif 'static_inputs' in self._cfg.keys():
+            warnings.warn(
+                "'static_inputs' will be deprecated. Use 'evolving_attributes' in the future",
+                FutureWarning,
+            )
+            return self._as_default_list(self._cfg['static_inputs'])
+        else:
+            return []
 
     @property
     def experiment_name(self) -> str:
@@ -468,7 +525,7 @@ class Config(object):
 
     @property
     def forecast_inputs(self) -> list[str]:
-        return self._get_value_verbose('forecast_inputs')
+        return self._cfg.get('forecast_inputs', [])
 
     @property
     def forecast_inputs_flattened(self) -> list[str]:
@@ -485,6 +542,10 @@ class Config(object):
     @property
     def dynamics_data_dir(self) -> Path:
         return self._get_value_verbose('dynamics_data_dir')
+
+    @property
+    def forcings(self) -> list[str]:
+        return self._as_default_list(self._get_value_verbose('forcings'))
 
     @property
     def save_git_diff(self) -> bool:
@@ -504,7 +565,7 @@ class Config(object):
 
     @property
     def hindcast_inputs(self) -> list[str]:
-        return self._get_value_verbose('hindcast_inputs')
+        return self._cfg.get('hindcast_inputs', [])
 
     @property
     def hindcast_inputs_flattened(self) -> list[str]:
@@ -521,6 +582,10 @@ class Config(object):
     @property
     def hindcast_hidden_size(self) -> int | dict[str, int]:
         return self._cfg.get('hindcast_hidden_size', self.hidden_size)
+
+    @property
+    def hydroatlas_attributes(self) -> list[str]:
+        return self._as_default_list(self._cfg.get('hydroatlas_attributes', []))
 
     @property
     def img_log_dir(self) -> Path:
@@ -562,6 +627,10 @@ class Config(object):
     @is_finetuning.setter
     def is_finetuning(self, flag: bool):
         self._cfg['is_finetuning'] = flag
+
+    @property
+    def lagged_features(self) -> dict:
+        return self._as_default_dict(self._cfg.get('lagged_features', {}))
 
     @property
     def lead_time(self) -> int:
@@ -648,6 +717,14 @@ class Config(object):
         return method
 
     @property
+    def nan_sequence_probability(self) -> float:
+        return self._cfg.get('nan_sequence_probability', 0.0)
+
+    @property
+    def nan_step_probability(self) -> float:
+        return self._cfg.get('nan_step_probability', 0.0)
+
+    @property
     def nan_handling_pos_encoding_size(self) -> int:
         return self._cfg.get('nan_handling_pos_encoding_size', 0)
 
@@ -688,6 +765,18 @@ class Config(object):
         return self._cfg.get('output_dropout', 0.0)
 
     @property
+    def per_basin_test_periods_file(self) -> Path:
+        return self._cfg.get('per_basin_test_periods_file', None)
+
+    @property
+    def per_basin_train_periods_file(self) -> Path:
+        return self._cfg.get('per_basin_train_periods_file', None)
+
+    @property
+    def per_basin_validation_periods_file(self) -> Path:
+        return self._cfg.get('per_basin_validation_periods_file', None)
+
+    @property
     def use_swap_memory(self) -> bool | None:
         return self._cfg.get('use_swap_memory', None)
 
@@ -702,6 +791,16 @@ class Config(object):
         return self._get_value_verbose('predict_last_n')
 
     @property
+    def random_holdout_from_dynamic_features(self) -> dict[str, float]:
+        return self._as_default_dict(
+            self._cfg.get('random_holdout_from_dynamic_features', {})
+        )
+
+    @property
+    def rating_curve_file(self) -> Path:
+        return self._get_value_verbose('rating_curve_file')
+
+    @property
     def regularization(self) -> list[str | tuple[str, float]]:
         return self._as_default_list(self._cfg.get('regularization', []))
 
@@ -712,6 +811,10 @@ class Config(object):
     @run_dir.setter
     def run_dir(self, folder: Path):
         self._cfg['run_dir'] = folder
+
+    @property
+    def save_train_data(self) -> bool:
+        return self._cfg.get('save_train_data', False)
 
     @property
     def save_all_output(self) -> bool:
@@ -752,7 +855,16 @@ class Config(object):
 
     @property
     def static_attributes(self) -> list[str]:
-        return self._as_default_list(self._cfg['static_attributes'])
+        if 'static_attributes' in self._cfg.keys():
+            return self._as_default_list(self._cfg['static_attributes'])
+        elif 'camels_attributes' in self._cfg.keys():
+            warnings.warn(
+                "'camels_attributes' will be deprecated. Use 'static_attributes' in the future",
+                FutureWarning,
+            )
+            return self._as_default_list(self._cfg['camels_attributes'])
+        else:
+            return []
 
     @property
     def statics_embedding(self) -> EmbeddingSpec | None:
@@ -781,7 +893,18 @@ class Config(object):
 
     @property
     def target_variables(self) -> list[str]:
-        return self._cfg['target_variables']
+        if 'target_variables' in self._cfg.keys():
+            return self._cfg['target_variables']
+        elif 'target_variable' in self._cfg.keys():
+            warnings.warn(
+                "'target_variable' will be deprecated. Use 'target_variables' in the future",
+                FutureWarning,
+            )
+            return self._cfg['target_variable']
+        else:
+            raise ValueError(
+                "No target variables ('target_variables') defined in the config."
+            )
 
     @property
     def union_mapping(self) -> dict[str, str] | None:
@@ -806,6 +929,10 @@ class Config(object):
     @property
     def train_basin_file(self) -> Path:
         return self._get_value_verbose('train_basin_file')
+
+    @property
+    def train_data_file(self) -> Path:
+        return self._cfg.get('train_data_file', None)
 
     @property
     def train_dir(self) -> Path:

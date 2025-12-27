@@ -14,7 +14,7 @@
 
 import os
 from pathlib import Path
-from typing import Iterator, Hashable
+from typing import Hashable, Iterator
 
 import dask
 import dask.array
