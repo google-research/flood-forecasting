@@ -311,26 +311,6 @@ class Config(object):
             else:
                 pass
 
-        # Check autoregressive inputs.
-        if 'autoregressive_inputs' in cfg:
-            if len(cfg['autoregressive_inputs']) > 1:
-                raise ValueError(
-                    'Currently only one autoregressive input is supported.'
-                )
-            if (
-                cfg['autoregressive_inputs']
-                and len(cfg['target_variables']) > 1
-            ):
-                raise ValueError(
-                    'Autoregressive models currently only support a single target variable.'
-                )
-            if not cfg['autoregressive_inputs'][0].startswith(
-                cfg['target_variables'][0]
-            ):
-                raise ValueError(
-                    'Autoregressive input must be a lagged version of the target variable.'
-                )
-
         # Allow separate data directories to be defined for different types of data.
         if 'data_dir' in cfg and 'statics_data_dir' not in cfg:
             cfg['statics_data_dir'] = cfg['data_dir']
@@ -413,10 +393,6 @@ class Config(object):
         return self._cfg.get('allow_subsequent_nan_losses', 0)
 
     @property
-    def autoregressive_inputs(self) -> list[str] | dict[str, list[str]]:
-        return self._as_default_list(self._cfg.get('autoregressive_inputs', []))
-
-    @property
     def base_run_dir(self) -> Path:
         return self._get_value_verbose('base_run_dir')
 
@@ -427,10 +403,6 @@ class Config(object):
     @property
     def batch_size(self) -> int:
         return self._get_value_verbose('batch_size')
-
-    @property
-    def bidirectional_stacked_forecast_lstm(self) -> bool:
-        return self._cfg.get('bidirectional_stacked_forecast_lstm', False)
 
     @property
     def cache_validation_data(self) -> bool:
@@ -504,10 +476,6 @@ class Config(object):
         )
 
     @property
-    def warmup_period(self) -> int:
-        return self._cfg.get('warmup_period', 0)
-
-    @property
     def dynamics_embedding(self) -> EmbeddingSpec | None:
         return self._get_embedding_spec(self._cfg.get('dynamics_embedding'))
 
@@ -552,10 +520,6 @@ class Config(object):
             )
 
     @property
-    def forecast_network(self) -> EmbeddingSpec | None:
-        return self._get_embedding_spec(self._cfg.get('forecast_network'))
-
-    @property
     def forecast_hidden_size(self) -> int:
         return self._cfg.get('forecast_hidden_size', self.hidden_size)
 
@@ -576,10 +540,6 @@ class Config(object):
         return self._cfg.get('forecast_overlap', None)
 
     @property
-    def forecast_seq_length(self) -> int:
-        return self._cfg.get('forecast_seq_length', None)
-
-    @property
     def dynamics_data_dir(self) -> Path:
         return self._get_value_verbose('dynamics_data_dir')
 
@@ -597,10 +557,7 @@ class Config(object):
 
     @property
     def head(self) -> str:
-        if self.model == 'mclstm':
-            return ''
-        else:
-            return self._get_value_verbose('head')
+        return self._get_value_verbose('head')
 
     @property
     def cmal_deterministic(self) -> bool:
@@ -725,22 +682,6 @@ class Config(object):
         self._cfg['loss'] = loss
 
     @property
-    def mamba_d_conv(self) -> int:
-        return self._cfg.get('d_conv', 4)
-
-    @property
-    def mamba_d_state(self) -> int:
-        return self._cfg.get('d_state', 16)
-
-    @property
-    def mamba_expand(self) -> int:
-        return self._cfg.get('expand', 2)
-
-    @property
-    def mass_inputs(self) -> list[str]:
-        return self._as_default_list(self._cfg.get('mass_inputs', []))
-
-    @property
     def max_updates_per_epoch(self) -> int:
         return max(0, self._cfg.get('max_updates_per_epoch', 0))
 
@@ -759,10 +700,6 @@ class Config(object):
     @property
     def model(self) -> str:
         return self._get_value_verbose('model')
-
-    @property
-    def conceptual_model(self) -> str:
-        return self._cfg.get('conceptual_model', 'SHM')
 
     @property
     def n_distributions(self) -> int:
@@ -814,18 +751,6 @@ class Config(object):
     @number_of_basins.setter
     def number_of_basins(self, num_basins: int):
         self._cfg['number_of_basins'] = num_basins
-
-    @property
-    def ode_method(self) -> str:
-        return self._cfg.get('ode_method', 'euler')
-
-    @property
-    def ode_num_unfolds(self) -> int:
-        return self._cfg.get('ode_num_unfolds', 4)
-
-    @property
-    def ode_random_freq_lower_bound(self) -> str:
-        return self._get_value_verbose('ode_random_freq_lower_bound')
 
     @property
     def optimizer(self) -> str:
@@ -911,30 +836,6 @@ class Config(object):
     def targets_data_dir(self) -> Path:
         return self._get_value_verbose('targets_data_dir')
 
-    @property
-    def transformer_nlayers(self) -> int:
-        return self._get_value_verbose('transformer_nlayers')
-
-    @property
-    def transformer_positional_encoding_type(self) -> str:
-        return self._get_value_verbose('transformer_positional_encoding_type')
-
-    @property
-    def transformer_dim_feedforward(self) -> int:
-        return self._get_value_verbose('transformer_dim_feedforward')
-
-    @property
-    def transformer_positional_dropout(self) -> float:
-        return self._get_value_verbose('transformer_positional_dropout')
-
-    @property
-    def transformer_dropout(self) -> float:
-        return self._get_value_verbose('transformer_dropout')
-
-    @property
-    def transformer_nheads(self) -> int:
-        return self._get_value_verbose('transformer_nheads')
-
     @seed.setter
     def seed(self, seed: int):
         if self._cfg.get('seed', None) is None:
@@ -947,10 +848,6 @@ class Config(object):
     @property
     def seq_length(self) -> int | dict[str, int]:
         return self._get_value_verbose('seq_length')
-
-    @property
-    def shared_mtslstm(self) -> bool:
-        return self._cfg.get('shared_mtslstm', False)
 
     @property
     def static_attributes(self) -> list[str]:
@@ -1049,12 +946,6 @@ class Config(object):
     def train_start_date(self) -> list[pd.Timestamp]:
         return self._as_default_list(
             self._get_value_verbose('train_start_date')
-        )
-
-    @property
-    def transfer_mtslstm_states(self) -> dict[str, str]:
-        return self._cfg.get(
-            'transfer_mtslstm_states', {'h': 'linear', 'c': 'linear'}
         )
 
     @property

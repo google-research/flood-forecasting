@@ -119,17 +119,11 @@ class InputLayer(nn.Module):
                     len(group) for group in self._dynamic_inputs
                 ]
 
-        self._num_autoregression_inputs = 0
-        if cfg.autoregressive_inputs:
-            self._num_autoregression_inputs = len(cfg.autoregressive_inputs)
-
         statics_input_size = len(
             cfg.static_attributes
             + cfg.hydroatlas_attributes
             + cfg.evolving_attributes
         )
-        if cfg.use_basin_id_encoding:
-            statics_input_size += cfg.number_of_basins
 
         xavier_init = WeightInitOpt.FC_XAVIER in cfg.weight_init_opts
 
@@ -206,7 +200,6 @@ class InputLayer(nn.Module):
         self.output_size = (
             self.dynamics_output_size
             + self.statics_output_size
-            + self._num_autoregression_inputs
         )
         self.cfg = cfg
 
@@ -333,18 +326,6 @@ class InputLayer(nn.Module):
                 ret_val = torch.cat([dynamics_out, statics_out], dim=-1)
             else:
                 ret_val = dynamics_out
-
-            # Append autoregressive inputs to the end of the output.
-            # Don't run autoregressive inputs through the embedding layer. This does not work with NaN's.
-            if self._num_autoregression_inputs:
-                x_autoregressive = torch.cat(
-                    [
-                        data[self._x_d_key][k]
-                        for k in self.cfg.autoregressive_inputs
-                    ],
-                    dim=-1,
-                ).transpose(0, 1)
-                ret_val = torch.cat([ret_val, x_autoregressive], dim=-1)
 
         return ret_val
 
