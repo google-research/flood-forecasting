@@ -7,7 +7,7 @@
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
+# distributed under the License is distributed on an AS IS BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
@@ -30,7 +30,8 @@ FC_XAVIER = WeightInitOpt.FC_XAVIER
 
 
 class MeanEmbeddingForecastLSTM(BaseModel):
-   """A forecasting model using mean embedding and LSTMs for hindcast and forecast.
+    r"""
+    A forecasting model using mean embedding and LSTMs for hindcast and forecast.
 
     This model implements a specific architecture designed to handle missing input data in hydrological 
     forecasting. It employs separate embedding networks for hindcast and forecast inputs, aggregating 
@@ -38,12 +39,14 @@ class MeanEmbeddingForecastLSTM(BaseModel):
     input features might be missing (NaN) by effectively ignoring them in the aggregation step.
 
     The model consists of two main LSTM components:
+    
     1.  **Hindcast LSTM:** Processes historical data (hindcast features) to build up a hidden state 
         representing the system's history up to the forecast issue time.
     2.  **Forecast LSTM:** Takes the final state of the Hindcast LSTM as initialization and unrolls 
         over the forecast horizon using forecast features (e.g., weather forecasts).
 
     Key features include:
+    
     -   **Static Embeddings:** Static catchment attributes are embedded and provided to all dynamic 
         embedding networks.
     -   **Dynamic Embeddings:** Hindcast and forecast features are grouped (e.g., by source or type) 
@@ -64,7 +67,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
     References
     ----------
-    .. [#] Gauch, M., et al. "How to deal w_ missing input data." Hydrology and Earth System Sciences 29.21 (2025): 6221-6235.
+    .. [#] Gauch, M., et al. "How to deal w\_ missing input data." Hydrology and Earth System Sciences 29.21 (2025): 6221-6235.
         https://hess.copernicus.org/articles/29/6221/2025/
     """
 
