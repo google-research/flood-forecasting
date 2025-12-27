@@ -12,14 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Utility script to generate config files from a base config and a defined set of variations"""
-
 import itertools
-from pathlib import Path
 
 import more_itertools
-
-from googlehydrology.utils.config import Config
 
 
 def flatten_feature_list(
