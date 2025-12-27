@@ -37,7 +37,6 @@ class Logger(object):
         self._train = True
         self.log_interval = cfg.log_interval
         self.log_dir = cfg.run_dir
-        self._img_log_dir = cfg.img_log_dir
 
         # get git commit hash if folder is a git repository
         cfg.update_config({'commit_hash': get_git_hash()})
@@ -93,40 +92,6 @@ class Logger(object):
             self.writer.flush()
             self.writer.close()
             self.writer = None
-
-    def log_figures(
-        self,
-        figures: list[mpl.figure.Figure],
-        freq: str,
-        preamble: str = '',
-        period: str = 'validation',
-        suffix: str = '',
-    ):
-        """Log matplotlib figures as to disk.
-
-        Parameters
-        ----------
-        figures : list[mpl.figure.Figure]
-            List of figures to save.
-        freq : str
-            Prediction frequency of the figures.
-        preamble : str, optional
-            Prefix to prepend to the figures' file names.
-        period : str
-            'validation' or 'test'
-        suffix : str
-            Appended to figure filenames
-        """
-        do_log_figures(
-            self.writer,
-            self._img_log_dir,
-            self.epoch,
-            figures,
-            freq,
-            preamble,
-            period,
-            suffix,
-        )
 
     def log_step(self, **kwargs):
         """Log the results of a single step within an epoch.
@@ -223,28 +188,3 @@ class Logger(object):
         self._metrics = defaultdict(list)
 
         return value
-
-
-def do_log_figures(
-    writer: SummaryWriter | None,
-    img_log_dir: Path,
-    epoch: int,
-    figures: list[mpl.figure.Figure],
-    freq: str,
-    preamble: str = '',
-    period: str = 'validation',
-    suffix: str = '',
-):
-    if writer is not None:
-        writer.add_figure(
-            f'{period}/timeseries/{freq}', figures, global_step=epoch
-        )
-
-    for figure in figures:
-        figure.savefig(
-            Path(
-                img_log_dir,
-                preamble + f'_{period}_freq{freq}_epoch{epoch}_{suffix}',
-            ),
-            dpi=300,
-        )

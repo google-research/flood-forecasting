@@ -573,6 +573,3 @@ class BaseTrainer(object):
             raise RuntimeError(
                 f'There is already a folder at {self.cfg.run_dir}'
             )
-        if self.cfg.log_n_figures is not None:
-            self.cfg.img_log_dir = self.cfg.run_dir / 'img_log'
-            self.cfg.img_log_dir.mkdir(parents=True)

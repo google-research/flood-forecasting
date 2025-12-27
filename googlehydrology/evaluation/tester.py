@@ -36,7 +36,6 @@ from googlehydrology.datautils.utils import (
     load_basin_file,
     sort_frequencies,
 )
-from googlehydrology.evaluation import plots
 from googlehydrology.evaluation.metrics import (
     calculate_metrics,
     get_available_metrics,
@@ -49,7 +48,7 @@ from googlehydrology.evaluation.utils import (
 from googlehydrology.modelzoo import get_model
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.training import get_loss_obj, get_regularization_obj
-from googlehydrology.training.logger import Logger, do_log_figures
+from googlehydrology.training.logger import Logger
 from googlehydrology.utils.config import Config, TesterSamplesReduction
 from googlehydrology.utils.errors import AllNaNError
 
@@ -250,13 +249,6 @@ class BaseTester(object):
             collate_fn=self.dataset.collate_fn,
             pin_memory=True,  # avoid 1 of 2 mem copies to gpu
         )
-
-        max_figures = min(
-            self.cfg.validate_n_random_basins,
-            self.cfg.log_n_figures,
-            len(basins),
-        )
-        basins_for_figures = random.sample(list(basins), k=max_figures)
 
         eval_data_it = self._evaluate(
             model, loader, self.dataset.frequencies, save_all_output, basins
@@ -474,11 +466,6 @@ class BaseTester(object):
                                 experiment_logger.log_step(**values)
                             results[freq].update(values)
 
-            if basin in basins_for_figures:
-                self._create_and_log_figures(
-                    basin, results, experiment_logger, epoch or -1
-                )
-
             self._save_incremental_results(
                 basin,
                 results=results,
@@ -532,46 +519,6 @@ class BaseTester(object):
             for start, end in zip(period_start, period_end):
                 if np.any((nan_date_starts <= start) & (nan_date_ends >= end)):
                     yield basin
-
-    def _create_and_log_figures(
-        self,
-        basin: str,
-        results: dict,
-        experiment_logger: Logger | None,
-        epoch: int,
-    ):
-        for target_var in self.cfg.target_variables:
-            for freq in results:
-                xr = results[freq]['xr']
-                obs = xr[f'{target_var}_obs'].values
-                sim = xr[f'{target_var}_sim'].values
-                # clip negative predictions to zero, if variable is listed in config 'clip_target_to_zero'
-                if target_var in self.cfg.clip_targets_to_zero:
-                    sim = xarray.where(sim < 0, 0, sim)
-                figures = [
-                    self._get_plots(
-                        obs,
-                        sim,
-                        title=f'{target_var} - Basin {basin} - Epoch {epoch} - Frequency {freq}',
-                    )[0],
-                ]
-                # make sure the preamble is a valid file name
-                preamble = re.sub(r'[^A-Za-z0-9\._\-]+', '', target_var)
-                if experiment_logger:
-                    experiment_logger.log_figures(
-                        figures, freq, preamble, self.period, basin
-                    )
-                else:
-                    do_log_figures(
-                        None,
-                        self.cfg.img_log_dir,
-                        epoch,
-                        figures,
-                        freq,
-                        preamble,
-                        self.period,
-                        basin,
-                    )
 
     def _ensure_no_previous_results_saved(self, epoch: int | None = None):
         parent_directory = self._parent_directory_for_results(epoch)
@@ -799,9 +746,6 @@ class BaseTester(object):
     def _create_xarray_data_vars(self, y_hat: np.ndarray, y: np.ndarray):
         raise NotImplementedError
 
-    def _get_plots(self, qobs: np.ndarray, qsim: np.ndarray, title: str):
-        raise NotImplementedError
-
 
 class RegressionTester(BaseTester):
     """Tester class to run inference on a regression model.
@@ -847,9 +791,6 @@ class RegressionTester(BaseTester):
             data[f'{var}_obs'] = (('date', 'time_step'), y[:, :, i])
             data[f'{var}_sim'] = (('date', 'time_step'), y_hat[:, :, i])
         return data
-
-    def _get_plots(self, qobs: np.ndarray, qsim: np.ndarray, title: str):
-        return plots.regression_plot(qobs, qsim, title)
 
 
 class UncertaintyTester(BaseTester):
@@ -910,9 +851,6 @@ class UncertaintyTester(BaseTester):
                 y_hat[:, :, i, :],
             )
         return data
-
-    def _get_plots(self, qobs: np.ndarray, qsim: np.ndarray, title: str):
-        return plots.uncertainty_plot(qobs, qsim, title)
 
 
 def _ensure_unicode_or_bytes_are_strings(ds: xarray.Dataset):

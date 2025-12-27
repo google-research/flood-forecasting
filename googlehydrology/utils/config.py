@@ -502,14 +502,6 @@ class Config(object):
         return self._cfg.get('hindcast_hidden_size', self.hidden_size)
 
     @property
-    def img_log_dir(self) -> Path:
-        return self._cfg.get('img_log_dir', None)
-
-    @img_log_dir.setter
-    def img_log_dir(self, folder: Path):
-        self._cfg['img_log_dir'] = folder
-
-    @property
     def initial_forget_bias(self) -> float:
         return self._cfg.get('initial_forget_bias', None)
 
@@ -569,15 +561,6 @@ class Config(object):
     @property
     def log_interval(self) -> int:
         return self._cfg.get('log_interval', 10)
-
-    @property
-    def log_n_figures(self) -> int:
-        if (self._cfg.get('log_n_figures', None) is None) or (
-            self._cfg['log_n_figures'] < 1
-        ):
-            return 0
-        else:
-            return self._cfg['log_n_figures']
 
     @property
     def log_tensorboard(self) -> bool:
