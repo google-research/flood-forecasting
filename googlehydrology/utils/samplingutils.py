@@ -221,11 +221,6 @@ class _SamplingSetup:
                 implied_statics_embedding,
                 implied_dynamics_embedding,
             ]
-        # account for transformer
-        implied_transformer_dropout = None
-        if cfg.model.lower() == 'transfomer':
-            implied_transformer_dropout = cfg.transformer_dropout
-            dropout_modules.append(implied_transformer_dropout)
 
         max_implied_dropout = max(dropout_modules)
         # check lower bound dropout:
@@ -238,8 +233,7 @@ class _SamplingSetup:
                                   - statics_forecast_embedding: {implied_forecast_statics_embedding}
                                   - dynamics_forecast_embedding: {implied_forecast_dynamics_embedding}
                                   - statics_hindcast_embedding: {implied_hindcast_statics_embedding}
-                                  - dynamics_hindcast_embedding: {implied_hindcast_dynamics_embedding}
-                                  - transformer: {implied_transformer_dropout}""")
+                                  - dynamics_hindcast_embedding: {implied_hindcast_dynamics_embedding}""")
         # check upper bound dropout:
         if cfg.mc_dropout and max_implied_dropout >= 1.0:
             raise RuntimeError(f"""The maximal dropout-rate is 1. Please check your dropout-settings:
@@ -250,8 +244,7 @@ class _SamplingSetup:
                                   - statics_forecast_embedding: {implied_forecast_statics_embedding}
                                   - dynamics_forecast_embedding: {implied_forecast_dynamics_embedding}
                                   - statics_hindcast_embedding: {implied_hindcast_statics_embedding}
-                                  - dynamics_hindcast_embedding: {implied_hindcast_dynamics_embedding}
-                                  - transformer: {implied_transformer_dropout}""")
+                                  - dynamics_hindcast_embedding: {implied_hindcast_dynamics_embedding}""")
 
         # assign setup properties:
         self.cfg = cfg
