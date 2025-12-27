@@ -27,6 +27,8 @@ FC_XAVIER = WeightInitOpt.FC_XAVIER
 
 
 class HandoffForecastLSTM(BaseModel):
+# ... existing code ...
+class HandoffForecastLSTM(BaseModel):
     """An encoder/decoder LSTM model class used for forecasting.
 
     This is a forecasting model that uses a state-handoff to transition from a hindcast sequence (LSTM)
@@ -56,8 +58,13 @@ class HandoffForecastLSTM(BaseModel):
     ----------
     cfg : Config
         The run configuration.
-    """
 
+    References
+    ----------
+    .. [#] Nearing, G., Cohen, D., Dube, V., Gauch, M., Gilon, O., Harrigan, S., ... & Matias, Y. (2024).
+       Global prediction of extreme floods in ungauged watersheds. Nature, 627(8004), 559-563.
+       https://www.nature.com/articles/s41586-024-07145-1
+    """
     # Specify submodules of the model that can later be used for finetuning. Names must match class attributes.
     module_parts = [
         'hindcast_embedding_net',
