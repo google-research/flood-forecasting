@@ -75,7 +75,6 @@ def setup_logging(log_file: str, level: int, print_warnings_once: bool):
 
     # Suppress DEBUG-level logging from these modules:
     logging.getLogger('filelock').setLevel(logging.INFO)
-    logging.getLogger('matplotlib.font_manager').setLevel(logging.INFO)
     logging.getLogger('fsspec').setLevel(logging.INFO)
 
 
