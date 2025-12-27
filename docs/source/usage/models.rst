@@ -31,11 +31,17 @@ model to a forecast sequence (LSTM) model. The hindcast model is run from the pa
 a (nonlinear) handoff network, which is then used to initialize the cell state and hidden state of a
 new LSTM that rolls out over the forecast period.
 
+This is a former produciton model that was previously used for the `Google FloodHub <https://sites.research.google/floods/>`__. 
+It is described in detail in [Nearing2024]_.
+
 Mean-Embedding-Forecast-LSTM
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 :py:class:`googlehydrology.modelzoo.mean_embedding_forecast_lstm.MeanEmbeddingForecastLSTM` is a forecasting
 model that uses separate embedding networks for hindcast and forecast inputs. It aggregates these inputs
 using masked means before passing them into respective LSTMs for the hindcast and forecast periods.
+
+This is the current production model, as of December 2025, for the `Google FloodHub <https://sites.research.google/floods/>`__. 
+It is described in detail in [Gauch2025]_.
 
 Implementing a new model
 ^^^^^^^^^^^^^^^^^^^^^^^^
@@ -115,3 +121,10 @@ The listing below shows the skeleton of a template model you can use to start im
             output = torch.zeros(batch_size, seq_len, self.output_size)
 
             return {'y_hat': output}
+
+References
+^^^^^^^^^^
+
+.. [Nearing2024] Nearing, Grey, et al. "Global prediction of extreme floods in ungauged watersheds <https://www.nature.com/articles/s41586-024-07145-1>_." Nature (2024).
+
+.. [Gauch2025] Gauch, Martin, et al. "How to deal with missing input data <https://hess.copernicus.org/articles/29/6221/2025/>_." Hydrology and Earth System Sciences (2025).

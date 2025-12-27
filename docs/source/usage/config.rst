@@ -27,10 +27,10 @@ General experiment configurations
 Validation settings
 -------------------
 
--  ``validate_every``: Interval (in epochs) at which validation is performed.
+-  ``validate_every``: Integer that specifies in which interval a validation is performed. If empty, no validation is done during training.
 -  ``validate_n_random_basins``: Integer specifying how many random basins to use per validation.
 -  ``metrics``: List of metrics to calculate. See :py:mod:`googlehydrology.evaluation.metrics`. Can also be a dictionary mapping target variables to lists of metrics.
--  ``save_validation_results``: True/False. If True, stores validation results to disk as a pickle file.
+-  ``save_validation_results``: True/False. If True, stores validation results to disk in a Zarr store.
 
 Evaluation settings
 -------------------
@@ -41,13 +41,13 @@ Evaluation settings
 General model configuration
 ---------------------------
 
--  ``model``: Defines the model class (e.g., ``cudalstm``, ``handoff_forecast_lstm``, ``mean_embedding_forecast_lstm``).
+-  ``model``: Defines the model class (``handoff_forecast_lstm``, ``mean_embedding_forecast_lstm``).
 -  ``head``: The prediction head (``regression``, ``cmal``, ``cmal_deterministic``).
 -  ``hidden_size``: Hidden size of the model (number of LSTM states).
--  ``initial_forget_bias``: Initial value of the forget gate bias.
+-  ``initial_forget_bias``: Initial value of the forget gate bias. A larger value (like 3) helps the model learn long-timescale dependencies.
 -  ``output_dropout``: Dropout applied to the output of the LSTM.
 -  ``weight_init_opts``: List of weight initialization options (e.g., ``lstm-ih-xavier``, ``fc-xavier``).
--  ``compile``: True/False. Whether to compile the model using ``torch.compile``.
+-  ``compile``: True/False. Whether to compile the model using ``torch.compile``. This 
 
 Regression head
 ~~~~~~~~~~~~~~~
@@ -59,7 +59,7 @@ CMAL head
 -  ``n_distributions``: Number of distributions for the CMAL head.
 -  ``n_samples``: Number of samples generated per time-step.
 -  ``cmal_deterministic``: True/False. Use deterministic 10-point sampling (mean + 9 quantiles) for CMAL.
--  ``negative_sample_handling``: ``clip``, ``truncate``, or ``none``.
+-  ``negative_sample_handling``: Approach for handling negative sampling. Possible values are `none` for doing nothing, `clip` for clipping the values at zero, and `truncate` for resampling values that were drawn below zero. If the last option is chosen, the additional argument `negative_sample_max_retries` controls how often the values are resampled.
 -  ``negative_sample_max_retries``: Max retries for ``truncate`` sampling.
 
 Forecast Model settings
@@ -73,9 +73,9 @@ Embedding network settings
 --------------------------
 Used for static/dynamic inputs or specific model components like ``state_handoff_network``. Defined as a dictionary:
 
--  ``type``: ``fc`` (fully connected).
--  ``hiddens``: List of integers defining layer sizes.
--  ``activation``: Activation function (``tanh``, ``sigmoid``, ``linear``, ``relu``).
+-  ``type``: (default ``fc``): Type of the embedding net. Currently, only ``fc`` for fully-connected net is supported.
+-  ``hiddens``: List of integers that define the number of neurons per layer in the fully connected network. The last number is the number of output neurons. Must have at least length one.
+-  ``activation``: activation function of the network. Supported values are: ``tanh``, ``sigmoid``, ``linear``, and ``relu``.
 -  ``dropout``: Dropout rate.
 
 Available keys for embeddings: ``statics_embedding``, ``dynamics_embedding``, ``hindcast_embedding``, ``forecast_embedding``.
@@ -85,8 +85,8 @@ Training settings
 
 -  ``optimizer``: Optimizer to use (``Adam``, ``AdamW``, ``SGD``, etc.).
 -  ``loss``: Loss function (``MSE``, ``NSE``, ``RMSE``, ``CMALLoss``).
--  ``target_loss_weights``: List of weights for multi-target training.
--  ``regularization``: List of regularization terms (e.g., ``tie_frequencies``, ``forecast_overlap``).
+-  ``target_loss_weights``: A list of float values specifying the per-target loss weight, when training on multiple targets at once. Can be combined with any loss. By default, the weight of each target is ``1/n`` with ``n`` being the number of target variables. The order of the weights corresponds to the order of the ``target_variables``.
+-  ``regularization``: List of regularization terms (currently, only ``forecast_overlap`` is supported for the ``handoff_forecast_lstm``).
 -  ``learning_rate_strategy``: ``ConstantLR``, ``StepLR``, or ``ReduceLROnPlateau``.
 -  ``initial_learning_rate``: Float. Starting learning rate.
 -  ``learning_rate_drop_factor``: Factor by which to reduce the learning rate.
