@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import enum
-import itertools
 import logging
 import random
 import re
@@ -471,14 +470,6 @@ class Config(object):
         return self._get_value_verbose('forecast_inputs')
 
     @property
-    def forecast_inputs_flattened(self) -> list[str]:
-        forecast_inputs = self.forecast_inputs
-        if forecast_inputs and isinstance(forecast_inputs[0], list):
-            return list(itertools.chain.from_iterable(forecast_inputs))
-        else:
-            return forecast_inputs
-
-    @property
     def forecast_overlap(self) -> int:
         return self._cfg.get('forecast_overlap', None)
 
@@ -501,14 +492,6 @@ class Config(object):
     @property
     def hindcast_inputs(self) -> list[str]:
         return self._get_value_verbose('hindcast_inputs')
-
-    @property
-    def hindcast_inputs_flattened(self) -> list[str]:
-        hindcast_inputs = self.hindcast_inputs
-        if hindcast_inputs and isinstance(hindcast_inputs[0], list):
-            return list(itertools.chain.from_iterable(hindcast_inputs))
-        else:
-            return hindcast_inputs
 
     @property
     def hidden_size(self) -> int | dict[str, int]:
