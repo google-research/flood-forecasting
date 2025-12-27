@@ -119,11 +119,7 @@ class InputLayer(nn.Module):
                     len(group) for group in self._dynamic_inputs
                 ]
 
-        statics_input_size = len(
-            cfg.static_attributes
-            + cfg.hydroatlas_attributes
-            + cfg.evolving_attributes
-        )
+        statics_input_size = len(cfg.static_attributes)
 
         xavier_init = WeightInitOpt.FC_XAVIER in cfg.weight_init_opts
 

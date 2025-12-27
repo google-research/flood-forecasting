@@ -14,13 +14,11 @@
 
 from typing import Callable
 
-import numpy as np
 import torch
-from torch.distributions import Categorical
 
 from googlehydrology.datautils.scaler import Scaler
-from googlehydrology.utils.config import Config
 from googlehydrology.utils import cmal_deterministic
+from googlehydrology.utils.config import Config
 
 
 def sample_pointpredictions(

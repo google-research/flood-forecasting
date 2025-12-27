@@ -14,14 +14,12 @@
 
 import itertools
 import math
-import pickle
 from collections import defaultdict
-from pathlib import Path
 from typing import Iterable
 
 import numpy as np
 import pandas as pd
-from torch.utils.data import SequentialSampler, BatchSampler
+from torch.utils.data import BatchSampler, SequentialSampler
 
 
 def metrics_to_dataframe(
