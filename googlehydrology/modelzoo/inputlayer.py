@@ -20,7 +20,7 @@ import torch.nn as nn
 
 from googlehydrology.modelzoo.fc import FC
 from googlehydrology.modelzoo.positional_encoding import PositionalEncoding
-from googlehydrology.utils.config import Config, WeightInitOpt, EmbeddingSpec
+from googlehydrology.utils.config import Config, EmbeddingSpec, WeightInitOpt
 
 LOGGER = logging.getLogger(__name__)
 
