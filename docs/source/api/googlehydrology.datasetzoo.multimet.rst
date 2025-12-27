@@ -1,7 +1,7 @@
-googlehydrology.modelzoo.inputlayer module
+googlehydrology.datasetzoo.multimet module
 ==========================================
 
-.. automodule:: googlehydrology.modelzoo.inputlayer
+.. automodule:: googlehydrology.datasetzoo.multimet
    :members:
    :show-inheritance:
    :undoc-members:

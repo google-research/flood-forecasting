@@ -1,11 +1,8 @@
-GoogleHydrology API
-===================
+googlehydrology package
+=======================
 
-.. automodule:: googlehydrology
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
+Subpackages
+-----------
 
 .. toctree::
    :maxdepth: 4
@@ -17,12 +14,19 @@ GoogleHydrology API
    googlehydrology.training
    googlehydrology.utils
 
-Main Entry Points
------------------
+Submodules
+----------
 
 .. toctree::
    :maxdepth: 4
 
    googlehydrology.run
    googlehydrology.run_scheduler
-   googlehydrology.utils.results_ensemble
+
+Module contents
+---------------
+
+.. automodule:: googlehydrology
+   :members:
+   :show-inheritance:
+   :undoc-members:

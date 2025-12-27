@@ -1,7 +1,7 @@
-metrics
-=======
+googlehydrology.evaluation.metrics module
+=========================================
 
 .. automodule:: googlehydrology.evaluation.metrics
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

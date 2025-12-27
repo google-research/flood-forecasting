@@ -1,7 +1,7 @@
-PositionalEncoding
-===================
+googlehydrology.modelzoo.positional\_encoding module
+====================================================
 
 .. automodule:: googlehydrology.modelzoo.positional_encoding
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

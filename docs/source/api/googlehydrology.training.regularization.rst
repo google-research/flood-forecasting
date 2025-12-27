@@ -1,7 +1,7 @@
-regularization
-==============
+googlehydrology.training.regularization module
+==============================================
 
 .. automodule:: googlehydrology.training.regularization
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

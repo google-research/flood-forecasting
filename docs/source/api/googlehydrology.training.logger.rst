@@ -1,7 +1,7 @@
-Logger
-======
+googlehydrology.training.logger module
+======================================
 
 .. automodule:: googlehydrology.training.logger
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

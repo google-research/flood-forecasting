@@ -1,10 +1,8 @@
-nh.training
-===========
+googlehydrology.training package
+================================
 
-.. automodule:: googlehydrology.training
-   :members:
-   :undoc-members:
-   :show-inheritance:
+Submodules
+----------
 
 .. toctree::
    :maxdepth: 4
@@ -14,3 +12,11 @@ nh.training
    googlehydrology.training.loss
    googlehydrology.training.regularization
    googlehydrology.training.train
+
+Module contents
+---------------
+
+.. automodule:: googlehydrology.training
+   :members:
+   :show-inheritance:
+   :undoc-members:

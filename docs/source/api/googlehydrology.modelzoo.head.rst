@@ -1,7 +1,7 @@
-head
-====
+googlehydrology.modelzoo.head module
+====================================
 
 .. automodule:: googlehydrology.modelzoo.head
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

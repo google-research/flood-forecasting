@@ -1,7 +1,7 @@
-FC
-==
+googlehydrology.modelzoo.fc module
+==================================
 
 .. automodule:: googlehydrology.modelzoo.fc
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

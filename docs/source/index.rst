@@ -24,5 +24,4 @@ You might also be interested in our `Research Blog <https://googlehydrology.gith
    usage/models
    tutorials/index
    usage/config
-   api/googlehydrology
-   contributing
+   api/modules

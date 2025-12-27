@@ -1,7 +1,7 @@
-BaseModel
-=========
+googlehydrology.modelzoo.basemodel module
+=========================================
 
 .. automodule:: googlehydrology.modelzoo.basemodel
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

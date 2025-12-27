@@ -1,7 +1,7 @@
-googlehydrology.evaluation.tester module
+googlehydrology.utils.lstm\_utils module
 ========================================
 
-.. automodule:: googlehydrology.evaluation.tester
+.. automodule:: googlehydrology.utils.lstm_utils
    :members:
    :show-inheritance:
    :undoc-members:

@@ -1,7 +1,7 @@
-googlehydrology.evaluation.plots module
+googlehydrology.evaluation.utils module
 =======================================
 
-.. automodule:: googlehydrology.evaluation.plots
+.. automodule:: googlehydrology.evaluation.utils
    :members:
    :show-inheritance:
    :undoc-members:
