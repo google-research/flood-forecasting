@@ -559,10 +559,6 @@ class Config(object):
         return self._get_value_verbose('head')
 
     @property
-    def cmal_deterministic(self) -> bool:
-        return self._cfg.get('cmal_deterministic', False)
-
-    @property
     def hindcast_inputs(self) -> list[str]:
         return self._cfg.get('hindcast_inputs', [])
 
