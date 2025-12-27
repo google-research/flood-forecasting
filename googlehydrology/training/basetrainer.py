@@ -21,10 +21,9 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset
 import torch.optim.lr_scheduler
 from torch.amp import GradScaler, autocast
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 import googlehydrology.training.loss as loss

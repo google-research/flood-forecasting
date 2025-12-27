@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import logging
-import itertools
 
 import pandas as pd
 import xarray as xr
