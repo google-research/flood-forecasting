@@ -24,7 +24,7 @@ from googlehydrology.utils.config import Config, WeightInitOpt, EmbeddingSpec
 
 LOGGER = logging.getLogger(__name__)
 
-_EMBEDDING_TYPES = ['full_model', 'hindcast', 'forecast']
+_EMBEDDING_TYPES = ['hindcast', 'forecast']
 
 
 class InputLayer(nn.Module):
@@ -54,10 +54,7 @@ class InputLayer(nn.Module):
         super(InputLayer, self).__init__()
 
         self.embedding_type = embedding_type
-        if embedding_type == 'full_model':
-            dynamic_inputs = cfg.dynamic_inputs
-            self._x_d_key = 'x_d'
-        elif embedding_type == 'forecast':
+        if embedding_type == 'forecast':
             dynamic_inputs = cfg.forecast_inputs
             self._x_d_key = 'x_d_forecast'
         elif embedding_type == 'hindcast':

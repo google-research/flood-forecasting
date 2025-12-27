@@ -508,22 +508,6 @@ class Config(object):
         return self._cfg.get('warmup_period', 0)
 
     @property
-    def dynamic_inputs(
-        self,
-    ) -> list[str] | list[list[str], dict[str, list[str]]]:
-        return self._get_value_verbose('dynamic_inputs')
-
-    @property
-    def dynamic_inputs_flattened(self) -> list[str]:
-        dynamic_inputs = self.dynamic_inputs
-        if isinstance(dynamic_inputs, dict):
-            return list(itertools.chain.from_iterable(dynamic_inputs.values()))
-        if dynamic_inputs and isinstance(dynamic_inputs[0], list):
-            return list(itertools.chain.from_iterable(dynamic_inputs))
-        else:
-            return dynamic_inputs
-
-    @property
     def dynamics_embedding(self) -> EmbeddingSpec | None:
         return self._get_embedding_spec(self._cfg.get('dynamics_embedding'))
 
@@ -1076,10 +1060,6 @@ class Config(object):
         return self._cfg.get(
             'transfer_mtslstm_states', {'h': 'linear', 'c': 'linear'}
         )
-
-    @property
-    def use_basin_id_encoding(self) -> bool:
-        return self._cfg.get('use_basin_id_encoding', False)
 
     @property
     def use_frequencies(self) -> list[str]:
