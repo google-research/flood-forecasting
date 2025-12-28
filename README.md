@@ -32,17 +32,17 @@ We recommend using **Conda** to manage dependencies like PyTorch and CUDA.
 
 1. **Create and Activate the Environment:**  
    ```
-   \# Create the environment from the file in the repo  
+   # Create the environment from the file in the repo  
    conda env create \-f environments/conda.yml
 
-   \# Activate the environment (MANDATORY)  
+   # Activate the environment (MANDATORY)  
    conda activate googlehydrology  
    ```
     
 3. Install the Package:  
    Install in editable mode so that changes to the source code are reflected immediately:  
    ```
-   \# Run from the root of the repository  
+   # Run from the root of the repository  
    pip install \-e .
    ```
 
@@ -69,20 +69,23 @@ The MultiMet forcing data extension is accessed directly from **Google Cloud Sto
 The package installs the run command as the primary entry point.
 
 ### **Training a Model**
-
+```
 run train \--config-file /path/to/your/training\_config\_file.yml \--gpu 0
+```
 
 ### **Evaluation**
 
 Calculate performance metrics (NSE, KGE) on the test set:
-
+```
 run evaluate \--run-dir /path/to/your/model\_run/
+```
 
 ### **Inference**
 
 Generate predictions (without skipping NaN observations):
-
+```
 run infer \--run-dir /path/to/your/model\_run/
+```
 
 ## **Configuration**
 
