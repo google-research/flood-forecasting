@@ -33,7 +33,7 @@ We recommend using **Conda** to manage dependencies like PyTorch and CUDA.
 1. **Create and Activate the Environment:**  
    ```
    # Create the environment from the file in the repo  
-   conda env create \-f environments/conda.yml
+   conda env create -f environments/conda.yml
 
    # Activate the environment (MANDATORY)  
    conda activate googlehydrology  
@@ -43,7 +43,7 @@ We recommend using **Conda** to manage dependencies like PyTorch and CUDA.
    Install in editable mode so that changes to the source code are reflected immediately:  
    ```
    # Run from the root of the repository  
-   pip install \-e .
+   pip install -e .
    ```
 
 ## **Data Setup**
