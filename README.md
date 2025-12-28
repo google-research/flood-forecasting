@@ -57,8 +57,10 @@ A small sample is provided in tutorial/data/Caravan-nc. For full runs:
 1. Visit the [Zenodo repository](https://doi.org/10.5281/zenodo.6522634).  
 2. Download the **NetCDF version** (Caravan-nc.tar.gz).  
 3. Unpack it locally:  
-   mkdir \-p \~/data/  
-   tar \-xvzf Caravan-nc.tar.gz \-C \~/data/
+    ```
+    mkdir -p ~/data/  
+    tar -xvzf Caravan-nc.tar.gz -C ~/data/
+    ```
 
 ### **2\. MultiMet Data**
 
@@ -70,21 +72,21 @@ The package installs the run command as the primary entry point.
 
 ### **Training a Model**
     ```
-    run train \--config-file /path/to/your/training\_config\_file.yml \--gpu 0
+    run train --config-file /path/to/your/training_config_file.yml --gpu 0
     ```
 
 ### **Evaluation**
 
 Calculate performance metrics (NSE, KGE) on the test set:
     ```
-    run evaluate \--run-dir /path/to/your/model\_run/
+    run evaluate --run-dir /path/to/your/model_run/
     ```
 
 ### **Inference**
 
 Generate predictions (without skipping NaN observations):
     ```
-    run infer \--run-dir /path/to/your/model\_run/
+    run infer --run-dir /path/to/your/model_run/
     ```
 
 ## **Configuration**
