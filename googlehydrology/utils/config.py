@@ -757,8 +757,8 @@ class Config(object):
         return self._as_default_list(self._cfg.get('mass_inputs', []))
 
     @property
-    def max_updates_per_epoch(self) -> int | None:
-        return self._cfg.get('max_updates_per_epoch')
+    def max_updates_per_epoch(self) -> int:
+        return max(0, self._cfg.get('max_updates_per_epoch', 0))
 
     @property
     def mc_dropout(self) -> bool:
