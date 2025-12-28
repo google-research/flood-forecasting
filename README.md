@@ -31,15 +31,20 @@ The [Mean Embedding Forecast LSTM](https://github.com/google-research/flood-fore
 We recommend using **Conda** to manage dependencies like PyTorch and CUDA.
 
 1. **Create and Activate the Environment:**  
+   ```
    \# Create the environment from the file in the repo  
    conda env create \-f environments/conda.yml
 
    \# Activate the environment (MANDATORY)  
    conda activate googlehydrology  
-2. Install the Package:  
+   ```
+    
+3. Install the Package:  
    Install in editable mode so that changes to the source code are reflected immediately:  
+   ```
    \# Run from the root of the repository  
    pip install \-e .
+   ```
 
 ## **Data Setup**
 
