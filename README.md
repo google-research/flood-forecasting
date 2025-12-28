@@ -14,14 +14,14 @@ This repository contains implementations of the core models used in Google's pro
 
 ### **Handoff-Forecast-LSTM**
 
-The [State Handoff Forecast LSTM](https://www.google.com/search?q=https://github.com/google-research/flood-forecasting/blob/main/googlehydrology/modelzoo/handoff_forecast_lstm.py) is a forecasting model that uses a state-handoff to transition from a hindcast sequence (LSTM) model to a forecast sequence (LSTM) model. The hindcast model runs from the past up to the present (the issue time of the forecast) and then passes the cell state and hidden state of the LSTM into a (nonlinear) handoff network, which is used to initialize a new LSTM that rolls out over the forecast period.
+The [State Handoff Forecast LSTM](https://github.com/google-research/flood-forecasting/blob/main/googlehydrology/modelzoo/handoff_forecast_lstm.py) is a forecasting model that uses a state-handoff to transition from a hindcast sequence (LSTM) model to a forecast sequence (LSTM) model. The hindcast model runs from the past up to the present (the issue time of the forecast) and then passes the cell state and hidden state of the LSTM into a (nonlinear) handoff network, which is used to initialize a new LSTM that rolls out over the forecast period.
 
 * **Status:** Former production model for [Google FloodHub](https://sites.research.google/floods/).  
 * **Reference:** Nearing, Grey, et al. "[Global prediction of extreme floods in ungauged watersheds](https://www.nature.com/articles/s41586-024-07145-1)." *Nature* (2024).
 
 ### **Mean-Embedding-Forecast-LSTM**
 
-The [Mean Embedding Forecast LSTM](https://www.google.com/search?q=https://github.com/google-research/flood-forecasting/blob/main/googlehydrology/modelzoo/mean_embedding_forecast_lstm.py) is a forecasting model that uses separate embedding networks for hindcast and forecast inputs. It aggregates these inputs using masked means before passing them into respective LSTMs for the hindcast and forecast periods.
+The [Mean Embedding Forecast LSTM](https://github.com/google-research/flood-forecasting/blob/main/googlehydrology/modelzoo/mean_embedding_forecast_lstm.py) is a forecasting model that uses separate embedding networks for hindcast and forecast inputs. It aggregates these inputs using masked means before passing them into respective LSTMs for the hindcast and forecast periods.
 
 * **Status:** **Current production model** (as of December 2025\) for [Google FloodHub](https://sites.research.google/floods/).  
 * **Reference:** Gauch, Martin, et al. "[How to deal with missing input data](https://hess.copernicus.org/articles/29/6221/2025/)." *Hydrology and Earth System Sciences* (2025).
