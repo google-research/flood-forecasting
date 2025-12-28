@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # How to install:
-# conda env create -f environments/cuda.yml
+# conda env create -f environments/conda.yml
 
 name: googlehydrology
 channels:  # Order matters
