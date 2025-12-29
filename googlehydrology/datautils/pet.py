@@ -13,10 +13,8 @@
 # limitations under the License.
 
 import numpy as np
-from numba import njit
 
 
-@njit
 def get_priestley_taylor_pet(t_min: np.ndarray, t_max: np.ndarray, s_rad: np.ndarray, lat: float, elev: float,
                              doy: np.ndarray) -> np.ndarray:
     """Calculate potential evapotranspiration (PET) as an approximation following the Priestley-Taylor equation.
@@ -91,7 +89,6 @@ def get_priestley_taylor_pet(t_min: np.ndarray, t_max: np.ndarray, s_rad: np.nda
     return pet
 
 
-@njit
 def _get_slope_svp_curve(t_mean: np.ndarray) -> np.ndarray:
     """Slope of saturation vapour pressure curve
 
@@ -111,7 +108,6 @@ def _get_slope_svp_curve(t_mean: np.ndarray) -> np.ndarray:
     return delta
 
 
-@njit
 def _get_net_sw_srad(s_rad: np.ndarray, albedo: float = 0.23) -> np.ndarray:
     """Calculate net shortwave radiation
 
@@ -133,7 +129,6 @@ def _get_net_sw_srad(s_rad: np.ndarray, albedo: float = 0.23) -> np.ndarray:
     return net_srad
 
 
-@njit
 def _get_sol_decl(doy: np.ndarray) -> np.ndarray:
     """Get solar declination
 
@@ -154,7 +149,6 @@ def _get_sol_decl(doy: np.ndarray) -> np.ndarray:
     return sol_dec
 
 
-@njit
 def _get_sunset_hour_angle(lat: float, sol_dec: np.ndarray) -> np.ndarray:
     """Sunset hour angle
 
@@ -179,7 +173,6 @@ def _get_sunset_hour_angle(lat: float, sol_dec: np.ndarray) -> np.ndarray:
     return sha
 
 
-@njit
 def _get_ird_earth_sun(doy: np.ndarray) -> np.ndarray:
     """Inverse relative distance between Earth and Sun
 
@@ -199,7 +192,6 @@ def _get_ird_earth_sun(doy: np.ndarray) -> np.ndarray:
     return ird
 
 
-@njit
 def _get_extraterra_rad(lat: float, sol_dec: np.ndarray, sha: np.ndarray, ird: np.ndarray) -> np.ndarray:
     """Extraterrestrial Radiation
 
@@ -227,7 +219,6 @@ def _get_extraterra_rad(lat: float, sol_dec: np.ndarray, sha: np.ndarray, ird: n
     return et_rad
 
 
-@njit
 def _get_clear_sky_rad(elev: float, et_rad: np.ndarray) -> np.ndarray:
     """Clear sky radiation
 
@@ -249,7 +240,6 @@ def _get_clear_sky_rad(elev: float, et_rad: np.ndarray) -> np.ndarray:
     return cs_rad
 
 
-@njit
 def _get_avp_tmin(t_min: np.ndarray) -> np.ndarray:
     """Actual vapor pressure estimated using min temperature
 
@@ -269,7 +259,6 @@ def _get_avp_tmin(t_min: np.ndarray) -> np.ndarray:
     return avp
 
 
-@njit
 def _get_net_outgoing_lw_rad(t_min: np.ndarray, t_max: np.ndarray, s_rad: np.ndarray, cs_rad: np.ndarray,
                              a_vp: np.ndarray) -> np.ndarray:
     """Net outgoing longwave radiation
@@ -304,7 +293,6 @@ def _get_net_outgoing_lw_rad(t_min: np.ndarray, t_max: np.ndarray, s_rad: np.nda
     return net_lw
 
 
-@njit
 def _get_net_rad(sw_rad: np.ndarray, lw_rad: np.ndarray) -> np.ndarray:
     """Net radiation
 
@@ -325,7 +313,6 @@ def _get_net_rad(sw_rad: np.ndarray, lw_rad: np.ndarray) -> np.ndarray:
     return sw_rad - lw_rad
 
 
-@njit
 def _get_atmos_pressure(elev: float) -> float:
     """Atmospheric pressure
 
@@ -345,7 +332,6 @@ def _get_atmos_pressure(elev: float) -> float:
     return np.power(temp, 5.26) * 101.3
 
 
-@njit
 def _get_psy_const(atm_pressure: float) -> float:
     """Psychometric constant
 
@@ -362,7 +348,6 @@ def _get_psy_const(atm_pressure: float) -> float:
     return 0.000665 * atm_pressure
 
 
-@njit
 def _srad_from_t(et_rad, cs_rad, t_min, t_max, coastal=False):
     """Estimate solar radiation from temperature"""
     # equation 50

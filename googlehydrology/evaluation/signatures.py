@@ -19,7 +19,6 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 import numpy as np
-from numba import njit
 from xarray.core.dataarray import DataArray
 
 from googlehydrology.datautils import utils
@@ -141,7 +140,6 @@ def calculate_signatures(da: DataArray,
     return values
 
 
-@njit
 def _split_list(alist: list, min_length: int = 0) -> list:
     """Split a list of indices into lists of consecutive indices of at least length `min_length`. """
     newlist = []
@@ -476,7 +474,6 @@ def q_mean(da: DataArray) -> float:
     return float(da.mean())
 
 
-@njit
 def _baseflow_index_jit(streamflow: np.ndarray, alpha: float, warmup: int, n_passes: int) -> tuple[float, np.ndarray]:
     non_nan_indices = np.where(~np.isnan(streamflow))[0]
     non_nan_streamflow_runs = _split_list(non_nan_indices, min_length=warmup + 1)

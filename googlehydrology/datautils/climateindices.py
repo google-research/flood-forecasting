@@ -20,7 +20,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from numba import njit
 from tqdm import tqdm
 
 from googlehydrology.datasetzoo.camelsus import load_camels_us_forcings, load_camels_us_attributes
@@ -171,7 +170,6 @@ def calculate_dyn_climate_indices(precip: pd.Series,
     return df
 
 
-@njit
 def _numba_climate_indexes(features: np.ndarray, window_length: int) -> np.ndarray:
     # features shape is (#timesteps, 4), where 4 breaks down into: (prcp, tmax, tmin, pet)
     n_samples = features.shape[0]
@@ -217,7 +215,6 @@ def _numba_climate_indexes(features: np.ndarray, window_length: int) -> np.ndarr
     return new_features
 
 
-@njit
 def _split_list(a_list: List) -> List:
     new_list = []
     start = 0

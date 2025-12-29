@@ -17,7 +17,6 @@ from typing import Callable
 import numpy as np
 import torch
 import torch.cuda
-from numba import njit
 from torch.distributions import Categorical
 
 from googlehydrology.datautils.scaler import Scaler
@@ -770,7 +769,6 @@ def umal_extend_batch(data: dict[str, torch.Tensor], cfg: Config, n_taus: int = 
     return data
 
 
-@njit
 def bernoulli_subseries_sampler(
     data: np.ndarray,
     missing_fraction: float,
