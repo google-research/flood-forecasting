@@ -379,5 +379,5 @@ log_loss_every_nth_update: 50
 
 # Data caching settings to speed up training by keeping data in RAM.
 cache:
-  enabled: True          # Set to True if you have enough RAM (if you have to ask, you don't).
+  enabled: True           # Set to True if you have enough RAM (if you have to ask, you don't).
   byte_limit: 10000000000 # Max RAM to use for cache (in bytes, ~10GB here)
