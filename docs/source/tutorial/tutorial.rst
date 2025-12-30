@@ -19,19 +19,25 @@ Core Concepts
 
 The tutorial covers three main technical workflows:
 
-1. **Model Evaluation**
-   Learn how to load pre-trained weights from the Google Hydrology model zoo and calculate standard hydrological performance metrics, including:
+This tutorial is structured to provide insights into five core areas of hydrologic machine learning:
+
+1. **Train a Base Models**
+   Train a hydrological model on a (small) set of basins. This serves as a foundation for further specialization.
+
+2. **Fine-Tune for a Specific Basin**
+   Understand the process of adapting a pre-trained model to improve its performance on a specific target or region that might be "out-of-distribution" compared to the base model's training data.
+
+3. **Running ``googlehydrology`` Models**
+   Gain practical experience generating and understanding the command-line arguments for training (``train``), fine-tuning (``finetune``), and performing inference (``infer``). You will learn how to prepare configuration files and execute these operations in a terminal environment.
+
+4. **Model Performance Analysis**
+   Quantitatively evaluate model performance using standard metrics and qualitatively assess predictions through hydrograph comparisons. Key metrics covered include:
 
    * **NSE** (Nash-Sutcliffe Efficiency)
    * **KGE** (Kling-Gupta Efficiency)
 
-2. **Fine-Tuning the Static Embedding**
-   A key highlight of this tutorial is the fine-tuning of the ``static_attributes_fc`` (fully connected) layer.
-
-   Many global models struggle with "outlier" basins—those with unique geological or geographic features not well-represented in the broad training set. Instead of retraining the entire LSTM, we optimize only the static attribute encoder. This allows the model to learn a better "representation" of the specific basin's characteristics (like area or slope) while keeping the temporal forecasting logic intact.
-
-3. **Hydrograph Visualization**
-   The tutorial includes tools to plot model predictions against observed discharge data to visually assess timing, peak magnitude, and baseflow accuracy.
+5. **Impact of Static Attributes**
+   Explore the role of static basin attributes (like basin area) and learn how targeted fine-tuning of the ``static_attributes_fc`` embedding layer of the :ref:`Mean Embedding Forecast LSTM <mean-embedding-forecast-lstm>` can address performance discrepancies.
 
 This notebook is designed as an educational exercise rather than a performance benchmark. To ensure the code runs quickly in a standard environment (like Google Colab), the experiment is restricted to a "toy" dataset of only 5 training basins. Because State-of-the-Art (SOTA) global models typically require data from hundreds or thousands of basins to learn universal hydrologic behaviors and relationships, this 5-basin model will **not** yield state-of-the-art results. Specifically, a model trained on such a small sample size lacks the "experience" to understand basins in different climates or terrains. You will observe that performance metrics (NSE/KGE) on the 3 "ungauged" basins (basins not seen during training) are significantly lower than the training set. This is expected behavior from a model trained on a small (5-basin) dataset.
 
