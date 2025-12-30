@@ -13,7 +13,9 @@
 # limitations under the License.
 
 from typing import Hashable, Iterable, Union
-
+import time
+import copy
+import concurrent.futures
 import logging
 import itertools
 import functools
@@ -21,6 +23,7 @@ from pathlib import Path
 
 import dask
 import dask.array
+import dask.distributed
 import numpy as np
 import pandas as pd
 import torch
@@ -50,6 +53,75 @@ TENSOR_VARS = [
     "basin_index",
 ]
 MULTIMET_MINIMUM_LEAD_TIME = 1
+
+class ThreadedDataLoader(torch.utils.data.DataLoader):
+    def __init__(
+        self, *args, _lazy_memory: bool, max_pending: int = 4, **kwargs
+    ):
+        self._n_threads = kwargs.get('num_workers', 0)
+        kwargs['num_workers'] = 0
+        super().__init__(*args, **kwargs)
+
+        self._lazy_memory = _lazy_memory
+        self._max_pending = max_pending
+
+        # TODO: use py instead of dask dist, unneeded overhead
+
+        self._cluster = dask.distributed.LocalCluster(
+            processes=False, n_workers=1, threads_per_worker=1
+        )
+        self._client = dask.distributed.Client(
+            self._cluster, direct_to_workers=True, set_as_default=False
+        )
+
+        self._futures = None
+        self._batches = None
+
+    def _prepare(self):
+        n = self._max_pending - self._futures.count()
+        if n <= 0:
+            return
+        print(f'  prepare {n}')
+        batches = itertools.islice(self._batches, n)
+        self._futures.update(map(self._submit_task, batches))
+
+    def _submit_task(self, indices):
+        return self._client.submit(
+            ThreadedDataLoader._compute_batch,
+            self.dataset,
+            self.collate_fn,
+            indices,
+        )
+
+    @staticmethod
+    def _compute_batch(dataset, collate_fn, batch_indices):
+        tt = time.time()
+        batch = [dataset[i] for i in batch_indices]
+
+        t = time.time()
+        (batch,) = dask.compute(batch, scheduler='single-threaded')
+        t = time.time() - t
+        print(f'worker {t=}')
+
+        batch = [
+            {k: _convert_to_tensor(k, v) for k, v in sample.items()}
+            for sample in batch
+        ]
+        batch = collate_fn(batch)
+        tt = time.time() - tt
+        print(f'worker tara {tt-t=}')
+        return batch
+
+    def __iter__(self):
+        self._batches = iter(self.batch_sampler)
+        self._futures = dask.distributed.as_completed(loop=self._client.loop)
+        self._prepare()
+        for future in self._futures:
+            result = future.result()
+            self._prepare()
+            print('yield')
+            yield result
+            print('yield post')
 
 
 class Multimet(Dataset):
@@ -314,11 +386,13 @@ class Multimet(Dataset):
             self._sample_index[item]["basin"], dtype=np.int16
         )
 
-        if self._lazy.enabled:
-            (sample,) = dask.compute(sample, scheduler='single-threaded')
+        # if self._lazy.enabled:
+        #     (sample,) = dask.compute(sample, scheduler='single-threaded')
+        #     # (sample,) = dask.compute(sample)
 
-        # Return sample with various required formats.
-        return {key: _convert_to_tensor(key, value) for key, value in sample.items()}
+        # return {key: _convert_to_tensor(key, value) for key, value in sample.items()}
+
+        return sample
 
     def _calc_date_range(self, item: int, *, lead: bool = False) -> range:
         date = self._sample_index[item]["date"]

@@ -29,6 +29,7 @@ from tqdm import tqdm
 
 import googlehydrology.training.loss as loss
 from googlehydrology.datasetzoo import get_dataset
+from googlehydrology.datasetzoo.multimet import ThreadedDataLoader
 from googlehydrology.datautils.utils import load_basin_file
 from googlehydrology.evaluation import get_tester
 from googlehydrology.evaluation.tester import BaseTester
@@ -108,12 +109,15 @@ class BaseTrainer(object):
     def _get_tester(self) -> BaseTester:
         return get_tester(cfg=self.cfg, run_dir=self.cfg.run_dir, period="validation", init_model=False)
 
-    def _get_data_loader(self, ds: Dataset) -> torch.utils.data.DataLoader:
-        return DataLoader(ds,
-                          batch_size=self.cfg.batch_size,
-                          shuffle=True,
-                          num_workers=self.cfg.num_workers,
-                          collate_fn=ds.collate_fn)
+    def _get_data_loader(self, ds: Dataset) -> ThreadedDataLoader:
+        return ThreadedDataLoader(
+            ds,
+            _lazy_memory=self.cfg.lazy_memory.enabled,
+            batch_size=self.cfg.batch_size,
+            shuffle=True,
+            num_workers=self.cfg.num_workers,
+            collate_fn=ds.collate_fn,
+        )
 
     def _freeze_model_parts(self):
         # freeze all model weights
@@ -327,6 +331,7 @@ class BaseTrainer(object):
 
         # process bar handle
         n_iter = min(self._max_updates_per_epoch, len(self.loader)) if self._max_updates_per_epoch is not None else None
+        # self.loader.prepare(n_iter)
         pbar = tqdm(self.loader, file=sys.stdout, disable=self._disable_pbar, total=n_iter)
         pbar.set_description(f'# Epoch {epoch}')
 
@@ -335,6 +340,12 @@ class BaseTrainer(object):
         for i, data in enumerate(pbar):
             if self._max_updates_per_epoch is not None and i >= self._max_updates_per_epoch:
                 break
+
+            # if self.loader.dataset._lazy.enabled:
+            #     print('####################### 1')
+            #     (data,) = dask.compute(data, scheduler='single-threaded')
+
+            # data = {key: _convert_to_tensor(key, value) for key, value in data.items()}
 
             for key in data.keys():
                 if key.startswith('x_d'):

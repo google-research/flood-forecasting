@@ -16,12 +16,12 @@ logging_level: INFO
 detect_anomaly: False
 print_warnings_once: False
 lazy_memory:
-  enabled: False
-  cache_bytes: 16000000000
+  enabled: True
+  cache_bytes: 4000000000
 
 # --- Training Parameters -------------------------------------------------------
 
-batch_size: 512
+batch_size: 128
 epochs: 80
 experiment_name: mean_embedding_forecast_lstm
 clip_gradient_norm: 1
@@ -32,22 +32,22 @@ initial_learning_rate: 0.0005
 learning_rate_drop_factor: 0.5
 learning_rate_epochs_drop: 5
 # max_updates_per_epoch:
-max_updates_per_epoch: 2000
+max_updates_per_epoch: 10
 metrics:
 - NSE
-- KGE
-- Alpha-NSE
-- Beta-NSE
-- Beta-KGE
-- Peak-Timing
-- Missed-Peaks
-num_workers: 0  # Scalene profiler works only without multiprocessing (`0`)
+# - KGE
+# - Alpha-NSE
+# - Beta-NSE
+# - Beta-KGE
+# - Peak-Timing
+# - Missed-Peaks
+num_workers: 4  # DataLoader Threads
 optimizer: Adam
-validate_every: 2
-validate_n_random_basins: 300
+validate_every: 1
+validate_n_random_basins: 3
 predict_last_n: 8
 log_n_figures: 5
-log_loss_every_nth_update: 50
+log_loss_every_nth_update: 1
 allzero_samples_are_invalid: False
 weight_init_opts:
 
@@ -57,14 +57,14 @@ train_basin_file: ~/flood-forecasting/config/basins/caravan/camels.txt
 validation_basin_file: ~/flood-forecasting/config/basins/caravan/camels.txt
 test_basin_file: ~/flood-forecasting/config/basins/caravan/camels.txt
 
-train_end_date: 31/12/2020
+train_end_date: 31/12/2016
 train_start_date: 01/01/2016
 
-validation_end_date: 31/12/2025
-validation_start_date: 01/01/2021
+validation_end_date: 31/12/2016
+validation_start_date: 01/01/2016
 
-test_end_date: 31/12/2025
-test_start_date: 01/01/2021
+test_end_date: 31/12/2016
+test_start_date: 01/01/2016
 
 # train_basin_file: ~/flood-forecasting/config/basins/caravan/lamah.txt
 # validation_basin_file: ~/flood-forecasting/config/basins/caravan/lamah.txt

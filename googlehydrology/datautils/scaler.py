@@ -231,8 +231,8 @@ def _save(scaler_dir: Path, scaler: xr.Dataset):
         raise ValueError('You are trying to save a scaler that has not been computed.')
     os.makedirs(scaler_dir, exist_ok=True)
     scaler_file = scaler_dir / SCALER_FILE_NAME
-    with open(scaler_file, 'wb') as f:
-        scaler.to_netcdf(f)
+    with open(scaler_file, 'w+b') as f:
+        scaler.to_netcdf(f, engine='h5netcdf')
 
 @dask.delayed
 def _save_task(scaler_dir: Path, scaler: xr.Dataset):

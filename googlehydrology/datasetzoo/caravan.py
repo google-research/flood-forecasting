@@ -141,7 +141,7 @@ def load_caravan_timeseries(data_dir: Path, basin: str, filetype: str = "netcdf"
 
     # Load timeseries data.
     if filetype == "netcdf":
-        return xarray.open_dataset(filepath)
+        return xarray.open_dataset(filepath, engine='h5netcdf')
     df = pd.read_csv(filepath, parse_dates=['date'])
     df = df.set_index('date')
     return df
@@ -182,11 +182,13 @@ def load_caravan_timeseries_together(
     ds = xarray.open_mfdataset(
         [basin_to_file_path(e) for e in basins],
         preprocess=preprocess,
-        combine="nested",
-        concat_dim="basin",
+        combine='nested',
+        concat_dim='basin',
         parallel=False,  # open_mfdataset has a bug (seg fault) when True
-        chunks={"date": "auto"},
+        chunks={'date': 'auto'},
         join='outer',
+        engine='h5netcdf',
+        lock=False,  # Need engine='h5netcdf'
     )
     return ds.assign_coords(basin=basins)
 

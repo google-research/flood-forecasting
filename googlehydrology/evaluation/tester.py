@@ -34,6 +34,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from googlehydrology.datasetzoo import get_dataset
+from googlehydrology.datasetzoo.multimet import ThreadedDataLoader
 from googlehydrology.datautils.utils import get_frequency_factor, load_basin_file, sort_frequencies
 from googlehydrology.evaluation import plots
 from googlehydrology.evaluation.metrics import calculate_metrics, get_available_metrics
@@ -205,10 +206,11 @@ class BaseTester(object):
             batch_size=self.cfg.batch_size,
             basins_indexes=set(get_samples_indexes(self.basins, samples=list(basins))),
         )
-        loader = DataLoader(
+        loader = ThreadedDataLoader(
             self.dataset,
+            _lazy_memory=self.cfg.lazy_memory.enabled,
             batch_sampler=batch_sampler,
-            num_workers=0,
+            num_workers=self.cfg.num_workers,
             collate_fn=self.dataset.collate_fn,
             pin_memory=True,  # avoid 1 of 2 mem copies to gpu
         )
@@ -507,12 +509,20 @@ class BaseTester(object):
         parent_directory.mkdir(parents=True, exist_ok=True)
         return parent_directory
 
-    def _evaluate(self, model: BaseModel, loader: DataLoader, frequencies: list[str], save_all_output: bool = False, basins: set[str] = set()):
+    def _evaluate(
+        self,
+        model: BaseModel,
+        loader: ThreadedDataLoader,
+        frequencies: list[str],
+        save_all_output: bool = False,
+        basins: set[str] = set(),
+    ):
         predict_last_n = self.cfg.predict_last_n
         if isinstance(predict_last_n, int):
             predict_last_n = {frequencies[0]: predict_last_n}  # if predict_last_n is int, there's only one frequency
 
         with torch.inference_mode():
+            # loader.prepare()
             basin_samples = itertools.groupby(loader, lambda data: data['basin_index'][0].item())
             for basin_index, samples in basin_samples:
                 basin = loader.dataset._basins[basin_index]

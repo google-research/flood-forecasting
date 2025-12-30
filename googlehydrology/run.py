@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 
 import dask
+import dask.distributed
 import torch
 
 # make sure code directory is in path, even if the package is not installed using the setup.py
@@ -62,6 +63,15 @@ def _main():
     torch.autograd.set_detect_anomaly(config.detect_anomaly)
 
     dask.config.set(num_workers=os.cpu_count(), scheduler='threads')
+    dask.config.set(
+        {
+            'distributed.worker.memory.target': False,
+            'distributed.worker.memory.spill': False,
+        }
+    )
+    # dask.distributed.Client(
+    #     set_as_default=True, processes=False, threads_per_worker=os.cpu_count()
+    # )
 
     if args["mode"] == "train":
         start_run(config=config, gpu=args["gpu"])
