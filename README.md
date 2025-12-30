@@ -61,8 +61,6 @@ The most direct way to explore this repository is through our interactive tutori
 * **Visualizing Results:** Compare model hydrographs against observed discharge data.
 
 **Run it now:** 
-<!-- [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/google-research/flood-forecasting/blob/main/GoogleHydrology_Evaluation_Notebook_with_Fine_Tuning.ipynb) -->
-
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/google-research/flood-forecasting/blob/main/GoogleHydrology_Evaluation_Notebook_with_Fine_Tuning.ipynb)
 
 ## **Data Setup**
