@@ -12,19 +12,19 @@ This repository is a fork of [NeuralHydrology](https://github.com/neuralhydrolog
 
 This repository contains implementations of the core models used in Google's production forecasting systems.
 
-### **Handoff-Forecast-LSTM**
-
-The [State Handoff Forecast LSTM](https://github.com/google-research/flood-forecasting/blob/main/googlehydrology/modelzoo/handoff_forecast_lstm.py) is a forecasting model that uses a state-handoff to transition from a hindcast sequence (LSTM) model to a forecast sequence (LSTM) model. The hindcast model runs from the past up to the present (the issue time of the forecast) and then passes the cell state and hidden state of the LSTM into a (nonlinear) handoff network, which is used to initialize a new LSTM that rolls out over the forecast period.
-
-* **Status:** Former production model for [Google FloodHub](https://sites.research.google/floods/).  
-* **Reference:** Nearing, Grey, et al. "[Global prediction of extreme floods in ungauged watersheds](https://www.nature.com/articles/s41586-024-07145-1)." *Nature* (2024).
-
 ### **Mean-Embedding-Forecast-LSTM**
 
 The [Mean Embedding Forecast LSTM](https://github.com/google-research/flood-forecasting/blob/main/googlehydrology/modelzoo/mean_embedding_forecast_lstm.py) is a forecasting model that uses separate embedding networks for hindcast and forecast inputs. It aggregates these inputs using masked means before passing them into respective LSTMs for the hindcast and forecast periods.
 
 * **Status:** **Current production model** (as of December 2025\) for [Google FloodHub](https://sites.research.google/floods/).  
 * **Reference:** Gauch, Martin, et al. "[How to deal with missing input data](https://hess.copernicus.org/articles/29/6221/2025/)." *Hydrology and Earth System Sciences* (2025).
+
+### **Handoff-Forecast-LSTM**
+
+The [State Handoff Forecast LSTM](https://github.com/google-research/flood-forecasting/blob/main/googlehydrology/modelzoo/handoff_forecast_lstm.py) is a forecasting model that uses a state-handoff to transition from a hindcast sequence (LSTM) model to a forecast sequence (LSTM) model. The hindcast model runs from the past up to the present (the issue time of the forecast) and then passes the cell state and hidden state of the LSTM into a (nonlinear) handoff network, which is used to initialize a new LSTM that rolls out over the forecast period.
+
+* **Status:** Former production model for [Google FloodHub](https://sites.research.google/floods/).  
+* **Reference:** Nearing, Grey, et al. "[Global prediction of extreme floods in ungauged watersheds](https://www.nature.com/articles/s41586-024-07145-1)." *Nature* (2024).
 
 ## **Installation**
 
@@ -49,6 +49,19 @@ We recommend using **Conda** to manage dependencies like PyTorch and CUDA.
    # Run from the root of the repository  
    pip install -e .
    ```
+
+## **🚀 Tutorial Notebook**
+
+The most direct way to explore this repository is through our interactive tutorial: [**GoogleHydrology Evaluation & Fine-Tuning Notebook**](https://www.google.com/search?q=./GoogleHydrology_Evaluation_Notebook_with_Fine_Tuning.ipynb).
+
+**What you will learn:**
+
+* **Model Evaluation:** Load pre-trained Google Hydrology models and calculate performance metrics (NSE, KGE) on real-world basin data.  
+* **Fine-Tuning for Performance:** Learn how to fine-tune the `static_attributes_fc` layer. This is a powerful technique for improving predictions on "outlier" basins (e.g., basins with unusual sizes or geology) without retraining the entire model.  
+* **Visualizing Results:** Compare model hydrographs against observed discharge data.
+
+**Run it now:** 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/USERNAME/REPO_NAME/blob/main/PATH_TO_NOTEBOOK.ipynb)
 
 ## **Data Setup**
 
