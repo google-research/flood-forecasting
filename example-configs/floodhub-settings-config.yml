@@ -61,14 +61,14 @@ dataset: multimet
 
 # -- File Paths (UPDATE THESE TO MATCH YOUR SYSTEM) --
 # Paths to text files containing lists of basin IDs for training, validation, and testing.
-train_basin_file: tutorial/basin-lists/5-basin-train.txt
-validation_basin_file: tutorial/basin-lists/5-basin-train.txt
-test_basin_file: tutorial/basin-lists/5-basin-train.txt
+train_basin_file: 
+validation_basin_file: 
+test_basin_file: 
 
 # Directory containing the target data (streamflow observations).
-targets_data_dir: tutorial/Caravan-nc
+targets_data_dir: Caravan-nc
 # Directory containing static catchment attributes (e.g., area, elevation).
-statics_data_dir: tutorial/Caravan-nc
+statics_data_dir: Caravan-nc
 # Directory containing dynamic meteorological forcing data (rain, temp, etc.).
 # 'gs://' indicates data is streamed directly from Google Cloud Storage.
 dynamics_data_dir: gs://caravan-multimet/v1.1
@@ -149,81 +149,81 @@ static_attributes:
   - high_prec_dur
   - low_prec_freq
   - low_prec_dur
-  # - aet_mm_syr
-  # - ari_ix_sav
-  # - crp_pc_sse
-  # - ele_mt_sav
-  # - ero_kh_sav
-  # - for_pc_sse
-  # - gdp_ud_ssu
-  # - gla_pc_sse
-  # - glc_pc_s01
-  # - glc_pc_s02
-  # - glc_pc_s03
-  # - glc_pc_s04
-  # - glc_pc_s05
-  # - glc_pc_s06
-  # - glc_pc_s07
-  # - glc_pc_s08
-  # - glc_pc_s09
-  # - glc_pc_s10
-  # - glc_pc_s11
-  # - glc_pc_s12
-  # - glc_pc_s13
-  # - glc_pc_s14
-  # - glc_pc_s15
-  # - glc_pc_s16
-  # - glc_pc_s17
-  # - glc_pc_s18
-  # - glc_pc_s19
-  # - glc_pc_s20
-  # - glc_pc_s21
-  # - glc_pc_s22
-  # - hft_ix_s09
-  # - hft_ix_s93
-  # - inu_pc_slt
-  # - inu_pc_smn
-  # - inu_pc_smx
-  # - ire_pc_sse
-  # - kar_pc_sse
-  # - lka_pc_sse
-  # - nli_ix_sav
-  # - pac_pc_sse
-  # - pet_mm_syr
-  # - pnv_pc_s01
-  # - pnv_pc_s02
-  # - pnv_pc_s03
-  # - pnv_pc_s04
-  # - pnv_pc_s05
-  # - pnv_pc_s06
-  # - pnv_pc_s07
-  # - pnv_pc_s08
-  # - pnv_pc_s09
-  # - pnv_pc_s10
-  # - pnv_pc_s11
-  # - pnv_pc_s12
-  # - pnv_pc_s13
-  # - pnv_pc_s14
-  # - pnv_pc_s15
-  # - ppd_pk_sav
-  # - pre_mm_syr
-  # - prm_pc_sse
-  # - rdd_mk_sav
-  # - snw_pc_syr
-  # - swc_pc_syr
-  # - tmp_dc_syr
-  # - urb_pc_sse
-  # - wet_pc_s01
-  # - wet_pc_s02
-  # - wet_pc_s03
-  # - wet_pc_s04
-  # - wet_pc_s05
-  # - wet_pc_s06
-  # - wet_pc_s07
-  # - wet_pc_s08
-  # - wet_pc_s09
-  # - wet_pc_sg1
-  # - wet_pc_sg2 
+  - aet_mm_syr
+  - ari_ix_sav
+  - crp_pc_sse
+  - ele_mt_sav
+  - ero_kh_sav
+  - for_pc_sse
+  - gdp_ud_ssu
+  - gla_pc_sse
+  - glc_pc_s01
+  - glc_pc_s02
+  - glc_pc_s03
+  - glc_pc_s04
+  - glc_pc_s05
+  - glc_pc_s06
+  - glc_pc_s07
+  - glc_pc_s08
+  - glc_pc_s09
+  - glc_pc_s10
+  - glc_pc_s11
+  - glc_pc_s12
+  - glc_pc_s13
+  - glc_pc_s14
+  - glc_pc_s15
+  - glc_pc_s16
+  - glc_pc_s17
+  - glc_pc_s18
+  - glc_pc_s19
+  - glc_pc_s20
+  - glc_pc_s21
+  - glc_pc_s22
+  - hft_ix_s09
+  - hft_ix_s93
+  - inu_pc_slt
+  - inu_pc_smn
+  - inu_pc_smx
+  - ire_pc_sse
+  - kar_pc_sse
+  - lka_pc_sse
+  - nli_ix_sav
+  - pac_pc_sse
+  - pet_mm_syr
+  - pnv_pc_s01
+  - pnv_pc_s02
+  - pnv_pc_s03
+  - pnv_pc_s04
+  - pnv_pc_s05
+  - pnv_pc_s06
+  - pnv_pc_s07
+  - pnv_pc_s08
+  - pnv_pc_s09
+  - pnv_pc_s10
+  - pnv_pc_s11
+  - pnv_pc_s12
+  - pnv_pc_s13
+  - pnv_pc_s14
+  - pnv_pc_s15
+  - ppd_pk_sav
+  - pre_mm_syr
+  - prm_pc_sse
+  - rdd_mk_sav
+  - snw_pc_syr
+  - swc_pc_syr
+  - tmp_dc_syr
+  - urb_pc_sse
+  - wet_pc_s01
+  - wet_pc_s02
+  - wet_pc_s03
+  - wet_pc_s04
+  - wet_pc_s05
+  - wet_pc_s06
+  - wet_pc_s07
+  - wet_pc_s08
+  - wet_pc_s09
+  - wet_pc_sg1
+  - wet_pc_sg2 
 
 # -- Targets --
 # The variable(s) we are trying to predict.
@@ -379,5 +379,5 @@ log_loss_every_nth_update: 50
 
 # Data caching settings to speed up training by keeping data in RAM.
 cache:
-  enabled: True           # Set to True if you have enough RAM (if you have to ask, you don't).
+  enabled: False          # Set to True if you have enough RAM (~250GB for Caravan).
   byte_limit: 10000000000 # Max RAM to use for cache (in bytes, ~10GB here)
