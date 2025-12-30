@@ -233,13 +233,11 @@ model: handoff_forecast_lstm
 # higher risk of overfitting.
 hidden_size: 256
 
-# The type of output head.
-head: regression
-# # These CMAL settings come from https://hess.copernicus.org/articles/26/1673/2022
-# head: cmal
-# n_distributions: 3
-# n_samples: 7500
-# negative_sample_handling: clip
+# These CMAL settings come from https://hess.copernicus.org/articles/26/1673/2022
+head: cmal
+n_distributions: 3
+n_samples: 7500
+negative_sample_handling: clip
 
 # Number of days of past data the model uses as input for a single prediction.
 seq_length: 365
@@ -276,15 +274,7 @@ statics_embedding:
 
 # We did not use hindcast and forecast embedding layers.
 hindcast_embedding:
-  type: fc
-  hiddens: [20]
-  activation: [linear]
-  dropout: 0.0
 forecast_embedding:
-  type: fc
-  hiddens: [20]
-  activation: [linear]
-  dropout: 0.0
 
 # Architecture for the network that transforms the final hindcast state
 # (LSTM cell state and hidden state) into the initial forecast state.
@@ -307,8 +297,7 @@ device: cuda:0
 optimizer: Adam
 
 # The loss function to minimize during training. 
-# loss: cmalloss
-loss: MSE
+loss: cmalloss
 
 # -- Training Loop --
 # Number of times the model sees the entire training dataset.

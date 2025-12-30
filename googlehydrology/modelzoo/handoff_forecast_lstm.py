@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import dataclasses
 
 import torch
 import torch.nn as nn
@@ -19,8 +20,7 @@ import torch.nn as nn
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.modelzoo.fc import FC
 from googlehydrology.modelzoo.head import get_head
-from googlehydrology.modelzoo.inputlayer import InputLayer
-from googlehydrology.utils.config import Config, WeightInitOpt
+from googlehydrology.utils.config import Config, EmbeddingSpec, WeightInitOpt
 from googlehydrology.utils.lstm_utils import lstm_init
 
 FC_XAVIER = WeightInitOpt.FC_XAVIER
@@ -68,6 +68,7 @@ class HandoffForecastLSTM(BaseModel):
     module_parts = [
         'hindcast_embedding_net',
         'forecast_embedding_net',
+        'statics_embedding_net',
         'hindcast_lstm',
         'forecast_lstm',
         'handoff_net',
@@ -78,6 +79,15 @@ class HandoffForecastLSTM(BaseModel):
     def __init__(self, cfg: Config):
         super(HandoffForecastLSTM, self).__init__(cfg=cfg)
 
+        self.overlap_output = False
+        if 'forecast_overlap' in cfg.regularization:
+            self.overlap_output = True
+            if cfg.head not in ['regression']:
+                raise ValueError('Forecast overlap regularization only works with a regression head.')
+           
+        self.hindcast_inputs = cfg.hindcast_inputs
+        self.forecast_inputs = cfg.forecast_inputs
+        
         # Determines whether there is an overlap between forecast and hindcast, which,
         # if present, is used for regularization.
         self.overlap = 0
@@ -95,21 +105,69 @@ class HandoffForecastLSTM(BaseModel):
         self.forecast_hidden_size = cfg.forecast_hidden_size
 
         # Input embedding layers.
-        self.forecast_embedding_net = InputLayer(
-            cfg=cfg, embedding_type='forecast'
-        )
-        self.hindcast_embedding_net = InputLayer(
-            cfg=cfg, embedding_type='hindcast'
-        )
+        if cfg.hindcast_embedding is not None:
+            hindcast_embedding = cfg.hindcast_embedding
+        elif cfg.dynamics_embedding is not None:
+            hindcast_embedding = cfg.hindcast_embedding
+        else:
+            hindcast_embedding = None
+            
+        if cfg.hindcast_embedding is not None:
+            self.hindcast_embedding_net = self._create_fc(
+                embedding_spec=cfg.hindcast_embedding,
+                input_size=len(cfg.hindcast_inputs)
+            )
+            hindcast_embedding_output_size = self.hindcast_embedding_net.output_size
+        else:
+            hindcast_embedding_output_size = len(cfg.hindcast_inputs)
+            self.hindcast_embedding_net = nn.Identity(
+                hindcast_embedding_output_size,
+                hindcast_embedding_output_size    
+            )
+            
+        if cfg.forecast_embedding is not None:
+            forecast_embedding = cfg.forecast_embedding
+        elif cfg.forecast_embedding is not None:
+            forecast_embedding = cfg.forecast_embedding
+        else:
+            forecast_embedding = None
+            
+        if cfg.forecast_embedding is not None:
+            self.forecast_embedding_net = self._create_fc(
+                embedding_spec=cfg.forecast_embedding,
+                input_size=len(cfg.forecast_inputs)
+            )
+            forecast_embedding_output_size = self.forecast_embedding_net.output_size
+        else:
+            forecast_embedding_output_size = len(cfg.forecast_inputs)
+            self.forecast_embedding_net = nn.Identity(
+                forecast_embedding_output_size,
+                forecast_embedding_output_size
+            )
+
+        if cfg.statics_embedding is not None:
+            self.statics_embedding_net = self._create_fc(
+                embedding_spec=cfg.statics_embedding,
+                input_size=len(cfg.static_attributes)
+            )
+            statics_embedding_output_size = self.statics_embedding_net.output_size
+        else:
+            statics_embedding_output_size = len(cfg.static_attributes)
+            self.statics_embedding_net = nn.Identity(
+                statics_embedding_output_size,
+                statics_embedding_output_size
+            )
 
         # Time series layers.
         self.hindcast_lstm = nn.LSTM(
-            input_size=self.hindcast_embedding_net.output_size,
+            input_size=hindcast_embedding_output_size + statics_embedding_output_size,
             hidden_size=cfg.hindcast_hidden_size,
+            batch_first=True
         )
         self.forecast_lstm = nn.LSTM(
-            input_size=self.forecast_embedding_net.output_size,
+            input_size=forecast_embedding_output_size + statics_embedding_output_size,
             hidden_size=cfg.forecast_hidden_size,
+            batch_first=True
         )
 
         # State handoff layer.
@@ -143,6 +201,30 @@ class HandoffForecastLSTM(BaseModel):
             weight_opts=cfg.weight_init_opts,
         )
 
+    def _create_fc(self, embedding_spec: EmbeddingSpec, input_size: int) -> FC:
+        assert input_size > 0, 'Cannot create embedding layer with input size 0'
+
+        emb_type = embedding_spec.type.lower()
+        assert emb_type == 'fc', f'{emb_type=} not supported'
+
+        hiddens = embedding_spec.hiddens
+        assert len(hiddens) > 0, 'hiddens must have at least one entry'
+
+        activation = embedding_spec.activation
+        assert len(activation) == len(hiddens), (
+            'hiddens and activation layers must match'
+        )
+
+        dropout = float(embedding_spec.dropout)
+
+        return FC(
+            input_size=input_size,
+            hidden_sizes=hiddens,
+            activation=activation,
+            dropout=dropout,
+            xavier_init=FC_XAVIER in self.cfg.weight_init_opts,
+        )
+
     def forward(self, data: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         """Perform a forward pass on the EncoderDecoderForecastLSTM model.
 
@@ -163,14 +245,39 @@ class HandoffForecastLSTM(BaseModel):
         """
 
         # Run the embedding layers.
-        hindcast_embeddings = self.hindcast_embedding_net(data)
-        forecast_embeddings = self.forecast_embedding_net(data)
+        hindcast_features = torch.cat(
+            [
+                t for f, t in data['x_d_hindcast'].items()
+                if f in self.hindcast_inputs
+            ], dim=-1)
+        forecast_features = torch.cat(
+            [
+                t for f, t in data['x_d_forecast'].items()
+                if f in self.forecast_inputs
+            ], dim=-1)
 
+        statics_embeddings = self.statics_embedding_net(data['x_s'])
+        hindcast_embeddings = self.hindcast_embedding_net(hindcast_features)
+        forecast_embeddings = self.forecast_embedding_net(forecast_features)
+        
+        hindcast_embeddings = torch.cat(
+            [
+                hindcast_embeddings,
+                statics_embeddings.unsqueeze(1).expand(-1, hindcast_embeddings.size(1), -1)
+            ], dim=-1
+        )
+        forecast_embeddings = torch.cat(
+            [
+                forecast_embeddings,
+                statics_embeddings.unsqueeze(1).expand(-1, forecast_embeddings.size(1), -1)
+            ], dim=-1
+        )
+        
         # Run the hindcast LSTM. This happens in two parts. First, the true hindcast
         # or spin-up, then the part the overlaps with the forecast. This is necessary
         # to extract the hidden and cell states at the point of the handoff.
-        spinup_embeddings = hindcast_embeddings[: -self.overlap,]
-        overlap_embeddings = hindcast_embeddings[-self.overlap :,]
+        spinup_embeddings = hindcast_embeddings[:, : -self.overlap,]
+        overlap_embeddings = hindcast_embeddings[:, -self.overlap :,]
         spinup, (h_hindcast, c_hindcast) = self.hindcast_lstm(spinup_embeddings)
         hindcast_overlap, _ = self.hindcast_lstm(
             overlap_embeddings, (h_hindcast, c_hindcast)
@@ -188,24 +295,29 @@ class HandoffForecastLSTM(BaseModel):
         )
 
         # Run head layers.
-        y_spinup = self.hindcast_head(self.dropout(spinup.transpose(0, 1)))[
-            'y_hat'
-        ]
-        y_hindcast_overlap = self.hindcast_head(
-            self.dropout(hindcast_overlap.transpose(0, 1))
-        )['y_hat']
-        y_forecast = self.forecast_head(self.dropout(forecast.transpose(0, 1)))[
-            'y_hat'
-        ]
-        y_forecast_overlap = y_forecast[:, : -self.lead_time, :]
-        y_true_forecast = y_forecast[:, -self.lead_time :, :]
-
+        y_spinup = self.hindcast_head(self.dropout(spinup))
+        y_hindcast_overlap = self.hindcast_head(self.dropout(hindcast_overlap))
+        y_forecast = self.forecast_head(self.dropout(forecast))
+        
         # Create the full prediction sequence, and only pull the last `seg_length` timesteps.
-        y = torch.cat([y_spinup, y_hindcast_overlap, y_true_forecast], dim=1)[
-            :, -self.seq_length :, :
-        ]
-        return {
-            'y_hat': y,
-            'y_hindcast_overlap': y_hindcast_overlap,
-            'y_forecast_overlap': y_forecast_overlap,
+        output = {
+            key: torch.cat(
+                [
+                    y_spinup[key], 
+                    y_hindcast_overlap[key], 
+                    y_forecast[key][:, -self.lead_time :, :]
+                ], dim=1
+            )[:, -self.seq_length :, :] for key in y_spinup
         }
+        
+        if self.overlap_output:
+            y_forecast_overlap = y_forecast['y_hat'][:, : -self.lead_time, :]
+            output.update(
+                {
+                    'y_hindcast_overlap': y_hindcast_overlap['y_hat'],
+                    'y_forecast_overlap': y_forecast_overlap,
+                }
+            )
+
+        return output
+
