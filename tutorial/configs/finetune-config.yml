@@ -12,7 +12,7 @@
 base_run_dir: ~/flood-forecasting/tutorial/model-runs/5-basin-example
 
 # Unique name for this fine-tuning experiment.
-experiment_name: finetune-13235000
+experiment_name: finetune-FINETUNE_BASIN
 
 # Where to save the fine-tuned model. Usually, we save it inside the base
 # model's directory to keep them organized together.
@@ -24,8 +24,8 @@ run_dir: ~/flood-forecasting/tutorial/model-runs/5-basin-example
 
 # For fine-tuning, the train and validation sets typically contain ONLY
 # the single target basin we want to adapt the model to.
-train_basin_file: ~/flood-forecasting/tutorial/basin-lists/camels-13235000.txt
-validation_basin_file: ~/flood-forecasting/tutorial/basin-lists/camels-13235000.txt
+train_basin_file: ~/flood-forecasting/tutorial/basin-lists/FINETUNE_BASIN.txt
+validation_basin_file: ~/flood-forecasting/tutorial/basin-lists/FINETUNE_BASIN.txt
 
 # The test set can remain larger to evaluate how standardizing on one basin
 # affects performance on others (usually negatively).
