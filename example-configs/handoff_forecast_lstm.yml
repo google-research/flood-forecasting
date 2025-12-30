@@ -101,8 +101,6 @@ hindcast_inputs:
   - hres_surface_pressure
   - hres_temperature_2m
   - hres_total_precipitation
-  - graphcast_temperature_2m
-  - graphcast_total_precipitation
   - imerg_precipitation
   - cpc_precipitation
 
@@ -113,8 +111,6 @@ forecast_inputs:
   - hres_surface_pressure
   - hres_temperature_2m
   - hres_total_precipitation
-  - graphcast_temperature_2m
-  - graphcast_total_precipitation
 
 # 'union_mapping': Fills missing values (NaNs) in one dataset with values from another.
 # The primary dataset (key) uses data from the fallback dataset (value) to fill gaps.
@@ -235,7 +231,7 @@ model: handoff_forecast_lstm
 
 # Size of the hidden state vector in the LSTM layers. Higher = more capacity but
 # higher risk of overfitting.
-hidden_size: 512
+hidden_size: 256
 
 # The type of output head.
 head: regression
@@ -277,24 +273,26 @@ statics_embedding:
   hiddens: [100, 100, 20]          # Three layers with 100, 100, and 20 neurons each
   activation: [tanh, tanh, linear] # Activation functions for each layer
   dropout: 0.0
+
+# We did not use hindcast and forecast embedding layers.
 hindcast_embedding:
   type: fc
-  hiddens: [100, 20]
-  activation: [tanh, linear]
+  hiddens: [20]
+  activation: [linear]
   dropout: 0.0
 forecast_embedding:
   type: fc
-  hiddens: [20, 20, 20, 20]
-  activation: [tanh, tanh, tanh, linear]
+  hiddens: [20]
+  activation: [linear]
   dropout: 0.0
 
 # Architecture for the network that transforms the final hindcast state
 # (LSTM cell state and hidden state) into the initial forecast state.
 state_handoff_network:
   type: fc
-  activation: [tanh, tanh, linear]
+  activation: [tanh]
   dropout: 0.0
-  hiddens: [30, 20, 64]
+  hiddens: [128]
 
 # --- 4. Training Configuration ------------------------------------------------
 # Controls how the model learns from data.
@@ -314,10 +312,10 @@ loss: MSE
 
 # -- Training Loop --
 # Number of times the model sees the entire training dataset.
-epochs: 125
+epochs: 50
 
 # Number of samples processed at once before updating weights.
-batch_size: 512
+batch_size: 256
 
 # Maximum number of weight updates per epoch (useful for very large datasets).
 max_updates_per_epoch: 2000
@@ -325,9 +323,9 @@ max_updates_per_epoch: 2000
 # -- Learning Rate Scheduler --
 # Adjusts the learning rate during training to improve convergence.
 learning_rate_strategy: ReduceLROnPlateau # Lowers LR when validation loss stops improving.
-initial_learning_rate: 0.0005             # Starting step size for weight updates.
+initial_learning_rate: 0.001              # Starting step size for weight updates.
 learning_rate_drop_factor: 0.5            # Multiply LR by this when dropping (unused).
-learning_rate_epochs_drop: 200            # Effectively infinite (since larger than # epochs)
+learning_rate_epochs_drop: 10             # Epochs between learning rate drops.
 
 # -- Regularization & Stability --
 # Prevents exploding gradients which can destabilize training.
