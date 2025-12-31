@@ -410,7 +410,7 @@ def test_forecast_dataset_init_forecast_hindcast_mismatch_error(
     )
     with pytest.raises(
         ValueError,
-        match='`hindcast_inputs` must be supplied.',
+        match='hindcast_inputs must be supplied.',
     ):
         Multimet(cfg=cfg, is_train=True, period='train')
 
@@ -419,7 +419,7 @@ def test_forecast_dataset_init_forecast_hindcast_mismatch_error(
     cfg.update_config({'hindcast_inputs': []})
     with pytest.raises(
         ValueError,
-        match='`hindcast_inputs` must be supplied.',
+        match='hindcast_inputs must be supplied.',
     ):
         Multimet(cfg=cfg, is_train=True, period='train')
 
