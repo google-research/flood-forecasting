@@ -151,7 +151,7 @@ Training a model
 
 .. code-block:: bash
 
-   run train --config-file ~/tutorial/training-config.yml --gpu 0
+   run train --config-file ~/tutorial/training-config.yml
 
 Evaluation
 ^^^^^^^^^^
