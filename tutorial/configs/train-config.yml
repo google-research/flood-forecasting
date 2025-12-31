@@ -1,0 +1,286 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# ==============================================================================
+# GoogleHydrology Tutorial Configuration File
+# ==============================================================================
+# This YAML file defines all parameters for a specific training run.
+# It is organized into logical sections to help you understand the workflow.
+
+# --- 1. General Experiment Settings -------------------------------------------
+# Basic identifiers and housekeeping for the experiment.
+
+# Unique name for this experiment. Output folders will use this name.
+experiment_name: 5-basin-example
+
+# Directory where model artifacts (weights, config copy, logs) will be saved.
+# IMPORTANT: You must ensure this path exists or can be created.
+run_dir: ~/flood-forecasting/tutorial/model-runs/
+
+# Controls how much information is printed to the console during training.
+# Options: DEBUG, INFO, WARNING, ERROR. 'INFO' is good standard practice.
+logging_level: INFO
+
+# If True, PyTorch will try to find operations that cause NaN or Inf values.
+# Slows down training; usually keep False unless debugging crashes.
+detect_anomaly: False
+
+# If True, warnings (like data storage issues) are only printed once.
+print_warnings_once: False
+
+
+# --- 2. Data Configuration ----------------------------------------------------
+# Defines what data is used, where it comes from, and how it's split.
+
+# Specifies the class of dataset loader to use. 'multimet' is used for Caravan
+# data with multiple meteorological forcing products.
+dataset: multimet
+
+# -- File Paths (UPDATE THESE TO MATCH YOUR SYSTEM) --
+# Paths to text files containing lists of basin IDs for training, validation, and testing.
+train_basin_file: ~/flood-forecasting/tutorial/basin-lists/5-basin-train.txt
+validation_basin_file: ~/flood-forecasting/tutorial/basin-lists/5-basin-train.txt
+test_basin_file: ~/flood-forecasting/tutorial/basin-lists/8-basin-test.txt
+
+# Directory containing the target data (streamflow observations).
+targets_data_dir: ~/flood-forecasting/tutorial/Caravan-nc
+# Directory containing static catchment attributes (e.g., area, elevation).
+statics_data_dir: ~/flood-forecasting/tutorial/Caravan-nc
+# Directory containing dynamic meteorological forcing data (rain, temp, etc.).
+# 'gs://' indicates data is streamed directly from Google Cloud Storage.
+dynamics_data_dir: gs://caravan-multimet/v1.1
+
+# This allows loading the input and target data from CSV files instead of NetCDF files.
+# This makes loading the data significantly slower, but can be useful for local applications
+# in cases where CSV file format is easier to prepare in a user's workflow.
+# CSV files are expected to be in the Caravan data format.
+load_as_csv: False
+
+# -- Time Periods --
+# Define the start and end dates for each data split (format: dd/mm/yyyy).
+
+# Training Period: The model learns from data in this date range.
+# It adjusts its internal weights to minimize prediction errors during this time.
+train_start_date: 01/01/2000
+train_end_date: 31/12/2020
+
+# Validation Period: Data in this range is used to check model performance *during* training.
+# It helps prevent overfitting (learning training data too perfectly but failing on new data)
+# and is used to tune hyperparameters like the learning rate.
+validation_start_date: 01/01/2022
+validation_end_date: 31/12/2024
+
+# Test Period: A completely separate period used ONLY after training is finished.
+# It provides the final, unbiased evaluation of how well the model performs on
+# unseen future data.
+test_start_date: 01/01/2022
+test_end_date: 31/12/2024
+
+# -- Input Features (Dynamic) --
+# 'hindcast_inputs': Historical weather data the model sees to learn current state.
+hindcast_inputs:
+  hres: # ECMWF High-Resolution operational forecast
+    - hres_temperature_2m
+    - hres_total_precipitation
+  imerg: # Satellite precipitation product
+    - imerg_precipitation
+  cpc: # Gauge-based precipitation product
+    - cpc_precipitation
+
+# 'forecast_inputs': Future weather data (forecasts) the model uses to predict ahead.
+forecast_inputs:
+  hres:
+    - hres_temperature_2m
+    - hres_total_precipitation
+  graphcast:
+    - graphcast_temperature_2m
+    - graphcast_total_precipitation
+
+# 'union_mapping': Fills missing values (NaNs) in one dataset with values from another.
+# The primary dataset (key) uses data from the fallback dataset (value) to fill gaps.
+# Format: {primary_feature_with_gaps: fallback_feature_to_fill_from}
+union_mapping:
+  cpc_precipitation: era5land_total_precipitation
+  imerg_precipitation: era5land_total_precipitation
+  graphcast_temperature_2m: era5land_temperature_2m
+  graphcast_total_precipitation: era5land_total_precipitation
+  hres_temperature_2m: era5land_temperature_2m
+  hres_total_precipitation: era5land_total_precipitation
+
+# -- Input Features (Static) --
+# Catchment characteristics that do not change over time.
+static_attributes:
+- area
+- aridity_ERA5_LAND
+- aridity_FAO_PM
+- frac_snow
+- moisture_index_ERA5_LAND
+- moisture_index_FAO_PM
+- p_mean
+- pet_mean_ERA5_LAND
+- pet_mean_FAO_PM
+
+# -- Targets --
+# The variable(s) we are trying to predict.
+target_variables:
+- streamflow
+
+
+# --- 3. Model Architecture ----------------------------------------------------
+# Defines the structure of the neural network.
+
+# The specific model class to use from the model zoo.
+# 'mean_embedding_forecast_lstm' uses separate LSTMs for past and future,
+# averaging embeddings from multiple weather products.
+model: mean_embedding_forecast_lstm
+
+# Size of the hidden state vector in the LSTM layers. Higher = more capacity but
+# higher risk of overfitting.
+hidden_size: 16
+
+# The type of output head. 'regression' directly predicts the continuous streamflow value.
+head: regression
+
+# The type of activation layer used for the regression head.
+output_activation: linear
+
+# Number of days of past data the model uses as input for a single prediction.
+seq_length: 365
+# Number of days into the future to predict.
+lead_time: 7
+# Number of days the hindcast (past) and forecast (future) LSTMs overlap.
+forecast_overlap: 365
+# If True, adds a feature indicating how many days ahead the forecast is for.
+timestep_counter: True
+
+# -- Dropout --
+# Regularization technique to prevent overfitting.
+output_dropout: 0.4 # Fraction of neurons to randomly deactivate in the output layer.
+
+# -- Initialization --
+# Sets initial values for model weights before training starts.
+initial_forget_bias: 3 # High initial forget gate bias helps LSTMs learn long-term dependencies.
+weight_init_opts:      # specific initialization schemes for different parts of the network.
+- lstm-ih-xavier
+- lstm-hh-orthogonal
+- fc-xavier
+
+# -- Sub-network Configurations --
+# Architectures for the small feed-forward networks that process specific input types
+# before they go into the main LSTMs.
+statics_embedding:
+  type: fc                         # Fully Connected (dense) network
+  hiddens: [100, 100, 20]          # Three layers with the specified number of neurons in each
+  activation: [tanh, tanh, linear] # Activation functions for each layer
+  dropout: 0.0
+hindcast_embedding:
+  type: fc
+  hiddens: [100, 20]
+  activation: [tanh, linear]
+  dropout: 0.0
+forecast_embedding:
+  type: fc
+  hiddens: [20, 20, 20, 20]
+  activation: [tanh, tanh, tanh, linear]
+  dropout: 0.0
+
+
+# --- 4. Training Configuration ------------------------------------------------
+# Controls how the model learns from data.
+
+# Choose which GPU to run the code with. On most systems you can see the
+# available GPUs using `nvidia-smi`. The most common naming scheme for GPUs
+# is `cuda:0`, 'cuda:1`, etc.
+# Set this arguement to `cpu` for training on a CPU
+device: cpu
+
+# The loss function to minimize during training. MSE = Mean Squared Error.
+loss: MSE
+# The optimization algorithm. Adam is a standard, robust choice.
+optimizer: Adam
+
+# -- Training Loop --
+# Number of times the model sees the entire training dataset.
+epochs: 15
+# Number of samples processed at once before updating weights.
+batch_size: 256
+# Maximum number of weight updates per epoch (useful for very large datasets).
+# Leave empty to use all training data for each epoch.
+max_updates_per_epoch: 
+
+# -- Learning Rate Scheduler --
+# Adjusts the learning rate during training to improve convergence.
+learning_rate_strategy: StepLR          # Lowers LR at fixed epoch intervals.
+initial_learning_rate: 0.001            # Starting step size for weight updates.
+learning_rate_drop_factor: 0.5          # Multiply LR by this factor when a step is taken.
+learning_rate_epochs_drop: 3            # The **interval (in epochs)** at which the LR is dropped.
+
+# -- Regularization & Stability --
+# Prevents exploding gradients which can destabilize training.
+clip_gradient_norm: 1
+# Adds small random noise to targets during training to improve robustness.
+target_noise_std: 0.005
+
+
+# --- 5. Validation & Evaluation -----------------------------------------------
+# Settings for checking model performance during and after training.
+
+# Metrics to calculate during validation and print to the console.
+# Include `all` to calculate all available metrics, which are listed in 
+# ~/googlehydrology/evaluation/metrics.py
+metrics:
+- all        # Calculate all available metrics.
+# - NSE      # Nash-Sutcliffe Efficiency (standard hydrology metric, 1=perfect, <0=worse than mean).
+# - KGE      # Kling-Gupta Efficiency (balances correlation, variability error, and bias error. 1=perfect).
+#- Alpha-NSE # Variability ratio (std_sim / std_obs). Ideal value is 1.
+#- Beta-NSE  # Standardized bias ( (mean_sim - mean_obs) / std_obs ). Ideal value is 0.
+#- Beta-KGE  # Bias ratio (mean_sim / mean_obs). Ideal value is 1.
+#- Pearson-r # Pearson correlation coefficient. Measures timing/shape agreement only. Ideal value is 1.
+
+# How often (in epochs) to run validation.
+validate_every:
+# Number of basins to use for validation. -1 means use ALL validation basins.
+validate_n_random_basins: -1
+
+# During testing/validation, ignore periods where observations are completely missing.
+tester_skip_obs_all_nan: True
+# Method for aggregating multiple predictions if ensemble is used (median is robust).
+tester_sample_reduction: median
+
+# Forces negative predictions to zero for these variables (physically realistic for streamflow).
+clip_targets_to_zero:
+- streamflow
+
+# Defines which time steps are used to calculate loss. 8 means only the last 8 days
+# of the sequence contributes to the error (focuses model on the forecast period).
+predict_last_n: 8
+
+# If True, samples with all-zero inputs are treated as invalid data gaps.
+allzero_samples_are_invalid: False
+
+
+# --- 6. System & Runtime ------------------------------------------------------
+# Computational settings.
+
+# Number of CPU processes used to load data in parallel. Higher can be faster.
+num_workers: 2
+# How often to print training loss to Tensorboard.
+log_loss_every_nth_update: 50
+# Number of validation plots to save to TensorBoard (0 to disable).
+log_n_figures: 0
+
+# Data caching settings to speed up training by keeping data in RAM.
+cache:
+  enabled: True           # Set to True if you have enough RAM
+  byte_limit: 10000000000 # Max RAM to use for cache (in bytes, ~10GB here)

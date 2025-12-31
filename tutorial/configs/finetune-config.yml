@@ -1,0 +1,109 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# ==============================================================================
+# GoogleHydrology Fine-Tuning Configuration File
+# ==============================================================================
+# This configuration defines a fine-tuning experiment where a pre-trained
+# base model is adapted to a specific target basin.
+
+# --- 1. Experiment Setup ------------------------------------------------------
+# Defines where to find the base model and where to save the new one.
+
+# The directory of the PRE-TRAINED base model. We start from these weights.
+# IMPORTANT: Update this path to point to your actual base model run.
+base_run_dir: ~/flood-forecasting/tutorial/model-runs/5-basin-example
+
+# Unique name for this fine-tuning experiment.
+experiment_name: finetune-FINETUNE_BASIN
+
+# Where to save the fine-tuned model. Usually, we save it inside the base
+# model's directory to keep them organized together.
+run_dir: ~/flood-forecasting/tutorial/model-runs/5-basin-example
+
+
+# --- 2. Data & Basins ---------------------------------------------------------
+# Defines the specific data used for this fine-tuning run.
+
+# For fine-tuning, the train and validation sets typically contain ONLY
+# the single target basin we want to adapt the model to.
+train_basin_file: ~/flood-forecasting/tutorial/basin-lists/FINETUNE_BASIN.txt
+validation_basin_file: ~/flood-forecasting/tutorial/basin-lists/FINETUNE_BASIN.txt
+
+# The test set can remain larger to evaluate how standardizing on one basin
+# affects performance on others (usually negatively).
+test_basin_file: ~/flood-forecasting/tutorial/basin-lists/8-basin-test.txt
+
+# Path to the observation data (streamflow targets).
+targets_data_dir: ~/flood-forecasting/tutorial/Caravan-nc
+
+
+# --- 3. Fine-Tuning Strategy --------------------------------------------------
+# This section defines WHICH parts of the neural network are allowed to update
+# their weights during fine-tuning.
+#
+# PHILOSOPHY: We want to adapt the model to the specific static characteristics
+# of the new basin without forgetting the general hydrological physics learned
+# from hundreds of other basins. We therefore freeze the core "time-series"
+# components and only retrain the static feature interpreters and output head.
+finetune_modules:
+# -- Active Modules (Weights WILL be updated) --
+# 1. Static Attribute Embedding: Learns how this specific basin's fixed
+#    descriptors (soil, elevation, etc.) uniquely influence its hydrology.
+- static_attributes_fc
+# 2. Output Head: Adapts the final scaling and bias of predictions to match
+#    the specific magnitude of streamflow in this basin.
+- head
+
+# -- Frozen Modules (Weights will NOT be updated) --
+# These are commented out so they are NOT trained. We want to keep the
+# general knowledge they learned from the large base dataset.
+#
+# Input Embeddings: These layers learned how to interpret raw weather data.
+#- hindcast_embeddings_fc
+#- forecast_embeddings_fc
+#- shared_embeddings_fc
+#
+# LSTMs: These are the core engines that model the physics of water movement
+# over time. They are generally robust and don't need basin-specific retraining.
+#- hindcast_lstm
+#- forecast_lstm
+
+
+# --- 4. Training Hyperparameters ----------------------------------------------
+# Controls the fine-tuning process.
+
+# -- Learning Rate --
+# A simple StepLR strategy is often sufficient for short fine-tuning runs.
+learning_rate_strategy: StepLR
+initial_learning_rate: 0.005     # Starting step size for weight updates.
+learning_rate_drop_factor: 0.9   # Multiply LR by this factor ...
+learning_rate_epochs_drop: 5     # ... every 5 epochs.
+
+# -- Training Loop --
+# Number of samples processed at once.
+batch_size: 256
+# Number of passes through the (small) fine-tuning dataset.
+epochs: 25
+
+
+# --- 5. Validation ------------------------------------------------------------
+# Metrics to monitor during fine-tuning.
+metrics:
+  - all
+
+# Validate after every single epoch to closely monitor adaptation.
+validate_every:
+# Validate on ALL basins in the validation file (which is just 1 basin here).
+validate_n_random_basins: -1
