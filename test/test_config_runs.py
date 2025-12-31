@@ -60,8 +60,11 @@ def test_forecast_daily_regression(
         [[nan_basin], nan_dates], 
         names=['basin', 'date']
     )
-    nan_discharge = pd.Series(
-        float('nan'), index=index)
+    nan_discharge = pd.DataFrame(
+        data=float('nan'), 
+        index=index, 
+        columns=['streamflow']
+    )
     _check_results(config, nan_basin, nan_discharge)  # No valid data.
     _check_results(config, 'lamah_1145')
     _check_results(config, 'hysets_01075000')
@@ -105,12 +108,12 @@ def _check_results(config: Config, basin: str, discharge: pd.Series = None):
         results = results.isel(time_step=-1)
 
     results_array = results[f'{config.target_variables[0]}_obs'].values
+    idx = pd.IndexSlice
     try:
-        idx = pd.IndexSlice
         discharge_slice = discharge.loc[idx[basin, test_start_date:test_end_date], 'streamflow']
-        discharge_array = discharge_slice.values
     except:
         import pdb; pdb.set_trace()
+    discharge_array = discharge_slice.values
 
     assert discharge_array == approx(results_array, nan_ok=True)
 
