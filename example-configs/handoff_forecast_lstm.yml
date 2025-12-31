@@ -363,7 +363,7 @@ allzero_samples_are_invalid: False
 # Computational settings.
 
 # Number of CPU processes used to load data in parallel. Higher can be faster.
-num_workers: 4
+num_workers: 0
 # How often to print training loss to Tensorboard.
 log_loss_every_nth_update: 50
 
