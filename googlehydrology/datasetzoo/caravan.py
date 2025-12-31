@@ -17,8 +17,8 @@ import logging
 from pathlib import Path
 
 import dask
-import dask.delayed
 import dask.dataframe as dd
+import dask.delayed
 import numpy as np
 import pandas as pd
 import xarray
@@ -45,6 +45,8 @@ def load_caravan_attributes(
     subdataset : str, optional
         If passed, returns only the attributes of one sub-dataset. Otherwise, the attributes of all sub-datasets are
         loaded.
+    features: list[str], optional
+        If passed, will only return the specified features (columns) in the statics datasets.
 
     Raises
     ------

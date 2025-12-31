@@ -16,9 +16,9 @@ from typing import Type
 
 from torch.utils.data import Dataset
 
+from googlehydrology.datasetzoo.datasetregistry import DatasetRegistry
 from googlehydrology.datasetzoo.multimet import Multimet
 from googlehydrology.utils.config import Config
-from googlehydrology.datasetzoo.datasetregistry import DatasetRegistry
 
 
 def get_dataset(

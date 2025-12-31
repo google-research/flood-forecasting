@@ -12,24 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
-from typing import Hashable, Iterable
-
-import logging
-import itertools
 import functools
-from pathlib import Path
+import itertools
+import logging
+import math
 import pickle
 import subprocess
 import sys
+from pathlib import Path
+from typing import Hashable, Iterable
 
 import dask
 import dask.array
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import Dataset
 import xarray as xr
+from torch.utils.data import Dataset
 
 from googlehydrology.datasetzoo.caravan import (
     load_caravan_attributes,
@@ -41,7 +40,7 @@ from googlehydrology.datautils.utils import load_basin_file
 from googlehydrology.datautils.validate_samples import validate_samples
 from googlehydrology.utils.config import Config
 from googlehydrology.utils.configutils import flatten_feature_list
-from googlehydrology.utils.errors import NoTrainDataError, NoEvaluationDataError
+from googlehydrology.utils.errors import NoEvaluationDataError, NoTrainDataError
 
 LOGGER = logging.getLogger(__name__)
 

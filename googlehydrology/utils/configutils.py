@@ -15,7 +15,6 @@
 """Utility script to generate config files from a base config and a defined set of variations"""
 
 import itertools
-from collections.abc import Iterable
 from pathlib import Path
 
 import more_itertools
