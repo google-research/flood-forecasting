@@ -128,8 +128,6 @@ class InputLayer(nn.Module):
             + cfg.hydroatlas_attributes
             + cfg.evolving_attributes
         )
-        if cfg.use_basin_id_encoding:
-            statics_input_size += cfg.number_of_basins
 
         xavier_init = WeightInitOpt.FC_XAVIER in cfg.weight_init_opts
 
