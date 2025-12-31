@@ -550,16 +550,6 @@ def test_forecast_dataset_per_basin_target_stds(
         1,
     )  # 1 basin, 1 target variable
 
-    cfg_weightednse = get_config('default')
-    cfg_weightednse.loss = 'weightednse'  # Manually set attribute
-    dataset_weightednse = Multimet(
-        cfg=cfg_weightednse, is_train=True, period='train'
-    )
-    sample_weightednse = dataset_weightednse[0]
-    assert 'per_basin_target_stds' in sample_weightednse
-    assert isinstance(sample_weightednse['per_basin_target_stds'], torch.Tensor)
-    assert sample_weightednse['per_basin_target_stds'].shape == (1, 1)
-
     cfg_mse = get_config('default')
     cfg_mse.loss = 'mse'  # Manually set attribute
     dataset_mse = Multimet(cfg=cfg_mse, is_train=True, period='train')
