@@ -193,9 +193,8 @@ class Config(object):
                                 )
                             temp_cfg[key] = temp_list
                         else:
-                            # Ignore None's due to e.g. using a per_basin_period_file
-                            if isinstance(val, pd.Timestamp):
-                                temp_cfg[key] = val.strftime(format='%d/%m/%Y')
+                            assert isinstance(val, pd.Timestamp)
+                            temp_cfg[key] = val.strftime(format='%d/%m/%Y')
                     else:
                         temp_cfg[key] = val
 
