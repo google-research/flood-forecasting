@@ -11,7 +11,6 @@ Submodules
    googlehydrology.modelzoo.fc
    googlehydrology.modelzoo.handoff_forecast_lstm
    googlehydrology.modelzoo.head
-   googlehydrology.modelzoo.inputlayer
    googlehydrology.modelzoo.mean_embedding_forecast_lstm
    googlehydrology.modelzoo.positional_encoding
 
