@@ -19,8 +19,6 @@ import pytest
 from unittest.mock import patch, ANY
 
 from googlehydrology.datautils.validate_samples import (
-    _flatten_feature_groups,
-    extract_feature_groups,
     validate_samples,
     validate_samples_for_nan_handling,
     validate_samples_any_all_group,
@@ -743,11 +741,7 @@ def test_validate_sequence_any_shift_right(sample_dates_fixture):
 )
 @patch('googlehydrology.datautils.validate_samples.validate_sequence_all')
 @patch('googlehydrology.datautils.validate_samples.validate_sequence_any')
-@patch('googlehydrology.datautils.validate_samples._flatten_feature_groups')
-@patch('googlehydrology.datautils.validate_samples.extract_feature_groups')
 def test_validate_samples_no_features_raises_error(
-    mock_extract_feature_groups,
-    mock_flatten_feature_groups,
     mock_validate_sequence_any,
     mock_validate_sequence_all,
     mock_validate_samples_for_nan_handling,
@@ -777,8 +771,6 @@ def test_validate_samples_no_features_raises_error(
     mock_validate_samples_for_nan_handling.assert_not_called()
     mock_validate_sequence_all.assert_not_called()
     mock_validate_sequence_any.assert_not_called()
-    mock_flatten_feature_groups.assert_not_called()
-    mock_extract_feature_groups.assert_not_called()
 
 
 @patch('googlehydrology.datautils.validate_samples.validate_samples_any')
@@ -788,11 +780,7 @@ def test_validate_samples_no_features_raises_error(
 )
 @patch('googlehydrology.datautils.validate_samples.validate_sequence_all')
 @patch('googlehydrology.datautils.validate_samples.validate_sequence_any')
-@patch('googlehydrology.datautils.validate_samples._flatten_feature_groups')
-@patch('googlehydrology.datautils.validate_samples.extract_feature_groups')
 def test_validate_samples_static_features_only(
-    mock_extract_feature_groups,
-    mock_flatten_feature_groups,
     mock_validate_sequence_any,
     mock_validate_sequence_all,
     mock_validate_samples_for_nan_handling,
@@ -833,8 +821,6 @@ def test_validate_samples_static_features_only(
     mock_validate_samples_any.assert_not_called()
     mock_validate_sequence_any.assert_not_called()
     mock_validate_sequence_all.assert_not_called()
-    mock_flatten_feature_groups.assert_not_called()
-    mock_extract_feature_groups.assert_not_called()
     assert len(masks) == 2
     assert masks[0].name == 'statics'
     assert masks[1].name == 'dates'
