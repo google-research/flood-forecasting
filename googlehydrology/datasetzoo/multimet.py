@@ -103,7 +103,6 @@ class Multimet(Dataset):
         # Feature lists by type.
         self._static_features = cfg.static_attributes
         self._target_features = cfg.target_variables
-        self._forecast_features = []
         self._forecast_features = flatten_feature_list(cfg.forecast_inputs)
         self._hindcast_features = flatten_feature_list(cfg.hindcast_inputs)
         self._union_mapping = cfg.union_mapping
@@ -261,7 +260,7 @@ class Multimet(Dataset):
         # TODO (future) :: Find a better way to decide whether to calculate these. At least keep a list of
         # losses that require them somewhere like `training.__init__.py`. Perhaps simply always calculate.
         self._per_basin_target_stds = None
-        if cfg.loss.lower() in ['nse', 'weightednse']:
+        if cfg.loss.lower() in ['nse']:
             LOGGER.debug('create per_basin_target_stds')
             self._per_basin_target_stds = self._dataset[
                 self._target_features

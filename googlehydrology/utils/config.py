@@ -183,6 +183,7 @@ class Config(object):
                                 )
                             temp_cfg[key] = temp_list
                         else:
+                            assert isinstance(val, pd.Timestamp)
                             temp_cfg[key] = val.strftime(format='%d/%m/%Y')
                     else:
                         temp_cfg[key] = val
