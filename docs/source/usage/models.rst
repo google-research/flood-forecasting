@@ -1,26 +1,19 @@
 Modelzoo
 ========
 
-The following section gives an overview of all implemented models in GoogleHydrology. Conceptually, all models in our package consist of two parts, the model class (which constitutes the core of the model as such) and the model heads (which relate the outputs of the model class to the predicted variables). The section `Model Heads`_ provides a list of all implemented model heads, and the section `Model Classes`_ a list of all model classes. If you want to implement your own model within the package you best start at the section `Implementing a new model`_, which provides the necessary details to do so. 
-
+This section provides an overview of the forecasting models available in the library.
 
 Model Heads
 -----------
-The head of the model is used on top of the model class and relates the outputs of the `Model Classes`_ to the predicted variable. Currently these model heads are available: `Regression`_, `CMAL`_. The CMAL head provides options for probabilistic modelling. A detailed overview can be found in `Klotz et al. "Uncertainty Estimation with Deep Learning for Rainfall-Runoff Modelling" <https://arxiv.org/abs/2012.14295>`__. 
+The head of the model is used on top of the model class and relates the outputs of the model to the predicted variable.
 
 Regression
 ^^^^^^^^^^
-:py:class:`googlehydrology.modelzoo.head.Regression` provides a single layer *regression* head, that includes different activation options for the output. (namely a linear, relu and softplus). 
-
-It is possible to obtain probabilistic predictions with the regression head by using Monte-Carlo Dropout. Its usage is defined in the config.yml by setting ``mc_dropout``. The sampling behavior is governed by picking the number of samples (``n_samples``) and the approach for handling negative samples (``negative_sample_handling``).   
-
-The number of components can be set in the config.yml using ``n_distributions``. Additionally, the sampling behavior (for the inference) is defined with config.yml by setting the number of samples (``n_samples``), and the approach for handling negative samples (``negative_sample_handling``).  
+:py:class:`googlehydrology.modelzoo.head.Regression` provides a single layer *regression* head, that includes different activation options for the output.
 
 CMAL
 ^^^^
-:py:class:`googlehydrology.modelzoo.head.CMAL` implements a *Countable Mixture of Asymmetric Laplacians* head. That is, a mixture density network with asymmetric Laplace distributions as components. The CMAL components are defined by three parameters (location, scale, and asymmetry) and linked by a set of weights. The current implementation of the CMAL head uses two layers. Specific output activations are used for the component scales (:py:class:`torch.nn.Softplus(2)`), the asymmetries (:py:func:`torch.sigmoid`), and the weights (:py:func:`torch.softmax`). In our preliminary experiments this heuristic achieved better results. 
-
-The number of components can be set in the config.yml using ``n_distributions``. Additionally, one can sample from CMAL. The behavior of which is defined by setting the number of samples (``n_samples``), and the approach for handling negative samples (``negative_sample_handling``).  
+:py:class:`googlehydrology.modelzoo.head.CMAL` implements a *Countable Mixture of Asymmetric Laplacians* head. That is, a mixture density network with asymmetric Laplace distributions as components.
 
 Model Classes
 -------------
@@ -29,164 +22,6 @@ BaseModel
 ^^^^^^^^^
 Abstract base class from which all models derive. Do not use this class for model training.
 
-ARLSTM
-^^^^^^
-:py:class:`googlehydrology.modelzoo.arlstm.ARLSTM` is an autoregressive long short term memory network (LSTM)
-that assumes one input is a time-lagged version of the output. All features (``x_d``, ``x_s``, ``x_one_hot``) 
-are concatenated and passed to the timeseries network at each time step, along with a binary flag that indicates 
-whether the autoregressive input (i.e., lagged target data) is missing (False) or present (True). The length of
-the autoregressive lag can be specified in the config file by specifying the lag on the autoregressive input.
-Any missing data in the autoregressive inputs is imputed with appropriately lagged model output, and gradients are 
-calculated through this imputation during backpropagation. Only one autoregressive input is currently supported, 
-and it is assumed that this is the last variable in the ``x_d`` vector. This model uses a standard pytorch LSTM 
-cell, but only runs the optimized LSTM one timestep at a time, and is therefore significantly slower than the CudaLSTM.  
-
-CudaLSTM
-^^^^^^^^
-:py:class:`googlehydrology.modelzoo.cudalstm.CudaLSTM` is a network using the standard PyTorch LSTM implementation.
-All features (``x_d``, ``x_s``, ``x_one_hot``) are concatenated and passed to the network at each time step.
-If ``statics/dynamics_embedding`` are used, the static/dynamic inputs will be passed through embedding networks before
-being concatenated.
-The initial forget gate bias can be defined in config.yml (``initial_forget_bias``) and will be set accordingly during
-model initialization.
-
-CustomLSTM
-^^^^^^^^^^
-:py:class:`googlehydrology.modelzoo.customlstm.CustomLSTM` is a variant of the ``CudaLSTM``
-that returns all gate and state activations for all time steps. This class is mainly implemented for exploratory
-reasons. You can use the method ``model.copy_weights()`` to copy the weights of a ``CudaLSTM`` model
-into a ``CustomLSTM`` model. This allows to use the fast CUDA implementations for training, and only use this class for
-inference with more detailed outputs. You can however also use this model during training (``model: customlstm`` in the
-config.yml) or as a starter for your own modifications to the LSTM cell. Note, however, that the runtime of this model
-is considerably slower than its optimized counterparts.
-
-EA-LSTM
-^^^^^^^
-:py:class:`googlehydrology.modelzoo.ealstm.EALSTM` is an implementation of the Entity-Aware LSTM, as introduced in
-`Kratzert et al. "Towards learning universal, regional, and local hydrological behaviors via machine learning applied to large-sample datasets" <https://hess.copernicus.org/articles/23/5089/2019/hess-23-5089-2019.html>`__.
-The static features (``x_s`` and/or ``x_one_hot``) are used to compute the input gate activations, while the dynamic
-inputs ``x_d`` are used in all other gates of the network.
-The initial forget gate bias can be defined in config.yml (``initial_forget_bias``).
-If ``statics/dynamics_embedding`` are used, the static/dynamic inputs will first be passed through embedding networks.
-The output of the static embedding network will then be passed through the input gate, which consists of a single linear
-layer.
-
-EmbCudaLSTM
-^^^^^^^^^^^
-.. deprecated:: 0.9.11-beta
-   Use `CudaLSTM`_ with ``statics_embedding``.
-
-:py:class:`googlehydrology.modelzoo.embcudalstm.EmbCudaLSTM` is similar to `CudaLSTM`_,
-with the only difference that static inputs (``x_s`` and/or ``x_one_hot``) are passed through an embedding network
-before being concatenated to the dynamic inputs ``x_d`` at each time step.
-
-GRU
-^^^
-:py:class:`googlehydrology.modelzoo.gru.GRU` is a network using the standard PyTorch GRU implementation.
-All features (``x_d``, ``x_s``, ``x_one_hot``) are concatenated and passed to the network at each time step.
-If ``statics/dynamics_embedding`` are used, the static/dynamic inputs will be passed through embedding networks before
-being concatenated.
-
-Hybrid-Model
-^^^^^^^^^^^^
-:py:class:`googlehydrology.modelzoo.hybridmodel.HybridModel` is a wrapper class to combine data-driven methods with
-conceptual hydrological models. Specifically, an LSTM network is used to produce a dynamic parameterization for a
-conceptual hydrological model. The inputs for the model are split into two groups: i) the inputs going into the LSTM
-``dynamic_inputs``, ``static_attributes``, etc. and ii) the inputs going into the conceptual model ```dynamic_conceptual_inputs``. If the features
-used in the data-driven part are also used into the conceptual model, one should use the ``duplicate_features``
-configuration argument. One also has to add the input features of the conceptual model and the target variable into
-``custom_normalization``, due to the mass-conservative structure of the conceptual part.
-
-.. code-block:: yaml
-
-    dynamic_inputs:
-        prcp(mm/day)
-    duplicate_features:
-        prcp(mm/day)
-    dynamic_conceptual_inputs:
-        prcp(mm/day)_copy1
-    custom_normalization:
-        prcp(mm/day)_copy1:
-            centering: None
-            scaling: None
-        QObs(mm/d):
-            centering: None
-            scaling: None
-
-.. _MC-LSTM:
-
-Mamba
-^^^^^
-:py:class:`googlehydrology.modelzoo.mamba.Mamba` is a state space model (SSM) using the PyTorch implementation
-https://github.com/state-spaces/mamba/tree/main from `Gu and Dao (2023) <https://arxiv.org/abs/2312.00752>`_.
-
-There are two required dependencies for Mamba: ``mamba_ssm`` and ``causal-conv1d``, which are the mamba ssm layer and
-implementation of a simple causal Conv1d layer used inside the Mamba block, respectively. Note the version here: ``causal-conv1d>=1.1.0``
-
-There are three hyperparameters which can be set in the config file:
-- ``mamba_d_conv``: Local convolution width (Default is set to 4)
-- ``mamba_d_state``: SSM state expansion factor (Default is set to 16)
-- ``mamba_expand``: Block expansion factor (Default is set to 2)
-
-MC-LSTM
-^^^^^^^
-:py:class:`googlehydrology.modelzoo.mclstm.MCLSTM` is a concept for a mass-conserving model architecture inspired by the
-LSTM that was recently proposed by `Hoedt et al. (2021) <https://arxiv.org/abs/2101.05186>`_. The implementation included
-in this library is the exact model configuration that was used for the hydrology experiments in the linked publication 
-(for details, see Appendix B.4.2).
-The inputs for the model are split into two groups: i) the mass input, whose values are stored in the memory cells of 
-the model and from which the target is calculated and ii) auxiliary inputs, which are used to control the gates 
-within the model. In this implementation, only a single mass input per timestep (e.g. precipitation) is allowed, which
-has to be specified with the config argument ``mass_inputs``. Make sure to exclude the mass input feature, as well as
-the target variable from the standard feature normalization. This can be done using the ``custom_normalization`` config argument
-and by setting the ``centering`` and ``scaling`` key to ``None``. For example, if the mass input is named "precipitation"
-and the target feature is named "discharge", this would look like this:
-
-.. code-block:: yaml
-
-    custom_normalization:
-        precipitation:
-            centering: None
-            scaling: None
-        discharge:
-            centering: None
-            scaling: None
-
-All inputs specified by the ``dynamic_inputs`` config argument are used as auxiliary inputs, as are (possibly embedded)
-static inputs (e.g. catchment attributes).
-The config argument ``head`` is ignored for this model and the model prediction is always computed as the sum over the 
-outgoing mass (excluding the trash cell output).
-
-MTS-LSTM
-^^^^^^^^
-:py:class:`googlehydrology.modelzoo.mtslstm.MTSLSTM` is a newly proposed model by `Gauch et al. "Rainfall--Runoff Prediction at Multiple Timescales with a Single Long Short-Term Memory Network" <https://arxiv.org/abs/2010.07921>`__.
-This model allows the training on more than temporal resolution (e.g., daily and hourly inputs) and
-returns multi-timescale model predictions accordingly. A more detailed tutorial will follow shortly.
-
-ODE-LSTM
-^^^^^^^^
-:py:class:`googlehydrology.modelzoo.odelstm.ODELSTM` is a PyTorch implementation of the ODE-LSTM proposed by
-`Lechner and Hasani <https://arxiv.org/abs/2006.04418>`_. This model can be used with unevenly sampled inputs and can
-be queried to return predictions for any arbitrary time step.
-
-Transformer
-^^^^^^^^^^^
-:py:class:`googlehydrology.modelzoo.transformer.Transformer` is the encoding portion of a standard transformer network with self-attention. 
-This uses the standard PyTorch TransformerEncoder implementation. All features (``x_d``, ``x_s``, ``x_one_hot``) are concatenated and passed 
-to the network at each time step. Unless the number of inputs is divisible by the number of transformer heads (``transformer_nheads``), it is
-necessary to use an embedding network that guarantees this. To achieve this, use ``statics/dynamics_embedding``, so the static/dynamic
-inputs will be passed through embedding networks before being concatenated. The embedding network will then map the static and dynamic features
-to size ``statics/dynamics_embedding['hiddens'][-1]``, so the total embedding size will be the sum of these values.
-Instead of a decoder, this model uses a standard head (e.g., linear). 
-The model requires the following hyperparameters specified in the config file: 
-
-* ``transformer_positional_encoding_type``: choices to "sum" or "concatenate" positional encoding to other model inputs.
-* ``transformer_positional_dropout``: fraction of dropout applied to the positional encoding.
-* ``transformer_nheads``: number of self-attention heads.
-* ``transformer_dim_feedforward``: dimension of the feedforward networks between self-attention heads.
-* ``transformer_dropout``: dropout in the feedforward networks between self-attention heads.
-* ``transformer_nlayers``: number of stacked self-attention + feedforward layers.
-
 Handoff-Forecast-LSTM
 ^^^^^^^^^^^^^^^^^^^^^
 :py:class:`googlehydrology.modelzoo.handoff_forecast_lstm.HandoffForecastLSTM` is a forecasting model
@@ -194,67 +29,29 @@ that uses a state-handoff to transition from a hindcast sequence (LSTM)
 model to a forecast sequence (LSTM) model. The hindcast model is run from the past up to present
 (the issue time of the forecast) and then passes the cell state and hidden state of the LSTM into
 a (nonlinear) handoff network, which is then used to initialize the cell state and hidden state of a
-new LSTM that rolls out over the forecast period. The handoff network is implemented as a custom FC
-network, which can have multiple layers. The handoff network is implemented using the
-``state_handoff_network`` config parameter.
-    
-The hindcast and forecast LSTMs have different weights and biases, different heads, and can have
-different embedding networks, as defined by ``hindcast_embedding`` and ``forecast_embedding`` in the
-config. The hidden size of the hindcast LSTM is set using the ``hindcast_hidden_size`` config parameter
-and the hidden size of the forecast LSTM is set using the ``forecast_hidden_size`` config parameter,
-which both default to ``hidden_size`` if not set explicitly.
+new LSTM that rolls out over the forecast period.
 
-The handoff forecast LSTM model can implement a delayed handoff, such that the handoff between the
-hindcast and forecast LSTM occurs prior to the forecast issue time. This is controlled by the
-``forecast_overlap`` parameter in the config file. The forecast and hindcast LSTMs run concurrently 
-for the number of timesteps indicated by ``forecast_overlap``. We recommend using the
-``ForecastOverlapMSERegularization`` regularization option to regularize the loss function by
-(dis)agreement between the overlapping portion of the hindcast and forecast LSTMs. This regularization
-term can be requested by setting  the ``regularization`` parameter list in the config file to include
-``forecast_overlap``.
+This is a former produciton model that was previously used for the `Google FloodHub <https://sites.research.google/floods/>`__. 
+It is described in detail in [Nearing2024]_.
 
-Multihead-Forecast-LSTM
-^^^^^^^^^^^^^^^^^^^^^^^
-:py:class:`googlehydrology.modelzoo.multihead_forecast_lstm.MultiheadForecastLSTM` is a forecasting model that runs a sequential (LSTM) model up to the forecast 
-issue time, and then directly predicts a sequence of forecast timesteps without using a recurrent rollout. Prediction is done with a custom ``FC`` (fully connected) 
-layer, which can have multiple layers. Do not use this model with ``forecast_overlap`` > 0.
+Mean-Embedding-Forecast-LSTM
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+:py:class:`googlehydrology.modelzoo.mean_embedding_forecast_lstm.MeanEmbeddingForecastLSTM` is a forecasting
+model that uses separate embedding networks for hindcast and forecast inputs. It aggregates these inputs
+using masked means before passing them into respective LSTMs for the hindcast and forecast periods.
 
-
-Sequential-Forecast-LSTM
-^^^^^^^^^^^^^^^^^^^^^^^^
-:py:class:`googlehydrology.modelzoo.sequential_forecast_lstm.SequentialForecastLSTM` is a forecasting
-model that uses a single sequential (LSTM) model that rolls 
-out through both the hindcast and forecast sequences. The difference between this
-and a standard ``CudaLSTM`` is (1) this model uses both hindcast and forecast
-input features, and (2) it uses a separate embedding network for the hindcast
-period and the forecast period, as defined by ``hindcast_embedding`` and
-``forecast_embedding`` in the config. Do not use this model with ``forecast_overlap`` > 0.
-
-
-Stacked-Forecast-LSTM
-^^^^^^^^^^^^^^^^^^^^^
-:py:class:`googlehydrology.modelzoo.stacked_forecast_lstm.StackedForecastLSTM` This is a forecasting
-model that uses two stacked sequential (LSTM) models to handle 
-hindcast vs. forecast. The config parameter ``forecast_overlap`` deterimines the temporal
-overlap of the hindcast and forecast LSTMs.
-        
-Outputs from the hindcast LSTM are concatenated to the input sequences to the forecast
-LSTM and shifted in time by the forecast horizon. This causes a lag between the latest
-hindcast data and the newest forecast time point, meaning that forecasts do not get
-information from the most recent hindcast inputs. To solve this, set the
-``bidirectional_stacked_forecast_lstm`` config parameter to True, so that the
-hindcast LSTM runs bidirectional and therefore all outputs from the hindcast
-LSTM receive information from the most recent hindcast input data. This model supports
-different embedding networks, as defined by ``hindcast_embedding`` and
-``forecast_embedding`` in the config.
-
+This is the current production model, as of December 2025, for the `Google FloodHub <https://sites.research.google/floods/>`__. 
+It is described in detail in [Gauch2025]_.
 
 Implementing a new model
 ^^^^^^^^^^^^^^^^^^^^^^^^
 The listing below shows the skeleton of a template model you can use to start implementing your own model.
-Once you have implemented your model, make sure to modify :py:func:`googlehydrology.modelzoo.__init__.get_model`.
-Furthermore, make sure to select a *unique* model abbreviation that will be used to specify the model in the config.yml
-files.
+
+**Crucial Steps:**
+
+1.  **Inherit from BaseModel:** Your class must inherit from :py:class:`googlehydrology.modelzoo.basemodel.BaseModel`.
+2.  **Define module_parts:** You must define a list called ``module_parts`` containing the names of the sub-modules (e.g., LSTMs, Linear layers) in your class. This is required for the fine-tuning logic to know which parts of the model to freeze or unfreeze.
+3.  **Register the Model:** Once implemented, you must modify :py:func:`googlehydrology.modelzoo.__init__.get_model` to instantiate your class when its name is found in the config.
 
 .. code-block:: python
 
@@ -265,12 +62,15 @@ files.
 
     class TemplateModel(BaseModel):
 
+        # The `module_parts` variable is a list of all of the different model components.
+        # You must construct and name these components. This is necessary in order to freeze
+        # and unfreeze individual components for fine tuning.
+        module_parts = [...]
+
         def __init__(self, cfg: dict):
             """Initialize the model
 
-            Each model receives as only input the config dictionary. From this, the entire model has to be implemented in
-            this class (with potential use of other modules, such as FC from fc.py). So this class will get the model inputs
-            and has to return the predictions.
+            Each model receives as only input the config dictionary. From this, the entire model can be implemented.
 
             Each Model inherits from the BaseModel, which implements some universal functionality. The basemodel also
             defines the output_size, which can be used here as a given attribute (self.output_size)
@@ -288,36 +88,43 @@ files.
 
         def forward(self, data: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
             """Forward pass through the model
-
-            By convention, each forward pass has to accept a dict of input tensors. Usually, this dict contains 'x_d' and,
-            possibly, x_s and x_one_hot. If x_d and x_s are available at multiple frequencies, the keys 'x_d' and 'x_s'
-            have frequency suffixes such as 'x_d_1h' for hourly data.
-            Furthermore, by definition, each model has to return a dict containing the network predictions in 'y_hat',
-            potentially in addition to other keys. LSTM-based models should stick to the convention to return (at least)
-            the following three tensors: y_hat, h_n, c_n (or, in the multi-frequency case, y_hat_1h, y_hat_1D, etc.).
-
+          
             Parameters
             ----------
-            data : dict[str, torch.Tensor]
-                 Dictionary with tensors
-                    - x_d of shape [batch size, sequence length, features] containing the dynamic input data.
-                    - x_s of shape [batch size, features] containing static input features. These are the concatenation
-                        of what is defined in the config under static_attributes and evolving_attributes. In case not a single
-                        camels attribute or static input feature is defined in the config, x_s will not be present.
-                    - x_one_hot of shape [batch size, number of basins] containing the one hot encoding of the basins.
-                        In case 'use_basin_id_encoding' is set to False in the config, x_one_hot will not be present.
-                    Note: If the input data are available at multiple frequencies (via use_frequencies), each input tensor
-                        will have a suffix "_{freq}" indicating the tensor's frequency.
-
+            - 'x_d_hindcast': Hindcast dynamic inputs 
+              Shape: [batch, seq_length, features]
+            - 'x_d_forecast': Forecast dynamic inputs 
+              Shape: [batch, lead_time, features]
+            - 'x_s': Static inputs 
+              Shape: [batch, features]
+            
             Returns
             -------
-            The network prediction has to be returned under the dictionary key 'y_hat' (or, if multiple frequencies are
-            predicted, 'y_hat_{freq}'. Furthermore, make sure to return predictions for each time step, even if you want
-            to train sequence-to-one. Which predictions are used for training the network is controlled in the train_epoch()
-            function in googlehydrology/training/basetrainer.py. Other return values should be the hidden states as 'h_n' and cell
-            states 'c_n'. Further return values are possible.
+            dict[str, torch.Tensor]
+                The dictionary must contain the key 'y_hat' with predictions.
+                Shape: [batch, seq_length, num_targets]
             """
+
             ###############################
             # Implement forward pass here #
             ###############################
-            pass
+            
+            # Example forward pass (remove when you add your own modeling logic)
+            hindcast = data['x_d_hindcast']
+            forecast = data['x_d_forecast']
+            statics = data['x_s']
+            
+            # ... implement your forecasting logic here ...
+            
+            # Example placeholder output (remove when you add your own modeling logic)
+            batch_size, seq_len, _ = hindcast.shape
+            output = torch.zeros(batch_size, seq_len, self.output_size)
+
+            return {'y_hat': output}
+
+References
+^^^^^^^^^^
+
+.. [Nearing2024] Nearing, Grey, et al. "Global prediction of extreme floods in ungauged watersheds <https://www.nature.com/articles/s41586-024-07145-1>_." Nature (2024).
+
+.. [Gauch2025] Gauch, Martin, et al. "How to deal with missing input data <https://hess.copernicus.org/articles/29/6221/2025/>_." Hydrology and Earth System Sciences (2025).

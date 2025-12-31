@@ -26,7 +26,9 @@
 #
 import datetime
 import os
+import shutil
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.abspath('.'))
 sys.path.insert(0, os.path.abspath('../../'))
@@ -36,8 +38,8 @@ with open('../../googlehydrology/__about__.py', 'r') as fp:
     exec(fp.read(), about)
 
 project = 'GoogleHydrology'
-copyright = f'{datetime.datetime.now().year}, Frederik Kratzert'
-author = 'Frederik Kratzert'
+copyright = f'{datetime.datetime.now().year}, Google Research'
+author = 'Grey Nearing, adapted from work by Frederik Kratzert'
 
 # The full version, including alpha/beta/rc tags
 release = about['__version__']
@@ -51,8 +53,7 @@ extensions = [
     'sphinx.ext.autodoc',  # autodocument
     'sphinx.ext.napoleon',  # google and numpy doc string support
     'sphinx.ext.mathjax',  # latex rendering of equations using MathJax
-    'nbsphinx',  # for direct embedding of jupyter notebooks into sphinx docs
-    'nbsphinx_link',  # to be able to include notebooks from outside of the docs folder
+    'nbsphinx'
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -85,19 +86,29 @@ html_static_path = ['_static']
 # -- Napoleon autodoc options -------------------------------------------------
 napoleon_numpy_docstring = True
 
-# -- Other settings -----------------------------------------------------------
 
-# Path to logo image file
-html_logo = '_static/img/neural-hyd-logo.png'
+def copy_notebooks(app):
+    """Copies notebooks from the tutorial directory to the source directory."""
+    root = Path(__file__).parent.parent.parent
+    examples_dir = root / 'tutorial'
+    tutorials_dir = root / 'docs' / 'source' / 'tutorials'
+    
+    # Mapping: Source relative to tutorial/ -> Destination relative to tutorials/
+    notebooks = {
+        'googlehydrology-tutorial.ipynb': 'googlehydrology-tutorial.ipynb',
+    }
 
-html_theme_options = {'style_nav_header_background': '#175762'}
+    if not tutorials_dir.exists():
+        tutorials_dir.mkdir(parents=True)
 
-# Allows to build the docs with a minimal environment without warnings about missing packages
-autodoc_mock_imports = [
-    'matplotlib',
-    'pandas',
-    'ruamel',
-    'scipy',
-    'tqdm',
-    'xarray',
-]
+    for src, dst in notebooks.items():
+        src_path = examples_dir / src
+        dst_path = tutorials_dir / dst
+        if src_path.exists():
+            print(f"Copying {src_path} to {dst_path}")
+            shutil.copyfile(src_path, dst_path)
+        else:
+            print(f"Warning: Notebook {src_path} not found.")
+
+def setup(app):
+    app.connect('builder-inited', copy_notebooks)

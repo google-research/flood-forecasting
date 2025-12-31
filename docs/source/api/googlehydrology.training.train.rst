@@ -1,7 +1,7 @@
-train
-=====
+googlehydrology.training.train module
+=====================================
 
 .. automodule:: googlehydrology.training.train
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

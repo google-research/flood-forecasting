@@ -1,7 +1,7 @@
-evaluate
-========
+googlehydrology.evaluation.evaluate module
+==========================================
 
 .. automodule:: googlehydrology.evaluation.evaluate
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

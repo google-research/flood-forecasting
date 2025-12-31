@@ -27,7 +27,8 @@ FC_XAVIER = WeightInitOpt.FC_XAVIER
 
 
 class HandoffForecastLSTM(BaseModel):
-    """An encoder/decoder LSTM model class used for forecasting.
+    """
+    An encoder/decoder LSTM model class used for forecasting.
 
     This is a forecasting model that uses a state-handoff to transition from a hindcast sequence (LSTM)
     model to a forecast sequence (LSTM) model. The hindcast model is run from the past up to present
@@ -50,14 +51,19 @@ class HandoffForecastLSTM(BaseModel):
     ``ForecastOverlapMSERegularization`` regularization option to regularize the loss function by
     (dis)agreement between the overlapping portion of the hindcast and forecast LSTMs. This regularization
     term can be requested by setting  the ``regularization`` parameter list in the config file to include
-    ``forecast_overlap``.
+    ``forecast_overlap``. The model architecture is based on [#]_.
 
     Parameters
     ----------
     cfg : Config
         The run configuration.
-    """
 
+    References
+    ----------
+    .. [#] Nearing, G., Cohen, D., Dube, V., Gauch, M., Gilon, O., Harrigan, S., ... & Matias, Y. (2024).
+       Global prediction of extreme floods in ungauged watersheds. Nature, 627(8004), 559-563.
+       https://www.nature.com/articles/s41586-024-07145-1
+    """
     # Specify submodules of the model that can later be used for finetuning. Names must match class attributes.
     module_parts = [
         'hindcast_embedding_net',

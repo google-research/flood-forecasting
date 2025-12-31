@@ -7,7 +7,7 @@
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
+# distributed under the License is distributed on an AS IS BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
@@ -30,12 +30,45 @@ FC_XAVIER = WeightInitOpt.FC_XAVIER
 
 
 class MeanEmbeddingForecastLSTM(BaseModel):
-    """A forecasting model using mean embedding and LSTMs for hindcast and forecast.
+    r"""
+    A forecasting model using mean embedding and LSTMs for hindcast and forecast.
+
+    This model implements a specific architecture designed to handle missing input data in hydrological 
+    forecasting. It employs separate embedding networks for hindcast and forecast inputs, aggregating 
+    them via a masked mean operation. This allows the model to robustly handle situations where some 
+    input features might be missing (NaN) by effectively ignoring them in the aggregation step.
+
+    The model consists of two main LSTM components:
+    
+    1.  **Hindcast LSTM:** Processes historical data (hindcast features) to build up a hidden state 
+        representing the system's history up to the forecast issue time.
+    2.  **Forecast LSTM:** Takes the final state of the Hindcast LSTM as initialization and unrolls 
+        over the forecast horizon using forecast features (e.g., weather forecasts).
+
+    Key features include:
+    
+    -   **Static Embeddings:** Static catchment attributes are embedded and provided to all dynamic 
+        embedding networks.
+    -   **Dynamic Embeddings:** Hindcast and forecast features are grouped (e.g., by source or type) 
+        and processed by separate, specific fully-connected embedding networks.
+    -   **Masked Mean Aggregation:** The outputs of the dynamic embedding networks are aggregated 
+        using a masked mean, which ensures that missing data (represented as NaNs) do not propagate 
+        errors or bias the embedding.
+    -   **Shared Embeddings:** Features present in both hindcast and forecast periods can share 
+        embedding networks to enforce consistent representation.
+
+    This model is based on the approach described in [#]_.
 
     Parameters
     ----------
     cfg : Config
-        The run configuration.
+        The run configuration, containing all hyperparameters and settings for the model structure, 
+        embedding specifications, and input features.
+
+    References
+    ----------
+    .. [#] Gauch, M., et al. "How to deal w\_ missing input data." Hydrology and Earth System Sciences 29.21 (2025): 6221-6235.
+        https://hess.copernicus.org/articles/29/6221/2025/
     """
 
     # Specify submodules of the model that can later be used for finetuning. Names must match class attributes.

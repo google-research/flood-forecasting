@@ -1,7 +1,7 @@
-Caravan
-=======
+googlehydrology.datasetzoo.caravan module
+=========================================
 
 .. automodule:: googlehydrology.datasetzoo.caravan
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

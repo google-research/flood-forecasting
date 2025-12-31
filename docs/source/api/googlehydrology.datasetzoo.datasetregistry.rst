@@ -1,7 +1,7 @@
-DatasetRegistry
-===============
+googlehydrology.datasetzoo.datasetregistry module
+=================================================
 
 .. automodule:: googlehydrology.datasetzoo.datasetregistry
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

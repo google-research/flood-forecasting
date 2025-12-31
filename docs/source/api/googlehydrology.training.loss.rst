@@ -1,7 +1,7 @@
-loss
-====
+googlehydrology.training.loss module
+====================================
 
 .. automodule:: googlehydrology.training.loss
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

@@ -1,7 +1,7 @@
-googlehydrology.training.basetrainer module
+googlehydrology.utils.logging\_utils module
 ===========================================
 
-.. automodule:: googlehydrology.training.basetrainer
+.. automodule:: googlehydrology.utils.logging_utils
    :members:
    :show-inheritance:
    :undoc-members:
