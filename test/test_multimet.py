@@ -46,7 +46,6 @@ def _get_default_config_attributes(**kwargs):
         'targets_data_dir': Path('/tmp/data/targets'),
         'nan_handling_method': 'none',
         'timestep_counter': False,
-        'use_basin_id_encoding': False,
         'train_start_date': ['01/01/2000', '01/02/2006'],
         'train_end_date': ['03/01/2000', '03/02/2006'],
         'test_start_date': '01/01/2000',
@@ -407,20 +406,20 @@ def test_forecast_dataset_init_forecast_hindcast_mismatch_error(
     # Case 1: No inputs are supplied
     cfg = get_config('default')
     cfg.update_config(
-        {'hindcast_inputs': [], 'forecast_inputs': [], 'dynamic_inputs': []}
+        {'hindcast_inputs': [], 'forecast_inputs': []}
     )
     with pytest.raises(
         ValueError,
-        match='Either `hindcast_inputs` or `dynamic_inputs` must be supplied.',
+        match='`hindcast_inputs` must be supplied.',
     ):
         Multimet(cfg=cfg, is_train=True, period='train')
 
-    # Case 2: Neither dynamic_inputs nor hindcast_inputs are supplied
+    # Case 2: Hindcast_inputs are not supplied
     cfg = get_config('default')
-    cfg.update_config({'hindcast_inputs': [], 'dynamic_inputs': []})
+    cfg.update_config({'hindcast_inputs': []})
     with pytest.raises(
         ValueError,
-        match='Either `hindcast_inputs` or `dynamic_inputs` must be supplied.',
+        match='`hindcast_inputs` must be supplied.',
     ):
         Multimet(cfg=cfg, is_train=True, period='train')
 

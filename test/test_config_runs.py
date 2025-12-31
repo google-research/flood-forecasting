@@ -90,9 +90,9 @@ def _check_results(config: Config, basin: str, discharge: pd.Series = None):
     )
 
     if discharge is None:
-        discharge = caravan.load_caravan_timeseries(
-            config.data_dir, basin
-        ).to_dataframe()[config.target_variables]
+        discharge = caravan.load_caravan_timeseries_together(
+            config.data_dir, basin, config.target_variables, csv=False
+        ).to_dataframe()
 
     if hasattr(config, 'lead_time'):
         results = results.isel(time_step=0).squeeze()
