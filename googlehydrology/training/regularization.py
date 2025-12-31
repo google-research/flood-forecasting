@@ -15,10 +15,6 @@
 
 import torch
 
-from googlehydrology.datautils.utils import (
-    get_frequency_factor,
-    sort_frequencies,
-)
 from googlehydrology.utils.config import Config
 
 
@@ -71,87 +67,6 @@ class BaseRegularization(torch.nn.Module):
             The regularization value.
         """
         raise NotImplementedError
-
-
-class TiedFrequencyMSERegularization(BaseRegularization):
-    """Regularization that penalizes inconsistent predictions across frequencies.
-
-    This regularization can only be used if at least two frequencies are predicted. For each pair of adjacent
-    frequencies f and f', where f is a higher frequency than f', it aggregates the f-predictions to f' and calculates
-    the mean squared deviation between f' and aggregated f.
-
-    Parameters
-    ----------
-    cfg : Config
-        The run configuration.
-    weight: float, optional.
-        Weight of the regularization term. Default: 1.
-
-    Raises
-    ------
-    ValueError
-        If the run configuration only predicts one frequency.
-    """
-
-    def __init__(self, cfg: Config, weight: float = 1.0):
-        super(TiedFrequencyMSERegularization, self).__init__(
-            cfg, name='tie_frequencies', weight=weight
-        )
-        self._frequencies = sort_frequencies(
-            [
-                f
-                for f in cfg.use_frequencies
-                if cfg.predict_last_n[f] > 0
-                and f not in cfg.no_loss_frequencies
-            ]
-        )
-
-        if len(self._frequencies) < 2:
-            raise ValueError(
-                'TiedFrequencyMSERegularization needs at least two frequencies.'
-            )
-
-    def forward(
-        self,
-        prediction: dict[str, torch.Tensor],
-        ground_truth: dict[str, torch.Tensor],
-        *args,
-    ) -> torch.Tensor:
-        """Calculate the sum of mean squared deviations between adjacent predicted frequencies.
-
-        Parameters
-        ----------
-        prediction : dict[str, torch.Tensor]
-            Dictionary containing ``y_hat_{frequency}`` for each frequency.
-        ground_truth : dict[str, torch.Tensor]
-            Dictionary continaing ``y_{frequency}`` for each frequency.
-
-        Returns
-        -------
-        torch.Tensor
-            The sum of mean squared deviations for each pair of adjacent frequencies.
-        """
-
-        loss = 0
-        for idx, freq in enumerate(self._frequencies):
-            if idx == 0:
-                continue
-            frequency_factor = int(
-                get_frequency_factor(self._frequencies[idx - 1], freq)
-            )
-            freq_pred = prediction[f'y_hat_{freq}']
-            mean_freq_pred = freq_pred.view(
-                freq_pred.shape[0],
-                freq_pred.shape[1] // frequency_factor,
-                frequency_factor,
-                -1,
-            ).mean(dim=2)
-            lower_freq_pred = prediction[f'y_hat_{self._frequencies[idx - 1]}'][
-                :, -mean_freq_pred.shape[1] :
-            ]
-            loss = loss + torch.mean((lower_freq_pred - mean_freq_pred) ** 2)
-
-        return loss
 
 
 class ForecastOverlapMSERegularization(BaseRegularization):
