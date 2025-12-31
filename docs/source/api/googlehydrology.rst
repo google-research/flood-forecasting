@@ -20,7 +20,6 @@ Submodules
 .. toctree::
    :maxdepth: 4
 
-   googlehydrology.pack_repo
    googlehydrology.run
    googlehydrology.run_scheduler
 
