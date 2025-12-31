@@ -215,13 +215,14 @@ def _load_attribute_files_of_subdatasets(
         df = df64.astype(
             {
                 col: np.float32
-                for col in df64.select_dtypes(include=['float64']).columns
+                for col in df64.select_dtypes(include=[np.number]).columns
             }
         )
         df.rename_axis('basin', inplace=True)
-        df.drop(
-            columns=(e for e in df.columns if e not in features), inplace=True
-        )
+        if features:
+            df.drop(
+                columns=(e for e in df.columns if e not in features), inplace=True
+            )
         return df.to_xarray().chunk(
             'auto'
         )  # Uses underlying numpy arrays in df
