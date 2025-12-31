@@ -78,7 +78,7 @@ The package installs the run command as the primary entry point.
 ### **Training a Model**
    
    ```
-   run train --config-file /path/to/your/training_config_file.yml --gpu 0
+   run train --config-file /path/to/your/training_config_file.yml
    ```
 
 ### **Evaluation**
