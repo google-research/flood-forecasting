@@ -335,7 +335,6 @@ class BaseTrainer(object):
                 self.validator.evaluate(
                     epoch=epoch,
                     save_results=self.cfg.save_validation_results,
-                    save_all_output=self.cfg.save_all_output,
                     metrics=self.cfg.metrics,
                     model=self.model,
                     experiment_logger=self.experiment_logger.valid(),
