@@ -170,7 +170,7 @@ class Scaler:
 
         os.makedirs(self.scaler_dir, exist_ok=True)
         scaler_file = self.scaler_dir / SCALER_FILE_NAME
-        with open(scaler_file, 'wb') as f:
+        with open(scaler_file, 'w+b') as f:
             self.scaler.to_netcdf(f)
 
     def check_zero_scale(self):
