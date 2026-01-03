@@ -28,8 +28,6 @@ def get_optimizer(
 ) -> torch.optim.Optimizer:
     """Get specific optimizer object, depending on the run configuration.
 
-    Currently only 'Adam' and 'AdamW' are supported.
-
     Parameters
     ----------
     model : torch.nn.Module
