@@ -54,10 +54,18 @@ def test_forecast_daily_regression(
     start_training(config)
     start_evaluation(cfg=config, run_dir=config.run_dir, epoch=1, period='test')
 
-    nan_discharge = pd.Series(
-        float('nan'), index=pd.date_range(*get_test_start_end_dates(config))
+    nan_basin = 'camelsaus_102101A'
+    nan_dates = pd.date_range(*get_test_start_end_dates(config))
+    index = pd.MultiIndex.from_product(
+        [[nan_basin], nan_dates], 
+        names=['basin', 'date']
     )
-    _check_results(config, 'camelsaus_102101A', nan_discharge)  # No valid data.
+    nan_discharge = pd.DataFrame(
+        data=float('nan'), 
+        index=index, 
+        columns=['streamflow']
+    )
+    _check_results(config, nan_basin, nan_discharge)  # No valid data.
     _check_results(config, 'lamah_1145')
     _check_results(config, 'hysets_01075000')
 
@@ -90,9 +98,9 @@ def _check_results(config: Config, basin: str, discharge: pd.Series = None):
     )
 
     if discharge is None:
-        discharge = caravan.load_caravan_timeseries(
-            config.data_dir, basin
-        ).to_dataframe()[config.target_variables]
+        discharge = caravan.load_caravan_timeseries_together(
+            config.data_dir, [basin], config.target_variables, csv=False
+        ).to_dataframe()
 
     if hasattr(config, 'lead_time'):
         results = results.isel(time_step=0).squeeze()
@@ -100,9 +108,10 @@ def _check_results(config: Config, basin: str, discharge: pd.Series = None):
         results = results.isel(time_step=-1)
 
     results_array = results[f'{config.target_variables[0]}_obs'].values
-    discharge_array = np.array(
-        [v.item() for v in discharge.loc[test_start_date:test_end_date].values]
-    )
+    idx = pd.IndexSlice
+    discharge_slice = discharge.loc[idx[basin, test_start_date:test_end_date], 'streamflow']
+    discharge_array = discharge_slice.values
+
     assert discharge_array == approx(results_array, nan_ok=True)
 
     # CAMELS forcings have no NaNs, so there should be no NaN predictions

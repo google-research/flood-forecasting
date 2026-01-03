@@ -34,7 +34,6 @@ device: cpu
 # --- Validation configuration ---------------------------------------------------------------------
 validate_every: 1
 validate_n_random_basins: 4
-cache_validation_data: True
 metrics:
   - NSE
   - KGE
@@ -68,11 +67,6 @@ dynamics_embedding:
     - 2
   activation: tanh
   dropout: 0.0
-forecast_network:
-  activation: tanh
-  dropout: 0.4
-  hiddens:
-  - 10
 
 # --- Training configuration -----------------------------------------------------------------------
 optimizer: Adam
