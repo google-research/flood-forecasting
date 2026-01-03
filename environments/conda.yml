@@ -30,9 +30,9 @@ dependencies:
   - dask
   - gcsfs
   - gh
+  - h5netcdf
   - h5py
   - hdf5
-  - h5netcdf
   - ipython
   - jupyter
   - matplotlib
