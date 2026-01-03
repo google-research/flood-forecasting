@@ -109,10 +109,7 @@ def _check_results(config: Config, basin: str, discharge: pd.Series = None):
 
     results_array = results[f'{config.target_variables[0]}_obs'].values
     idx = pd.IndexSlice
-    try:
-        discharge_slice = discharge.loc[idx[basin, test_start_date:test_end_date], 'streamflow']
-    except:
-        import pdb; pdb.set_trace()
+    discharge_slice = discharge.loc[idx[basin, test_start_date:test_end_date], 'streamflow']
     discharge_array = discharge_slice.values
 
     assert discharge_array == approx(results_array, nan_ok=True)
