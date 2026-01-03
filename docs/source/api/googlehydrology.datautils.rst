@@ -1,14 +1,21 @@
-nh.datautils
-============
+googlehydrology.datautils package
+=================================
 
-.. automodule:: googlehydrology.datautils
-   :members:
-   :undoc-members:
-   :show-inheritance:
+Submodules
+----------
 
 .. toctree::
    :maxdepth: 4
 
-   googlehydrology.datautils.climateindices
-   googlehydrology.datautils.pet
+   googlehydrology.datautils.scaler
+   googlehydrology.datautils.union_features
    googlehydrology.datautils.utils
+   googlehydrology.datautils.validate_samples
+
+Module contents
+---------------
+
+.. automodule:: googlehydrology.datautils
+   :members:
+   :show-inheritance:
+   :undoc-members:

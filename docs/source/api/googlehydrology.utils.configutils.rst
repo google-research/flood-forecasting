@@ -1,7 +1,7 @@
-configutils
-===========
+googlehydrology.utils.configutils module
+========================================
 
 .. automodule:: googlehydrology.utils.configutils
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

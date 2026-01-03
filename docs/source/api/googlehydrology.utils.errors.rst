@@ -1,7 +1,7 @@
-errors
-======
+googlehydrology.utils.errors module
+===================================
 
 .. automodule:: googlehydrology.utils.errors
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:
