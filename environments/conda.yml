@@ -32,6 +32,7 @@ dependencies:
   - gh
   - h5py
   - hdf5
+  - h5netcdf
   - ipython
   - jupyter
   - matplotlib
