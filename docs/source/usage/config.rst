@@ -93,11 +93,15 @@ Training settings
 -  ``learning_rate_epochs_drop``: Epochs to wait before dropping LR.
 -  ``batch_size``: Mini-batch size.
 -  ``epochs``: Number of training epochs.
--  ``max_updates_per_epoch``: Optional limit on weight updates per epoch.
--  ``clip_gradient_norm``: Max norm for gradient clipping.
--  ``target_noise_std``: Standard deviation of Gaussian noise added to labels during training.
+-  ``num_workers``: Number of (parallel) threads used in the data loader.
+-  ``max_updates_per_epoch``: Optional limit on weight updates per epoch. Use `< 1` to go through all data in every epoch.
+-  ``clip_gradient_norm``: Max norm for gradient clipping. Leave empty for not clipping.
+-  ``target_noise_std``: Standard deviation of Gaussian noise added to labels during training. Set to zero or
+   leave empty to *not* add noise.
 -  ``allow_subsequent_nan_losses``: Number of allowed consecutive NaN losses before stopping.
--  ``save_weights_every``: Interval (in epochs) to save model weights.
+-  ``save_weights_every``: Interval (in epochs) over which the weights of the model
+   are stored to disk. ``1`` means to store the weights after each
+   epoch, which is the default if not otherwise specified.
 
 Data settings
 -------------
@@ -111,9 +115,48 @@ Data settings
 -  ``hindcast_inputs``: Dynamic features for the hindcast period (used in forecast models).
 -  ``target_variables``: List of target variables to predict.
 -  ``static_attributes``: List of static attributes to use.
--  ``seq_length``: Input sequence length (or hindcast length for forecast models).
+-  ``seq_length``: Hindcast sequence length for forecast models.
 -  ``lead_time``: Forecast lead time (integer).
 -  ``predict_last_n``: Number of time steps (counted backwards) used for loss calculation.
 -  ``timestep_counter``: True/False. Adds a counting integer sequence as input for forecasts.
 -  ``nan_handling_method``: ``masked_mean``, ``input_replacing``, or ``attention``. Strategy for handling missing input data.
 -  ``nan_handling_pos_encoding_size``: Size of positional encoding for NaN handling methods.
+
+Finetune settings
+-----------------
+
+Ignored if ``mode != finetune``
+
+-  ``finetune_modules``: List of model parts that will be trained
+   during fine-tuning. Only parts listed here will be
+   updated during finetuning. Check the documentation of each model to see a list
+   of available module parts.
+
+Logger settings
+---------------
+
+-  ``log_interval``: Interval at which the training loss is logged, 
+   by default 10.
+
+-  ``log_tensorboard``: True/False. If True, writes logging results into
+   TensorBoard file. The default, if not specified, is True.
+
+-  ``log_n_figures``: If a (integer) value greater than 0, saves the
+   predictions as plots of that n specific (random) basins during
+   validations.
+
+-  ``log_loss_every_nth_update``: Refresh rate of logging of the loss value
+   every n iterations. For example for `20`, the loss logging would be
+   updated every 20 iterations (updates) during training. Logging loss has
+   performance cost (waits to transfer memory from GPU to CPU instead of
+   additional iterations). For example, for multimet_mean_embedding_forecast,
+   a value of 5 saves 50ms per iteration on average which translates to 1.5h
+   given 2000 updates for 30 epocs.
+
+-  ``save_git_diff``: If set to True and GoogleHydrology is a git repository
+   with uncommitted changes, the git diff will be stored in the run directory.
+   When using this option, make sure that your run and data directories are either
+   not located inside the git repository, or that they are part of the ``.gitignore`` file.
+   Otherwise, the git diff may become very large and use up a lot of disk space.
+   To make sure everything is configured correctly, you can simply check that the
+   output of ``git diff HEAD`` only contains your code changes.
