@@ -91,19 +91,19 @@ def copy_notebooks(app):
     """Copies notebooks from the tutorial directory to the source directory."""
     root = Path(__file__).parent.parent.parent
     examples_dir = root / 'tutorial'
-    tutorials_dir = root / 'docs' / 'source' / 'tutorials'
+    tutorial_dir = root / 'docs' / 'source' / 'tutorial'
     
-    # Mapping: Source relative to tutorial/ -> Destination relative to tutorials/
+    # Mapping: Source relative to tutorial/ -> Destination relative to tutorial/
     notebooks = {
         'googlehydrology-tutorial.ipynb': 'googlehydrology-tutorial.ipynb',
     }
 
-    if not tutorials_dir.exists():
-        tutorials_dir.mkdir(parents=True)
+    if not tutorial_dir.exists():
+        tutorial_dir.mkdir(parents=True)
 
     for src, dst in notebooks.items():
         src_path = examples_dir / src
-        dst_path = tutorials_dir / dst
+        dst_path = tutorial_dir / dst
         if src_path.exists():
             print(f"Copying {src_path} to {dst_path}")
             shutil.copyfile(src_path, dst_path)

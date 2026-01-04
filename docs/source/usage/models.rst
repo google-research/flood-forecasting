@@ -22,6 +22,8 @@ BaseModel
 ^^^^^^^^^
 Abstract base class from which all models derive. Do not use this class for model training.
 
+.. _handoff-forecast-lstm:
+
 Handoff-Forecast-LSTM
 ^^^^^^^^^^^^^^^^^^^^^
 :py:class:`googlehydrology.modelzoo.handoff_forecast_lstm.HandoffForecastLSTM` is a forecasting model
@@ -33,6 +35,8 @@ new LSTM that rolls out over the forecast period.
 
 This is a former produciton model that was previously used for the `Google FloodHub <https://sites.research.google/floods/>`__. 
 It is described in detail in [Nearing2024]_.
+
+.. _mean-embedding-forecast-lstm:
 
 Mean-Embedding-Forecast-LSTM
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
