@@ -198,6 +198,7 @@ def load_caravan_timeseries_together(
         parallel=False,  # open_mfdataset has a bug (seg fault) when True
         chunks={'date': 'auto'},
         join='outer',
+        engine='h5netcdf',
     ).assign_coords(basin=basins)
 
 

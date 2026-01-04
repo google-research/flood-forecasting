@@ -52,7 +52,6 @@ setup(
         'console_scripts': [
             'schedule-runs=googlehydrology.run_scheduler:_main',
             'run=googlehydrology.run:_main',
-            'results-ensemble=googlehydrology.utils.results_ensemble:_main',
         ]
     },
     python_requires='>=3.12',
