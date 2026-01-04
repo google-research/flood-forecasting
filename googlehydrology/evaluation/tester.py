@@ -46,7 +46,6 @@ from googlehydrology.evaluation.metrics import (
     get_available_metrics,
 )
 from googlehydrology.evaluation.utils import (
-    load_basin_id_encoding,
     metrics_to_dataframe,
     BasinBatchSampler,
     get_samples_indexes,
