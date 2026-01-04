@@ -38,7 +38,6 @@ dependencies:
   - matplotlib
   - more-itertools
   - nbsphinx
-  - nbsphinx-link
   - netcdf4
   - numpy
   - pandas

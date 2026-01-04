@@ -1,10 +1,8 @@
-nh.evaluation
-=============
+googlehydrology.evaluation package
+==================================
 
-.. automodule:: googlehydrology.evaluation
-   :members:
-   :undoc-members:
-   :show-inheritance:
+Submodules
+----------
 
 .. toctree::
    :maxdepth: 4
@@ -12,5 +10,13 @@ nh.evaluation
    googlehydrology.evaluation.evaluate
    googlehydrology.evaluation.metrics
    googlehydrology.evaluation.plots
-   googlehydrology.evaluation.signatures
    googlehydrology.evaluation.tester
+   googlehydrology.evaluation.utils
+
+Module contents
+---------------
+
+.. automodule:: googlehydrology.evaluation
+   :members:
+   :show-inheritance:
+   :undoc-members:

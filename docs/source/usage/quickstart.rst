@@ -1,108 +1,172 @@
+===========
 Quick Start
-============
+===========
 
-Prerequisites
--------------
-As a first step you need a Python environment with all required dependencies. The recommended way is to use Mini-/Anaconda
-and to create a new environment using one of our predefined environment files in `environments/ <https://github.com/google-research/flood-forecasting/tree/master/environments>`__.
-Make sure to select the correct file, depending on your system.
+This guide will help you get up and running with the **GoogleHydrology Flood Forecasting** repository.
 
-If you don't have a CUDA-capable GPU, or if you want to train on MacOS with Metal support, use:
+---------------
+Obtain the Code
+---------------
 
-.. code-block::
+To get started, you need to download the source code to your local machine. This ensures you have access to the environment definitions, example configurations, and the tutorial notebook.
 
-    conda env create -f environments/environment_cpu.yml
+Option A: Via GitHub Cloning (Recommended)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-If you do have a CUDA-capable GPU, use ``environment_cuda11_8.yml``, depending on your hardware.
+If you use git, clone the repository to access the full source and development history:
 
-If you prefer to not use Mini-/Anaconda, make sure you have a Python environment with Python >= 3.10 with all packages installed that are listed in 
-these environment files. 
-The next steps should be executed from within this Python environment.
+.. code-block:: bash
 
+   git clone https://github.com/google-research/flood-forecasting.git
+   cd flood-forecasting
+
+Option B: Via Zipball
+^^^^^^^^^^^^^^^^^^^^^
+
+If you do not use git, you can download the source code as a zip file:
+
+.. code-block:: bash
+
+   # Download the source code zip file
+   curl -L https://github.com/google-research/flood-forecasting/zipball/master -o flood-forecasting.zip
+
+   # Extract the archive
+   unzip flood-forecasting.zip
+
+   # Enter the resulting directory (folder name may vary based on the specific commit)
+   cd google-research-flood-forecasting-*
+
+----------------------------------
+Prerequisites & Environment Setup
+----------------------------------
+
+A Python environment with specific dependencies (like PyTorch and CUDA) is required. We recommend using **Conda** to manage these dependencies automatically.
+
+Using Conda (Recommended)
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The environment file is located in the ``environments/`` directory of the code you just obtained.
+
+.. code-block:: bash
+
+   # Create the environment from the file in the repo
+   conda env create -f environments/conda.yml
+
+   # Activate the environment (MANDATORY)
+   conda activate googlehydrology
+
+Manual Setup
+^^^^^^^^^^^^
+
+If you prefer not to use Conda, ensure you have **Python >= 3.12** and install the dependencies listed in ``environments/rtd_requirements.txt`` using your preferred package manager.
+
+------------
 Installation
 ------------
-There are two ways how you can install GoogleHydrology: Editable or non-editable.
-If all you want to do is run experiments with existing datasets and existing models, you can use the non-editable
-installation. To install the latest release from PyPI:
 
-.. code-block::
+Once your environment is active, install the package in **editable mode**. This allows you to run the model scripts and have any changes you make to the code reflected immediately.
 
-    pip install googlehydrology
+.. code-block:: bash
 
-To install the package directly from the current master branch of this repository, including any changes that are not yet part of a release, run:
+   # Run this from the root of the flood-forecasting directory
+   pip install -e .
 
-.. code-block::
+----------
+Data Setup
+----------
 
-    pip install git+https://github.com/google-research/flood-forecasting.git
+GoogleHydrology uses the `Caravan <https://www.nature.com/articles/s41597-023-01975-w>`_ dataset for streamflow observations and static catchment attributes.
 
-If you want to try implementing your own models or datasets, you'll need an editable installation.
-For this, start by downloading or cloning the repository to your local machine.
-If you use git, you can run:
+Download Caravan (NetCDF Version)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. code-block::
+A small amount of data is provided in the ``~/tutorial/data/Caravan-nc`` folder. This data is sufficient for running the tutorial example. For more comprehensive model runs, it is necessary to download the Caravan dataset locally.
 
-    git clone https://github.com/google-research/flood-forecasting.git
+1. Navigate to the `Zenodo repository <https://doi.org/10.5281/zenodo.6522634>`_.
+2. Download the **NetCDF version** of the dataset (e.g., ``Caravan-nc.tar.gz``). 
+   
+   .. note:: 
+      Do not use the CSV version for standard training as it is significantly slower.
 
-If you don't know git, you can also download the code from `here <https://github.com/google-research/flood-forecasting/zipball/master>`__ and extract the zip-file.
+3. Unpack the tarball file into a local directory (e.g., ``~/data/caravan/``).
 
-After you cloned or downloaded the zip-file, you'll end up with a directory called "googlehydrology" (or "googlehydrology-master").
-Next, we'll go to that directory and install a local, editable copy of the package:
+.. code-block:: bash
 
-.. code-block::
+   # Create the directory and unpack the data
+   mkdir -p ~/data/
+   tar -xvzf Caravan-nc.tar.gz -C ~/data/
 
-    cd googlehydrology
-    pip install -e .
+MultiMet Data
+^^^^^^^^^^^^^
 
-The installation procedure (both the editable and the non-editable version) adds the package to your Python environment and installs three bash scripts:
-`run`, `schedule-runs` and `results-ensemble`. For details, see below.
+The MultiMet forcing data extension is accessed directly from **Google Cloud Storage** during runtime. You do not need to download it; ensure your configuration file's ``dynamics_data_dir`` argument points to: ``gs://caravan-multimet/v1.1``
 
-Data
-----
-Training and evaluating models requires a dataset.
-If you're unsure where to start, a common dataset is CAMELS US, available at
-`CAMELS US (NCAR) <https://ral.ucar.edu/solutions/products/camels>`_.
-This dataset is used in all of our tutorials and we have a `dedicated tutorial <../tutorials/data-prerequisites.nblink>`_ with download instructions that you might want to look at.
+----------------------
+Training Configuration
+----------------------
 
+To train a model, you must create or modify a YAML configuration file. An example is provided in the ``tutorial/`` directory (``training-config.yml``).
+
+Understanding the Dataset Splits
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+
+* **Training Set (5-basin set):** Core portion used by the algorithm to identify patterns and learn relationships between inputs and streamflow.
+* **Test Set (8-basin set):** A final, independent portion never "seen" during training. In this example, it includes the 5 training basins plus 3 additional "ungauged" basins to test generalization.
+
+Understanding Time Periods
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Training Period:** 01/01/2000 to 31/12/2020 (Historical learning).
+* **Validation/Test Period:** 01/01/2022 to 31/12/2024 (Objective performance estimation).
+
+It is normal practice to keep the Validation and Test periods distinct to avoid information leakage, ensuring the model reflects performance on truly novel data. Please notice that this was **not** done for the toy example in the tutorial.
+
+Local Path Requirements
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Update these arguments in your configuration file (``~/tutorial/configs/training-config.yml``) to match your data source:
+
+=====================  ============================================================================================================
+Argument               Description
+=====================  ============================================================================================================
+**run_dir**            Directory where weights, logs, and config copies are saved (e.g., ``~/tutorial/run/``).
+
+**train_basin_file**   Path to plain text files containing lists of basin IDs.
+
+**targets_data_dir**   Use the tutorial sample (``~/tutorial/data/Caravan-nc/``) OR the unpacked full dataset, wherever you put it.
+
+**statics_data_dir**   Use the tutorial sample (``~/tutorial/data/Caravan-nc/``) OR the unpacked full dataset, wherever you put it.
+
+**dynamics_data_dir**   Path to the forcing data. For MultiMet, use the cloud bucket: ``gs://caravan-multimet/v1.1``.
+=====================  ============================================================================================================
+
+-----
+Usage
+-----
 
 Training a model
-----------------
-To train a model, prepare a configuration file, then run::
+^^^^^^^^^^^^^^^^
 
-    run train --config-file /path/to/config.yml
+.. code-block:: bash
 
-If you want to train multiple models, you can make use of the ``schedule-runs`` command.
-Place all configs in a folder, then run::
+   run train --config-file ~/tutorial/training-config.yml
 
-    schedule-runs train --directory /path/to/config_dir/ --runs-per-gpu X --gpu-ids Y
+Evaluation
+^^^^^^^^^^
 
-With X, you can specify how many models should be trained on parallel on a single GPU.
-With Y, you can specify which GPUs to use for training (use the id as specified in ``nvidia-smi``).
+To calculate performance metrics on the test set:
 
+.. code-block:: bash
 
-Evaluating a model
-------------------
-To evaluate a trained model on the test set, run::
+   run evaluate --run-dir /path/to/your/model_run/
 
-    run evaluate --run-dir /path/to/run_dir/
+Inference
+^^^^^^^^^
 
-If the optional argument ``--epoch N`` (where N is the epoch to evaluate) is not specified,
-the weights of the last epoch are used.
+To generate predictions without skipping NaN observations:
 
-To evaluate all runs in a specific directory you can, similarly to training, run::
+.. code-block:: bash
 
-    schedule-runs evaluate --directory /path/to/config_dir/ --runs-per-gpu X --gpu-ids Y
-
-
-To merge the predictons of a number of runs (stored in ``$DIR1``, ...) into one averaged ensemble,
-use the ``results-ensemble`` script::
-
-    results-ensemble --run-dirs $DIR1 $DIR2 ... --output-dir /path/to/output/directory --metrics NSE MSE ...
-
-``--metrics`` specifies which metrics will be calculated for the averaged predictions.
-
-Running evaluate in inference mode; run::
-
-    run infer --run-dir /path/to/run_dir
-
-This mode runs evaluation but without saving extra data such as observed data nor models' outputs
-nor skipping all-nan observed data dates.
+   run infer --run-dir /path/to/your/model_run/
