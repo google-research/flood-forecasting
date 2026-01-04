@@ -99,6 +99,7 @@ class DatasetRegistry:
             raise NotImplementedError(
                 f'No dataset class implemented for dataset {cfg.dataset}'
             )
+
         return dataset_cls(
             cfg=cfg,
             is_train=is_train,
