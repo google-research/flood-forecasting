@@ -1,0 +1,223 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+logging_level: INFO
+detect_anomaly: False
+print_warnings_once: False
+
+# --- Training Parameters -------------------------------------------------------
+
+batch_size: 512
+epochs: 80
+experiment_name: mean_embedding_forecast_lstm
+clip_gradient_norm: 1
+clip_targets_to_zero:
+- streamflow
+learning_rate_strategy: ReduceLROnPlateau
+initial_learning_rate: 0.0005
+learning_rate_drop_factor: 0.5
+learning_rate_epochs_drop: 5
+# max_updates_per_epoch:
+max_updates_per_epoch: 2000
+metrics:
+- NSE
+- KGE
+- Alpha-NSE
+- Beta-NSE
+- Beta-KGE
+- Peak-Timing
+- Missed-Peaks
+num_workers: 0  # Scalene profiler works only without multiprocessing (`0`)
+optimizer: Adam
+validate_every: 1
+validate_n_random_basins: -1
+predict_last_n: 8
+log_n_figures: 5
+log_loss_every_nth_update: 50
+allzero_samples_are_invalid: False
+weight_init_opts:
+- lstm-ih-xavier
+- lstm-hh-orthogonal
+- fc-xavier
+cache:
+  enabled: False
+  byte_limit: 2000000000  # in GB
+use_swap_memory:
+load_target_features_parallel_processes:
+
+# --- Dataset Parameters --------------------------------------------------------
+
+train_basin_file: ~/flood-forecasting/config/basins/caravan/camels.txt
+validation_basin_file: ~/flood-forecasting/config/basins/caravan/camels.txt
+test_basin_file: ~/flood-forecasting/config/basins/caravan/camels.txt
+
+train_end_date: 31/12/2020
+train_start_date: 01/01/2016
+
+validation_end_date: 31/12/2025
+validation_start_date: 01/01/2021
+
+test_end_date: 31/12/2025
+test_start_date: 01/01/2021
+
+# train_basin_file: ~/flood-forecasting/config/basins/caravan/lamah.txt
+# validation_basin_file: ~/flood-forecasting/config/basins/caravan/lamah.txt
+# test_basin_file: ~/flood-forecasting/config/basins/caravan/lamah.txt
+#
+# train_end_date:
+# - 31/12/2015
+# - 31/12/2023
+# train_start_date:
+# - 01/01/1980
+# - 01/01/2020
+#
+# validation_end_date: 31/12/2018
+# validation_start_date: 01/01/2017
+#
+# test_end_date: 31/12/2018
+# test_start_date: 01/01/2017
+
+tester_skip_obs_all_nan: True
+tester_sample_reduction: mean
+
+# data_dir: ~/nh-data/data/Caravan-multimet
+targets_data_dir: ~/nh-data/data/Caravan-nc
+statics_data_dir: ~/nh-data/data/Caravan-nc
+dynamics_data_dir: ~/nh-data/data/Caravan-multimet
+
+load_as_csv: False
+dataset: multimet
+seq_length: 365
+lead_time: 7
+forecast_inputs:
+  hres:
+    - hres_surface_net_solar_radiation
+    - hres_surface_net_thermal_radiation
+    - hres_surface_pressure
+    - hres_temperature_2m
+    - hres_total_precipitation
+  graphcast:
+    - graphcast_temperature_2m
+    - graphcast_total_precipitation
+hindcast_inputs:
+  hres:
+    - hres_surface_net_solar_radiation
+    - hres_surface_net_thermal_radiation
+    - hres_surface_pressure
+    - hres_temperature_2m
+    - hres_total_precipitation
+  graphcast:
+    - graphcast_temperature_2m
+    - graphcast_total_precipitation
+  imerg:
+    - imerg_precipitation
+  cpc:
+    - cpc_precipitation
+static_attributes:
+- area
+- p_mean
+- pet_mean_ERA5_LAND
+- pet_mean_FAO_PM
+- aridity_ERA5_LAND
+- aridity_FAO_PM
+- frac_snow
+- moisture_index_ERA5_LAND
+- moisture_index_FAO_PM
+- seasonality_ERA5_LAND
+- seasonality_FAO_PM
+- high_prec_freq
+- high_prec_dur
+- low_prec_freq
+- low_prec_dur
+- pet_mm_syr
+- ele_mt_smx
+- pre_mm_syr
+target_noise_std: 0.005
+target_variables:
+- streamflow
+# - volumetric_soil_water_layer_1_mean
+union_mapping:
+  # Precipitation nowcast features.
+  cpc_precipitation: era5land_total_precipitation
+  imerg_precipitation: era5land_total_precipitation
+  # Graphcast forecast features.
+  graphcast_temperature_2m: era5land_temperature_2m
+  graphcast_total_precipitation: era5land_total_precipitation
+  graphcast_u_component_of_wind_10m: era5land_u_component_of_wind_10m
+  graphcast_v_component_of_wind_10m: era5land_v_component_of_wind_10m
+  # IFS forecast features.
+  hres_surface_net_solar_radiation: era5land_surface_net_solar_radiation
+  hres_surface_net_thermal_radiation: era5land_surface_net_thermal_radiation
+  hres_surface_pressure: era5land_surface_pressure
+  hres_temperature_2m: era5land_temperature_2m
+  hres_total_precipitation: era5land_total_precipitation
+
+
+# --- Model Parameters ----------------------------------------------------------
+model: mean_embedding_forecast_lstm
+forecast_overlap: 365
+
+### head ###
+loss: CMALLoss
+head: cmal
+# head: cmal_deterministic
+# loss: NSE
+# head: regression
+n_distributions: 3
+n_samples: 7500  # https://hess.copernicus.org/articles/26/1673/2022/#App1.Ch1.S2.SS2:~:text=each%20time%20step%20we%20compute%207500%C2%A0samples
+# n_samples: 1000
+negative_sample_handling: clip  # https://hess.copernicus.org/articles/26/1673/2022/#App1.Ch1.S2.SS2:~:text=The%20%E2%80%9Cclipping%E2%80%9D%20sign%20emphasizes%20our%20choice%20to%20set%20samples%20that%20would%20be%20below%20zero%20back%20to%20the%20zero%2Drunoff%20baseline
+# mc_dropout: True  # https://hess.copernicus.org/articles/26/1673/2022/#App1.Ch1.S2.SS2:~:text=2.3.2-,Monte%20Carlo%20dropout,-MCD%20provides%20an
+
+hidden_size: 512
+initial_forget_bias: 3
+output_dropout: 0.4
+timestep_counter: True
+run_dir: ~/nh-data/runs
+
+statics_embedding:
+  type: fc
+  hiddens:
+    - 100
+    - 100
+    - 20
+  activation: 
+    - tanh
+    - tanh
+    - linear
+  dropout: 0.0
+
+hindcast_embedding:
+  type: fc
+  hiddens:
+    - 100
+    - 20
+  activation: 
+    - tanh
+    - linear
+  dropout: 0.0
+
+forecast_embedding:
+  type: fc
+  hiddens:
+    - 20
+    - 20
+    - 20
+    - 20
+  activation: 
+    - tanh
+    - tanh
+    - tanh
+    - linear
+  dropout: 0.0
