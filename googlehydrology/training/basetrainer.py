@@ -19,6 +19,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+import more_itertools
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -102,10 +103,13 @@ class BaseTrainer(object):
         self._set_random_seeds()
         self._set_device()
 
-    def _get_dataset(self, compute_scaler: bool) -> Dataset:
+    def _get_dataset(
+        self, compute_scaler: bool, basins: list[str] | None = None
+    ) -> Dataset:
         return get_dataset(
             cfg=self.cfg,
             period='train',
+            basins=basins,
             is_train=True,
             compute_scaler=compute_scaler,
         )
@@ -176,6 +180,44 @@ class BaseTrainer(object):
                 f'Could not resolve the following module parts for finetuning: {unresolved_modules}'
             )
 
+    def init_loader(
+        self,
+        *,
+        max_random_basins: int = 0,
+        init_exp_logger: bool = False,
+        ds: Dataset | None = None,
+    ) -> Dataset:
+        print(f'init loader with {max_random_basins=}')
+        compute_scaler = (not self.cfg.is_finetuning) and max_random_basins < 1
+        assert compute_scaler ^ (ds is not None)
+        if ds is None:
+            ds = self._get_dataset(
+                compute_scaler=compute_scaler,
+                basins=[],
+            )
+        if max_random_basins > 0:
+            basins = random.sample(
+                self.basins, min(max_random_basins, len(self.basins))
+            )
+            ds.load_basins(basins)
+        if (not compute_scaler) and len(ds) == 0:
+            raise ValueError('Dataset contains no samples.')
+        if not compute_scaler:
+            self.loader = self._get_data_loader(ds=ds)
+
+        if init_exp_logger:
+            self.experiment_logger = Logger(cfg=self.cfg)
+            if self.cfg.log_tensorboard:
+                self.experiment_logger.start_tb()
+
+            if self.cfg.is_continue_training:
+                # set epoch and iteration step counter to continue from the selected checkpoint
+                self.experiment_logger.epoch = self._epoch
+                self.experiment_logger.update = len(self.loader) * self._epoch
+
+        print(f'init loader with {max_random_basins=} DONE')
+        return ds
+
     def initialize_training(self):
         """Initialize the training class.
 
@@ -184,11 +226,7 @@ class BaseTrainer(object):
         If called in a ``continue_training`` context, this model will also restore the model and optimizer state.
         """
         # Initialize dataset before the model is loaded.
-        ds = self._get_dataset(compute_scaler=(not self.cfg.is_finetuning))
-        if len(ds) == 0:
-            raise ValueError('Dataset contains no samples.')
-        self.loader = self._get_data_loader(ds=ds)
-
+        self.ds = self.init_loader()  # full scaler
         LOGGER.debug('init model')
         self.model = self._get_model().to(self.device)
 
@@ -235,15 +273,6 @@ class BaseTrainer(object):
         if self.cfg.is_continue_training:
             self._restore_training_state()
 
-        self.experiment_logger = Logger(cfg=self.cfg)
-        if self.cfg.log_tensorboard:
-            self.experiment_logger.start_tb()
-
-        if self.cfg.is_continue_training:
-            # set epoch and iteration step counter to continue from the selected checkpoint
-            self.experiment_logger.epoch = self._epoch
-            self.experiment_logger.update = len(self.loader) * self._epoch
-
         if self.cfg.validate_every is not None:
             if self.cfg.validate_n_random_basins < 1:
                 warn_msg = [
@@ -259,12 +288,12 @@ class BaseTrainer(object):
                 loc=0, scale=self.cfg.target_noise_std
             )
             target_means = [
-                ds.scaler.scaler.sel(parameter='mean')[feature].item()
+                self.ds.scaler.scaler.sel(parameter='mean')[feature].item()
                 for feature in self.cfg.target_variables
             ]
             self._target_mean = torch.tensor(target_means).to(self.device)
             target_stds = [
-                ds.scaler.scaler.sel(parameter='std')[feature].item()
+                self.ds.scaler.scaler.sel(parameter='std')[feature].item()
                 for feature in self.cfg.target_variables
             ]
             self._target_std = torch.tensor(target_stds).to(self.device)
@@ -316,7 +345,13 @@ class BaseTrainer(object):
         """
         lr_scheduler, lr_step = self._create_lr_scheduler()
 
-        for epoch in range(self._epoch + 1, self._epoch + self.cfg.epochs + 1):
+        for is_first, is_last, epoch in more_itertools.mark_ends(
+            range(self._epoch + 1, self._epoch + self.cfg.epochs + 1)
+        ):
+            self.init_loader(
+                max_random_basins=3, init_exp_logger=is_first, ds=self.ds
+            )
+
             LOGGER.info(f'learning rate is {lr_scheduler.get_last_lr()}')
 
             self._train_epoch(epoch=epoch)

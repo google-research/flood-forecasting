@@ -25,7 +25,7 @@ def get_dataset(
     cfg: Config,
     is_train: bool,
     period: str,
-    basin: str = None,
+    basins: list[str] | None= None,
     compute_scaler: bool = False,
 ) -> Dataset:
     """Get data set instance, depending on the run configuration.
@@ -46,8 +46,8 @@ def get_dataset(
         is created and also stored to disk. If False, the scaler must be calculated (`compute_scaler` must be True).
     period : {'train', 'validation', 'test'}
         Defines the period for which the data will be loaded
-    basin : str, optional
-        If passed, the data for only this basin will be loaded. Otherwise the basin(s) is(are) read from the appropriate
+    basins : str, optional
+        If passed, the data for only these basins will be loaded. Otherwise the basins are read from the appropriate
         basin file, corresponding to the `period`.
     compute_scaler : bool
         Forces the dataset to calculate a new scaler instead of loading a precalculated scaler. Used during training, but
@@ -66,7 +66,7 @@ def get_dataset(
     global _datasetZooRegistry
 
     return _datasetZooRegistry.instantiate_dataset(
-        cfg, is_train, period, basin, compute_scaler
+        cfg, is_train, period, basins, compute_scaler
     )
 
 

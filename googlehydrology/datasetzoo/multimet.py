@@ -75,8 +75,8 @@ class Multimet(Dataset):
         is created and also stored to disk. If False, the scaler must be calculated (`compute_scaler` must be True).
     period : {'train', 'validation', 'test'}
         Defines the period for which the data will be loaded
-    basin : str, optional
-        If passed, the data for only this basin will be loaded. Otherwise, the basin(s) is(are) read from the
+    basins : list[str], optional
+        If passed, the data for only these basins will be loaded. Otherwise, basins are read from the
         appropriate basin file, corresponding to the `period`.
     compute_scaler : bool
         Forces the dataset to calculate a new scaler instead of loading a precalculated scaler. Used during training, but
@@ -88,7 +88,7 @@ class Multimet(Dataset):
         cfg: Config,
         is_train: bool,
         period: str,
-        basin: str = None,
+        basins: list[str] | None = None,
         compute_scaler: bool = True,
     ):
         self._cfg = cfg
@@ -164,9 +164,9 @@ class Multimet(Dataset):
             )
 
         # TODO (future) :: Consolidate the basin list loading somewhere instead of in two different places.
-        self._basins = [basin]
-        if basin is None:
-            self._basins = load_basin_file(getattr(cfg, f'{period}_basin_file'))
+        self._basins = basins or load_basin_file(
+            getattr(cfg, f'{period}_basin_file')
+        )
 
         # Load & preprocess the data.
         LOGGER.debug('load data')
@@ -252,31 +252,54 @@ class Multimet(Dataset):
             custom_normalization=cfg.custom_normalization,
             dataset=(self._dataset if compute_scaler else None),
         )
-        LOGGER.debug('scale data')
-        self._dataset = self.scaler.scale(self._dataset)
 
-        # TODO: Optionally, optimize the data loader and trainer modules to work with chunked lazy data.
-        LOGGER.debug('materialize data (compute)')
-        # We explicitly keep the self.scaler.scaler computation since trainer uses it directly
-        # create sample index does a compute on the data. We compute here prior to avoid recompute.
-        self._dataset, self.scaler.scaler = dask.compute(
-            self._dataset, self.scaler.scaler
+        LOGGER.debug('compute scaler')
+        (self.scaler.scaler,) = dask.compute(
+            self.scaler.scaler,
         )
-
         LOGGER.debug('scaler check zero scale')
         self.scaler.check_zero_scale()
-        LOGGER.debug('scaler save')
-        self.scaler.save()
+        if compute_scaler:
+            LOGGER.debug('scaler save (compute_scaler)')
+            self.scaler.save()
 
-        # Create sample index lookup table for `__getitem__`.
-        LOGGER.debug('create sample index')
-        self._create_sample_index()
+        # call scale after scaler.scaler is computed to avoid duplicate calc
+        LOGGER.debug('scale data')
+        self._dataset = self.scaler.scale(self._dataset)  # when scaler computed
+
+        self._data_cache: dict[str, xr.DataArray] = {}
+
+        self._dataset_lazy = self._dataset
+        self._dataset = None
+        if basins != []:
+            self.load_basins(basins)
+
+        LOGGER.debug('forecast dataset init complete')
+
+    def load_basins(self, basins: list[str] | None = None) -> 'Multimet':
+        if basins is None:
+            print('load_basins: load all', self._period)
+        else:
+            print(f'# load_basins: {len(basins)=}', self._period)
+
+        self._data_cache = {}
+
+        if basins:
+            self._dataset = self._dataset_lazy.sel(basin=basins)
+        else:  # [] or None
+            self._dataset = self._dataset_lazy
+
+        valid_sample_mask = self._create_valid_sample_mask()
+        (self._dataset, *indices) = dask.compute(
+            self._dataset, *dask.array.nonzero(valid_sample_mask.data)
+        )
+        self._create_sample_index(valid_sample_mask, indices)
 
         # Compute stats for NSE-based loss functions.
         # TODO (future) :: Find a better way to decide whether to calculate these. At least keep a list of
         # losses that require them somewhere like `training.__init__.py`. Perhaps simply always calculate.
         self._per_basin_target_stds = None
-        if cfg.loss.lower() in ['nse', 'weightednse']:
+        if self._cfg.loss.lower() in ['nse', 'weightednse']:
             LOGGER.debug('create per_basin_target_stds')
             self._per_basin_target_stds = self._dataset[
                 self._target_features
@@ -289,9 +312,7 @@ class Multimet(Dataset):
                 skipna=True,
             )
 
-        self._data_cache: dict[str, xr.DataArray] = {}
-
-        LOGGER.debug('forecast dataset init complete')
+        return self
 
     def __len__(self) -> int:
         return self._num_samples
@@ -489,12 +510,7 @@ class Multimet(Dataset):
         ]
         return functools.reduce(pd.Index.union, ranges)
 
-    # This is run by the base class.
-    def _create_sample_index(self):
-        """Creates a map from integer sample indexes to the integer positions into the xr.Dataset.
-
-        This allows index-based sample retrieval, which is faster than coordinate-based sample retrieval.
-        """
+    def _create_valid_sample_mask(self):
         # Create a boolean mask for the original dataset noting valid (True) vs. invalid (False) samples.
         valid_sample_mask = validate_samples(
             is_train=self.is_train,
@@ -513,21 +529,17 @@ class Multimet(Dataset):
             feature_groups=self._feature_groups,
             allzero_samples_are_invalid=self._allzero_samples_are_invalid,
         )[0]
+        return valid_sample_mask
 
-        LOGGER.debug('valid_sample_mask compute')
-        # Convert boolean valid sample mask into indexes of all samples. This retains
-        # only the portion of the valid sample mask with True values.
-        # Each element is a list of valid integer positions (indexers) for which
-        # values are True for a dimension.
-        indices = dask.compute(*dask.array.nonzero(valid_sample_mask.data))
-
+    def _create_sample_index(
+        self, valid_sample_mask: xr.DataArray, indices: list[np.ndarray]
+    ):
         # Count the number of valid samples.
         num_samples = len(indices[0]) if indices else 0
         if num_samples == 0:
             if self._period == 'train':
                 raise NoTrainDataError
-            else:
-                raise NoEvaluationDataError
+            raise NoEvaluationDataError
 
         # Maps dim name to its respective list of int indices (index arrays) i.e. columns
         # of all basins, all dates, etc.

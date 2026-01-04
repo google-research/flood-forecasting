@@ -176,17 +176,7 @@ class BaseTester(object):
             cfg=self.cfg,
             is_train=False,
             period=self.period,
-            basin=None,
-            compute_scaler=False,
-        )
-
-    def _get_dataset(self, basin: str) -> Dataset:
-        """Get dataset for a single basin."""
-        return get_dataset(
-            cfg=self.cfg,
-            is_train=False,
-            period=self.period,
-            basin=basin,
+            basins=None,
             compute_scaler=False,
         )
 
