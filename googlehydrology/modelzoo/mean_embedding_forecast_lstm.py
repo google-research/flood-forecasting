@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import dataclasses
 from typing import Iterable
 
-import dataclasses
 import numpy as np
 import torch
 import torch.nn as nn
@@ -22,9 +22,9 @@ import torch.nn as nn
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.modelzoo.fc import FC
 from googlehydrology.modelzoo.head import get_head
-from googlehydrology.utils.config import Config, WeightInitOpt, EmbeddingSpec
-from googlehydrology.utils.lstm_utils import lstm_init
+from googlehydrology.utils.config import Config, EmbeddingSpec, WeightInitOpt
 from googlehydrology.utils.configutils import group_features_list
+from googlehydrology.utils.lstm_utils import lstm_init
 
 FC_XAVIER = WeightInitOpt.FC_XAVIER
 

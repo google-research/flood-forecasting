@@ -16,12 +16,12 @@
 import torch
 import torch.nn as nn
 
-from googlehydrology.utils.config import Config, WeightInitOpt
-from googlehydrology.utils.lstm_utils import lstm_init
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.modelzoo.fc import FC
 from googlehydrology.modelzoo.head import get_head
 from googlehydrology.modelzoo.inputlayer import InputLayer
+from googlehydrology.utils.config import Config, WeightInitOpt
+from googlehydrology.utils.lstm_utils import lstm_init
 
 FC_XAVIER = WeightInitOpt.FC_XAVIER
 
