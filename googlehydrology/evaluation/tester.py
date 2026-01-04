@@ -193,7 +193,6 @@ class BaseTester(object):
         self,
         epoch: int = None,
         save_results: bool = True,
-        save_all_output: bool = False,
         metrics: list | dict = [],
         model: torch.nn.Module = None,
         experiment_logger: Logger = None,
@@ -206,8 +205,6 @@ class BaseTester(object):
             Define a specific epoch to evaluate. By default, the weights of the last epoch are used.
         save_results : bool, optional
             If True, stores the evaluation results in the run directory. By default, True.
-        save_all_output : bool, optional
-            If True, stores all of the model output in the run directory. By default, False.
         metrics : list | dict, optional
             List of metrics to compute during evaluation. Can also be a dict that specifies per-target metrics
         model : torch.nn.Module, optional
@@ -263,7 +260,7 @@ class BaseTester(object):
         basins_for_figures = random.sample(list(basins), k=max_figures)
 
         eval_data_it = self._evaluate(
-            model, loader, self.dataset.frequencies, save_all_output, basins
+            model, loader, self.dataset.frequencies, basins
         )
         pbar = tqdm(
             eval_data_it,
@@ -486,9 +483,8 @@ class BaseTester(object):
             self._save_incremental_results(
                 basin,
                 results=results,
-                states=basin_data['all_output'] if save_all_output else {},
+                states={},
                 save_results=save_results,
-                save_all_output=save_all_output,
                 epoch=epoch,
             )
 
@@ -582,7 +578,6 @@ class BaseTester(object):
 
         zarr_stores_to_remove = [
             parent_directory / f'{self.period}_results.zarr',
-            parent_directory / f'{self.period}_all_output.zarr',
         ]
         for zarr_store in zarr_stores_to_remove:
             shutil.rmtree(zarr_store, ignore_errors=True)
@@ -598,7 +593,6 @@ class BaseTester(object):
         results: dict,
         states: dict,
         save_results: bool,
-        save_all_output: bool,
         epoch: int | None,
     ):
         """Store results in various formats to disk.
@@ -643,28 +637,6 @@ class BaseTester(object):
             else:
                 ds.to_zarr(result_file, mode='w', consolidated=False)
 
-        # store all model output in a zarr store
-        if (
-            states
-            and save_all_output
-            and self.cfg.inference_mode
-            and self.period == 'test'
-        ):
-            result_file = parent_directory / f'{self.period}_all_output.zarr'
-
-            # TODO(future): setup dims by name instead of by order.
-            data_vars = {
-                key: (tuple(f'{key}_dim_{i}' for i in range(value.ndim)), value)
-                for key, value in states.items()
-            }
-            ds = xarray.Dataset(data_vars).expand_dims(basin=[basin])
-            ds = _ensure_unicode_or_bytes_are_strings(ds)
-
-            if result_file.exists():
-                ds.to_zarr(result_file, append_dim='basin', consolidated=False)
-            else:
-                ds.to_zarr(result_file, mode='w', consolidated=False)
-
     def _parent_directory_for_results(self, epoch: int | None = None):
         # determine parent directory name and create if needed
         weight_file = self._get_weight_file(epoch=epoch)
@@ -677,7 +649,6 @@ class BaseTester(object):
         model: BaseModel,
         loader: DataLoader,
         frequencies: list[str],
-        save_all_output: bool = False,
         basins: set[str] = set(),
     ):
         predict_last_n = self.cfg.predict_last_n
@@ -698,7 +669,6 @@ class BaseTester(object):
                 preds = {}
                 obs = {}
                 dates = {}
-                all_output = {}
                 losses = []
                 mean_losses = {}
 
@@ -719,11 +689,6 @@ class BaseTester(object):
                         predictions, loss = self._get_predictions_and_loss(
                             model, data
                         )
-
-                    if save_all_output:
-                        for key, value in predictions.items():
-                            if value is not None and type(value) != dict:
-                                all_output.setdefault(key, []).append(value)
 
                     for freq in frequencies:
                         if predict_last_n[freq] == 0:
@@ -754,10 +719,6 @@ class BaseTester(object):
 
                     losses.append(loss)
 
-                # concatenate all output variables (currently a dict-of-dicts) into a single-level dict
-                for key, list_of_data in all_output.items():
-                    all_output[key] = torch.concatenate(list_of_data, 0)
-
                 # set to NaN explicitly if all losses are NaN to avoid RuntimeWarning
                 if len(losses) == 0:
                     mean_losses['loss'] = np.nan
@@ -775,7 +736,6 @@ class BaseTester(object):
                     'preds': _values_to_cpu(preds),
                     'obs': _values_to_cpu(obs),
                     'dates': dates,
-                    'all_output': _values_to_cpu(all_output),
                     'losses': losses,
                     'mean_losses': mean_losses,
                 }

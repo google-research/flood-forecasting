@@ -335,7 +335,6 @@ class BaseTrainer(object):
                 self.validator.evaluate(
                     epoch=epoch,
                     save_results=self.cfg.save_validation_results,
-                    save_all_output=self.cfg.save_all_output,
                     metrics=self.cfg.metrics,
                     model=self.model,
                     experiment_logger=self.experiment_logger.valid(),
@@ -421,7 +420,7 @@ class BaseTrainer(object):
         # process bar handle
         n_iter = (
             min(self._max_updates_per_epoch, len(self.loader))
-            if self._max_updates_per_epoch is not None
+            if self._max_updates_per_epoch > 0
             else None
         )
         pbar = tqdm(
@@ -436,7 +435,7 @@ class BaseTrainer(object):
         nan_count = 0
         for i, data in enumerate(pbar):
             if (
-                self._max_updates_per_epoch is not None
+                self._max_updates_per_epoch > 0
                 and i >= self._max_updates_per_epoch
             ):
                 break
