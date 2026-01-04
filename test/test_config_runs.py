@@ -61,7 +61,7 @@ def test_forecast_daily_regression(
         names=['basin', 'date']
     )
     nan_discharge = pd.DataFrame(
-        data=float('nan'), 
+        data=np.nan, 
         index=index, 
         columns=['streamflow']
     )
