@@ -404,7 +404,7 @@ Training settings
 -  ``epochs``: Number of training epochs.
 
 -  ``max_updates_per_epoch``: Maximum number of weight updates per training epoch.
-   Leave unspecified to go through all data in every epoch.
+   Leave unspecified or `< 1` to go through all data in every epoch.
 
 -  ``use_frequencies``: Defines the time step frequencies to use (daily,
    hourly, ...). Use `pandas frequency

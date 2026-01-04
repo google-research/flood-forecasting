@@ -13,18 +13,20 @@
 # limitations under the License.
 
 # How to install:
-# conda env create -f environments/environment_cuda11_8.yml
+# conda env create -f environments/conda.yml
 
 name: googlehydrology
-channels:
+channels:  # Order matters
   - pytorch
   - nvidia
   - conda-forge
-  - defaults  # Keep last
+  - defaults
 dependencies:
   - absl-py
   - bokeh
   - cachey
+  - cuda-toolkit 
+  - cuda-version=12.4
   - dask
   - gcsfs
   - gh
@@ -42,12 +44,11 @@ dependencies:
   - parso
   - pydantic
   - pytest
-  - pytest
   - pytest-cov
   - pytest-xdist
   - python=3.12
   - pytorch
-  - pytorch-cuda=11.8
+  - pytorch-cuda=12.4
   - ruamel.yaml
   - ruff
   - scipy
