@@ -41,6 +41,5 @@ def start_evaluation(
     tester.evaluate(
         epoch=epoch,
         save_results=True,
-        save_all_output=cfg.save_all_output,
         metrics=cfg.metrics,
     )
