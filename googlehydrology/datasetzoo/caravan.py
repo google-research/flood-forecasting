@@ -194,9 +194,9 @@ def load_caravan_timeseries_together(
             # 'rdcc_nbytes': 1024 * 1024,
             # 'rdcc_nslots': 100,
         },
-        coords='minimal',  # Only concatenate coords that differ by file (e.g. time)
-        data_vars='all',  # Don't duplicate invariant variables
-        compat='override',  # CRITICAL: Skip equality checks. Trust the first file.
+        coords='minimal',  # only concat coords that differ by file
+        data_vars='all',  # don't duplicate invariant vars
+        compat='override',  # skip equality checks, use first file
     )
     return ds.assign_coords(basin=basins)
 
