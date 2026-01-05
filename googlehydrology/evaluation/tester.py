@@ -45,6 +45,7 @@ from googlehydrology.training import get_loss_obj, get_regularization_obj
 from googlehydrology.training.logger import Logger, do_log_figures
 from googlehydrology.utils.config import Config
 from googlehydrology.utils.errors import AllNaNError, NoEvaluationDataError
+import contextlib
 
 LOGGER = logging.getLogger(__name__)
 
@@ -206,9 +207,10 @@ class BaseTester(object):
             batch_size=self.cfg.batch_size,
             basins_indexes=set(get_samples_indexes(self.basins, samples=list(basins))),
         )
-        loader = ThreadedDataLoader(
+        loader = (
+            ThreadedDataLoader if self.cfg.lazy_memory.enabled else DataLoader
+        )(
             self.dataset,
-            _lazy_memory=self.cfg.lazy_memory.enabled,
             batch_sampler=batch_sampler,
             num_workers=self.cfg.num_workers,
             collate_fn=self.dataset.collate_fn,
@@ -522,7 +524,9 @@ class BaseTester(object):
             predict_last_n = {frequencies[0]: predict_last_n}  # if predict_last_n is int, there's only one frequency
 
         with torch.inference_mode():
-            # loader.prepare()
+            with contextlib.suppress(AttributeError):
+                loader.prepare()
+
             basin_samples = itertools.groupby(loader, lambda data: data['basin_index'][0].item())
             for basin_index, samples in basin_samples:
                 basin = loader.dataset._basins[basin_index]

@@ -20,6 +20,7 @@ from pathlib import Path
 
 import dask
 import dask.distributed
+import xarray
 import torch
 
 # make sure code directory is in path, even if the package is not installed using the setup.py
@@ -69,6 +70,7 @@ def _main():
             'distributed.worker.memory.spill': False,
         }
     )
+    # xarray.set_options(file_cache_maxsize=1)
     # dask.distributed.Client(
     #     set_as_default=True, processes=False, threads_per_worker=os.cpu_count()
     # )

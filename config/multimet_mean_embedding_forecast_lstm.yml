@@ -12,16 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-logging_level: INFO
+logging_level: DEBUG
 detect_anomaly: False
 print_warnings_once: False
 lazy_memory:
   enabled: True
-  cache_bytes: 4000000000
+  # cache_bytes: 1000000000 # 1GB
+  cache_bytes: 0
 
 # --- Training Parameters -------------------------------------------------------
 
-batch_size: 128
+batch_size: 512
 epochs: 80
 experiment_name: mean_embedding_forecast_lstm
 clip_gradient_norm: 1
@@ -31,8 +32,7 @@ learning_rate_strategy: ReduceLROnPlateau
 initial_learning_rate: 0.0005
 learning_rate_drop_factor: 0.5
 learning_rate_epochs_drop: 5
-# max_updates_per_epoch:
-max_updates_per_epoch: 10
+max_updates_per_epoch: 20
 metrics:
 - NSE
 # - KGE
@@ -41,7 +41,7 @@ metrics:
 # - Beta-KGE
 # - Peak-Timing
 # - Missed-Peaks
-num_workers: 4  # DataLoader Threads
+num_workers: 0
 optimizer: Adam
 validate_every: 1
 validate_n_random_basins: 3

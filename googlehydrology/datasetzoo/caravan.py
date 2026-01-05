@@ -186,9 +186,17 @@ def load_caravan_timeseries_together(
         concat_dim='basin',
         parallel=False,  # open_mfdataset has a bug (seg fault) when True
         chunks={'date': 'auto'},
-        join='outer',
+        join='override',
         engine='h5netcdf',
         lock=False,  # Need engine='h5netcdf'
+        backend_kwargs={
+            # 'cache_size': 1024 * 1024,  # 1 MB
+            # 'rdcc_nbytes': 1024 * 1024,
+            # 'rdcc_nslots': 100,
+        },
+        coords='minimal',  # Only concatenate coords that differ by file (e.g. time)
+        data_vars='all',  # Don't duplicate invariant variables
+        compat='override',  # CRITICAL: Skip equality checks. Trust the first file.
     )
     return ds.assign_coords(basin=basins)
 

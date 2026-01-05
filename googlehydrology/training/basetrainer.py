@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import contextlib
 import logging
 import math
 import random
@@ -109,14 +110,16 @@ class BaseTrainer(object):
     def _get_tester(self) -> BaseTester:
         return get_tester(cfg=self.cfg, run_dir=self.cfg.run_dir, period="validation", init_model=False)
 
-    def _get_data_loader(self, ds: Dataset) -> ThreadedDataLoader:
-        return ThreadedDataLoader(
+    def _get_data_loader(self, ds: Dataset) -> ThreadedDataLoader | DataLoader:
+        return (
+            ThreadedDataLoader if self.cfg.lazy_memory.enabled else DataLoader
+        )(
             ds,
-            _lazy_memory=self.cfg.lazy_memory.enabled,
             batch_size=self.cfg.batch_size,
             shuffle=True,
             num_workers=self.cfg.num_workers,
             collate_fn=ds.collate_fn,
+            pin_memory=True,  # avoid 1 of 2 mem copies to gpu
         )
 
     def _freeze_model_parts(self):
@@ -331,7 +334,8 @@ class BaseTrainer(object):
 
         # process bar handle
         n_iter = min(self._max_updates_per_epoch, len(self.loader)) if self._max_updates_per_epoch is not None else None
-        # self.loader.prepare(n_iter)
+        with contextlib.suppress(AttributeError):
+            self.loader.prepare(n_iter)
         pbar = tqdm(self.loader, file=sys.stdout, disable=self._disable_pbar, total=n_iter)
         pbar.set_description(f'# Epoch {epoch}')
 

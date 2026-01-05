@@ -71,6 +71,10 @@ def setup_logging(log_file: str, level: int, print_warnings_once: bool):
 
     sys.excepthook = exception_logging
 
+    logging.getLogger('filelock').setLevel(logging.INFO)
+    logging.getLogger('torch._inductor').setLevel(logging.INFO)
+    logging.getLogger("numcodecs").setLevel(logging.WARNING)
+
     LOGGER.info(f"Logging to {log_file} initialized.")
 
 
