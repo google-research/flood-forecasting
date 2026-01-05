@@ -116,6 +116,10 @@ class ThreadedDataLoader(torch.utils.data.DataLoader):
             yield result
             print('yield post')
 
+    def __del__(self):
+        self._client.close()
+        self._cluster.close()
+
 
 class Multimet(Dataset):
     """Base data set class for forecast models.
@@ -317,9 +321,14 @@ class Multimet(Dataset):
         indices, valid_sample_mask = self._create_valid_sample_mask()
         if self._lazy.enabled:
             LOGGER.debug('compute scaler, indices')
-            with dask.config.set(scheduler='processes', num_workers=1):
+            with (
+                multiprocessing.Pool(processes=1) as pool,
+                dask.config.set(
+                    pool=pool, scheduler='processes', num_workers=1
+                ),
+            ):
                 (self.scaler.scaler, *indices) = dask.compute(
-                    self.scaler.scaler, *indices, scheduler='processes'
+                    self.scaler.scaler, *indices
                 )
             LOGGER.debug('scale data post scaler')
             self._dataset = self.scaler.scale(self._dataset)
