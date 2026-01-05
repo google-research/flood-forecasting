@@ -188,7 +188,7 @@ def load_caravan_timeseries_together(
         chunks={'date': 'auto'},
         join='override',
         engine='h5netcdf',
-        lock=False,  # Need engine='h5netcdf'
+        # lock=False,  # Need engine='h5netcdf'
         backend_kwargs={
             # 'cache_size': 1024 * 1024,  # 1 MB
             # 'rdcc_nbytes': 1024 * 1024,
