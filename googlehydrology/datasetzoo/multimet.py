@@ -1005,4 +1005,5 @@ class SampleIndexer:
         return zip(self.keys(), self.values())
 
     def __len__(self) -> int:
-        return len(self._aligned_indices[0][1])
+        _, indexes = self._aligned_indices[0]
+        return len(indexes)
