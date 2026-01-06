@@ -13,33 +13,41 @@
 # limitations under the License.
 
 from math import ceil
+
 import pytest
 
+from googlehydrology.datasetzoo.multimet import SampleIndexer
 from googlehydrology.evaluation.utils import BasinBatchSampler
 
 
 @pytest.fixture
 def fixure():
-    sample_index = {  # sample index -> basin metadata
-        # basin 101: 7 samples, 3 batches
-        0: {'basin': 101, 'date': 1},
-        1: {'basin': 101, 'date': 2},
-        2: {'basin': 101, 'date': 3},
-        3: {'basin': 101, 'date': 4},
-        4: {'basin': 101, 'date': 5},
-        5: {'basin': 101, 'date': 6},
-        6: {'basin': 101, 'date': 7},
-        # basin 102: 6 samples, 2 batches
-        7: {'basin': 102, 'date': 1},
-        8: {'basin': 102, 'date': 2},
-        9: {'basin': 102, 'date': 3},
-        10: {'basin': 102, 'date': 4},
-        11: {'basin': 102, 'date': 5},
-        12: {'basin': 102, 'date': 6},
-        # basin 103: 2 samples, 1 batch
-        13: {'basin': 103, 'date': 1},
-        14: {'basin': 103, 'date': 2},
-    }
+    sample_index = SampleIndexer(  # sample index -> basin metadata
+        (
+            (
+                'basin',
+                [
+                    # 7 samples, 3 batches
+                    *[101, 101, 101, 101, 101, 101, 101],
+                    # 6 samples, 2 batches
+                    *[102, 102, 102, 102, 102, 102],
+                    # 2 samples, 1 batch
+                    *[103, 103],
+                ],
+            ),
+            (
+                'date',
+                [
+                    # 7 samples, 3 batches
+                    *[1, 2, 3, 4, 5, 6, 7],
+                    # 6 samples, 2 batches
+                    *[1, 2, 3, 4, 5, 6],
+                    # 2 samples, 1 batch
+                    *[1, 2],
+                ],
+            ),
+        )
+    )
 
     expected_groups = {  # basin id -> expected sample indexes
         101: [0, 1, 2, 3, 4, 5, 6],
@@ -121,9 +129,12 @@ def test_one_basin_per_batch(fixure):
 
 def test_sampler_with_single_basin(fixure):
     """Test that the sampler works with one basin."""
-    sample_index = {
-        k: v for k, v in fixure['sample_index'].items() if v['basin'] == 101
-    }
+    sample_index = SampleIndexer(
+        (
+            ('basin', [101, 101, 101, 101, 101, 101, 101]),
+            ('date', [1, 2, 3, 4, 5, 6, 7]),
+        ),
+    )
     sampler = BasinBatchSampler(
         sample_index, batch_size=3, basins_indexes=set()
     )
@@ -136,7 +147,7 @@ def test_sampler_with_single_basin(fixure):
 
 def test_sampler_with_batch_size_larger_than_samples():
     """Test behavior when a basin has fewer samples than the batch size."""
-    sample_index = {0: {'basin': 201}, 1: {'basin': 201}}
+    sample_index = SampleIndexer((('basin', [201, 201]),))
     sampler = BasinBatchSampler(
         sample_index, batch_size=5, basins_indexes=set()
     )
