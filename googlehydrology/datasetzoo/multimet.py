@@ -16,6 +16,7 @@ import functools
 import itertools
 import logging
 import math
+import multiprocessing
 import pickle
 import subprocess
 import sys
@@ -241,13 +242,20 @@ class Multimet(Dataset):
         LOGGER.debug('scale data')
         self._dataset = self.scaler.scale(self._dataset)
 
+        LOGGER.debug('create valid sample mask and indices')
+        valid_sample_mask, indices = self._create_valid_sample_mask()
+
         # TODO: Optionally, optimize the data loader and trainer modules to work with chunked lazy data.
         LOGGER.debug('materialize data (compute)')
         # We explicitly keep the self.scaler.scaler computation since trainer uses it directly
-        # create sample index does a compute on the data. We compute here prior to avoid recompute.
-        self._dataset, self.scaler.scaler = dask.compute(
-            self._dataset, self.scaler.scaler
-        )
+        with multiprocessing.Pool(processes=1) as pool:
+            self._dataset, self.scaler.scaler, indices = dask.compute(
+                self._dataset,
+                self.scaler.scaler,
+                indices,
+                pool=pool,
+                scheduler='processes',
+            )
 
         LOGGER.debug('scaler check zero scale')
         self.scaler.check_zero_scale()
@@ -255,8 +263,7 @@ class Multimet(Dataset):
         self.scaler.save()
 
         # Create sample index lookup table for `__getitem__`.
-        LOGGER.debug('create sample index')
-        self._create_sample_index()
+        self._create_sample_index(valid_sample_mask, indices)
 
         # Compute stats for NSE-based loss functions.
         # TODO (future) :: Find a better way to decide whether to calculate these. At least keep a list of
@@ -277,7 +284,7 @@ class Multimet(Dataset):
 
         self._data_cache: dict[str, xr.DataArray] = {}
 
-        LOGGER.debug('forecast dataset init complete')
+        LOGGER.debug('forecast dataset init complete (%s)', self._period)
 
     def __len__(self) -> int:
         return self._num_samples
@@ -475,12 +482,7 @@ class Multimet(Dataset):
         ]
         return functools.reduce(pd.Index.union, ranges)
 
-    # This is run by the base class.
-    def _create_sample_index(self):
-        """Creates a map from integer sample indexes to the integer positions into the xr.Dataset.
-
-        This allows index-based sample retrieval, which is faster than coordinate-based sample retrieval.
-        """
+    def _create_valid_sample_mask(self):
         # Create a boolean mask for the original dataset noting valid (True) vs. invalid (False) samples.
         valid_sample_mask = validate_samples(
             is_train=self.is_train,
@@ -500,13 +502,21 @@ class Multimet(Dataset):
             allzero_samples_are_invalid=self._allzero_samples_are_invalid,
         )[0]
 
-        LOGGER.debug('valid_sample_mask compute')
         # Convert boolean valid sample mask into indexes of all samples. This retains
         # only the portion of the valid sample mask with True values.
         # Each element is a list of valid integer positions (indexers) for which
         # values are True for a dimension.
-        indices = dask.compute(*dask.array.nonzero(valid_sample_mask.data))
+        indices = dask.array.nonzero(valid_sample_mask.data)
 
+        return valid_sample_mask, indices
+
+    def _create_sample_index(
+        self, valid_sample_mask: xr.DataArray, indices: np.ndarray
+    ):
+        """Creates a map from integer sample indexes to the integer positions into the xr.Dataset.
+
+        This allows index-based sample retrieval, which is faster than coordinate-based sample retrieval.
+        """
         # Count the number of valid samples.
         num_samples = len(indices[0]) if indices else 0
         if num_samples == 0:
