@@ -563,7 +563,7 @@ def test_scaler_load_from_file_raises_error_for_zero_scale(tmp_scaler_dir):
     )
     os.makedirs(tmp_scaler_dir, exist_ok=True)
     with open(scaler_file_path, 'w+b') as f:
-        zero_scale_ds.to_netcdf(f, engine='h5netcdf')
+        zero_scale_ds.to_netcdf(f, engine='netcdf4')
 
     # Now try to load this scaler and expect a ValueError
     with pytest.raises(
