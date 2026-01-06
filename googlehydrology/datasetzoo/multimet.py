@@ -16,12 +16,11 @@ import functools
 import itertools
 import logging
 import math
-import multiprocessing
 import pickle
 import subprocess
 import sys
+from collections.abc import Hashable, Iterable, Iterator
 from pathlib import Path
-from typing import Hashable, Iterable
 
 import dask
 import dask.array
@@ -29,6 +28,7 @@ import numpy as np
 import pandas as pd
 import torch
 import xarray as xr
+from dask.sizeof import sizeof
 from torch.utils.data import Dataset
 
 from googlehydrology.datasetzoo.caravan import (
@@ -246,22 +246,23 @@ class Multimet(Dataset):
         valid_sample_mask, indices = self._create_valid_sample_mask()
 
         # TODO: Optionally, optimize the data loader and trainer modules to work with chunked lazy data.
-        LOGGER.debug('materialize data (compute)')
+        LOGGER.debug('compute dataset, scaler')
         # We explicitly keep the self.scaler.scaler computation since trainer uses it directly
-        with multiprocessing.Pool(processes=1) as pool:
-            self._dataset, self.scaler.scaler, indices = dask.compute(
-                self._dataset,
-                self.scaler.scaler,
-                indices,
-                pool=pool,
-                scheduler='processes',
-            )
-
+        (self._dataset, self.scaler.scaler) = dask.compute(
+            self._dataset, self.scaler.scaler
+        )
+        LOGGER.debug(f'Dataset size: {sizeof(self._dataset) / 1024 / 1024} MB')
         LOGGER.debug('scaler check zero scale')
         self.scaler.check_zero_scale()
         LOGGER.debug('scaler save')
         self.scaler.save()
 
+        LOGGER.debug('create valid sample mask and indices')
+        valid_sample_mask, indices = self._create_valid_sample_mask()
+        (indices,) = dask.compute(indices)
+        LOGGER.debug(
+            f'Sample masks indices size: {sizeof(indices) / 1024 / 1024} MB'
+        )
         # Create sample index lookup table for `__getitem__`.
         self._create_sample_index(valid_sample_mask, indices)
 
@@ -513,9 +514,10 @@ class Multimet(Dataset):
     def _create_sample_index(
         self, valid_sample_mask: xr.DataArray, indices: np.ndarray
     ):
-        """Creates a map from integer sample indexes to the integer positions into the xr.Dataset.
+        """Map int sample indexes to the int positions into the xr.Dataset.
 
-        This allows index-based sample retrieval, which is faster than coordinate-based sample retrieval.
+        Allows index-based sample retrieval, faster than coordinate-based sample
+        retrieval.
         """
         # Count the number of valid samples.
         num_samples = len(indices[0]) if indices else 0
@@ -525,26 +527,16 @@ class Multimet(Dataset):
             else:
                 raise NoEvaluationDataError
 
-        # Maps dim name to its respective list of int indices (index arrays) i.e. columns
-        # of all basins, all dates, etc.
-        vectorized_indices = {
-            dim: indices[i]
+        # Align dim name with its respective list of int indices (index arrays),
+        # i.e. columns of all basins, all dates, etc.
+        aligned_indices = tuple(
+            (dim, indices[i])
             for i, dim in enumerate(valid_sample_mask.dims)
             if dim != 'sample'
-        }
+        )
 
         LOGGER.debug('sample_index')
-        # Reorg columns to rows, mapping sample index i [0, num_samples) to a dict that
-        # maps an int position for that sample in each dim. E.g. {1: {'basin': 2, 'date': 3}}
-        #
-        # This allows integer indexing into each coordinate dimension of the original dataset,
-        # while ONLY selecting valid samples. The full original dataset is retained (including
-        # not-valid samples) for sequence construction.
-        self._sample_index = {
-            i: {dim: indexes[i] for dim, indexes in vectorized_indices.items()}
-            for i in range(num_samples)
-        }
-
+        self._sample_index = SampleIndexer(aligned_indices)
         self._num_samples = num_samples
 
     def _extract_dataset(
@@ -983,3 +975,28 @@ def _get_products_and_bands_from_feature_strings(
             product = 'ERA5_LAND'
         product_bands.setdefault(product, []).append(feature)
     return product_bands
+
+class SampleIndexer:
+    """Reorg columns to rows.
+
+    Map sample index i [0, num_samples) to a dict that maps an int
+    position for that sample in each dim.
+    E.g. {1: {'basin': 2, 'date': 3}}
+
+    This allows integer indexing into each coordinate dimension of
+    the original dataset, while ONLY selecting valid samples. The full
+    original dataset is retained (including not-valid samples) for
+    sequence construction.
+    """
+
+    def __init__(self, aligned_indices: tuple[tuple[str, np.ndarray]]) -> None:
+        self._aligned_indices = aligned_indices
+
+    def __getitem__(self, item: int) -> dict[str, int]:
+        return {dim: indexes[item] for dim, indexes in self._aligned_indices}
+
+    def items(self) -> Iterator[tuple[int, dict[str, int]]]:
+        return enumerate(self[i] for i in range(len(self)))
+
+    def __len__(self) -> int:
+        return len(self._aligned_indices[0][1])
