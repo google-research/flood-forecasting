@@ -995,8 +995,14 @@ class SampleIndexer:
     def __getitem__(self, item: int) -> dict[str, int]:
         return {dim: indexes[item] for dim, indexes in self._aligned_indices}
 
+    def keys(self) -> Iterator[int]:
+        return range(len(self))
+
+    def values(self) -> Iterator[dict[str, int]]:
+        return (self[i] for i in self.keys())
+
     def items(self) -> Iterator[tuple[int, dict[str, int]]]:
-        return enumerate(self[i] for i in range(len(self)))
+        return zip(self.keys(), self.values())
 
     def __len__(self) -> int:
         return len(self._aligned_indices[0][1])
