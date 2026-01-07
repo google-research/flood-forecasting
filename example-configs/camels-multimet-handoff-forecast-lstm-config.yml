@@ -1,0 +1,278 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# ==============================================================================
+# GoogleHydrology State Handoff Model Configuration File
+# ==============================================================================
+# DESCRIPTION:
+# This configuration runs a test for the full CAMELS-US dataset. It is intended 
+# as a medium-sized test for software development to ensure model stability 
+# and performance across a standard benchmark before full-scale deployment.
+# ==============================================================================
+
+# --- 1. General Experiment Settings -------------------------------------------
+# Basic identifiers and housekeeping for the experiment.
+
+# Unique name for this experiment. Output folders will use this name.
+experiment_name: camels-multimet-handoff-forecast-lstm
+
+# Directory where model artifacts (weights, config copy, logs) will be saved.
+run_dir: 
+
+# Controls how much information is printed to the console during training.
+logging_level: INFO
+
+# If True, PyTorch will try to find operations that cause NaN or Inf values.
+detect_anomaly: False
+
+# If True, warnings (like data storage issues) are only printed once.
+print_warnings_once: False
+
+
+# --- 2. Data Configuration ----------------------------------------------------
+# Defines what data is used, where it comes from, and how it's split.
+
+# Specifies the class of dataset loader to use.
+dataset: multimet
+
+# -- File Paths --
+# Paths to text files containing lists of basin IDs for training, validation, and testing.
+train_basin_file: ~/flood-forecasting/example-configs/camels-us-531-basins-list.txt
+validation_basin_file: ~/flood-forecasting/example-configs/camels-us-531-basins-list.txt
+test_basin_file: ~/flood-forecasting/example-configs/camels-us-531-basins-list.txt
+
+# Directory containing the target data (streamflow observations).
+targets_data_dir: ~/data/camels-updated-2025
+# Directory containing static catchment attributes (e.g., area, elevation).
+statics_data_dir: ~/data/camels-updated-2025
+# Directory containing dynamic meteorological forcing data (rain, temp, etc.).
+dynamics_data_dir: ~/data/camels-updated-2025
+
+# This allows loading the input and target data from CSV files instead of NetCDF files.
+load_as_csv: False
+
+# Number of parallel processes to use for loading target features.
+load_target_features_parallel_processes:
+
+# -- Time Periods --
+train_start_date: 01/01/2016
+train_end_date: 31/12/2020
+
+validation_start_date: 01/01/2021
+validation_end_date: 31/12/2025
+
+test_start_date: 01/01/2021
+test_end_date: 31/12/2025
+
+# -- Input Features (Dynamic) --
+# 'hindcast_inputs': Historical weather data the model sees to learn current state.
+hindcast_inputs:
+  - hres_surface_net_solar_radiation
+  - hres_surface_net_thermal_radiation
+  - hres_surface_pressure
+  - hres_temperature_2m
+  - hres_total_precipitation
+  - imerg_precipitation
+  - cpc_precipitation
+
+# 'forecast_inputs': Future weather data (forecasts) the model uses to predict ahead.
+forecast_inputs:
+  - hres_surface_net_solar_radiation
+  - hres_surface_net_thermal_radiation
+  - hres_surface_pressure
+  - hres_temperature_2m
+  - hres_total_precipitation
+  - graphcast_temperature_2m
+  - graphcast_total_precipitation
+  - graphcast_u_component_of_wind_10m
+  - graphcast_v_component_of_wind_10m
+
+# 'union_mapping': Fills missing values in one dataset with values from another.
+union_mapping:
+  cpc_precipitation: era5land_total_precipitation
+  imerg_precipitation: era5land_total_precipitation
+  graphcast_temperature_2m: era5land_temperature_2m
+  graphcast_total_precipitation: era5land_total_precipitation
+  graphcast_u_component_of_wind_10m: era5land_u_component_of_wind_10m
+  graphcast_v_component_of_wind_10m: era5land_v_component_of_wind_10m
+  hres_surface_net_solar_radiation: era5land_surface_net_solar_radiation
+  hres_surface_net_thermal_radiation: era5land_surface_net_thermal_radiation
+  hres_surface_pressure: era5land_surface_pressure
+  hres_temperature_2m: era5land_temperature_2m
+  hres_total_precipitation: era5land_total_precipitation
+
+
+# -- Input Features (Static) --
+static_attributes:
+- area
+- p_mean
+- pet_mean_ERA5_LAND
+- pet_mean_FAO_PM
+- aridity_ERA5_LAND
+- aridity_FAO_PM
+- frac_snow
+- moisture_index_ERA5_LAND
+- moisture_index_FAO_PM
+- seasonality_ERA5_LAND
+- seasonality_FAO_PM
+- high_prec_freq
+- high_prec_dur
+- low_prec_freq
+- low_prec_dur
+- pet_mm_syr
+- ele_mt_smx
+- pre_mm_syr
+
+# -- Targets --
+target_variables:
+- streamflow
+
+# --- 3. Model Architecture ----------------------------------------------------
+# Defines the structure of the neural network.
+
+# The specific model class to use.
+model: handoff_forecast_lstm
+
+# Size of the hidden state vector in the LSTM layers.
+hidden_size: 128
+
+# The type of output head.
+head: regression
+
+# The type of activation layer used for the regression head.
+output_activation: linear
+
+# Number of days of past data the model uses as input.
+seq_length: 365
+
+# Number of days into the future to predict.
+lead_time: 7
+
+# Number of days the hindcast and forecast LSTMs overlap.
+forecast_overlap: 10
+
+# If True, adds a feature indicating how many days ahead the forecast is for.
+timestep_counter: True
+
+# -- Dropout --
+output_dropout: 0.4
+
+# -- Initialization --
+initial_forget_bias: 3
+weight_init_opts:
+- lstm-ih-xavier
+- lstm-hh-orthogonal
+- fc-xavier
+
+# -- Sub-network Configurations --
+# Architecture for the state handoff network (Specific to handoff model)
+state_handoff_network:
+  hiddens: [30, 20, 64]
+  activation: tanh
+  dropout: 0.0
+
+statics_embedding:
+  type: fc                         
+  hiddens: [100, 100, 20]          
+  activation: [tanh, tanh, linear] 
+  dropout: 0.0
+
+# We did not use hindcast and forecast embedding layers.
+hindcast_embedding:
+forecast_embedding:
+
+
+# --- 4. Training Configuration ------------------------------------------------
+# Controls how the model learns from data.
+
+device: cpu
+
+# The loss function to minimize.
+loss: NSE
+
+# The optimization algorithm.
+optimizer: Adam
+
+# -- Training Loop --
+epochs: 30
+batch_size: 256
+max_updates_per_epoch: 2000
+
+# -- Learning Rate Scheduler --
+learning_rate_strategy: StepLR
+initial_learning_rate: 0.001
+learning_rate_drop_factor: 0.2
+learning_rate_epochs_drop: 10
+
+# -- Regularization & Stability --
+clip_gradient_norm: 1
+target_noise_std: 0.005
+
+regularization:
+- forecast_overlap
+
+
+# --- 5. Validation & Evaluation -----------------------------------------------
+# Settings for checking model performance during and after training.
+
+# Metrics to calculate during validation.
+metrics:
+- NSE
+- KGE
+- Alpha-NSE
+- Beta-NSE
+- Beta-KGE
+- Peak-Timing
+- Missed-Peaks
+
+# How often (in epochs) to run validation.
+validate_every: 1
+# Number of basins to use for validation. -1 means use ALL.
+validate_n_random_basins: -1
+
+# During testing/validation, ignore periods where observations are completely missing.
+tester_skip_obs_all_nan: True
+
+# Method for aggregating multiple predictions.
+tester_sample_reduction: mean
+
+# Forces negative predictions to zero for these variables.
+clip_targets_to_zero:
+- streamflow
+
+# Defines which time steps are used to calculate loss.
+predict_last_n: 8
+
+# If True, samples with all-zero inputs are treated as invalid data gaps.
+allzero_samples_are_invalid: False
+
+
+# --- 6. System & Runtime ------------------------------------------------------
+# Computational settings.
+
+# Number of CPU processes used to load data in parallel.
+num_workers: 0
+
+# How often to print training loss to Tensorboard.
+log_loss_every_nth_update: 50
+
+# Number of validation plots to save to TensorBoard (0 to disable).
+log_n_figures: 3
+
+# Data caching settings.
+cache:
+  enabled: False
+  byte_limit: 2000000000
+  use_swap_memory:
+  
