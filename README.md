@@ -119,11 +119,9 @@ Experiments are defined by YAML files. Update the following paths in your config
 * targets\_data\_dir / statics\_data\_dir: Path to your local Caravan NetCDF data.  
 * dynamics\_data\_dir: Path to forcing data (e.g., gs://caravan-multimet/v1.1).
 
-## **Example Configurations**
+### **Example Configurations**
 
 The `~/flood-forecasting/example-configs` directory contains reference YAML files that define the experimental setups for different model architectures and datasets.
-
-### **Configuration File Breakdown**
 
 * **`floodhub-settings-config.yml`**  
   * **Model Architecture:** `mean_embedding_forecast_lstm`  
