@@ -48,14 +48,14 @@ dataset: multimet
 
 # -- File Paths --
 # Paths to text files containing lists of basin IDs for training, validation, and testing.
-train_basin_file: ~/flood-forecasting/example-configs/camels-basin-list.txt
-validation_basin_file: ~/flood-forecasting/example-configs/camels-basin-list.txt
-test_basin_file: ~/flood-forecasting/example-configs/camels-basin-list.txt
+train_basin_file: ~/flood-forecasting/example-configs/camels-basins-list.txt
+validation_basin_file: ~/flood-forecasting/example-configs/camels-basins-list.txt
+test_basin_file: ~/flood-forecasting/example-configs/camels-basins-list.txt
 
 # Directory containing the target data (streamflow observations).
-targets_data_dir: 
+targets_data_dir: ~/data/camels-updated-2025
 # Directory containing static catchment attributes (e.g., area, elevation).
-statics_data_dir: 
+statics_data_dir: ~/data/camels-updated-2025
 # Directory containing dynamic meteorological forcing data (rain, temp, etc.).
 dynamics_data_dir: gs://caravan-multimet/v1.1
 
@@ -152,7 +152,10 @@ output_dropout: 0.4
 
 # -- Initialization --
 initial_forget_bias: 3
-weight_init_opts: # Left empty as per handoff file
+weight_init_opts:
+- lstm-ih-xavier
+- lstm-hh-orthogonal
+- fc-xavier
 
 # -- Sub-network Configurations --
 # Architecture for the state handoff network (Specific to handoff model)
@@ -175,17 +178,18 @@ forecast_embedding:
 # --- 4. Training Configuration ------------------------------------------------
 # Controls how the model learns from data.
 
-device: cpu # Defaulting to cpu as it was not specified in the original handoff
+device: cpu
 
 # The loss function to minimize.
 loss: NSE
+
 # The optimization algorithm.
 optimizer: Adam
 
 # -- Training Loop --
 epochs: 30
 batch_size: 256
-max_updates_per_epoch: # Left empty as per handoff file
+max_updates_per_epoch: 2000
 
 # -- Learning Rate Scheduler --
 learning_rate_strategy: StepLR
