@@ -481,6 +481,11 @@ class Multimet(Dataset):
         return functools.reduce(pd.Index.union, ranges)
 
     def _create_valid_sample_mask(self):
+        """Map int sample indexes to the int positions into the xr.Dataset.
+
+        Allows index-based sample retrieval, faster than coordinate-based sample
+        retrieval.
+        """
         # Create a boolean mask for the original dataset noting valid (True) vs. invalid (False) samples.
         valid_sample_mask = validate_samples(
             is_train=self.is_train,
@@ -511,11 +516,7 @@ class Multimet(Dataset):
     def _create_sample_index(
         self, valid_sample_mask: xr.DataArray, indices: np.ndarray
     ):
-        """Map int sample indexes to the int positions into the xr.Dataset.
-
-        Allows index-based sample retrieval, faster than coordinate-based sample
-        retrieval.
-        """
+        """Create the sample index structure to access the mapping."""
         # Count the number of valid samples.
         num_samples = len(indices[0]) if indices else 0
         if num_samples == 0:
