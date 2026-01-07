@@ -14,6 +14,7 @@
 
 from math import ceil
 
+import numpy as np
 import pytest
 
 from googlehydrology.datasetzoo.multimet import SampleIndexer
@@ -26,25 +27,29 @@ def fixure():
         (
             (
                 'basin',
-                [
-                    # 7 samples, 3 batches
-                    *[101, 101, 101, 101, 101, 101, 101],
-                    # 6 samples, 2 batches
-                    *[102, 102, 102, 102, 102, 102],
-                    # 2 samples, 1 batch
-                    *[103, 103],
-                ],
+                np.array(
+                    [
+                        # basin 101: 7 samples, 3 batches
+                        *[101, 101, 101, 101, 101, 101, 101],
+                        # basin 102: 6 samples, 2 batches
+                        *[102, 102, 102, 102, 102, 102],
+                        # basin 103: 2 samples, 1 batch
+                        *[103, 103],
+                    ]
+                ),
             ),
             (
                 'date',
-                [
-                    # 7 samples, 3 batches
-                    *[1, 2, 3, 4, 5, 6, 7],
-                    # 6 samples, 2 batches
-                    *[1, 2, 3, 4, 5, 6],
-                    # 2 samples, 1 batch
-                    *[1, 2],
-                ],
+                np.array(
+                    [
+                        # basin 101: 7 samples, 3 batches
+                        *[1, 2, 3, 4, 5, 6, 7],
+                        # basin 102: 6 samples, 2 batches
+                        *[1, 2, 3, 4, 5, 6],
+                        # basin 103: 2 samples, 1 batch
+                        *[1, 2],
+                    ]
+                ),
             ),
         )
     )
@@ -131,8 +136,8 @@ def test_sampler_with_single_basin(fixure):
     """Test that the sampler works with one basin."""
     sample_index = SampleIndexer(
         (
-            ('basin', [101, 101, 101, 101, 101, 101, 101]),
-            ('date', [1, 2, 3, 4, 5, 6, 7]),
+            ('basin', np.array([101, 101, 101, 101, 101, 101, 101])),
+            ('date', np.array([1, 2, 3, 4, 5, 6, 7])),
         ),
     )
     sampler = BasinBatchSampler(
@@ -147,7 +152,7 @@ def test_sampler_with_single_basin(fixure):
 
 def test_sampler_with_batch_size_larger_than_samples():
     """Test behavior when a basin has fewer samples than the batch size."""
-    sample_index = SampleIndexer((('basin', [201, 201]),))
+    sample_index = SampleIndexer((('basin', np.array([201, 201])),))
     sampler = BasinBatchSampler(
         sample_index, batch_size=5, basins_indexes=set()
     )
