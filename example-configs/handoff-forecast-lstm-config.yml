@@ -61,9 +61,9 @@ dataset: multimet
 
 # -- File Paths (UPDATE THESE TO MATCH YOUR SYSTEM) --
 # Paths to text files containing lists of basin IDs for training, validation, and testing.
-train_basin_file: 
-validation_basin_file: 
-test_basin_file: 
+train_basin_file: ~/flood-forecasting/example-configs/multimet-basins-list-no-chirps.txt
+validation_basin_file: ~/flood-forecasting/example-configs/multimet-basins-list-no-chirps.txt
+test_basin_file: ~/flood-forecasting/example-configs/multimet-basins-list-no-chirps.txt
 
 # Directory containing the target data (streamflow observations).
 targets_data_dir: Caravan-nc

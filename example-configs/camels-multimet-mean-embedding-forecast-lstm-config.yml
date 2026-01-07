@@ -232,11 +232,13 @@ metrics:
 
 # How often (in epochs) to run validation.
 validate_every: 1
+
 # Number of basins to use for validation. -1 means use ALL validation basins.
 validate_n_random_basins: -1
 
 # During testing/validation, ignore periods where observations are completely missing.
 tester_skip_obs_all_nan: True
+
 # Method for aggregating multiple predictions.
 tester_sample_reduction: mean
 
@@ -259,6 +261,7 @@ num_workers: 0
 
 # How often to print training loss to Tensorboard.
 log_loss_every_nth_update: 50
+
 # Number of validation plots to save.
 log_n_figures: 5
 
