@@ -22,6 +22,7 @@ import cachey
 import dask
 import dask.cache
 import torch
+import xarray
 
 # make sure code directory is in path, even if the package is not installed using the setup.py
 sys.path.append(str(Path(__file__).parent.parent))
@@ -99,6 +100,9 @@ def _main():
 
     if config.cache.enabled:
         dask.cache.Cache(cachey.Cache(config.cache.byte_limit)).register()
+
+    # engines netcdf4 and h5netcdf fail parallelizing anyway
+    xarray.set_options(file_cache_maxsize=1)
 
     if args['mode'] == 'train':
         start_run(config=config, gpu=args['gpu'])

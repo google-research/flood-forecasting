@@ -195,7 +195,7 @@ def load_caravan_timeseries_together(
         preprocess=select,
         combine='nested',
         concat_dim='basin',
-        parallel=False,  # open_mfdataset has a bug (seg fault) when True
+        parallel=False,  # segfault when True
         chunks={'date': 'auto'},
         join='outer',
         engine='netcdf4',
