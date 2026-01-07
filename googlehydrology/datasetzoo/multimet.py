@@ -242,9 +242,6 @@ class Multimet(Dataset):
         LOGGER.debug('scale data')
         self._dataset = self.scaler.scale(self._dataset)
 
-        LOGGER.debug('create valid sample mask and indices')
-        valid_sample_mask, indices = self._create_valid_sample_mask()
-
         # TODO: Optionally, optimize the data loader and trainer modules to work with chunked lazy data.
         LOGGER.debug('compute dataset, scaler')
         # We explicitly keep the self.scaler.scaler computation since trainer uses it directly
