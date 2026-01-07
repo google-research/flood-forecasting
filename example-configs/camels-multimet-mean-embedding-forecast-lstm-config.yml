@@ -48,9 +48,9 @@ dataset: multimet
 
 # -- File Paths --
 # Paths to text files containing lists of basin IDs for training, validation, and testing.
-train_basin_file: ~/flood-forecasting/example-configs/camels-basins-list.txt
-validation_basin_file: ~/flood-forecasting/example-configs/camels-basins-list.txt
-test_basin_file: ~/flood-forecasting/example-configs/camels-basins-list.txt
+train_basin_file: ~/flood-forecasting/example-configs/camels-us-531-basins-list.txt
+validation_basin_file: ~/flood-forecasting/example-configs/camels-us-531-basins-list.txt
+test_basin_file: ~/flood-forecasting/example-configs/camels-us-531-basins-list.txt
 
 # Directory containing the target data (streamflow observations).
 targets_data_dir: ~/data/camels-updated-2025
