@@ -133,11 +133,11 @@ The `~/flood-forecasting/example-configs` directory contains reference YAML file
   * **Description:** Provides the settings used for the former operational model. This configuration aligns with the methodology described in the *Nature* (2024) paper for global ungauged flood prediction.  
 * **`camels-multimet-mean-embedding-forecast-lstm-config.yml`**  
   * **Model Architecture:** `mean_embedding_forecast_lstm`  
-  * **Dataset:** CAMELS-US (671 basins)  
+  * **Dataset:** CAMELS-US (531 basins)  
   * **Description:** A benchmarking configuration for the Mean-Embedding model tailored for the CAMELS-US dataset. It is optimized for evaluating model stability and performance on a standard hydrological benchmark. Our team uses this as a reference point during model development, and it is included in this repository because this is what we use to ensure that any changes to the repository work as expected.  
 * **`camels-multimet-handoff-forecast-lstm-config.yml`**  
   * **Model Architecture:** `handoff_forecast_lstm`  
-  * **Dataset:** CAMELS-US (671 basins)  
+  * **Dataset:** CAMELS-US (531 basins)  
   * **Description:** A benchmarking configuration for the State Handoff model tailored for the CAMELS-US dataset, used to compare the handoff approach against other architectures on US-based basin data.
 
 ## **Issue Reporting**

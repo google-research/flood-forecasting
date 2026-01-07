@@ -31,11 +31,11 @@ Configuration Files
 
    * - ``camels-multimet-mean-embedding-forecast-lstm-config.yml``
      - :mod:`~googlehydrology.modelzoo.mean_embedding_forecast_lstm`
-     - Optimized for benchmarking on the CAMELS-US (671 basins) dataset. Used as a core development reference.
+     - Optimized for benchmarking on the CAMELS-US (531 basins) dataset. Used as a core development reference.
 
    * - ``camels-multimet-handoff-forecast-lstm-config.yml``
      - :mod:`~googlehydrology.modelzoo.handoff_forecast_lstm`
-     - Benchmarking configuration for the State Handoff model tailored for the CAMELS-US dataset.
+     - Benchmarking configuration for the State Handoff model tailored for the CAMELS-US (531 basins) dataset.
 
 
 Operational Models

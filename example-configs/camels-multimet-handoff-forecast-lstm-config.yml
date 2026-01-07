@@ -57,7 +57,7 @@ targets_data_dir: ~/data/camels-updated-2025
 # Directory containing static catchment attributes (e.g., area, elevation).
 statics_data_dir: ~/data/camels-updated-2025
 # Directory containing dynamic meteorological forcing data (rain, temp, etc.).
-dynamics_data_dir: gs://caravan-multimet/v1.1
+dynamics_data_dir: ~/data/camels-updated-2025
 
 # This allows loading the input and target data from CSV files instead of NetCDF files.
 load_as_csv: False
