@@ -119,6 +119,29 @@ Experiments are defined by YAML files. Update the following paths in your config
 * targets\_data\_dir / statics\_data\_dir: Path to your local Caravan NetCDF data.  
 * dynamics\_data\_dir: Path to forcing data (e.g., gs://caravan-multimet/v1.1).
 
+## **Example Configurations**
+
+The `~/flood-forecasting/example-configs` directory contains reference YAML files that define the experimental setups for different model architectures and datasets.
+
+### **Configuration File Breakdown**
+
+* **`floodhub-settings-config.yml`**  
+  * **Model Architecture:** `mean_embedding_forecast_lstm`  
+  * **Dataset:** MultiMet (Global Caravan dataset)  
+  * **Description:** This configuration is designed to replicate the training settings of the current (2025) operational FloodHub model as closely as possible within this open-source framework.  
+* **`handoff-forecast-lstm-config.yml`**  
+  * **Model Architecture:** `handoff_forecast_lstm`  
+  * **Dataset:** MultiMet (Global Caravan dataset)  
+  * **Description:** Provides the settings used for the former operational model. This configuration aligns with the methodology described in the *Nature* (2024) paper for global ungauged flood prediction.  
+* **`camels-multimet-mean-embedding-forecast-lstm-config.yml`**  
+  * **Model Architecture:** `mean_embedding_forecast_lstm`  
+  * **Dataset:** CAMELS-US (671 basins)  
+  * **Description:** A benchmarking configuration for the Mean-Embedding model tailored for the CAMELS-US dataset. It is optimized for evaluating model stability and performance on a standard hydrological benchmark. Our team uses this as a reference point during model development, and it is included in this repository because this is what we use to ensure that any changes to the repository work as expected.  
+* **`camels-multimet-handoff-forecast-lstm-config.yml`**  
+  * **Model Architecture:** `handoff_forecast_lstm`  
+  * **Dataset:** CAMELS-US (671 basins)  
+  * **Description:** A benchmarking configuration for the State Handoff model tailored for the CAMELS-US dataset, used to compare the handoff approach against other architectures on US-based basin data.
+
 ## **Issue Reporting**
 
 If you encounter bugs, please use the [GitHub Issue Tracker](https://www.google.com/search?q=https://github.com/google-research/flood-forecasting/issues). Provide a clear description, steps to reproduce, and the expected behavior.
