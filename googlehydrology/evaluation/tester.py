@@ -236,8 +236,8 @@ class BaseTester(object):
         batch_sampler = BasinBatchSampler(
             sample_index=self.dataset._sample_index,
             batch_size=self.cfg.batch_size,
-            basins_indexes=set(
-                get_samples_indexes(self.basins, samples=list(basins))
+            basins_indexes=get_samples_indexes(
+                self.basins, samples=list(basins)
             ),
         )
         loader = DataLoader(

@@ -1005,3 +1005,6 @@ class SampleIndexer:
     def __len__(self) -> int:
         _, indexes = self._aligned_indices[0]
         return len(indexes)
+
+    def get_column(self, dim: str):
+        return next(v for (k, v) in self._aligned_indices if k == dim)

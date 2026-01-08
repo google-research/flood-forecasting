@@ -22,7 +22,7 @@ from googlehydrology.evaluation.utils import BasinBatchSampler
 
 
 @pytest.fixture
-def fixure():
+def fixture():
     sample_index = SampleIndexer(  # sample index -> basin metadata
         (
             (
@@ -68,29 +68,38 @@ def fixure():
     }
 
 
-def test_init_groups_basins(fixure):
+def test_init_groups_basins(fixture):
     """Test grouping all sample indices by their basin id."""
     sampler = BasinBatchSampler(
-        fixure['sample_index'], batch_size=3, basins_indexes=set()
+        fixture['sample_index'], batch_size=3, basins_indexes=np.array([])
     )
 
-    assert sampler._basin_indices == fixure['expected_groups']
+    indices = np.concatenate(list(sampler))
+
+    groups = fixture['expected_groups']
+    expected_indices = groups[101] + groups[102] + groups[103]
+    np.testing.assert_array_equal(indices, expected_indices)
 
 
-def test_init_groups_basins_subset(fixure):
+def test_init_groups_basins_subset(fixture):
     """Test grouping all sample indices by their basin id."""
     sampler = BasinBatchSampler(
-        fixure['sample_index'], batch_size=3, basins_indexes={102, 103}
+        fixture['sample_index'],
+        batch_size=3,
+        basins_indexes=np.array([102, 103]),
     )
 
-    del fixure['expected_groups'][101]
-    assert sampler._basin_indices == fixure['expected_groups']
+    indices = np.concatenate(list(sampler))
+
+    groups = fixture['expected_groups']
+    expected_indices = groups[102] + groups[103]
+    np.testing.assert_array_equal(indices, expected_indices)
 
 
-def test_num_batches(fixure):
+def test_num_batches(fixture):
     """Test _num_batches is total num batches for an epoc (accounting for partial batch)."""
     sampler = BasinBatchSampler(
-        fixure['sample_index'], batch_size=3, basins_indexes=set()
+        fixture['sample_index'], batch_size=3, basins_indexes=np.array([])
     )
 
     expected_num_batches = ceil(7 / 3) + ceil(6 / 3) + ceil(2 / 3)
@@ -98,10 +107,10 @@ def test_num_batches(fixure):
     assert sampler._num_batches == expected_num_batches
 
 
-def test_len_returns_num_batches(fixure):
+def test_len_returns_num_batches(fixture):
     """Test __len__ returns total num batches for an epoc (accounting for partial batch)."""
     sampler = BasinBatchSampler(
-        fixure['sample_index'], batch_size=3, basins_indexes=set()
+        fixture['sample_index'], batch_size=3, basins_indexes=np.array([])
     )
 
     expected_num_batches = ceil(7 / 3) + ceil(6 / 3) + ceil(2 / 3)
@@ -109,30 +118,31 @@ def test_len_returns_num_batches(fixure):
     assert len(sampler) == expected_num_batches
 
 
-def test_iter_yields_all_samples_once(fixure):
+def test_iter_yields_all_samples_once(fixture):
     """Test iterating results in all sample indices once per epoc."""
     sampler = BasinBatchSampler(
-        fixure['sample_index'], batch_size=3, basins_indexes=set()
+        fixture['sample_index'], batch_size=3, basins_indexes=np.array([])
     )
 
     indices = {i for batch in sampler for i in batch}
 
-    assert indices == set(fixure['sample_index'].keys())
+    assert indices == set(fixture['sample_index'].keys())
 
 
-def test_one_basin_per_batch(fixure):
+def test_one_basin_per_batch(fixture):
     """Test every batch contains samples belonging to only one basin."""
     sampler = BasinBatchSampler(
-        fixure['sample_index'], batch_size=3, basins_indexes=set()
+        fixture['sample_index'], batch_size=3, basins_indexes=np.array([])
     )
 
     basinss = [
-        {fixure['sample_index'][i]['basin'] for i in batch} for batch in sampler
+        {fixture['sample_index'][i]['basin'] for i in batch}
+        for batch in sampler
     ]
     assert all(len(basins) == 1 for basins in basinss)
 
 
-def test_sampler_with_single_basin(fixure):
+def test_sampler_with_single_basin(fixture):
     """Test that the sampler works with one basin."""
     sample_index = SampleIndexer(
         (
@@ -141,7 +151,7 @@ def test_sampler_with_single_basin(fixure):
         ),
     )
     sampler = BasinBatchSampler(
-        sample_index, batch_size=3, basins_indexes=set()
+        sample_index, batch_size=3, basins_indexes=np.array([])
     )
 
     indices = {idx for batch in sampler for idx in batch}
@@ -154,7 +164,7 @@ def test_sampler_with_batch_size_larger_than_samples():
     """Test behavior when a basin has fewer samples than the batch size."""
     sample_index = SampleIndexer((('basin', np.array([201, 201])),))
     sampler = BasinBatchSampler(
-        sample_index, batch_size=5, basins_indexes=set()
+        sample_index, batch_size=5, basins_indexes=np.array([])
     )
     batches = list(sampler)
 
