@@ -97,7 +97,7 @@ class BasinBatchSampler(BatchSampler):
             # Counts are ends - starts ie the distance (diff) eg [3,1,4,2]
             self._starts, self._counts = bounds[:-1], np.diff(bounds)
         # Array lengths are in terms of num basins eg len changes, len starts,
-        # etc. Or use bool masks that are 1 byte instead of 8 bytes (64 bit) so
+        # etc. Or bool masks that are 1 byte instead of 8 bytes (64 bit) so
         # the col's compare size is 1/8 of col.
 
         fulls, remainders = np.divmod(self._counts, batch_size)
