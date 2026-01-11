@@ -82,7 +82,7 @@ class BasinBatchSampler(BatchSampler):
             batch_size,
             drop_last=False,
         )
-        self.batch_size = batch_size
+        self._batch_size = batch_size
 
         col = sample_index.get_column('basin')
 
@@ -107,7 +107,7 @@ class BasinBatchSampler(BatchSampler):
     def __iter__(self):
         for start, count in zip(self._starts, self._counts, strict=True):
             end = start + count
-            yield from itertools.batched(range(start, end), self.batch_size)
+            yield from itertools.batched(range(start, end), self._batch_size)
 
     def __len__(self):
         return self._num_batches
