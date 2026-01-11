@@ -21,6 +21,8 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import BatchSampler, SequentialSampler
 
+from googlehydrology.datasetzoo.multimet import SampleIndexer
+
 
 def metrics_to_dataframe(
     results: dict, metrics: Iterable[str], targets: Iterable[str]
@@ -71,32 +73,41 @@ class BasinBatchSampler(BatchSampler):
 
     def __init__(
         self,
-        sample_index: dict[int, dict[str, int]],
+        sample_index: SampleIndexer,
         batch_size: int,
-        basins_indexes: set[int],
+        basins_indexes: np.typing.NDArray[np.integer],
     ):
         super().__init__(
             SequentialSampler(range(len(sample_index))),
             batch_size,
             drop_last=False,
         )
-
         self._batch_size = batch_size
 
-        self._basin_indices: dict[int, list[int]] = {}
-        for sample, data in sample_index.items():
-            basin_index = data['basin']
-            if (not basins_indexes) or basin_index in basins_indexes:
-                self._basin_indices.setdefault(basin_index, []).append(sample)
+        col = sample_index.get_column('basin')
 
-        self._num_batches = sum(
-            math.ceil(len(indices) / batch_size)
-            for indices in self._basin_indices.values()
-        )
+        if len(basins_indexes):  # Binary search the already sorted indexes
+            starts = np.searchsorted(col, basins_indexes, side='left')
+            ends = np.searchsorted(col, basins_indexes, side='right')
+            self._starts, self._counts = starts, ends - starts
+        else:  # Find boundary changes eg for all [0,0,0,1,2,2,2,2,3,3]
+            changes = np.flatnonzero(col[:-1] != col[1:]) + 1
+            bounds = np.concatenate(([0], changes, [len(col)]))
+            # Starts are bounds' left edges eg [0,3,4,8](,10)
+            # Counts are ends - starts ie the distance (diff) eg [3,1,4,2]
+            self._starts, self._counts = bounds[:-1], np.diff(bounds)
+        # Array lengths are in terms of num basins eg len changes, len starts,
+        # etc. Or bool masks that are 1 byte instead of 8 bytes (64 bit) so
+        # the col's compare size is 1/8 of col.
+
+        fulls, remainders = np.divmod(self._counts, batch_size)
+        self._num_batches = int(fulls.sum() + np.count_nonzero(remainders))
+
 
     def __iter__(self):
-        for indices in self._basin_indices.values():  # for every basin
-            yield from itertools.batched(indices, self._batch_size)
+        for start, count in zip(self._starts, self._counts, strict=True):
+            end = start + count
+            yield from itertools.batched(range(start, end), self._batch_size)
 
     def __len__(self):
         return self._num_batches
