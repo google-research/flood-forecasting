@@ -41,7 +41,7 @@ def _calc_stats(dataset: xr.Dataset, needed: set[str]):
     # https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance (Naive):
     # Var(X) = E[X**2] - E**2[X] instead of xr.std that subtracts mean from all
     # elements, to force dask work element wise. Non negative var failsafes if
-    # there is propagating cancellation.
+    # there is propagating cancellation. For benchmark ds abs error was < 0.0001
     var = (dataset**2).mean(skipna=True) - stats['mean'] ** 2
     stats['std'] = var.clip(min=0) ** 0.5
 
