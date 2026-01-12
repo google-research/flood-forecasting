@@ -3,6 +3,7 @@
 import contextlib
 import ctypes
 import gc
+from ctypes.util import find_library
 
 
 def release() -> None:
@@ -22,5 +23,5 @@ def release() -> None:
     """
     gc.collect()
 
-    with contextlib.suppress(OSError):  # Ignore if not Unix-like
-        ctypes.CDLL('libc.so.6').malloc_trim(0)
+    with contextlib.suppress(OSError, AttributeError):  # Ignore non Unix-like
+        ctypes.CDLL(find_library('c') or 'libc.so.6').malloc_trim(0)
