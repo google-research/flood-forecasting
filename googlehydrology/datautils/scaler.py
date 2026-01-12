@@ -27,16 +27,24 @@ SCALER_FILE_NAME = 'scaler.nc'
 def _calc_stats(dataset: xr.Dataset, needed: set[str]):
     stats = {
         'mean': dataset.mean(skipna=True),
-        'std': dataset.std(skipna=True),
         'median': (
             dataset.quantile(q=0.5, skipna=True) if 'median' in needed else None
         ),
         'min': dataset.min(skipna=True) if {'min', 'minmax'} & needed else None,
         'max': dataset.max(skipna=True) if {'max', 'minmax'} & needed else None,
     }
+
     stats['minmax'] = (
         stats['max'] - stats['min'] if 'minmax' in needed else None
     )
+
+    # https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance (Naive):
+    # Var(X) = E[X**2] - E**2[X] instead of xr.std that subtracts mean from all
+    # elements, to force dask work element wise. Non negative var failsafes if
+    # there is propagating cancellation. For benchmark ds abs error was < 0.0001
+    var = (dataset**2).mean(skipna=True) - stats['mean'] ** 2
+    stats['std'] = var.clip(min=0) ** 0.5
+
     return stats
 
 
