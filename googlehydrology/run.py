@@ -102,12 +102,13 @@ def _main():
     if config.cache.enabled:
         dask.cache.Cache(cachey.Cache(config.cache.byte_limit)).register()
 
-    tqdm.dask.TqdmCallback(
-        mininterval=2,
-        unit=' tasks',
-        desc='compute',
-        unit_scale=True,
-    ).register()
+    if config.logging_level <= logging.DEBUG:
+        tqdm.dask.TqdmCallback(
+            mininterval=2,
+            unit=' tasks',
+            desc='compute',
+            unit_scale=True,
+        ).register()
 
     # engines netcdf4 and h5netcdf fail parallelizing anyway
     xarray.set_options(file_cache_maxsize=1)
