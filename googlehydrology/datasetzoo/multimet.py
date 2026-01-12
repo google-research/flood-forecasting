@@ -158,6 +158,7 @@ class Multimet(Dataset):
         # Load & preprocess the data.
         LOGGER.debug('load data')
         self._dataset = self._load_data()
+        memory.release()
         LOGGER.debug('validate all floats are float32')
         _assert_floats_are_float32(self._dataset)
 
