@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import argparse
+import logging
 import os
 import sys
 from pathlib import Path
@@ -22,6 +23,7 @@ import cachey
 import dask
 import dask.cache
 import torch
+import tqdm.dask
 import xarray
 
 # make sure code directory is in path, even if the package is not installed using the setup.py
@@ -100,6 +102,14 @@ def _main():
 
     if config.cache.enabled:
         dask.cache.Cache(cachey.Cache(config.cache.byte_limit)).register()
+
+    if config.logging_level <= logging.DEBUG:
+        tqdm.dask.TqdmCallback(
+            mininterval=2,
+            unit=' tasks',
+            desc='compute',
+            unit_scale=True,
+        ).register()
 
     # engines netcdf4 and h5netcdf fail parallelizing anyway
     xarray.set_options(file_cache_maxsize=1)
