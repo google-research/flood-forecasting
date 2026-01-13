@@ -15,7 +15,6 @@
 
 import argparse
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -92,7 +91,6 @@ def _main():
     torch.autograd.set_detect_anomaly(config.detect_anomaly)
 
     dask_config = {
-        'num_workers': os.cpu_count(),
         'scheduler': 'threads',
         'shuffle': 'p2p',
     }
