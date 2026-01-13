@@ -24,7 +24,6 @@ import torch
 import torch.optim.lr_scheduler
 from torch.amp import GradScaler, autocast
 from torch.utils.data import DataLoader, Dataset
-from tqdm import tqdm
 
 import googlehydrology.training.loss as loss
 from googlehydrology.datasetzoo import get_dataset

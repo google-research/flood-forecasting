@@ -28,7 +28,6 @@ import torch.cuda
 import xarray
 from torch.amp import autocast
 from torch.utils.data import DataLoader, Dataset
-from tqdm import tqdm
 
 from googlehydrology.datasetzoo import get_dataset
 from googlehydrology.datautils.utils import (
