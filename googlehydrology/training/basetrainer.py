@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import itertools
 import logging
 import math
 import random
@@ -423,7 +424,7 @@ class BaseTrainer(object):
             else None
         )
         pbar = tqdm(
-            self.loader,
+            itertools.islice(self.loader, n_iter) if n_iter else self.loader,
             file=sys.stdout,
             disable=self._disable_pbar,
             total=n_iter,
@@ -433,12 +434,6 @@ class BaseTrainer(object):
         # Iterate in batches over training set
         nan_count = 0
         for i, data in enumerate(pbar):
-            if (
-                self._max_updates_per_epoch > 0
-                and i >= self._max_updates_per_epoch
-            ):
-                break
-
             for key in data.keys():
                 if key.startswith('x_d'):
                     data[key] = {
