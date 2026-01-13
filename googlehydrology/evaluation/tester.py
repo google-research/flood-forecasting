@@ -52,6 +52,7 @@ from googlehydrology.training import get_loss_obj, get_regularization_obj
 from googlehydrology.training.logger import Logger, do_log_figures
 from googlehydrology.utils.config import Config, TesterSamplesReduction
 from googlehydrology.utils.errors import AllNaNError
+from googlehydrology.utils.tqdm import AutoRefreshTqdm as tqdm
 
 LOGGER = logging.getLogger(__name__)
 

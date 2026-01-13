@@ -17,6 +17,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tqdm.contrib.logging import logging_redirect_tqdm
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -77,6 +79,8 @@ def setup_logging(log_file: str, level: int, print_warnings_once: bool):
     logging.getLogger('filelock').setLevel(logging.INFO)
     logging.getLogger('matplotlib.font_manager').setLevel(logging.INFO)
     logging.getLogger('fsspec').setLevel(logging.INFO)
+
+    logging_redirect_tqdm().__enter__()
 
 
 def get_git_hash() -> str | None:

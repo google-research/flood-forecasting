@@ -26,6 +26,8 @@ import torch
 import tqdm.dask
 import xarray
 
+from googlehydrology.utils.tqdm import AutoRefreshTqdm
+
 # make sure code directory is in path, even if the package is not installed using the setup.py
 sys.path.append(str(Path(__file__).parent.parent))
 from googlehydrology.evaluation.evaluate import start_evaluation
@@ -109,6 +111,7 @@ def _main():
             unit=' tasks',
             desc='compute',
             unit_scale=True,
+            tqdm_class=AutoRefreshTqdm,
         ).register()
 
     # engines netcdf4 and h5netcdf fail parallelizing anyway

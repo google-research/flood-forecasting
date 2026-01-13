@@ -40,6 +40,7 @@ from googlehydrology.training import (
 from googlehydrology.training.logger import Logger
 from googlehydrology.utils.config import Config
 from googlehydrology.utils.logging_utils import setup_logging
+from googlehydrology.utils.tqdm import AutoRefreshTqdm as tqdm
 
 LOGGER = logging.getLogger(__name__)
 
