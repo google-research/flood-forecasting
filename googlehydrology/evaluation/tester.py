@@ -28,7 +28,6 @@ import torch.cuda
 import xarray
 from torch.amp import autocast
 from torch.utils.data import DataLoader, Dataset
-from tqdm import tqdm
 
 from googlehydrology.datasetzoo import get_dataset
 from googlehydrology.datautils.utils import (
@@ -52,6 +51,7 @@ from googlehydrology.training import get_loss_obj, get_regularization_obj
 from googlehydrology.training.logger import Logger, do_log_figures
 from googlehydrology.utils.config import Config, TesterSamplesReduction
 from googlehydrology.utils.errors import AllNaNError
+from googlehydrology.utils.tqdm import AutoRefreshTqdm as tqdm
 
 LOGGER = logging.getLogger(__name__)
 
