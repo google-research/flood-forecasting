@@ -424,7 +424,7 @@ class BaseTrainer(object):
             else None
         )
         pbar = tqdm(
-            itertools.islice(self.loader, n_iter) if n_iter else self.loader,
+            itertools.islice(self.loader, n_iter),
             file=sys.stdout,
             disable=self._disable_pbar,
             total=n_iter,
