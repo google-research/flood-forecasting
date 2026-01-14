@@ -332,6 +332,14 @@ class Config(object):
         return pydantic.TypeAdapter(Cache).validate_python(data)
 
     @property
+    def lazy_data(self) -> bool:
+        return self._cfg.get('lazy_data', False)
+
+    @lazy_data.setter
+    def lazy_data(self, value: bool):
+        self._cfg['lazy_data'] = value
+
+    @property
     def print_warnings_once(self) -> bool:
         return self._cfg.get('print_warnings_once', False)
 

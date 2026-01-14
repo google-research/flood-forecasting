@@ -279,10 +279,18 @@ def test_forecast_dataset_getitem(
     sample = dataset[0]
     assert isinstance(sample, dict)
     assert 'date' in sample
-    assert 'x_s' in sample and isinstance(sample['x_s'], torch.Tensor)
+    assert 'x_s' in sample
     assert 'x_d_hindcast' in sample and isinstance(sample['x_d_hindcast'], dict)
     assert 'x_d_forecast' in sample and isinstance(sample['x_d_forecast'], dict)
-    assert 'y' in sample and isinstance(sample['y'], torch.Tensor)
+    assert 'y' in sample
+
+    # Assert all values are np.ndarray
+    for k, v in sample.items():
+        if isinstance(v, dict):
+            for k1, v1 in v.items():
+                assert isinstance(v1, np.ndarray), f'{k=} {k1=}'
+        else:
+            assert isinstance(v, np.ndarray), f'{k=}'
 
     # Check shapes (basic check, more detailed checks can be added)
     assert sample['x_s'].shape == (1,)  # For a single static feature
@@ -543,7 +551,7 @@ def test_forecast_dataset_per_basin_target_stds(
     dataset_nse = Multimet(cfg=cfg_nse, is_train=True, period='train')
     sample_nse = dataset_nse[0]
     assert 'per_basin_target_stds' in sample_nse
-    assert isinstance(sample_nse['per_basin_target_stds'], torch.Tensor)
+    assert isinstance(sample_nse['per_basin_target_stds'], np.ndarray)
     assert sample_nse['per_basin_target_stds'].shape == (
         1,
         1,
@@ -580,14 +588,14 @@ def test_forecast_dataset_timestep_counter(
     sample = dataset[0]
 
     assert 'hindcast_counter' in sample['x_d_hindcast']
-    assert isinstance(sample['x_d_hindcast']['hindcast_counter'], torch.Tensor)
+    assert isinstance(sample['x_d_hindcast']['hindcast_counter'], np.ndarray)
     assert sample['x_d_hindcast']['hindcast_counter'].shape == (
         cfg_with_counter.seq_length,
         1,
     )
 
     assert 'forecast_counter' in sample['x_d_forecast']
-    assert isinstance(sample['x_d_forecast']['forecast_counter'], torch.Tensor)
+    assert isinstance(sample['x_d_forecast']['forecast_counter'], np.ndarray)
     assert sample['x_d_forecast']['forecast_counter'].shape == (
         cfg_with_counter.lead_time + cfg_with_counter.forecast_overlap,
         1,

@@ -39,9 +39,11 @@ from googlehydrology.datautils.scaler import Scaler
 from googlehydrology.datautils.union_features import union_features
 from googlehydrology.datautils.utils import load_basin_file
 from googlehydrology.datautils.validate_samples import validate_samples
+from googlehydrology.utils import memory
 from googlehydrology.utils.config import Config
 from googlehydrology.utils.configutils import flatten_feature_list
 from googlehydrology.utils.errors import NoEvaluationDataError, NoTrainDataError
+from googlehydrology.utils.tqdm import AutoRefreshTqdm as tqdm
 
 LOGGER = logging.getLogger(__name__)
 
@@ -57,6 +59,59 @@ TENSOR_VARS = [
     'basin_index',
 ]
 MULTIMET_MINIMUM_LEAD_TIME = 1
+
+class DataLoader(torch.utils.data.DataLoader):
+    """Custom DataLoader that handles lazy data loading.
+
+    Ignores num_workers to avoid issues with dask/xarray in subprocesses.
+
+    If `lazy_data` is True, triggers compute() every batch using dask.
+
+    Parameters
+    ----------
+    *args
+        Positional arguments passed to the parent class.
+    lazy_data : bool
+        If True, the data is computed using dask before collating.
+    logging_level : int
+        The value of the logging level e.g. DEBUG INFO etc.
+    **kwargs
+        Keyword arguments passed to the parent class.
+    """
+
+    def __init__(self, *args, lazy_data: bool, logging_level: int, **kwargs):
+        kwargs['num_workers'] = 0
+        super().__init__(*args, **kwargs)
+        self._lazy = lazy_data
+        self._debug = logging_level <= logging.DEBUG
+
+    def __iter__(self):
+        for indices in self.batch_sampler:
+            # TODO(future): Implement getitems (batched getitem) to save memory
+            # and runtime due to many independent dask graphs, especially in
+            # lazy mode.
+            # TODO(future): Consider using dask.Bag to stream results instead.
+            # TODO(future): Consider saving mem in non lazy mode by streaming
+            # batch samples to tensor conversion below etc.
+            batch = tqdm(
+                (self.dataset[i] for i in indices),
+                desc='Prepare batch',
+                unit='sample',
+                disable=not self._lazy or not self._debug,
+                total=len(indices),
+            )
+
+            batch = dask.compute(*batch) if self._lazy else tuple(batch)
+
+            # TODO(future): Assess first collating to save memory.
+            batch = [
+                {k: _convert_to_tensor(k, v) for k, v in sample.items()}
+                for sample in batch
+            ]
+            yield self.collate_fn(batch)
+
+    def __len__(self):
+        return len(self.batch_sampler)
 
 
 class Multimet(Dataset):
@@ -240,28 +295,38 @@ class Multimet(Dataset):
             custom_normalization=cfg.custom_normalization,
             dataset=(self._dataset if compute_scaler else None),
         )
-        LOGGER.debug('scale data')
-        self._dataset = self.scaler.scale(self._dataset)
 
-        # TODO: Optionally, optimize the data loader and trainer modules to work with chunked lazy data.
-        LOGGER.debug('compute dataset, scaler')
+        LOGGER.debug('create valid sample mask and indices plan')
+        valid_sample_mask, indices = self._create_valid_sample_mask()
+
         # We explicitly keep the self.scaler.scaler computation since trainer uses it directly
-        (self._dataset, self.scaler.scaler) = dask.compute(
-            self._dataset, self.scaler.scaler
-        )
-        LOGGER.debug(f'Dataset size: {sizeof(self._dataset) / 1024 / 1024} MB')
+        if cfg.lazy_data:
+            LOGGER.debug('[lazy_data] compute scaler, indices')
+            (self.scaler.scaler, indices) = dask.compute(
+                self.scaler.scaler, indices
+            )
+            LOGGER.debug('[lazy_data] apply scale data post scaler compute')
+            self._dataset = self.scaler.scale(self._dataset)
+        else:
+            LOGGER.debug('setup scale data pre scaler compute')
+            self._dataset = self.scaler.scale(self._dataset)
+            LOGGER.debug('compute dataset, scaler, indices')
+            (self._dataset, self.scaler.scaler, indices) = dask.compute(
+                self._dataset, self.scaler.scaler, indices
+            )
+        memory.release()
+
+        LOGGER.debug(f'Dataset size: {sizeof(self._dataset) / 1024**2} MB')
+        LOGGER.debug(f'Dataset on disk: {self._dataset.nbytes / 1024**2} MB')
+        LOGGER.debug(f'Sample index size: {sizeof(indices) / 1024**2} MB')
+
         LOGGER.debug('scaler check zero scale')
         self.scaler.check_zero_scale()
         LOGGER.debug('scaler save')
         self.scaler.save()
 
-        LOGGER.debug('create valid sample mask and indices')
-        valid_sample_mask, indices = self._create_valid_sample_mask()
-        (indices,) = dask.compute(indices)
-        LOGGER.debug(
-            f'Sample masks indices size: {sizeof(indices) / 1024 / 1024} MB'
-        )
         # Create sample index lookup table for `__getitem__`.
+        LOGGER.debug('create sample index')
         self._create_sample_index(valid_sample_mask, indices)
 
         # Compute stats for NSE-based loss functions.
@@ -334,10 +399,7 @@ class Multimet(Dataset):
             self._sample_index[item]['basin'], dtype=np.int16
         )
 
-        # Return sample with various required formats.
-        return {
-            key: _convert_to_tensor(key, value) for key, value in sample.items()
-        }
+        return sample
 
     def _calc_date_range(self, item: int, *, lead: bool = False) -> range:
         date = self._sample_index[item]['date']
@@ -534,7 +596,6 @@ class Multimet(Dataset):
             if dim != 'sample'
         )
 
-        LOGGER.debug('sample_index')
         self._sample_index = SampleIndexer(aligned_indices)
         self._num_samples = num_samples
 
@@ -909,14 +970,16 @@ class Multimet(Dataset):
 def _extract_dataarray(
     data: xr.DataArray, indexers: dict[Hashable, int | range | slice]
 ) -> np.ndarray | np.float32:
-    """Returns the values in array according to dims given by indexers.
+    """Return the values in array according to dims given by indexers.
 
     This function replaces uses of `isel` with data and indexers.
     """
-    locators = (
+    locs = (
         indexers[dim] if dim in indexers else slice(None) for dim in data.dims
     )
-    return data.data[tuple(locators)]
+    # Convert range(0, n) to [0, 1, ..., n-1] as arrays don't support range.
+    locs = (list(loc) if isinstance(loc, range) else loc for loc in locs)
+    return data.data[tuple(locs)]
 
 
 def _assert_floats_are_float32(dataset: xr.Dataset):

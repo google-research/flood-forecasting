@@ -104,6 +104,11 @@ def forecast_model(request) -> str:
     return request.param
 
 
+@pytest.fixture(params=[True, False])
+def lazy_data(request) -> bool:
+    return request.param
+
+
 @pytest.fixture(
     params=[
         ('daymet', ['prcp(mm/day)', 'tmax(C)']),

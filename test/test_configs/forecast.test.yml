@@ -88,6 +88,7 @@ save_validation_results: False
 
 # --- Data configurations --------------------------------------------------------------------------
 dataset: multimet
+lazy_data: False
 data_dir: ./test/test_data/multimet
 lead_time: 7
 target_variables:

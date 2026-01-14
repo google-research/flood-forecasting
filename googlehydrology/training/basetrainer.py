@@ -24,10 +24,10 @@ import numpy as np
 import torch
 import torch.optim.lr_scheduler
 from torch.amp import GradScaler, autocast
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import Dataset
 
-import googlehydrology.training.loss as loss
 from googlehydrology.datasetzoo import get_dataset
+from googlehydrology.datasetzoo.multimet import DataLoader
 from googlehydrology.datautils.utils import load_basin_file
 from googlehydrology.evaluation import get_tester
 from googlehydrology.evaluation.tester import BaseTester
@@ -36,6 +36,7 @@ from googlehydrology.training import (
     get_loss_obj,
     get_optimizer,
     get_regularization_obj,
+    loss,
 )
 from googlehydrology.training.logger import Logger
 from googlehydrology.utils.config import Config
@@ -134,9 +135,11 @@ class BaseTrainer(object):
             init_model=False,
         )
 
-    def _get_data_loader(self, ds: Dataset) -> torch.utils.data.DataLoader:
+    def _get_data_loader(self, ds: Dataset) -> DataLoader:
         return DataLoader(
             ds,
+            lazy_data=self.cfg.lazy_data,
+            logging_level=self.cfg.logging_level,
             batch_size=self.cfg.batch_size,
             shuffle=True,
             num_workers=self.cfg.num_workers,

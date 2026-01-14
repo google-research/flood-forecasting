@@ -121,6 +121,7 @@ Data settings
 -  ``timestep_counter``: True/False. Adds a counting integer sequence as input for forecasts.
 -  ``nan_handling_method``: ``masked_mean``, ``input_replacing``, or ``attention``. Strategy for handling missing input data.
 -  ``nan_handling_pos_encoding_size``: Size of positional encoding for NaN handling methods.
+-  ``lazy_data``: Whether to access data lazily rather than load all in-memory. Each batch is loaded dynamically. Default: `False`.
 
 Finetune settings
 -----------------

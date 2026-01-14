@@ -45,6 +45,7 @@ print_warnings_once: False
 
 # Specifies the class of dataset loader to use.
 dataset: multimet
+lazy_data: False
 
 # -- File Paths --
 # Paths to text files containing lists of basin IDs for training, validation, and testing.

@@ -27,9 +27,10 @@ import torch
 import torch.cuda
 import xarray
 from torch.amp import autocast
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import Dataset
 
 from googlehydrology.datasetzoo import get_dataset
+from googlehydrology.datasetzoo.multimet import DataLoader
 from googlehydrology.datautils.utils import (
     get_frequency_factor,
     load_basin_file,
@@ -242,6 +243,8 @@ class BaseTester(object):
         )
         loader = DataLoader(
             self.dataset,
+            lazy_data=self.cfg.lazy_data,
+            logging_level=self.cfg.logging_level,
             batch_sampler=batch_sampler,
             num_workers=0,
             collate_fn=self.dataset.collate_fn,
