@@ -12,8 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import functools
 import itertools
 import logging
+import math
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 import dask
@@ -22,6 +25,8 @@ import dask.delayed
 import numpy as np
 import pandas as pd
 import xarray
+
+from googlehydrology.utils.tqdm import AutoRefreshTqdm as tqdm
 
 LOGGER = logging.getLogger(__name__)
 
@@ -144,6 +149,15 @@ def load_csvs_as_ds(basin_to_path: dict[str, Path]) -> xarray.Dataset:
     datas = [df.assign(basin=basin) for basin, df in zip(basin_to_path, datas)]
     return dd.concat(datas).compute().set_index(['basin', 'date']).to_xarray()
 
+_JOIN = functools.partial(
+    xarray.combine_nested,
+    concat_dim='basin',  # make dim basin to concat by, later assign ids to it
+    coords='minimal',  # share dims (date, basin) of same structure for targets
+    compat='override',  # share same vars' structure (same name same types)
+    combine_attrs='override',  # take metadata eg file modified dates from first
+)
+
+_OPEN_DATASET_ARGS = {'chunks': {'date': 'auto'}, 'engine': 'netcdf4'}
 
 def load_caravan_timeseries_together(
     data_dir: Path,
@@ -151,6 +165,7 @@ def load_caravan_timeseries_together(
     target_features: list[str],
     *,
     csv: bool,
+    batch_size: int = 500,
 ) -> xarray.Dataset:
     """Load the timeseries data of basins from the Caravan dataset.
 
@@ -168,12 +183,17 @@ def load_caravan_timeseries_together(
         The target variables to select.
     csv: bool
         Whether to load CSV files instead of NC (netcdf) files.
+    batch_size : int
+        Basin combining is done in batches to nullify combine runtime & memory.
+        500 for 16k basins over 46yr date range results in 1GB peak memory used.
+        TODO(future): Add config arg if needed.
 
     Raises
     ------
     FileNotFoundError
         If no timeseries file exists for the basin.
     """
+    bar_off = logging.getLogger().level > logging.DEBUG
 
     def basin_to_path(basin: str) -> Path:
         subdataset = basin.partition('_')[0]
@@ -187,19 +207,37 @@ def load_caravan_timeseries_together(
     def select(ds: xarray.Dataset) -> xarray.Dataset:
         return ds[target_features]
 
-    if csv:
-        return select(load_csvs_as_ds({e: basin_to_path(e) for e in basins}))
+    paths = tuple(map(basin_to_path, basins))
 
-    return xarray.open_mfdataset(
-        [basin_to_path(e) for e in basins],
-        preprocess=select,
-        combine='nested',
-        concat_dim='basin',
-        parallel=False,  # segfault when True
-        chunks={'date': 'auto'},
-        join='outer',
-        engine='netcdf4',
-    ).assign_coords(basin=basins)
+    if csv:
+        return select(load_csvs_as_ds(dict(zip(basins, paths))))
+
+    def open_datasets(
+        batch_paths: tuple[Path],
+    ) -> Iterator[tuple[xarray.Dataset, float, float]]:
+        for path in tqdm(
+            batch_paths, desc='Read', unit='file', leave=False, disable=bar_off
+        ):
+            ds = select(xarray.open_dataset(path, **_OPEN_DATASET_ARGS))
+            first_date, last_date = ds['date'].isel(date=[0, -1]).data
+            yield ds, first_date, last_date
+
+    def process_batch(batch_paths: Iterable[Path]) -> xarray.Dataset:
+        datasets, starts, ends = zip(*open_datasets(batch_paths))
+        start, end = min(starts), max(ends)
+        date = pd.date_range(start=start, end=end, freq='D', name='date')
+        datasets = [ds.reindex(date=date) for ds in datasets]
+        return _JOIN(datasets, join='override')  # use 1st basin's date
+
+    def batchify() -> Iterator[xarray.Dataset]:
+        batches = map(process_batch, itertools.batched(paths, batch_size))
+        total = math.ceil(len(paths) / batch_size)
+        yield from tqdm(
+            batches, desc='Gather', unit='batch', total=total, disable=bar_off
+        )
+
+    # join='outer' aligns dates across batches
+    return _JOIN(tuple(batchify()), join='outer').assign_coords(basin=basins)
 
 
 def _load_attribute_files_of_subdatasets(
@@ -222,7 +260,8 @@ def _load_attribute_files_of_subdatasets(
         df.rename_axis('basin', inplace=True)
         if features:
             df.drop(
-                columns=(e for e in df.columns if e not in features), inplace=True
+                columns=(e for e in df.columns if e not in features),
+                inplace=True,
             )
         return df.to_xarray().chunk(
             'auto'
