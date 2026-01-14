@@ -152,8 +152,8 @@ def load_csvs_as_ds(basin_to_path: dict[str, Path]) -> xarray.Dataset:
 _JOIN = functools.partial(
     xarray.combine_nested,
     concat_dim='basin',  # make dim basin to concat by, later assign ids to it
-    coords='minimal',  # share dims (date, basin) of same structure for targets
-    compat='override',  # share same vars' structure (same name same types)
+    coords='minimal',  # share dims structure, it's target features not static
+    compat='override',  # share same variables' nan structure instead of diffing
     combine_attrs='override',  # take metadata eg file modified dates from first
 )
 
