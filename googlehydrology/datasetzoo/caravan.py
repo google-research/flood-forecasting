@@ -149,15 +149,6 @@ def load_csvs_as_ds(basin_to_path: dict[str, Path]) -> xarray.Dataset:
     datas = [df.assign(basin=basin) for basin, df in zip(basin_to_path, datas)]
     return dd.concat(datas).compute().set_index(['basin', 'date']).to_xarray()
 
-_JOIN = functools.partial(
-    xarray.combine_nested,
-    concat_dim='basin',  # make dim basin to concat by, later assign ids to it
-    coords='minimal',  # share dims structure, it's target features not static
-    compat='override',  # share same variables' nan structure instead of diffing
-    combine_attrs='override',  # take metadata eg file modified dates from first
-)
-
-_OPEN_DATASET_ARGS = {'chunks': {'date': 'auto'}, 'engine': 'netcdf4'}
 
 def load_caravan_timeseries_together(
     data_dir: Path,
@@ -212,22 +203,36 @@ def load_caravan_timeseries_together(
     if csv:
         return select(load_csvs_as_ds(dict(zip(basins, paths))))
 
+    combine = functools.partial(
+        xarray.combine_nested,
+        concat_dim='basin',  # make dim to concat by, to later assign ids in
+        coords='minimal',  # share dims structure: target features not static
+        compat='override',  # share same vars' nan structure instead of diffing
+        combine_attrs='override',  # take metadata from 1st file e.g. mod dates
+    )
+
+    # Avoid recreating this 16k times:
+    open_dataset_args = {'chunks': {'date': 'auto'}, 'engine': 'netcdf4'}
+
+    def open_dataset(ds_path: Path) -> tuple[xarray.Dataset, float, float]:
+        ds = select(xarray.open_dataset(ds_path, **open_dataset_args))
+        first_date, last_date = ds['date'].isel(date=[0, -1]).data
+        return ds, first_date, last_date
+
     def open_datasets(
         batch_paths: tuple[Path],
     ) -> Iterator[tuple[xarray.Dataset, float, float]]:
-        for path in tqdm(
-            batch_paths, desc='Read', unit='file', leave=False, disable=bar_off
-        ):
-            ds = select(xarray.open_dataset(path, **_OPEN_DATASET_ARGS))
-            first_date, last_date = ds['date'].isel(date=[0, -1]).data
-            yield ds, first_date, last_date
+        dss, n = map(open_dataset, batch_paths), len(batch_paths)
+        yield from tqdm(
+            dss, desc='Read', unit='file', leave=False, disable=bar_off, total=n
+        )
 
     def process_batch(batch_paths: Iterable[Path]) -> xarray.Dataset:
         datasets, starts, ends = zip(*open_datasets(batch_paths))
         start, end = min(starts), max(ends)
         date = pd.date_range(start=start, end=end, freq='D', name='date')
         datasets = [ds.reindex(date=date) for ds in datasets]
-        return _JOIN(datasets, join='override')  # use 1st basin's date length
+        return combine(datasets, join='override')  # use 1st basin's date length
 
     def batchify() -> Iterator[xarray.Dataset]:
         batches = map(process_batch, itertools.batched(paths, batch_size))
@@ -237,7 +242,7 @@ def load_caravan_timeseries_together(
         )
 
     # join='outer' aligns dates across batches
-    return _JOIN(tuple(batchify()), join='outer').assign_coords(basin=basins)
+    return combine(tuple(batchify()), join='outer').assign_coords(basin=basins)
 
 
 def _load_attribute_files_of_subdatasets(
