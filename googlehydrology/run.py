@@ -106,9 +106,10 @@ def _main():
     if config.logging_level <= logging.DEBUG:
         tqdm.dask.TqdmCallback(
             mininterval=2,
-            unit=' tasks',
+            unit='task',
             desc='compute',
             unit_scale=True,
+            dynamic_ncols=True,
             tqdm_class=AutoRefreshTqdm,
         ).register()
 
