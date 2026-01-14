@@ -260,8 +260,7 @@ def _load_attribute_files_of_subdatasets(
         df.rename_axis('basin', inplace=True)
         if features:
             df.drop(
-                columns=(e for e in df.columns if e not in features),
-                inplace=True,
+                columns=(e for e in df.columns if e not in features), inplace=True
             )
         return df.to_xarray().chunk(
             'auto'
