@@ -227,7 +227,7 @@ def load_caravan_timeseries_together(
         start, end = min(starts), max(ends)
         date = pd.date_range(start=start, end=end, freq='D', name='date')
         datasets = [ds.reindex(date=date) for ds in datasets]
-        return _JOIN(datasets, join='override')  # use 1st basin's date
+        return _JOIN(datasets, join='override')  # use 1st basin's date length
 
     def batchify() -> Iterator[xarray.Dataset]:
         batches = map(process_batch, itertools.batched(paths, batch_size))
