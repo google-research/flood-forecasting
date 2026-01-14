@@ -19,7 +19,9 @@ class AutoRefreshTqdm(tqdm):
     """Refresh all other bars on close and when opening a new bar."""
 
     def __init__(self, *args, **kwargs):
-        kwargs['mininterval'] = kwargs.get('mininterval') or 2.0
+        kwargs['mininterval'] = kwargs.get('mininterval', 2.0)
+        kwargs['unit_scale'] = kwargs.get('unit_scale', True)
+        kwargs['dynamic_ncols'] = kwargs.get('dynamic_ncols', True)
         super().__init__(*args, **kwargs)
         self.refresh_all()
 
