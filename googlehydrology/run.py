@@ -25,10 +25,10 @@ import torch
 import tqdm.dask
 import xarray
 
-from googlehydrology.utils.tqdm import AutoRefreshTqdm
 
 # make sure code directory is in path, even if the package is not installed using the setup.py
 sys.path.append(str(Path(__file__).parent.parent))
+from googlehydrology.utils.tqdm import AutoRefreshTqdm
 from googlehydrology.evaluation.evaluate import start_evaluation
 from googlehydrology.training.train import start_training
 from googlehydrology.utils.config import Config
