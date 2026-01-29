@@ -144,9 +144,11 @@ class Scaler:
         scale = xr.merge(_calc_types(dataset, scaling_types, 1.0, stats))
 
         # Combine parameters into a single xarray.Dataset with a 'parameter' coordinate.
+        param_names = ['center', 'scale', 'mean', 'std']
+        param_index = pd.Index(param_names, name='parameter', dtype=object)
         scaler = xr.concat(
-            [center, scale, stats['mean'], stats['std']],
-            dim=pd.Index(['center', 'scale', 'mean', 'std'], name='parameter'),
+            [center, scale, stats['mean'], stats['std']], 
+            dim=param_index
         )
 
         # Expand the scaler dataset to include 'obs' and 'sim' versions of all variables.
