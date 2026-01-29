@@ -39,6 +39,7 @@ from googlehydrology.datautils.scaler import Scaler
 from googlehydrology.datautils.union_features import union_features
 from googlehydrology.datautils.utils import load_basin_file
 from googlehydrology.datautils.validate_samples import validate_samples
+from googlehydrology.utils import memory
 from googlehydrology.utils.config import Config
 from googlehydrology.utils.configutils import flatten_feature_list
 from googlehydrology.utils.errors import NoEvaluationDataError, NoTrainDataError
