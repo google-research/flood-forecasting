@@ -296,20 +296,30 @@ class Multimet(Dataset):
             dataset=(self._dataset if compute_scaler else None),
         )
 
+        # Note: dep chain to avoid multi passes on all data (lazy mode)
+        # scaler computed  1>  scale dataset  2>  create valid masks
+        # 1>  else sampling from dataset needs re-scaling on everything,
+        # 2>  else calcuation wouldn't be equivalent to as originally done.
+        # Note: keep materialized `self.scaler.scaler` as also trainer uses it.
+        # Note: in non-lazy_mode, dataset is scaled with the non-materialized
+        #       scaler, computing scaler needs going over all data, and
+        #       computing indices needs going over all data (scaled) - so -
+        #       those 3 are computed together.
+
+        if cfg.lazy_data:
+            LOGGER.debug('[lazy_data] pre-compute scaler')
+            (self.scaler.scaler,) = dask.compute(self.scaler.scaler)
+            memory.release()
+        LOGGER.debug('scale data')
+        self._dataset = self.scaler.scale(self._dataset)
+
         LOGGER.debug('create valid sample mask and indices plan')
         valid_sample_mask, indices = self._create_valid_sample_mask()
 
-        # We explicitly keep the self.scaler.scaler computation since trainer uses it directly
         if cfg.lazy_data:
-            LOGGER.debug('[lazy_data] compute scaler, indices')
-            (self.scaler.scaler, indices) = dask.compute(
-                self.scaler.scaler, indices
-            )
-            LOGGER.debug('[lazy_data] apply scale data post scaler compute')
-            self._dataset = self.scaler.scale(self._dataset)
+            LOGGER.debug('[lazy_data] post-compute indices')
+            (indices,) = dask.compute(indices)
         else:
-            LOGGER.debug('setup scale data pre scaler compute')
-            self._dataset = self.scaler.scale(self._dataset)
             LOGGER.debug('compute dataset, scaler, indices')
             (self._dataset, self.scaler.scaler, indices) = dask.compute(
                 self._dataset, self.scaler.scaler, indices
