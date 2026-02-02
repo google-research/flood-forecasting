@@ -60,7 +60,7 @@ TENSOR_VARS = [
 ]
 MULTIMET_MINIMUM_LEAD_TIME = 1
 
-class LazyDataLoader(torch.utils.data.DataLoader):
+class MultimetDataLoader(torch.utils.data.DataLoader):
     """Custom DataLoader that handles lazy data loading.
 
     Ignores num_workers to avoid issues with dask/xarray in subprocesses.

@@ -30,7 +30,7 @@ from torch.amp import autocast
 from torch.utils.data import Dataset
 
 from googlehydrology.datasetzoo import get_dataset
-from googlehydrology.datasetzoo.multimet import LazyDataLoader
+from googlehydrology.datasetzoo.multimet import MultimetDataLoader
 from googlehydrology.datautils.utils import (
     get_frequency_factor,
     load_basin_file,
@@ -241,7 +241,7 @@ class BaseTester(object):
                 self.basins, samples=list(basins)
             ),
         )
-        loader = LazyDataLoader(
+        loader = MultimetDataLoader(
             self.dataset,
             lazy_load=self.cfg.lazy_load,
             logging_level=self.cfg.logging_level,
@@ -646,7 +646,7 @@ class BaseTester(object):
     def _evaluate(
         self,
         model: BaseModel,
-        loader: LazyDataLoader,
+        loader: MultimetDataLoader,
         frequencies: list[str],
         basins: set[str] = set(),
     ):

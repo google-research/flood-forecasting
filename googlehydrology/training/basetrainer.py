@@ -27,7 +27,7 @@ from torch.amp import GradScaler, autocast
 from torch.utils.data import Dataset
 
 from googlehydrology.datasetzoo import get_dataset
-from googlehydrology.datasetzoo.multimet import LazyDataLoader
+from googlehydrology.datasetzoo.multimet import MultimetDataLoader
 from googlehydrology.datautils.utils import load_basin_file
 from googlehydrology.evaluation import get_tester
 from googlehydrology.evaluation.tester import BaseTester
@@ -135,8 +135,8 @@ class BaseTrainer(object):
             init_model=False,
         )
 
-    def _get_data_loader(self, ds: Dataset) -> LazyDataLoader:
-        return LazyDataLoader(
+    def _get_data_loader(self, ds: Dataset) -> MultimetDataLoader:
+        return MultimetDataLoader(
             ds,
             lazy_load=self.cfg.lazy_load,
             logging_level=self.cfg.logging_level,
