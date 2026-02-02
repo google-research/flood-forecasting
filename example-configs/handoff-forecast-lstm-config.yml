@@ -58,7 +58,6 @@ print_warnings_once: True
 # Specifies the class of dataset loader to use. 'multimet' is used for Caravan
 # data with multiple meteorological forcing products.
 dataset: multimet
-lazy_load: False
 
 # -- File Paths (UPDATE THESE TO MATCH YOUR SYSTEM) --
 # Paths to text files containing lists of basin IDs for training, validation, and testing.
