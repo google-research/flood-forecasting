@@ -299,6 +299,7 @@ class Multimet(Dataset):
         # scaler computed  1>  scale dataset  2>  create valid masks
         # 1>  else sampling from dataset needs re-scaling on everything,
         # 2>  else calcuation wouldn't be equivalent to as originally done.
+        # TODO(future): Invariant 2> may be unneeded.
         # Note: keep materialized `self.scaler.scaler` as also trainer uses it.
         # Note: in non-lazy_mode, dataset is scaled with the non-materialized
         #       scaler, computing scaler needs going over all data, and
