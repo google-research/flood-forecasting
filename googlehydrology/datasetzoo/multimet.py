@@ -65,13 +65,13 @@ class DataLoader(torch.utils.data.DataLoader):
 
     Ignores num_workers to avoid issues with dask/xarray in subprocesses.
 
-    If `lazy_data` is True, triggers compute() every batch using dask.
+    If `lazy_load` is True, triggers compute() every batch using dask.
 
     Parameters
     ----------
     *args
         Positional arguments passed to the parent class.
-    lazy_data : bool
+    lazy_load : bool
         If True, the data is computed using dask before collating.
     logging_level : int
         The value of the logging level e.g. DEBUG INFO etc.
@@ -79,10 +79,10 @@ class DataLoader(torch.utils.data.DataLoader):
         Keyword arguments passed to the parent class.
     """
 
-    def __init__(self, *args, lazy_data: bool, logging_level: int, **kwargs):
+    def __init__(self, *args, lazy_load: bool, logging_level: int, **kwargs):
         kwargs['num_workers'] = 0
         super().__init__(*args, **kwargs)
-        self._lazy = lazy_data
+        self._lazy = lazy_load
         self._debug = logging_level <= logging.DEBUG
 
     def __iter__(self):
@@ -306,8 +306,8 @@ class Multimet(Dataset):
         #       computing indices needs going over all data (scaled) - so -
         #       those 3 are computed together.
 
-        if cfg.lazy_data:
-            LOGGER.debug('[lazy_data] pre-compute scaler')
+        if cfg.lazy_load:
+            LOGGER.debug('[lazy_load] pre-compute scaler')
             (self.scaler.scaler,) = dask.compute(self.scaler.scaler)
             memory.release()
         LOGGER.debug('scale data')
@@ -316,8 +316,8 @@ class Multimet(Dataset):
         LOGGER.debug('create valid sample mask and indices plan')
         valid_sample_mask, indices = self._create_valid_sample_mask()
 
-        if cfg.lazy_data:
-            LOGGER.debug('[lazy_data] post-compute indices')
+        if cfg.lazy_load:
+            LOGGER.debug('[lazy_load] post-compute indices')
             (indices,) = dask.compute(indices)
         else:
             LOGGER.debug('compute dataset, scaler, indices')

@@ -35,7 +35,7 @@ def test_forecast_daily_regression(
     get_config: Fixture[Callable[[str], dict]],
     forecast_model: Fixture[str],
     forecast_config_updates: Fixture[Callable[[str], dict]],
-    lazy_data: Fixture[bool],
+    lazy_load: Fixture[bool],
 ):
     """Test regression training and evaluation for daily predictions.
 
@@ -51,7 +51,7 @@ def test_forecast_daily_regression(
     # Currently only supports testing with Multimet.
     config = get_config('forecast')
     config.update_config(forecast_config_updates(forecast_model))
-    config.lazy_data = lazy_data
+    config.lazy_load = lazy_load
 
     start_training(config)
     start_evaluation(cfg=config, run_dir=config.run_dir, epoch=1, period='test')

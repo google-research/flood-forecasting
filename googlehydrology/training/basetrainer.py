@@ -138,7 +138,7 @@ class BaseTrainer(object):
     def _get_data_loader(self, ds: Dataset) -> DataLoader:
         return DataLoader(
             ds,
-            lazy_data=self.cfg.lazy_data,
+            lazy_load=self.cfg.lazy_load,
             logging_level=self.cfg.logging_level,
             batch_size=self.cfg.batch_size,
             shuffle=True,

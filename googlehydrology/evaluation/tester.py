@@ -243,7 +243,7 @@ class BaseTester(object):
         )
         loader = DataLoader(
             self.dataset,
-            lazy_data=self.cfg.lazy_data,
+            lazy_load=self.cfg.lazy_load,
             logging_level=self.cfg.logging_level,
             batch_sampler=batch_sampler,
             num_workers=0,

@@ -105,7 +105,7 @@ def forecast_model(request) -> str:
 
 
 @pytest.fixture(params=[True, False])
-def lazy_data(request) -> bool:
+def lazy_load(request) -> bool:
     return request.param
 
 
