@@ -81,7 +81,7 @@ class MultimetDataLoader(torch.utils.data.DataLoader):
     def __init__(self, *args, lazy_load: bool, logging_level: int, **kwargs):
         kwargs['num_workers'] = 0
         super().__init__(*args, **kwargs)
-        self._lazy = lazy_load
+        self._lazy_load = lazy_load
         self._debug = logging_level <= logging.DEBUG
 
     def __iter__(self):
@@ -96,11 +96,11 @@ class MultimetDataLoader(torch.utils.data.DataLoader):
                 (self.dataset[i] for i in indices),
                 desc='Prepare batch',
                 unit='sample',
-                disable=not self._lazy or not self._debug,
+                disable=not self._lazy_load or not self._debug,
                 total=len(indices),
             )
 
-            batch = dask.compute(*batch) if self._lazy else tuple(batch)
+            batch = dask.compute(*batch) if self._lazy_load else tuple(batch)
 
             # TODO(future): Assess first collating to save memory.
             batch = [
