@@ -64,15 +64,14 @@ class MultimetDataLoader(torch.utils.data.DataLoader):
     """Custom DataLoader that handles lazy data loading.
 
     Ignores num_workers to avoid issues with dask/xarray in subprocesses.
-
-    If `lazy_load` is True, triggers compute() every batch using dask.
+    Triggers compute() every batch using dask IFF `lazy_load` is True.
 
     Parameters
     ----------
     *args
         Positional arguments passed to the parent class.
     lazy_load : bool
-        If True, the data is computed using dask before collating.
+        Iff True, the data is computed using dask before collating.
     logging_level : int
         The value of the logging level e.g. DEBUG INFO etc.
     **kwargs
