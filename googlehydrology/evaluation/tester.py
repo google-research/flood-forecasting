@@ -516,6 +516,11 @@ class BaseTester(object):
                 self.cfg.validation_end_date,
             )
 
+        if self.cfg.lazy_load:
+            LOGGER.warning(
+                'tester_skip_obs_all_nan combined with lazy_load may be slow, '
+                'it goes over all the data.'
+            )
         # TODO(future): this may be optimized to work vectorically via xarray on all
         # basins at once.
         for basin in self.basins:
