@@ -24,8 +24,9 @@ generating fine-tuning configurations.
 import glob
 import os
 import re
-import yaml
+import sys
 from typing import Any, Dict, List, Optional, Tuple, Set, Union
+import yaml
 
 # Third-Party Library Imports
 import geopandas as gpd
@@ -36,6 +37,8 @@ import xarray as xr
 from tqdm.notebook import tqdm
 
 # Local Module Imports
+# Get the current working directory and go one level up
+sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 from googlehydrology.evaluation import metrics
 
 # --- Model Selection and Data Loading ---
@@ -372,6 +375,7 @@ def plot_lead_time_zero_scores(
 
     ax.set_yticks([])
     ax.invert_yaxis()
+    ax.set_xlim([-0.5, 1])
     ax.set_xlabel(f"{metric_name} Score (Lead Time {SKILL_LEAD_TIME})")
     ax.set_ylabel("Basins (sorted)")
     ax.set_title(f"{model_name} Performance: {metric_name}")
