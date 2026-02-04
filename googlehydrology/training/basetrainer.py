@@ -421,11 +421,8 @@ class BaseTrainer(object):
         self.experiment_logger.train()
 
         # process bar handle
-        n_iter = (
-            min(self._max_updates_per_epoch, len(self.loader))
-            if self._max_updates_per_epoch > 0
-            else None
-        )
+        n_limit = self._max_updates_per_epoch
+        n_iter = n_limit if 0 < n_limit < len(self.loader) else len(self.loader)
         pbar = tqdm(
             itertools.islice(self.loader, n_iter),
             file=sys.stdout,
