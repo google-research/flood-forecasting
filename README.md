@@ -142,4 +142,4 @@ The `~/flood-forecasting/example-configs` directory contains reference YAML file
 
 ## **Issue Reporting**
 
-If you encounter bugs, please use the [GitHub Issue Tracker](https://www.google.com/search?q=https://github.com/google-research/flood-forecasting/issues). Provide a clear description, steps to reproduce, and the expected behavior.
+If you encounter bugs, please use the [GitHub Issue Tracker](https://github.com/google-research/flood-forecasting/issues). Provide a clear description, steps to reproduce, and the expected behavior.
