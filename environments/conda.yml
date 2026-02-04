@@ -29,6 +29,7 @@ dependencies:
   - cuda-version=12.4
   - dask
   - gcsfs
+  - geopandas
   - gh
   - h5netcdf
   - h5py
@@ -52,6 +53,7 @@ dependencies:
   - ruamel.yaml
   - ruff
   - scipy
+  - seaborn
   - sphinx
   - sphinx-rtd-theme
   - tensorboard
