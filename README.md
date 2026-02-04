@@ -52,7 +52,7 @@ We recommend using **Conda** to manage dependencies like PyTorch and CUDA.
 
 ## **🚀 Tutorial Notebook**
 
-The most direct way to explore this repository is through our interactive tutorial: [**GoogleHydrology Evaluation & Fine-Tuning Notebook**](https://www.google.com/search?q=./GoogleHydrology_Evaluation_Notebook_with_Fine_Tuning.ipynb).
+The most direct way to explore this repository is through our interactive tutorial: [**GoogleHydrology Tutorial Notebook**](https://www.google.com/search?q=./GoogleHydrology_Evaluation_Notebook_with_Fine_Tuning.ipynb).
 
 **What you will learn:**
 
@@ -142,4 +142,4 @@ The `~/flood-forecasting/example-configs` directory contains reference YAML file
 
 ## **Issue Reporting**
 
-If you encounter bugs, please use the [GitHub Issue Tracker](https://www.google.com/search?q=https://github.com/google-research/flood-forecasting/issues). Provide a clear description, steps to reproduce, and the expected behavior.
+If you encounter bugs, please use the [GitHub Issue Tracker](https://github.com/google-research/flood-forecasting/issues). Provide a clear description, steps to reproduce, and the expected behavior.

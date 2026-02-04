@@ -205,6 +205,9 @@ forecast_embedding:
 # Set this arguement to `cpu` for training on a CPU
 device: cpu
 
+# Set the random seed for reproducibility.
+seed: 42
+
 # The loss function to minimize during training. MSE = Mean Squared Error.
 loss: MSE
 # The optimization algorithm. Adam is a standard, robust choice.
@@ -240,16 +243,16 @@ target_noise_std: 0.005
 # Include `all` to calculate all available metrics, which are listed in 
 # ~/googlehydrology/evaluation/metrics.py
 metrics:
-- all        # Calculate all available metrics.
-# - NSE      # Nash-Sutcliffe Efficiency (standard hydrology metric, 1=perfect, <0=worse than mean).
-# - KGE      # Kling-Gupta Efficiency (balances correlation, variability error, and bias error. 1=perfect).
+# - all        # Calculate all available metrics.
+- NSE      # Nash-Sutcliffe Efficiency (standard hydrology metric, 1=perfect, <0=worse than mean).
+- KGE      # Kling-Gupta Efficiency (balances correlation, variability error, and bias error. 1=perfect).
 #- Alpha-NSE # Variability ratio (std_sim / std_obs). Ideal value is 1.
 #- Beta-NSE  # Standardized bias ( (mean_sim - mean_obs) / std_obs ). Ideal value is 0.
 #- Beta-KGE  # Bias ratio (mean_sim / mean_obs). Ideal value is 1.
 #- Pearson-r # Pearson correlation coefficient. Measures timing/shape agreement only. Ideal value is 1.
 
 # How often (in epochs) to run validation.
-validate_every:
+validate_every: 1
 # Number of basins to use for validation. -1 means use ALL validation basins.
 validate_n_random_basins: -1
 

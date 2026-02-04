@@ -96,14 +96,17 @@ learning_rate_epochs_drop: 5     # ... every 5 epochs.
 batch_size: 256
 # Number of passes through the (small) fine-tuning dataset.
 epochs: 25
-
+# Maximum number of weight updates per epoch (useful for very large datasets).
+# Leave empty to use all training data for each epoch.
+max_updates_per_epoch: -1 
 
 # --- 5. Validation ------------------------------------------------------------
 # Metrics to monitor during fine-tuning.
 metrics:
-  - all
+  - NSE
+  - KGE
 
 # Validate after every single epoch to closely monitor adaptation.
-validate_every:
+validate_every: 1
 # Validate on ALL basins in the validation file (which is just 1 basin here).
 validate_n_random_basins: -1
