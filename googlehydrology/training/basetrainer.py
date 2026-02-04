@@ -422,7 +422,8 @@ class BaseTrainer(object):
 
         # process bar handle
         n_limit = self._max_updates_per_epoch
-        n_iter = n_limit if 0 < n_limit < len(self.loader) else len(self.loader)
+        n_length = len(self.loader)
+        n_iter = n_limit if 0 < n_limit <= n_length else n_length
         pbar = tqdm(
             itertools.islice(self.loader, n_iter),
             file=sys.stdout,
