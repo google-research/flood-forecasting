@@ -27,9 +27,10 @@ import torch
 import torch.cuda
 import xarray
 from torch.amp import autocast
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import Dataset
 
 from googlehydrology.datasetzoo import get_dataset
+from googlehydrology.datasetzoo.multimet import MultimetDataLoader
 from googlehydrology.datautils.utils import (
     get_frequency_factor,
     load_basin_file,
@@ -240,8 +241,10 @@ class BaseTester(object):
                 self.basins, samples=list(basins)
             ),
         )
-        loader = DataLoader(
+        loader = MultimetDataLoader(
             self.dataset,
+            lazy_load=self.cfg.lazy_load,
+            logging_level=self.cfg.logging_level,
             batch_sampler=batch_sampler,
             num_workers=0,
             collate_fn=self.dataset.collate_fn,
@@ -513,6 +516,11 @@ class BaseTester(object):
                 self.cfg.validation_end_date,
             )
 
+        if self.cfg.lazy_load:
+            LOGGER.warning(
+                'tester_skip_obs_all_nan combined with lazy_load may be slow, '
+                'it goes over all the data.'
+            )
         # TODO(future): this may be optimized to work vectorically via xarray on all
         # basins at once.
         for basin in self.basins:
@@ -643,7 +651,7 @@ class BaseTester(object):
     def _evaluate(
         self,
         model: BaseModel,
-        loader: DataLoader,
+        loader: MultimetDataLoader,
         frequencies: list[str],
         basins: set[str] = set(),
     ):
