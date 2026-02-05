@@ -602,7 +602,7 @@ class Config(object):
 
     @property
     def max_updates_per_epoch(self) -> int:
-        return max(0, self._cfg.get('max_updates_per_epoch', 0))
+        return max(0, self._cfg.get('max_updates_per_epoch', 0) or 0)
 
     @property
     def mc_dropout(self) -> bool:
