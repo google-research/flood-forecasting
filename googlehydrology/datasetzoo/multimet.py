@@ -60,6 +60,23 @@ TENSOR_VARS = [
 ]
 MULTIMET_MINIMUM_LEAD_TIME = 1
 
+# Caravan Multimet products that are available in the GCS zarr store
+KNOWN_GCS_PRODUCTS = {
+    "CHIRPS",
+    "CHIRPS_GEFS",
+    "CPC",
+    "ERA5_LAND",
+    "GRAPHCAST",
+    "HRES",
+    "IMERG",
+}
+
+# Aliases for multimet product names with inconsistent naming conventions
+PRODUCT_ALIASES = {
+    "ERA5LAND": "ERA5_LAND",
+    "CHIRPSGEFS": "CHIRPS_GEFS",
+}
+
 class MultimetDataLoader(torch.utils.data.DataLoader):
     """Custom DataLoader that handles lazy data loading.
 
@@ -686,8 +703,8 @@ class Multimet(Dataset):
         )
 
         # Separate products and bands for each product from feature names.
-        product_bands = _get_products_and_bands_from_feature_strings(
-            features=features
+        product_bands = _get_products_and_bands_from_feature_dict(
+            self._cfg.hindcast_inputs
         )
 
         # Initialize storage for product/band dataframes that will eventually be concatenated.
@@ -698,7 +715,16 @@ class Multimet(Dataset):
             product_path = (
                 self._dynamics_data_path / product / 'timeseries.zarr'
             )
+            LOGGER.info(f"Loading hindcast product '{product}' with bands {bands}")
             product_ds = _open_zarr(product_path)
+
+            missing = set(bands) - set(product_ds.data_vars)
+
+            if missing:
+                raise ValueError(
+                    f"Requested features {missing} not found in product '{product}'. "
+                    f"Available variables: {list(product_ds.data_vars)}"
+                )
             
             if 'lead_time' in product_ds:
                 # The same product may be used both for forecast and hindcast features. For hindcast, we load it with the
@@ -857,8 +883,8 @@ class Multimet(Dataset):
             Dataset containing the loaded features with dimensions (date, lead_time, basin).
         """
         # Separate products and bands for each product from feature names.
-        product_bands = _get_products_and_bands_from_feature_strings(
-            features=self._forecast_features
+        product_bands = _get_products_and_bands_from_feature_dict(
+            self._cfg.forecast_inputs
         )
 
         # Initialize storage for product/band dataframes that will eventually be concatenated.
@@ -869,7 +895,16 @@ class Multimet(Dataset):
             product_path = (
                 self._dynamics_data_path / product / 'timeseries.zarr'
             )
+            LOGGER.info(f"Loading forecast product '{product}' with bands {bands}")
             product_ds = _open_zarr(product_path)
+
+            missing = set(bands) - set(product_ds.data_vars)
+
+            if missing:
+                raise ValueError(
+                    f"Requested features {missing} not found in product '{product}'. "
+                    f"Available variables: {list(product_ds.data_vars)}"
+                )
 
             # If this is a forecast product, extract only leadtime 0 for hindcasts.
             if 'lead_time' not in product_ds:
@@ -1026,31 +1061,43 @@ def _open_zarr(path: Path) -> xr.Dataset:
     return xr.open_zarr(store=path, chunks='auto', decode_timedelta=True)
 
 
-def _get_products_and_bands_from_feature_strings(
-    features: Iterable[str],
-) -> dict[str, list[str]]:
+def _get_products_and_bands_from_feature_dict(feature_dict):
+
     """
-    Processes feature strings to create a dictionary of product to band(s).
+    Processes feature dictionary to create a mapping of product to band(s).
 
     Parameters
     ----------
-    features : list[str]
-        A list features in the format `<product>_<band>. This is the format for feature
-        names in the Multimet dataset.
+    feature_dict : dict[str, list[str]]
+        Dictionary where keys are product names from the config and values
+        are lists of features belonging to that product.
 
     Returns
     -------
     dict[str, list[str]]
-        Keys are product names and values are a list of features for that product. Features
-        remain in the format <product>_<band>.
+        Keys are normalized product names and values are lists of features
+        for that product.
     """
+
     product_bands = {}
-    for feature in features:
-        product = feature.split('_')[0].upper()
-        if product == 'ERA5LAND':
-            product = 'ERA5_LAND'
-        product_bands.setdefault(product, []).append(feature)
+    for raw_key, features in feature_dict.items():
+        # Normalize: Uppercase, replace hyphens with underscores
+        norm_key = raw_key.upper().replace("-", "_")
+
+        # Try alias mapping first
+        product = PRODUCT_ALIASES.get(norm_key, norm_key)
+
+        # If it's a known product, use canonical name
+        # (e.g., user says 'era5land', but dataset is 'ERA5_LAND')
+        for known in KNOWN_GCS_PRODUCTS:
+            if product.replace("_", "") == known.replace("_", ""):
+                product = known
+                break
+
+        product_bands[product] = features
+
     return product_bands
+
 
 class SampleIndexer:
     """Reorg columns to rows.
