@@ -79,6 +79,7 @@ def setup_logging(log_file: str, level: int, print_warnings_once: bool):
     logging.getLogger('filelock').setLevel(logging.INFO)
     logging.getLogger('matplotlib.font_manager').setLevel(logging.INFO)
     logging.getLogger('fsspec').setLevel(logging.INFO)
+    logging.getLogger('zarr').setLevel(logging.INFO)
 
     logging_redirect_tqdm().__enter__()
 
