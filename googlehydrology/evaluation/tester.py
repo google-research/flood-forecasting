@@ -112,12 +112,9 @@ class BaseTester(object):
         self._load_run_data()  # Sets self.basins
 
         self.dataset = self._get_dataset_all()
-
-        exclude_basins = set(self._calc_exclude_basins())  # Needs self.dataset
-        self.basins = [e for e in self.basins if e not in exclude_basins]
-
         if cfg.limit_n_basins < 1:
             self.dataset.load_basins()
+            self.basins = self._calc_and_apply_excluded_basins(self.basins)
 
     def _set_device(self):
         if self.cfg.device is not None:
@@ -221,6 +218,7 @@ class BaseTester(object):
             basins = random.sample(basins, k=self.cfg.validate_n_random_basins)
         if self.cfg.limit_n_basins > 0:
             self.dataset.load_basins(basins)
+            basins = self._calc_and_apply_excluded_basins(basins)
 
         # force model to train-mode when doing mc-dropout evaluation
         if self.cfg.mc_dropout:
@@ -500,7 +498,13 @@ class BaseTester(object):
         if self.cfg.limit_n_basins > 0:
             self.dataset.unload_basins()
 
-    def _calc_exclude_basins(self) -> Iterator[str]:
+    def _calc_and_apply_excluded_basins(self, basins: list[str]) -> list[str]:
+        exclude_basins = set(self._calc_exclude_basins(basins))
+        if exclude_basins:
+            return [e for e in basins if e not in exclude_basins]
+        return basins
+
+    def _calc_exclude_basins(self, basins: list[str]) -> Iterator[str]:
         if not self.cfg.tester_skip_obs_all_nan:
             return
 
@@ -521,7 +525,7 @@ class BaseTester(object):
             )
         # TODO(future): this may be optimized to work vectorically via xarray on all
         # basins at once.
-        for basin in self.basins:
+        for basin in basins:
             basin_ds = self.dataset._dataset.sel(basin=basin)
             # Calculate all-nan ranges
             diffs = np.diff(
