@@ -332,6 +332,14 @@ class Config(object):
         return pydantic.TypeAdapter(Cache).validate_python(data)
 
     @property
+    def limit_n_basins(self) -> int:
+        return int(self._cfg.get('limit_n_basins', 0))
+
+    @limit_n_basins.setter
+    def limit_n_basins(self, value: int):
+        self._cfg['limit_n_basins'] = value
+
+    @property
     def lazy_load(self) -> bool:
         return self._cfg.get('lazy_load', False)
 
