@@ -69,12 +69,15 @@ KNOWN_GCS_PRODUCTS = {
     "GRAPHCAST",
     "HRES",
     "IMERG",
+    "GEFSv12_ens01"
 }
 
 # Aliases for multimet product names with inconsistent naming conventions
 PRODUCT_ALIASES = {
     "ERA5LAND": "ERA5_LAND",
     "CHIRPSGEFS": "CHIRPS_GEFS",
+    "GEFSV12": "GEFSv12_ens01",
+    "GEFS": "GEFSv12_ens01",
 }
 
 class MultimetDataLoader(torch.utils.data.DataLoader):
@@ -353,7 +356,10 @@ class Multimet(Dataset):
         LOGGER.debug('scaler check zero scale')
         self.scaler.check_zero_scale()
         LOGGER.debug('scaler save')
-        self.scaler.save()
+
+        # Don't save the scaler if we are finetuning
+        if not cfg.is_finetuning:
+            self.scaler.save()  
 
         # Create sample index lookup table for `__getitem__`.
         LOGGER.debug('create sample index')
