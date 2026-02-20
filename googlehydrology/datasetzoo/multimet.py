@@ -68,13 +68,17 @@ KNOWN_GCS_PRODUCTS = {
     "ERA5_LAND",
     "GRAPHCAST",
     "HRES",
-    "IMERG"
+    "IMERG",
+    "GEFSv12_ens01"
 }
 
 # Aliases for multimet product names with inconsistent naming conventions
 PRODUCT_ALIASES = {
     "ERA5LAND": "ERA5_LAND",
-    "CHIRPSGEFS": "CHIRPS_GEFS"
+    "CHIRPSGEFS": "CHIRPS_GEFS",
+    "GEFSV12": "GEFSv12_ens01",
+    "GEFS": "GEFSv12_ens01",
+}
 
 class MultimetDataLoader(torch.utils.data.DataLoader):
     """Custom DataLoader that handles lazy data loading.
