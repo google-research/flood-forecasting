@@ -62,9 +62,6 @@ dynamics_data_dir: ~/data/camels-updated-2025
 # Loading from CSV is slower; usually False for NetCDF workflows.
 load_as_csv: False
 
-# Number of parallel processes to use for loading target features.
-load_target_features_parallel_processes:
-
 # -- Time Periods --
 train_start_date: 01/01/2016
 train_end_date: 31/12/2020

@@ -109,11 +109,12 @@ class BaseTester(object):
             get_regularization_obj(cfg=self.cfg)
         )
 
-        self._load_run_data()
+        self._load_run_data()  # Sets self.basins
 
         self.dataset = self._get_dataset_all()
 
-        self.exclude_basins = set(self._calc_exclude_basins())
+        exclude_basins = set(self._calc_exclude_basins())  # Needs self.dataset
+        self.basins = [e for e in self.basins if e not in exclude_basins]
 
     def _set_device(self):
         if self.cfg.device is not None:
@@ -167,22 +168,12 @@ class BaseTester(object):
         )
 
     def _get_dataset_all(self) -> Dataset:
-        """Get dataset for all basin."""
+        """Get dataset for all basins."""
         return get_dataset(
             cfg=self.cfg,
             is_train=False,
             period=self.period,
-            basin=None,
-            compute_scaler=False,
-        )
-
-    def _get_dataset(self, basin: str) -> Dataset:
-        """Get dataset for a single basin."""
-        return get_dataset(
-            cfg=self.cfg,
-            is_train=False,
-            period=self.period,
-            basin=basin,
+            basins=None,
             compute_scaler=False,
         )
 
@@ -219,14 +210,12 @@ class BaseTester(object):
                 )
 
         # during validation, depending on settings, only evaluate on a random subset of basins
-        basins = set(self.basins) - self.exclude_basins
-        if self.period == 'validation':
-            if len(basins) > self.cfg.validate_n_random_basins:
-                basins = set(
-                    random.sample(
-                        list(basins), k=self.cfg.validate_n_random_basins
-                    )
-                )
+        basins = self.basins
+        if (
+            self.period == 'validation'
+            and len(basins) > self.cfg.validate_n_random_basins
+        ):
+            basins = random.sample(basins, k=self.cfg.validate_n_random_basins)
 
         # force model to train-mode when doing mc-dropout evaluation
         if self.cfg.mc_dropout:

@@ -22,7 +22,6 @@ General experiment configurations
 -  ``device``: Device to use, e.g., ``cuda:0``, ``cpu``, or ``mps``.
 -  ``cache``: A dictionary with keys ``enabled`` (bool) and ``byte_limit`` (int) to control opportunistic caching of data.
 -  ``use_swap_memory``: True/False. Whether to enable ``distributed.p2p.storage.disk`` explicitly for dask.
--  ``load_target_features_parallel_processes``: Integer. Number of processes to use to load target features' netCDF files in parallel.
 
 Validation settings
 -------------------
