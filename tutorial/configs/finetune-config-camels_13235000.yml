@@ -1,0 +1,22 @@
+base_run_dir: /home/gsnearing/flood-forecasting/tutorial/model-runs/5-basin-example
+batch_size: 256
+epochs: 25
+experiment_name: finetune-camels_13235000
+finetune_modules:
+- static_attributes_fc
+- head
+initial_learning_rate: 0.005
+learning_rate_drop_factor: 0.9
+learning_rate_epochs_drop: 5
+learning_rate_strategy: StepLR
+max_updates_per_epoch: -1
+metrics:
+- NSE
+- KGE
+run_dir: /home/gsnearing/flood-forecasting/tutorial/model-runs/5-basin-example
+targets_data_dir: ~/flood-forecasting/tutorial/Caravan-nc
+test_basin_file: ~/flood-forecasting/tutorial/basin-lists/8-basin-test.txt
+train_basin_file: ~/flood-forecasting/tutorial/basin-lists/camels_13235000.txt
+validate_every: 1
+validate_n_random_basins: -1
+validation_basin_file: ~/flood-forecasting/tutorial/basin-lists/camels_13235000.txt

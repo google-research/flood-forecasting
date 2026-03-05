@@ -1,0 +1,247 @@
+[INFO] 13:50:25.410 (logging_utils.py:setup_logging) -- Logging to /home/gsnearing/googlehydrology-tutorial/model-runs/530-camels_0811_135025/output.log initialized.
+[INFO] 13:50:25.411 (basetrainer.py:__init__) -- ### Folder structure created at /home/gsnearing/googlehydrology-tutorial/model-runs/530-camels_0811_135025
+[INFO] 13:50:25.411 (basetrainer.py:__init__) -- ### Run configurations for 530-camels
+[INFO] 13:50:25.411 (basetrainer.py:__init__) -- experiment_name: 530-camels
+[INFO] 13:50:25.411 (basetrainer.py:__init__) -- run_dir: /home/gsnearing/googlehydrology-tutorial/model-runs/530-camels_0811_135025
+[INFO] 13:50:25.411 (basetrainer.py:__init__) -- logging_level: INFO
+[INFO] 13:50:25.411 (basetrainer.py:__init__) -- detect_anomaly: False
+[INFO] 13:50:25.411 (basetrainer.py:__init__) -- print_warnings_once: True
+[INFO] 13:50:25.411 (basetrainer.py:__init__) -- dataset: multimet
+[INFO] 13:50:25.411 (basetrainer.py:__init__) -- train_basin_file: /home/gsnearing/googlehydrology-tutorial/basin-lists/530-camels.txt
+[INFO] 13:50:25.411 (basetrainer.py:__init__) -- validation_basin_file: /home/gsnearing/googlehydrology-tutorial/basin-lists/530-camels.txt
+[INFO] 13:50:25.411 (basetrainer.py:__init__) -- test_basin_file: /home/gsnearing/flood-forecasting/googlehydrology-tutorial/basin-lists/670-camels.txt
+[INFO] 13:50:25.411 (basetrainer.py:__init__) -- targets_data_dir: /home/gsnearing/googlehydrology-tutorial/camels-updated-2025
+[INFO] 13:50:25.411 (basetrainer.py:__init__) -- statics_data_dir: /home/gsnearing/googlehydrology-tutorial/camels-updated-2025
+[INFO] 13:50:25.411 (basetrainer.py:__init__) -- dynamics_data_dir: gs:/caravan-multimet/v1.1
+[INFO] 13:50:25.412 (basetrainer.py:__init__) -- train_start_date: 2000-01-01 00:00:00
+[INFO] 13:50:25.412 (basetrainer.py:__init__) -- train_end_date: 2020-12-31 00:00:00
+[INFO] 13:50:25.412 (basetrainer.py:__init__) -- validation_start_date: 2022-01-01 00:00:00
+[INFO] 13:50:25.412 (basetrainer.py:__init__) -- validation_end_date: 2024-12-31 00:00:00
+[INFO] 13:50:25.412 (basetrainer.py:__init__) -- test_start_date: 2022-01-01 00:00:00
+[INFO] 13:50:25.412 (basetrainer.py:__init__) -- test_end_date: 2024-12-31 00:00:00
+[INFO] 13:50:25.412 (basetrainer.py:__init__) -- hindcast_inputs: {'hres': ['hres_surface_net_solar_radiation', 'hres_surface_net_thermal_radiation', 'hres_surface_pressure', 'hres_temperature_2m', 'hres_total_precipitation'], 'graphcast': ['graphcast_temperature_2m', 'graphcast_total_precipitation'], 'imerg': ['imerg_precipitation'], 'cpc': ['cpc_precipitation']}
+[INFO] 13:50:25.412 (basetrainer.py:__init__) -- forecast_inputs: {'hres': ['hres_surface_net_solar_radiation', 'hres_surface_net_thermal_radiation', 'hres_surface_pressure', 'hres_temperature_2m', 'hres_total_precipitation'], 'graphcast': ['graphcast_temperature_2m', 'graphcast_total_precipitation']}
+[INFO] 13:50:25.412 (basetrainer.py:__init__) -- union_mapping: {'cpc_precipitation': 'era5land_total_precipitation', 'imerg_precipitation': 'era5land_total_precipitation', 'graphcast_temperature_2m': 'era5land_temperature_2m', 'graphcast_total_precipitation': 'era5land_total_precipitation', 'graphcast_u_component_of_wind_10m': 'era5land_u_component_of_wind_10m', 'graphcast_v_component_of_wind_10m': 'era5land_v_component_of_wind_10m', 'hres_surface_net_solar_radiation': 'era5land_surface_net_solar_radiation', 'hres_surface_net_thermal_radiation': 'era5land_surface_net_thermal_radiation', 'hres_surface_pressure': 'era5land_surface_pressure', 'hres_temperature_2m': 'era5land_temperature_2m', 'hres_total_precipitation': 'era5land_total_precipitation'}
+[INFO] 13:50:25.412 (basetrainer.py:__init__) -- static_attributes: ['area', 'p_mean', 'pet_mean_ERA5_LAND', 'pet_mean_FAO_PM', 'aridity_ERA5_LAND', 'aridity_FAO_PM', 'frac_snow', 'moisture_index_ERA5_LAND', 'moisture_index_FAO_PM', 'seasonality_ERA5_LAND', 'seasonality_FAO_PM', 'high_prec_freq', 'high_prec_dur', 'low_prec_freq', 'low_prec_dur', 'pet_mm_syr', 'ele_mt_smx', 'pre_mm_syr']
+[INFO] 13:50:25.412 (basetrainer.py:__init__) -- target_variables: ['streamflow']
+[INFO] 13:50:25.412 (basetrainer.py:__init__) -- model: mean_embedding_forecast_lstm
+[INFO] 13:50:25.412 (basetrainer.py:__init__) -- hidden_size: 256
+[INFO] 13:50:25.412 (basetrainer.py:__init__) -- head: regression
+[INFO] 13:50:25.412 (basetrainer.py:__init__) -- seq_length: 365
+[INFO] 13:50:25.413 (basetrainer.py:__init__) -- lead_time: 7
+[INFO] 13:50:25.413 (basetrainer.py:__init__) -- forecast_overlap: 365
+[INFO] 13:50:25.413 (basetrainer.py:__init__) -- timestep_counter: True
+[INFO] 13:50:25.413 (basetrainer.py:__init__) -- output_dropout: 0.4
+[INFO] 13:50:25.413 (basetrainer.py:__init__) -- initial_forget_bias: 3
+[INFO] 13:50:25.413 (basetrainer.py:__init__) -- weight_init_opts: ['lstm-ih-xavier', 'lstm-hh-orthogonal', 'fc-xavier']
+[INFO] 13:50:25.413 (basetrainer.py:__init__) -- statics_embedding: {'type': 'fc', 'hiddens': [100, 100, 20], 'activation': ['tanh', 'tanh', 'linear'], 'dropout': 0.0}
+[INFO] 13:50:25.413 (basetrainer.py:__init__) -- hindcast_embedding: {'type': 'fc', 'hiddens': [100, 20], 'activation': ['tanh', 'linear'], 'dropout': 0.0}
+[INFO] 13:50:25.413 (basetrainer.py:__init__) -- forecast_embedding: {'type': 'fc', 'hiddens': [20, 20, 20, 20], 'activation': ['tanh', 'tanh', 'tanh', 'linear'], 'dropout': 0.0}
+[INFO] 13:50:25.413 (basetrainer.py:__init__) -- device: cuda:0
+[INFO] 13:50:25.413 (basetrainer.py:__init__) -- loss: MSE
+[INFO] 13:50:25.413 (basetrainer.py:__init__) -- optimizer: Adam
+[INFO] 13:50:25.413 (basetrainer.py:__init__) -- epochs: 30
+[INFO] 13:50:25.413 (basetrainer.py:__init__) -- batch_size: 256
+[INFO] 13:50:25.413 (basetrainer.py:__init__) -- max_updates_per_epoch: 2000
+[INFO] 13:50:25.413 (basetrainer.py:__init__) -- learning_rate_strategy: ReduceLROnPlateau
+[INFO] 13:50:25.413 (basetrainer.py:__init__) -- initial_learning_rate: 0.0005
+[INFO] 13:50:25.414 (basetrainer.py:__init__) -- learning_rate_drop_factor: 0.5
+[INFO] 13:50:25.414 (basetrainer.py:__init__) -- learning_rate_epochs_drop: 5
+[INFO] 13:50:25.414 (basetrainer.py:__init__) -- clip_gradient_norm: 1
+[INFO] 13:50:25.414 (basetrainer.py:__init__) -- target_noise_std: 0.005
+[INFO] 13:50:25.414 (basetrainer.py:__init__) -- metrics: ['NSE', 'KGE']
+[INFO] 13:50:25.414 (basetrainer.py:__init__) -- validate_every: 1
+[INFO] 13:50:25.414 (basetrainer.py:__init__) -- validate_n_random_basins: -1
+[INFO] 13:50:25.414 (basetrainer.py:__init__) -- tester_skip_obs_all_nan: True
+[INFO] 13:50:25.414 (basetrainer.py:__init__) -- tester_sample_reduction: median
+[INFO] 13:50:25.414 (basetrainer.py:__init__) -- clip_targets_to_zero: ['streamflow']
+[INFO] 13:50:25.414 (basetrainer.py:__init__) -- predict_last_n: 8
+[INFO] 13:50:25.414 (basetrainer.py:__init__) -- allzero_samples_are_invalid: False
+[INFO] 13:50:25.414 (basetrainer.py:__init__) -- num_workers: 2
+[INFO] 13:50:25.414 (basetrainer.py:__init__) -- log_loss_every_nth_update: 50
+[INFO] 13:50:25.414 (basetrainer.py:__init__) -- log_n_figures: 0
+[INFO] 13:50:25.414 (basetrainer.py:__init__) -- cache: {'enabled': True, 'byte_limit': 10000000000}
+[INFO] 13:50:25.414 (basetrainer.py:__init__) -- number_of_basins: 530
+[INFO] 13:50:25.414 (basetrainer.py:__init__) -- train_dir: /home/gsnearing/googlehydrology-tutorial/model-runs/530-camels_0811_135025/train_data
+[INFO] 13:50:25.415 (basetrainer.py:__init__) -- img_log_dir: /home/gsnearing/googlehydrology-tutorial/model-runs/530-camels_0811_135025/img_log
+[INFO] 13:50:26.556 (basetrainer.py:_set_device) -- ### Device cuda:0 will be used for training
+[WARNING] 13:52:19.379 (basetrainer.py:initialize_training) -- Validation set to validate every 1 epoch(s), but 'validate_n_random_basins' not set or set to zero. Will validate on the entire validation set.
+[INFO] 13:52:48.842 (basetrainer.py:train_and_validate) -- learning rate is [0.0005]
+[INFO] 14:00:30.676 (basetrainer.py:train_and_validate) -- Epoch 1 average loss: avg_loss: 0.25194, avg_total_loss: 0.25194
+[INFO] 14:10:59.177 (basetrainer.py:train_and_validate) -- Epoch 1 average validation loss: 0.20584 -- Median validation metrics: avg_loss: 0.20584, NSE: 0.38090, KGE: 0.39142
+[INFO] 14:10:59.177 (basetrainer.py:train_and_validate) -- learning rate is [0.0005]
+[INFO] 14:17:03.330 (basetrainer.py:train_and_validate) -- Epoch 2 average loss: avg_learning_rate: 0.00050, avg_loss: 0.18459, avg_total_loss: 0.18459
+[INFO] 14:26:37.123 (basetrainer.py:train_and_validate) -- Epoch 2 average validation loss: 0.19497 -- Median validation metrics: avg_loss: 0.19497, NSE: 0.46640, KGE: 0.44557
+[INFO] 14:26:37.123 (basetrainer.py:train_and_validate) -- learning rate is [0.0005]
+[INFO] 14:32:41.800 (basetrainer.py:train_and_validate) -- Epoch 3 average loss: avg_learning_rate: 0.00050, avg_loss: 0.20476, avg_total_loss: 0.20476
+[INFO] 14:42:17.522 (basetrainer.py:train_and_validate) -- Epoch 3 average validation loss: 0.18490 -- Median validation metrics: avg_loss: 0.18490, NSE: 0.52470, KGE: 0.49353
+[INFO] 14:42:17.523 (basetrainer.py:train_and_validate) -- learning rate is [0.0005]
+[INFO] 14:48:22.228 (basetrainer.py:train_and_validate) -- Epoch 4 average loss: avg_learning_rate: 0.00050, avg_loss: 0.16565, avg_total_loss: 0.16565
+[INFO] 14:57:58.141 (basetrainer.py:train_and_validate) -- Epoch 4 average validation loss: 0.18885 -- Median validation metrics: avg_loss: 0.18885, NSE: 0.55197, KGE: 0.58884
+[INFO] 14:57:58.141 (basetrainer.py:train_and_validate) -- learning rate is [0.0005]
+[INFO] 15:04:03.150 (basetrainer.py:train_and_validate) -- Epoch 5 average loss: avg_learning_rate: 0.00050, avg_loss: 0.16141, avg_total_loss: 0.16141
+[INFO] 15:13:45.922 (basetrainer.py:train_and_validate) -- Epoch 5 average validation loss: 0.17805 -- Median validation metrics: avg_loss: 0.17805, NSE: 0.57870, KGE: 0.57104
+[INFO] 15:13:45.922 (basetrainer.py:train_and_validate) -- learning rate is [0.0005]
+[INFO] 15:19:48.900 (basetrainer.py:train_and_validate) -- Epoch 6 average loss: avg_learning_rate: 0.00050, avg_loss: 0.20082, avg_total_loss: 0.20082
+[INFO] 15:29:29.458 (basetrainer.py:train_and_validate) -- Epoch 6 average validation loss: 0.17507 -- Median validation metrics: avg_loss: 0.17507, NSE: 0.59069, KGE: 0.55301
+[INFO] 15:29:29.458 (basetrainer.py:train_and_validate) -- learning rate is [0.0005]
+[INFO] 15:35:32.109 (basetrainer.py:train_and_validate) -- Epoch 7 average loss: avg_learning_rate: 0.00050, avg_loss: 0.13396, avg_total_loss: 0.13396
+[INFO] 15:45:13.572 (basetrainer.py:train_and_validate) -- Epoch 7 average validation loss: 0.16877 -- Median validation metrics: avg_loss: 0.16877, NSE: 0.60139, KGE: 0.58011
+[INFO] 15:45:13.572 (basetrainer.py:train_and_validate) -- learning rate is [0.0005]
+[INFO] 15:51:15.255 (basetrainer.py:train_and_validate) -- Epoch 8 average loss: avg_learning_rate: 0.00050, avg_loss: 0.13753, avg_total_loss: 0.13753
+[INFO] 16:00:54.480 (basetrainer.py:train_and_validate) -- Epoch 8 average validation loss: 0.16857 -- Median validation metrics: avg_loss: 0.16857, NSE: 0.61177, KGE: 0.59992
+[INFO] 16:00:54.480 (basetrainer.py:train_and_validate) -- learning rate is [0.0005]
+[INFO] 16:07:22.690 (basetrainer.py:train_and_validate) -- Epoch 9 average loss: avg_learning_rate: 0.00050, avg_loss: 0.13864, avg_total_loss: 0.13864
+[INFO] 16:17:08.594 (basetrainer.py:train_and_validate) -- Epoch 9 average validation loss: 0.17116 -- Median validation metrics: avg_loss: 0.17116, NSE: 0.59161, KGE: 0.51218
+[INFO] 16:17:08.594 (basetrainer.py:train_and_validate) -- learning rate is [0.0005]
+[INFO] 16:23:15.564 (basetrainer.py:train_and_validate) -- Epoch 10 average loss: avg_learning_rate: 0.00050, avg_loss: 0.11042, avg_total_loss: 0.11042
+[INFO] 16:32:55.955 (basetrainer.py:train_and_validate) -- Epoch 10 average validation loss: 0.16716 -- Median validation metrics: avg_loss: 0.16716, NSE: 0.60254, KGE: 0.56732
+[INFO] 16:32:55.955 (basetrainer.py:train_and_validate) -- learning rate is [0.0005]
+[INFO] 16:39:03.563 (basetrainer.py:train_and_validate) -- Epoch 11 average loss: avg_learning_rate: 0.00050, avg_loss: 0.19738, avg_total_loss: 0.19738
+[INFO] 16:48:48.840 (basetrainer.py:train_and_validate) -- Epoch 11 average validation loss: 0.16239 -- Median validation metrics: avg_loss: 0.16239, NSE: 0.61374, KGE: 0.60234
+[INFO] 16:48:48.841 (basetrainer.py:train_and_validate) -- learning rate is [0.0005]
+[INFO] 16:54:53.510 (basetrainer.py:train_and_validate) -- Epoch 12 average loss: avg_learning_rate: 0.00050, avg_loss: 0.13061, avg_total_loss: 0.13061
+[INFO] 17:04:37.300 (basetrainer.py:train_and_validate) -- Epoch 12 average validation loss: 0.16343 -- Median validation metrics: avg_loss: 0.16343, NSE: 0.62564, KGE: 0.60976
+[INFO] 17:04:37.300 (basetrainer.py:train_and_validate) -- learning rate is [0.0005]
+[INFO] 17:10:40.122 (basetrainer.py:train_and_validate) -- Epoch 13 average loss: avg_learning_rate: 0.00050, avg_loss: 0.11505, avg_total_loss: 0.11505
+[INFO] 17:20:21.192 (basetrainer.py:train_and_validate) -- Epoch 13 average validation loss: 0.16353 -- Median validation metrics: avg_loss: 0.16353, NSE: 0.61755, KGE: 0.59879
+[INFO] 17:20:21.192 (basetrainer.py:train_and_validate) -- learning rate is [0.0005]
+[INFO] 17:26:20.258 (basetrainer.py:train_and_validate) -- Epoch 14 average loss: avg_learning_rate: 0.00050, avg_loss: 0.11975, avg_total_loss: 0.11975
+[INFO] 17:36:01.734 (basetrainer.py:train_and_validate) -- Epoch 14 average validation loss: 0.16174 -- Median validation metrics: avg_loss: 0.16174, NSE: 0.61385, KGE: 0.59787
+[INFO] 17:36:01.734 (basetrainer.py:train_and_validate) -- learning rate is [0.0005]
+[INFO] 17:42:03.574 (basetrainer.py:train_and_validate) -- Epoch 15 average loss: avg_learning_rate: 0.00050, avg_loss: 0.11645, avg_total_loss: 0.11645
+[INFO] 17:51:41.706 (basetrainer.py:train_and_validate) -- Epoch 15 average validation loss: 0.16542 -- Median validation metrics: avg_loss: 0.16542, NSE: 0.61291, KGE: 0.60962
+[INFO] 17:51:41.707 (basetrainer.py:train_and_validate) -- learning rate is [0.0005]
+[INFO] 17:57:44.688 (basetrainer.py:train_and_validate) -- Epoch 16 average loss: avg_learning_rate: 0.00050, avg_loss: 0.12500, avg_total_loss: 0.12500
+[INFO] 18:07:23.983 (basetrainer.py:train_and_validate) -- Epoch 16 average validation loss: 0.16451 -- Median validation metrics: avg_loss: 0.16451, NSE: 0.61740, KGE: 0.60546
+[INFO] 18:07:23.983 (basetrainer.py:train_and_validate) -- learning rate is [0.00025]
+[INFO] 18:13:31.261 (basetrainer.py:train_and_validate) -- Epoch 17 average loss: avg_learning_rate: 0.00025, avg_loss: 0.09782, avg_total_loss: 0.09782
+[INFO] 18:23:14.359 (basetrainer.py:train_and_validate) -- Epoch 17 average validation loss: 0.16256 -- Median validation metrics: avg_loss: 0.16256, NSE: 0.62821, KGE: 0.61694
+[INFO] 18:23:14.359 (basetrainer.py:train_and_validate) -- learning rate is [0.00025]
+[INFO] 18:29:20.508 (basetrainer.py:train_and_validate) -- Epoch 18 average loss: avg_learning_rate: 0.00025, avg_loss: 0.10246, avg_total_loss: 0.10246
+[INFO] 18:39:04.117 (basetrainer.py:train_and_validate) -- Epoch 18 average validation loss: 0.16239 -- Median validation metrics: avg_loss: 0.16239, NSE: 0.64234, KGE: 0.64968
+[INFO] 18:39:04.117 (basetrainer.py:train_and_validate) -- learning rate is [0.00025]
+[INFO] 18:45:05.764 (basetrainer.py:train_and_validate) -- Epoch 19 average loss: avg_learning_rate: 0.00025, avg_loss: 0.10476, avg_total_loss: 0.10476
+[INFO] 18:54:44.364 (basetrainer.py:train_and_validate) -- Epoch 19 average validation loss: 0.16226 -- Median validation metrics: avg_loss: 0.16226, NSE: 0.62551, KGE: 0.64167
+[INFO] 18:54:44.365 (basetrainer.py:train_and_validate) -- learning rate is [0.00025]
+[INFO] 19:00:46.927 (basetrainer.py:train_and_validate) -- Epoch 20 average loss: avg_learning_rate: 0.00025, avg_loss: 0.09495, avg_total_loss: 0.09495
+[INFO] 19:10:37.517 (basetrainer.py:train_and_validate) -- Epoch 20 average validation loss: 0.16531 -- Median validation metrics: avg_loss: 0.16531, NSE: 0.62524, KGE: 0.61485
+[INFO] 19:10:37.518 (basetrainer.py:train_and_validate) -- learning rate is [0.00025]
+[INFO] 19:16:39.800 (basetrainer.py:train_and_validate) -- Epoch 21 average loss: avg_learning_rate: 0.00025, avg_loss: 0.09103, avg_total_loss: 0.09103
+[INFO] 19:26:21.182 (basetrainer.py:train_and_validate) -- Epoch 21 average validation loss: 0.16250 -- Median validation metrics: avg_loss: 0.16250, NSE: 0.63120, KGE: 0.62610
+[INFO] 19:26:21.182 (basetrainer.py:train_and_validate) -- learning rate is [0.00025]
+[INFO] 19:32:25.231 (basetrainer.py:train_and_validate) -- Epoch 22 average loss: avg_learning_rate: 0.00025, avg_loss: 0.08829, avg_total_loss: 0.08829
+[INFO] 19:42:07.175 (basetrainer.py:train_and_validate) -- Epoch 22 average validation loss: 0.16458 -- Median validation metrics: avg_loss: 0.16458, NSE: 0.63907, KGE: 0.64262
+[INFO] 19:42:07.175 (basetrainer.py:train_and_validate) -- learning rate is [0.00025]
+[INFO] 19:48:10.605 (basetrainer.py:train_and_validate) -- Epoch 23 average loss: avg_learning_rate: 0.00025, avg_loss: 0.09960, avg_total_loss: 0.09960
+[INFO] 19:57:47.865 (basetrainer.py:train_and_validate) -- Epoch 23 average validation loss: 0.16675 -- Median validation metrics: avg_loss: 0.16675, NSE: 0.61509, KGE: 0.61591
+[INFO] 19:57:47.865 (basetrainer.py:train_and_validate) -- learning rate is [0.00025]
+[INFO] 20:03:52.514 (basetrainer.py:train_and_validate) -- Epoch 24 average loss: avg_learning_rate: 0.00025, avg_loss: 0.08435, avg_total_loss: 0.08435
+[INFO] 20:13:23.191 (basetrainer.py:train_and_validate) -- Epoch 24 average validation loss: 0.16856 -- Median validation metrics: avg_loss: 0.16856, NSE: 0.61267, KGE: 0.61128
+[INFO] 20:13:23.191 (basetrainer.py:train_and_validate) -- learning rate is [0.00025]
+[INFO] 20:19:24.000 (basetrainer.py:train_and_validate) -- Epoch 25 average loss: avg_learning_rate: 0.00025, avg_loss: 0.09369, avg_total_loss: 0.09369
+[INFO] 20:29:01.759 (basetrainer.py:train_and_validate) -- Epoch 25 average validation loss: 0.16662 -- Median validation metrics: avg_loss: 0.16662, NSE: 0.61284, KGE: 0.62896
+[INFO] 20:29:01.760 (basetrainer.py:train_and_validate) -- learning rate is [0.00025]
+[INFO] 20:35:02.535 (basetrainer.py:train_and_validate) -- Epoch 26 average loss: avg_learning_rate: 0.00025, avg_loss: 0.09685, avg_total_loss: 0.09685
+[INFO] 20:44:43.572 (basetrainer.py:train_and_validate) -- Epoch 26 average validation loss: 0.16775 -- Median validation metrics: avg_loss: 0.16775, NSE: 0.60916, KGE: 0.60247
+[INFO] 20:44:43.572 (basetrainer.py:train_and_validate) -- learning rate is [0.00025]
+[INFO] 20:50:49.695 (basetrainer.py:train_and_validate) -- Epoch 27 average loss: avg_learning_rate: 0.00025, avg_loss: 0.09347, avg_total_loss: 0.09347
+[INFO] 21:00:22.859 (basetrainer.py:train_and_validate) -- Epoch 27 average validation loss: 0.17038 -- Median validation metrics: avg_loss: 0.17038, NSE: 0.61964, KGE: 0.62800
+[INFO] 21:00:22.859 (basetrainer.py:train_and_validate) -- learning rate is [0.00025]
+[INFO] 21:06:22.416 (basetrainer.py:train_and_validate) -- Epoch 28 average loss: avg_learning_rate: 0.00025, avg_loss: 0.09101, avg_total_loss: 0.09101
+[INFO] 21:15:59.208 (basetrainer.py:train_and_validate) -- Epoch 28 average validation loss: 0.16816 -- Median validation metrics: avg_loss: 0.16816, NSE: 0.61846, KGE: 0.60124
+[INFO] 21:15:59.208 (basetrainer.py:train_and_validate) -- learning rate is [0.00025]
+[INFO] 21:22:01.440 (basetrainer.py:train_and_validate) -- Epoch 29 average loss: avg_learning_rate: 0.00025, avg_loss: 0.08509, avg_total_loss: 0.08509
+[INFO] 21:31:37.306 (basetrainer.py:train_and_validate) -- Epoch 29 average validation loss: 0.17321 -- Median validation metrics: avg_loss: 0.17321, NSE: 0.61769, KGE: 0.62539
+[INFO] 21:31:37.307 (basetrainer.py:train_and_validate) -- learning rate is [0.00025]
+[INFO] 21:37:37.581 (basetrainer.py:train_and_validate) -- Epoch 30 average loss: avg_learning_rate: 0.00025, avg_loss: 0.07952, avg_total_loss: 0.07952
+[INFO] 21:47:14.110 (basetrainer.py:train_and_validate) -- Epoch 30 average validation loss: 0.17003 -- Median validation metrics: avg_loss: 0.17003, NSE: 0.60987, KGE: 0.63455
+[INFO] 16:22:29.235 (logging_utils.py:setup_logging) -- Logging to model-runs/530-camels_0811_135025/output.log initialized.
+[INFO] 16:23:14.596 (tester.py:_load_weights) -- Using the model weights from model-runs/530-camels_0811_135025/model_epoch030.pt
+[INFO] 16:38:42.310 (tester.py:evaluate) -- 1D NSE median=0.570117
+[INFO] 16:38:42.310 (tester.py:evaluate) -- 1D KGE median=0.595973
+[INFO] 15:12:24.796 (logging_utils.py:setup_logging) -- Logging to model-runs/530-camels/output.log initialized.
+[WARNING] 15:12:24.797 (warnings.py:_showwarnmsg) -- /home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/site-packages/dask/config.py:786: FutureWarning: Dask configuration key 'shuffle' has been deprecated; please use 'dataframe.shuffle.algorithm' instead
+  warnings.warn(
+
+[ERROR] 15:12:26.426 (logging_utils.py:exception_logging) -- Uncaught exception
+Traceback (most recent call last):
+  File "/home/gsnearing/googlehydrology-tutorial/flood-forecasting/googlehydrology/run.py", line 257, in <module>
+    _main()
+  File "/home/gsnearing/googlehydrology-tutorial/flood-forecasting/googlehydrology/run.py", line 119, in _main
+    eval_run(
+  File "/home/gsnearing/googlehydrology-tutorial/flood-forecasting/googlehydrology/run.py", line 253, in eval_run
+    start_evaluation(cfg=config, run_dir=run_dir, epoch=epoch, period=period)
+  File "/home/gsnearing/googlehydrology-tutorial/flood-forecasting/googlehydrology/evaluation/evaluate.py", line 38, in start_evaluation
+    tester = get_tester(
+             ^^^^^^^^^^^
+  File "/home/gsnearing/googlehydrology-tutorial/flood-forecasting/googlehydrology/evaluation/__init__.py", line 57, in get_tester
+    return Tester(
+           ^^^^^^^
+  File "/home/gsnearing/googlehydrology-tutorial/flood-forecasting/googlehydrology/evaluation/tester.py", line 835, in __init__
+    super(RegressionTester, self).__init__(cfg, run_dir, period, init_model)
+  File "/home/gsnearing/googlehydrology-tutorial/flood-forecasting/googlehydrology/evaluation/tester.py", line 103, in __init__
+    self.model = get_model(cfg).to(self.device)
+                 ^^^^^^^^^^^^^^
+  File "/home/gsnearing/googlehydrology-tutorial/flood-forecasting/googlehydrology/modelzoo/__init__.py", line 60, in get_model
+    model = MeanEmbeddingForecastLSTM(cfg=cfg)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gsnearing/googlehydrology-tutorial/flood-forecasting/googlehydrology/modelzoo/mean_embedding_forecast_lstm.py", line 53, in __init__
+    super(MeanEmbeddingForecastLSTM, self).__init__(cfg=cfg)
+  File "/home/gsnearing/googlehydrology-tutorial/flood-forecasting/googlehydrology/modelzoo/basemodel.py", line 46, in __init__
+    self._scaler = Scaler(
+                   ^^^^^^^
+  File "/home/gsnearing/googlehydrology-tutorial/flood-forecasting/googlehydrology/datautils/scaler.py", line 103, in __init__
+    self.load()
+  File "/home/gsnearing/googlehydrology-tutorial/flood-forecasting/googlehydrology/datautils/scaler.py", line 116, in load
+    raise ValueError('Old scaler files are unsupported')
+ValueError: Old scaler files are unsupported
+[INFO] 15:13:44.880 (logging_utils.py:setup_logging) -- Logging to model-runs/530-camels/output.log initialized.
+[WARNING] 15:13:44.880 (warnings.py:_showwarnmsg) -- /home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/site-packages/dask/config.py:786: FutureWarning: Dask configuration key 'shuffle' has been deprecated; please use 'dataframe.shuffle.algorithm' instead
+  warnings.warn(
+
+[INFO] 15:14:29.400 (tester.py:_load_weights) -- Using the model weights from model-runs/530-camels/model_epoch030.pt
+[ERROR] 15:17:01.230 (logging_utils.py:exception_logging) -- Uncaught exception
+Traceback (most recent call last):
+  File "/home/gsnearing/googlehydrology-tutorial/flood-forecasting/googlehydrology/run.py", line 257, in <module>
+    _main()
+  File "/home/gsnearing/googlehydrology-tutorial/flood-forecasting/googlehydrology/run.py", line 119, in _main
+    eval_run(
+  File "/home/gsnearing/googlehydrology-tutorial/flood-forecasting/googlehydrology/run.py", line 253, in eval_run
+    start_evaluation(cfg=config, run_dir=run_dir, epoch=epoch, period=period)
+  File "/home/gsnearing/googlehydrology-tutorial/flood-forecasting/googlehydrology/evaluation/evaluate.py", line 41, in start_evaluation
+    tester.evaluate(
+  File "/home/gsnearing/googlehydrology-tutorial/flood-forecasting/googlehydrology/evaluation/tester.py", line 487, in evaluate
+    self._save_incremental_results(
+  File "/home/gsnearing/googlehydrology-tutorial/flood-forecasting/googlehydrology/evaluation/tester.py", line 643, in _save_incremental_results
+    ds.to_zarr(result_file, append_dim='basin', consolidated=False)
+  File "/home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/site-packages/xarray/core/dataset.py", line 2371, in to_zarr
+    return to_zarr(  # type: ignore[call-overload,misc]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/site-packages/xarray/backends/writers.py", line 797, in to_zarr
+    dump_to_store(dataset, zstore, writer, encoding=encoding)
+  File "/home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/site-packages/xarray/backends/writers.py", line 491, in dump_to_store
+    store.store(variables, attrs, check_encoding, writer, unlimited_dims=unlimited_dims)
+  File "/home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/site-packages/xarray/backends/zarr.py", line 1056, in store
+    self.set_variables(
+  File "/home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/site-packages/xarray/backends/zarr.py", line 1285, in set_variables
+    writer.add(v.data, zarr_array, region)
+  File "/home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/site-packages/xarray/backends/common.py", line 401, in add
+    target[region] = source
+    ~~~~~~^^^^^^^^
+  File "/home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/site-packages/zarr/core/array.py", line 2905, in __setitem__
+    self.set_orthogonal_selection(pure_selection, value, fields=fields)
+  File "/home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/site-packages/zarr/core/array.py", line 3357, in set_orthogonal_selection
+    return sync(
+           ^^^^^
+  File "/home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/site-packages/zarr/core/sync.py", line 156, in sync
+    finished, unfinished = wait([future], return_when=asyncio.ALL_COMPLETED, timeout=timeout)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/concurrent/futures/_base.py", line 305, in wait
+    waiter.event.wait(timeout)
+  File "/home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/threading.py", line 655, in wait
+    signaled = self._cond.wait(timeout)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/threading.py", line 355, in wait
+    waiter.acquire()
+KeyboardInterrupt

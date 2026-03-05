@@ -1,0 +1,162 @@
+allzero_samples_are_invalid: false
+batch_size: 256
+cache:
+  enabled: true
+  byte_limit: 10000000000
+clip_gradient_norm: 1
+clip_targets_to_zero:
+- streamflow
+commit_hash: 6988cf0
+dataset: multimet
+detect_anomaly: false
+device: cuda:0
+dynamics_data_dir: gs:/caravan-multimet/v1.1
+epochs: 30
+experiment_name: 530-camels
+forecast_embedding:
+  type: fc
+  hiddens:
+  - 20
+  - 20
+  - 20
+  - 20
+  activation:
+  - tanh
+  - tanh
+  - tanh
+  - linear
+  dropout: 0.0
+forecast_inputs:
+  hres:
+  - hres_surface_net_solar_radiation
+  - hres_surface_net_thermal_radiation
+  - hres_surface_pressure
+  - hres_temperature_2m
+  - hres_total_precipitation
+  graphcast:
+  - graphcast_temperature_2m
+  - graphcast_total_precipitation
+forecast_overlap: 365
+head: regression
+hidden_size: 256
+hindcast_embedding:
+  type: fc
+  hiddens:
+  - 100
+  - 20
+  activation:
+  - tanh
+  - linearn
+  dropout: 0.0
+hindcast_inputs:
+  hres:
+  - hres_surface_net_solar_radiation
+  - hres_surface_net_thermal_radiation
+  - hres_surface_pressure
+  - hres_temperature_2m
+  - hres_total_precipitation
+  graphcast:
+  - graphcast_temperature_2m
+  - graphcast_total_precipitation
+  imerg:
+  - imerg_precipitation
+  cpc:
+  - cpc_precipitation
+img_log_dir: 
+  /home/gsnearing/flood-forecasting/tutorial/model-runs/530-camels/img_log
+initial_forget_bias: 3
+initial_learning_rate: 0.0005
+lead_time: 7
+learning_rate_drop_factor: 0.5
+learning_rate_epochs_drop: 5
+learning_rate_strategy: ReduceLROnPlateau
+log_loss_every_nth_update: 50
+log_n_figures: 0
+logging_level: INFO
+loss: MSE
+max_updates_per_epoch: 2000
+metrics:
+- NSE
+- KGE
+model: mean_embedding_forecast_lstm
+num_workers: 2
+number_of_basins: 530
+optimizer: Adam
+output_dropout: 0.4
+package_version: 1.12.0
+predict_last_n: 8
+print_warnings_once: true
+run_dir: 
+  /home/gsnearing/flood-forecasting/tutorial/model-runs/530-camels
+seed: 642868
+seq_length: 365
+static_attributes:
+- area
+- p_mean
+- pet_mean_ERA5_LAND
+- pet_mean_FAO_PM
+- aridity_ERA5_LAND
+- aridity_FAO_PM
+- frac_snow
+- moisture_index_ERA5_LAND
+- moisture_index_FAO_PM
+- seasonality_ERA5_LAND
+- seasonality_FAO_PM
+- high_prec_freq
+- high_prec_dur
+- low_prec_freq
+- low_prec_dur
+- pet_mm_syr
+- ele_mt_smx
+- pre_mm_syr
+statics_data_dir: /home/gsnearing/flood-forecasting/tutorial/camels-updated-2025
+statics_embedding:
+  type: fc
+  hiddens:
+  - 100
+  - 100
+  - 20
+  activation:
+  - tanh
+  - tanh
+  - linear
+  dropout: 0.0
+target_noise_std: 0.005
+target_variables:
+- streamflow
+targets_data_dir: /home/gsnearing/flood-forecasting/tutorial/camels-updated-2025
+test_basin_file: 
+  /home/gsnearing/flood-forecasting/tutorial/basin-lists/670-camels.txt
+test_end_date: 31/12/2024
+test_start_date: 01/01/2022
+tester_sample_reduction: median
+tester_skip_obs_all_nan: true
+timestep_counter: true
+train_basin_file: 
+  /home/gsnearing/flood-forecasting/tutorial/basin-lists/530-camels.txt
+train_dir: 
+  /home/gsnearing/flood-forecasting/tutorial/model-runs/530-camels/train_data
+train_end_date: 31/12/2020
+train_start_date: 01/01/2000
+union_mapping:
+  cpc_precipitation: era5land_total_precipitation
+  imerg_precipitation: era5land_total_precipitation
+  graphcast_temperature_2m: era5land_temperature_2m
+  graphcast_total_precipitation: era5land_total_precipitation
+  graphcast_u_component_of_wind_10m: era5land_u_component_of_wind_10m
+  graphcast_v_component_of_wind_10m: era5land_v_component_of_wind_10m
+  hres_surface_net_solar_radiation: era5land_surface_net_solar_radiation
+  hres_surface_net_thermal_radiation: era5land_surface_net_thermal_radiation
+  hres_surface_pressure: era5land_surface_pressure
+  hres_temperature_2m: era5land_temperature_2m
+  hres_total_precipitation: era5land_total_precipitation
+validate_every: 1
+validate_n_random_basins: -1
+validation_basin_file: 
+  /home/gsnearing/flood-forecasting/tutorial/basin-lists/530-camels.txt
+validation_end_date: 31/12/2024
+validation_start_date: 01/01/2022
+weight_init_opts:
+- lstm-ih-xavier
+- lstm-hh-orthogonal
+- fc-xavier
