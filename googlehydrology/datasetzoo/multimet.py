@@ -814,7 +814,12 @@ class Multimet(Dataset):
                     if basin not in basin_fallback_cache:
                         if fallback_file_path.exists():
                             # Load and set time column as index (only once per basin)
-                            df_fallback = pd.read_csv(fallback_file_path, index_col=0, parse_dates=True)
+                            df_fallback = pd.read_csv(
+                                fallback_file_path,
+                                index_col=0,
+                                parse_dates=True,
+                                dtype='float32'
+                            )
                             df_fallback.index.name = 'date'
                             basin_fallback_cache[basin] = df_fallback
                         else:
