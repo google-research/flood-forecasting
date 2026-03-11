@@ -1055,7 +1055,7 @@ def _convert_to_tensor(
 
 @functools.cache
 def _open_zarr(path: Path) -> xr.Dataset:
-    path = str(path).replace('gs:/', 'gs://')
+    path = path.as_posix().replace('gs:/', 'gs://')
     return xr.open_zarr(store=path, chunks='auto', decode_timedelta=True)
 
 
