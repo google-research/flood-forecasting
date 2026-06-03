@@ -2,7 +2,7 @@
 Quick Start
 ===========
 
-This guide will help you get up and running with the **GoogleHydrology Flood Forecasting** repository.
+This guide will help you get up and running with the **OpenHydroNet Flood Forecasting** repository.
 
 ---------------
 Obtain the Code
@@ -75,7 +75,7 @@ Once your environment is active, install the package in **editable mode**. This 
 Data Setup
 ----------
 
-GoogleHydrology uses the `Caravan <https://www.nature.com/articles/s41597-023-01975-w>`_ dataset for streamflow observations and static catchment attributes.
+OpenHydroNet uses the `Caravan <https://www.nature.com/articles/s41597-023-01975-w>`_ dataset for streamflow observations and static catchment attributes.
 
 Download Caravan (NetCDF Version)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
