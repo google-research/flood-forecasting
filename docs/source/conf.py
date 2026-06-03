@@ -95,7 +95,7 @@ def copy_notebooks(app):
     
     # Mapping: Source relative to tutorial/ -> Destination relative to tutorial/
     notebooks = {
-        'OpenHydroNet Tutorial.ipynb': 'OpenHydroNet Tutorial.ipynb',
+        'OpenHydroNet_Tutorial.ipynb': 'OpenHydroNet_Tutorial.ipynb',
     }
 
     if not tutorial_dir.exists():

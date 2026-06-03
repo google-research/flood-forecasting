@@ -11,7 +11,7 @@ Interactive Version
 You can run this tutorial interactively in your browser using Google Colab. This is the recommended way to get started as it provides a pre-configured environment with all necessary dependencies.
 
 .. image:: https://colab.research.google.com/assets/colab-badge.svg
-   :target: https://colab.research.google.com/github/google-research/flood-forecasting/blob/main/OpenHydroNet Tutorial.ipynb
+   :target: https://colab.research.google.com/github/google-research/flood-forecasting/blob/main/OpenHydroNet_Tutorial.ipynb
    :alt: Open In Colab
 
 Core Concepts
@@ -58,4 +58,4 @@ Notebook File
 -------------
 
 The source notebook for this tutorial can be found in the root of the repository:
-``flood-forecasting/tutorial/OpenHydroNet Tutorial.ipynb``
+``flood-forecasting/tutorial/OpenHydroNet_Tutorial.ipynb``
