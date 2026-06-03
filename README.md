@@ -52,7 +52,7 @@ We recommend using **Conda** to manage dependencies like PyTorch and CUDA.
 
 ## **🚀 Tutorial Notebook**
 
-The most direct way to explore this repository is through our interactive tutorial: [**GoogleHydrology Tutorial Notebook**](https://www.google.com/search?q=./GoogleHydrology_Evaluation_Notebook_with_Fine_Tuning.ipynb).
+The most direct way to explore this repository is through our interactive tutorial: [**OpenHydroNet Tutorial Notebook**](https://colab.research.google.com/github/google-research/flood-forecasting/blob/main/tutorial/OpenHydroNet_Tutorial.ipynb).
 
 **What you will learn:**
 
@@ -61,11 +61,11 @@ The most direct way to explore this repository is through our interactive tutori
 * **Visualizing Results:** Compare model hydrographs against observed discharge data.
 
 **Run it now:** 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/google-research/flood-forecasting/blob/main/GoogleHydrology_Evaluation_Notebook_with_Fine_Tuning.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/google-research/flood-forecasting/blob/main/tutorial/OpenHydroNet_Tutorial.ipynb)
 
 ## **Data Setup**
 
-GoogleHydrology uses the [Caravan](https://www.nature.com/articles/s41597-023-01975-w) dataset for streamflow observations and static catchment attributes.
+OpenHydroNet uses the [Caravan](https://www.nature.com/articles/s41597-023-01975-w) dataset for streamflow observations and static catchment attributes.
 
 ### **1\. Download Caravan (NetCDF Version)**
 

@@ -85,7 +85,7 @@ html_static_path = ['_static']
 
 # -- Napoleon autodoc options -------------------------------------------------
 napoleon_numpy_docstring = True
-
+nbsphinx_execute = 'never'
 
 def copy_notebooks(app):
     """Copies notebooks from the tutorial directory to the source directory."""
@@ -95,7 +95,7 @@ def copy_notebooks(app):
     
     # Mapping: Source relative to tutorial/ -> Destination relative to tutorial/
     notebooks = {
-        'OpenHydroNet Tutorial.ipynb': 'OpenHydroNet Tutorial.ipynb',
+        'OpenHydroNet_Tutorial.ipynb': 'OpenHydroNet_Tutorial.ipynb',
     }
 
     if not tutorial_dir.exists():
