@@ -59,3 +59,8 @@ Notebook File
 
 The source notebook for this tutorial can be found in the root of the repository:
 ``flood-forecasting/tutorial/OpenHydroNet_Tutorial.ipynb``
+
+.. toctree::
+   :maxdepth: 1
+
+   OpenHydroNet_Tutorial
