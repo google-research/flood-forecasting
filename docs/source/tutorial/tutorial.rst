@@ -11,7 +11,7 @@ Interactive Version
 You can run this tutorial interactively in your browser using Google Colab. This is the recommended way to get started as it provides a pre-configured environment with all necessary dependencies.
 
 .. image:: https://colab.research.google.com/assets/colab-badge.svg
-   :target: https://colab.research.google.com/github/google-research/flood-forecasting/blob/main/GoogleHydrology_Evaluation_Notebook_with_Fine_Tuning.ipynb
+   :target: https://colab.research.google.com/github/google-research/flood-forecasting/blob/main/OpenHydroNet Tutorial.ipynb
    :alt: Open In Colab
 
 Core Concepts
@@ -27,7 +27,7 @@ This tutorial is structured to provide insights into five core areas of hydrolog
 2. **Fine-Tune for a Specific Basin**
    Understand the process of adapting a pre-trained model to improve its performance on a specific target or region that might be "out-of-distribution" compared to the base model's training data.
 
-3. **Running ``googlehydrology`` Models**
+3. **Running Models**
    Gain practical experience generating and understanding the command-line arguments for training (``train``), fine-tuning (``finetune``), and performing inference (``infer``). You will learn how to prepare configuration files and execute these operations in a terminal environment.
 
 4. **Model Performance Analysis**
@@ -47,7 +47,7 @@ Prerequisites
 To run this tutorial locally, ensure you have:
 
 * **Python 3.12**
-* The ``googlehydrology`` package installed (follow the :doc:`install instructions </usage/quickstart>`).
+* The OpenHydroNet package installed (follow the :doc:`install instructions </usage/quickstart>`).
 
 Data Requirements
 -----------------
@@ -58,4 +58,4 @@ Notebook File
 -------------
 
 The source notebook for this tutorial can be found in the root of the repository:
-``flood-forecasting/tutorial/GoogleHydrology_Evaluation_Notebook_with_Fine_Tuning.ipynb``
+``flood-forecasting/tutorial/OpenHydroNet Tutorial.ipynb``

@@ -37,9 +37,9 @@ about = {}
 with open('../../googlehydrology/__about__.py', 'r') as fp:
     exec(fp.read(), about)
 
-project = 'GoogleHydrology'
+project = 'OpenHydroNet'
 copyright = f'{datetime.datetime.now().year}, Google Research'
-author = 'Grey Nearing, adapted from work by Frederik Kratzert'
+author = 'Grey Nearing, adapted from work by Frederik Kratzert and others.'
 
 # The full version, including alpha/beta/rc tags
 release = about['__version__']
@@ -95,7 +95,7 @@ def copy_notebooks(app):
     
     # Mapping: Source relative to tutorial/ -> Destination relative to tutorial/
     notebooks = {
-        'googlehydrology-tutorial.ipynb': 'googlehydrology-tutorial.ipynb',
+        'openhydronet-tutorial.ipynb': 'openhydronet-tutorial.ipynb',
     }
 
     if not tutorial_dir.exists():
