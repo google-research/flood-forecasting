@@ -13,6 +13,9 @@ This repository is a fork of [NeuralHydrology](https://github.com/neuralhydrolog
 Detailed instructions on how to configure, train, and evaluate OpenHydroNet models can be found on our official documentation page:
 👉 **[openhydronet.readthedocs.io](https://openhydronet.readthedocs.io/)**
 
+Watch our high-level video introduction to the interactive tutorial on YouTube:
+[![OpenHydroNet Tutorial](https://img.youtube.com/vi/431Kr3mxidU/maxresdefault.jpg)](https://www.youtube.com/watch?v=431Kr3mxidU)
+
 ## **Models**
 
 This repository contains implementations of the core models used in Google's production forecasting systems.
