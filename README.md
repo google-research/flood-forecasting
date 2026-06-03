@@ -1,12 +1,17 @@
 # **OpenHydroNet: Riverine Flood Forecasting**
 
-### **🌊 This repository implements the state-of-the-art models that power [Google FloodHub](https://sites.research.google/floods/).**
+## **🌊 This repository implements the state-of-the-art models that power [Google FloodHub](https://sites.research.google/floods/).**
 
 This is not an officially supported Google product. This project is not eligible for the Google Open Source Software Vulnerability Rewards Program.
 
 The repository provides open-source replication of Google’s global flood-forecasting models. By open-sourcing these models, we aim to foster transparency, enable in-house integration in production systems, and accelerate academic research.
 
 This repository is a fork of [NeuralHydrology](https://github.com/neuralhydrology/neuralhydrology), which has been heavily modified and extended to support forecast sequences using the specific model architectures that are used operationally in the Google FloodHub.
+
+## 📖 Documentation
+
+Detailed instructions on how to configure, train, and evaluate OpenHydroNet models can be found on our official documentation page:
+👉 **[openhydronet.readthedocs.io](https://openhydronet.readthedocs.io/)**
 
 ## **Models**
 
