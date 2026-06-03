@@ -1,4 +1,4 @@
-# **Flood Forecasting**
+# **OpenHydroNet: Riverine Flood Forecasting**
 
 ### **🌊 This repository implements the state-of-the-art models that power [Google FloodHub](https://sites.research.google/floods/).**
 
