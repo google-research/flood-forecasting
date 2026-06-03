@@ -14,7 +14,7 @@ Detailed instructions on how to configure, train, and evaluate OpenHydroNet mode
 👉 **[openhydronet.readthedocs.io](https://openhydronet.readthedocs.io/)**
 
 Watch our high-level video introduction to the interactive tutorial on YouTube:
-[![OpenHydroNet Tutorial]](https://www.youtube.com/watch?v=431Kr3mxidU)
+[OpenHydroNet Tutorial](https://www.youtube.com/watch?v=431Kr3mxidU)
 
 ## **Models**
 
