@@ -69,8 +69,6 @@ PRODUCT_ALIASES = {
     'graphcast': 'GRAPHCAST',
     'hres': 'HRES',
     'imerg': 'IMERG',
-    'gefsv12': 'GEFSv12_ens01',
-    'gefs': 'GEFSv12_ens01',
 }
 
 
@@ -709,15 +707,24 @@ class Multimet(Dataset):
         return self._load_hindcast_as_zarr()
 
     def _load_hindcast_as_zarr(self) -> list[xr.Dataset]:
-        # Prepare hindcast features to load, including the masks of union_mapping
-        features = set(self._hindcast_features) | set(
-            (self._union_mapping or {}).values()
-        )
-
-        # Separate products and bands for each product from feature names.
+        # Separate products and bands for each product from the configured
+        # hindcast inputs.
         product_bands = _get_products_and_bands_from_features(
             self._hindcast_inputs
         )
+
+        # Also load fallback variables used by union_mapping. This preserves the
+        # previous behavior where fallback features did not have to be listed
+        # explicitly in hindcast_inputs.
+        if self._union_mapping:
+            union_product_bands = _get_products_and_bands_from_feature_strings(
+                self._union_mapping.values()
+            )
+            for product, bands in union_product_bands.items():
+                product_bands.setdefault(product, [])
+                for band in bands:
+                    if band not in product_bands[product]:
+                        product_bands[product].append(band)
 
         # Initialize storage for product/band dataframes that will eventually be concatenated.
         product_dss = []
@@ -791,7 +798,7 @@ class Multimet(Dataset):
         base_dir = self._dynamics_data_path / 'timeseries' / 'csv'
         
         # Cache for fallback files, loaded only once per basin for efficiency
-        basin_fallback_cache: Dict[str, pd.DataFrame] = {}
+        basin_fallback_cache: dict[str, pd.DataFrame] = {}
 
         # Load data for the selected products, bands, and basins.
         for basin in self._basins:
@@ -1101,6 +1108,15 @@ def _canonical_product_name(product: str) -> str:
     return PRODUCT_ALIASES.get(_normalize_product_key(product), product)
 
 
+def _product_name_from_feature(feature: str) -> str:
+    normalized_feature = _normalize_product_key(feature)
+    for alias in sorted(PRODUCT_ALIASES, key=len, reverse=True):
+        if normalized_feature.startswith(alias):
+            return PRODUCT_ALIASES[alias]
+
+    return feature.split('_')[0].upper()
+
+
 def _get_products_and_bands_from_feature_strings(
     features: Iterable[str],
 ) -> dict[str, list[str]]:
@@ -1109,20 +1125,18 @@ def _get_products_and_bands_from_feature_strings(
 
     Parameters
     ----------
-    features : list[str]
-        A list of features in the format `<product>_<band>. This is the format for feature
-        names in the Multimet dataset.
+    features : Iterable[str]
+        Feature names in the format '<product>_<band>'.
 
     Returns
     -------
     dict[str, list[str]]
-        Keys are product names and values are a list of features for that product. Features
-        remain in the format <product>_<band>.
+        Keys are canonical product names and values are lists of features.
+        Feature names are preserved.
     """
     product_bands = {}
     for feature in features:
-        product = feature.split('_')[0]
-        product = _canonical_product_name(product)
+        product = _product_name_from_feature(feature)
         product_bands.setdefault(product, []).append(feature)
     return product_bands
 
@@ -1197,6 +1211,7 @@ class SampleIndexer:
 
     def get_column(self, dim: str):
         return next(v for (k, v) in self._aligned_indices if k == dim)
+
 
 def rechunk(ds: xr.Dataset | xr.DataTree) -> xr.Dataset:
     return ds.chunk('auto').unify_chunks()
