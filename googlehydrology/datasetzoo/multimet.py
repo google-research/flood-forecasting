@@ -127,7 +127,10 @@ class MultimetDataLoader(torch.utils.data.DataLoader):
                 {k: _convert_to_tensor(k, v) for k, v in sample.items()}
                 for sample in batch
             ]
-            yield self.collate_fn(batch)
+            batch = self.collate_fn(batch)
+
+            del indices
+            yield batch
 
     def __len__(self):
         return len(self.batch_sampler)
@@ -149,8 +152,8 @@ class Multimet(Dataset):
         is created and also stored to disk. If False, the scaler must be calculated (`compute_scaler` must be True).
     period : {'train', 'validation', 'test'}
         Defines the period for which the data will be loaded
-    basin : str, optional
-        If passed, the data for only this basin will be loaded. Otherwise, the basin(s) is(are) read from the
+    basins : list[str], optional
+        If passed, the data for only these basins will be loaded. Otherwise, the basin(s) is(are) read from the
         appropriate basin file, corresponding to the `period`.
     compute_scaler : bool
         Forces the dataset to calculate a new scaler instead of loading a precalculated scaler. Used during training, but
@@ -162,7 +165,7 @@ class Multimet(Dataset):
         cfg: Config,
         is_train: bool,
         period: str,
-        basin: str = None,
+        basins: list[str] | None = None,
         compute_scaler: bool = True,
     ):
         self._cfg = cfg
@@ -227,9 +230,9 @@ class Multimet(Dataset):
                 )
 
         # TODO (future) :: Consolidate the basin list loading somewhere instead of in two different places.
-        self._basins = [basin]
-        if basin is None:
-            self._basins = load_basin_file(getattr(cfg, f'{period}_basin_file'))
+        self._basins = basins or load_basin_file(
+            getattr(cfg, f'{period}_basin_file')
+        )
 
         # Load & preprocess the data.
         LOGGER.debug('load data')
@@ -332,6 +335,12 @@ class Multimet(Dataset):
         (self.scaler.scaler,) = dask.compute(self.scaler.scaler)
         memory.release()
 
+        LOGGER.debug('scaler check zero scale')
+        self.scaler.check_zero_scale()
+        if compute_scaler:
+            LOGGER.debug('scaler save')
+            self.scaler.save()
+
         LOGGER.debug('scale data')
         self._dataset = self.scaler.scale(self._dataset)
 
@@ -351,15 +360,6 @@ class Multimet(Dataset):
         LOGGER.debug(f'Dataset size: {sizeof(self._dataset) / 1024**2} MB')
         LOGGER.debug(f'Dataset on disk: {self._dataset.nbytes / 1024**2} MB')
         LOGGER.debug(f'Sample index size: {sizeof(indices) / 1024**2} MB')
-
-        # TODO(future) :: Move above to the scalar compute block
-        LOGGER.debug('scaler check zero scale')
-        self.scaler.check_zero_scale()
-        LOGGER.debug('scaler save')
-
-        # Don't save the scaler if we are finetuning
-        if not cfg.is_finetuning:
-            self.scaler.save()  
 
         # Create sample index lookup table for `__getitem__`.
         LOGGER.debug('create sample index')
@@ -407,15 +407,18 @@ class Multimet(Dataset):
             raise ValueError(f'Requested index {item} is not an integer.')
 
         # TODO (future) :: Suggest remove outer keys and use only feature names. Major change required.
+        sample_index = self._sample_index[item]
         sample = {
-            'date': self._extract_dates(item),
-            'x_s': self._extract_statics(item),
-            'x_d_hindcast': self._extract_hindcasts(item),
-            'x_d_forecast': self._extract_forecasts(item),
-            'y': self._extract_targets(item),
+            'date': self._extract_dates(sample_index),
+            'x_s': self._extract_statics(sample_index),
+            'x_d_hindcast': self._extract_hindcasts(sample_index),
+            'x_d_forecast': self._extract_forecasts(sample_index),
+            'y': self._extract_targets(sample_index),
         }
         if self._per_basin_target_stds is not None:
-            sample['per_basin_target_stds'] = self._extract_per_basin_stds(item)
+            sample['per_basin_target_stds'] = self._extract_per_basin_stds(
+                sample_index
+            )
         if self._hindcast_counter is not None:
             sample['x_d_hindcast']['hindcast_counter'] = np.expand_dims(
                 self._hindcast_counter, -1
@@ -431,37 +434,42 @@ class Multimet(Dataset):
             _ = sample.pop('x_d_forecast')
 
         # Can't use strings. Torch does not support it in tensors.
-        sample['basin_index'] = np.array(
-            self._sample_index[item]['basin'], dtype=np.int16
-        )
+        basin_index = sample_index['basin']
+        # Use signed type: -1 handles limits, e.g. 128 > -128 > -129 > int16.
+        min_dtype = np.min_scalar_type(-int(basin_index)  - 1)
+        sample['basin_index'] = np.array(basin_index , dtype=min_dtype)
 
         return sample
 
-    def _calc_date_range(self, item: int, *, lead: bool = False) -> range:
-        date = self._sample_index[item]['date']
+    def _calc_date_range(
+        self, sample_index: dict[str, int], *, lead: bool = False
+    ) -> range:
+        date = sample_index['date']
         duration = self._seq_length - 1
         if not lead and not self._lead_times:
             return range(date - duration, date + 1)
         end = date + self.lead_time
         return range(end - duration, end + 1)
 
-    def _extract_dates(self, item: int) -> np.ndarray:
-        date = self._calc_date_range(item)
+    def _extract_dates(self, sample_index: dict[str, int]) -> np.ndarray:
+        date = self._calc_date_range(sample_index)
         features = self._extract_dataset(
             self._dataset, ['date'], {'date': date}
         )
         return features['date']
 
-    def _extract_statics(self, item: int) -> np.ndarray:
-        basin = self._sample_index[item]['basin']
+    def _extract_statics(self, sample_index: dict[str, int]) -> np.ndarray:
+        basin = sample_index['basin']
         features = self._extract_dataset(
             self._dataset, self._static_features, {'basin': basin}
         )
         return np.stack([features[e] for e in self._static_features], axis=-1)
 
-    def _extract_hindcasts(self, item: int) -> dict[str, np.ndarray]:
+    def _extract_hindcasts(
+        self, sample_index: dict[str, int]
+    ) -> dict[str, np.ndarray]:
         # Extract hindcast features without lead_time.
-        dim_indexes_without_lead_time = self._sample_index[item].copy()
+        dim_indexes_without_lead_time = sample_index.copy()
         dim_indexes_without_lead_time['date'] = range(
             dim_indexes_without_lead_time['date'] - self._seq_length + 1,
             dim_indexes_without_lead_time['date'] + 1,
@@ -474,7 +482,7 @@ class Multimet(Dataset):
 
         # Forecast features with lead_time may be used as hindcast features. In that case, we select
         # only the first lead_time value, and move selection period one day backwards.
-        dim_indexes_with_lead_time = self._sample_index[item].copy()
+        dim_indexes_with_lead_time = sample_index.copy()
         dim_indexes_with_lead_time['lead_time'] = 0
         dim_indexes_with_lead_time['date'] = range(
             dim_indexes_with_lead_time['date'] - self._seq_length,
@@ -494,12 +502,14 @@ class Multimet(Dataset):
         # There is no need for this except that it is how basedataset works, and everything else expects
         # the trailing dim. Remove this dependency in the future.
 
-    def _extract_forecasts(self, item: int) -> dict[str, np.ndarray]:
+    def _extract_forecasts(
+        self, sample_index: dict[str, int]
+    ) -> dict[str, np.ndarray]:
         features = self._extract_dataset(
-            self._dataset, self._forecast_features, self._sample_index[item]
+            self._dataset, self._forecast_features, sample_index
         )
         if self._forecast_overlap is not None and self._forecast_overlap > 0:
-            dim_indexes = self._sample_index[item].copy()
+            dim_indexes = sample_index.copy()
             dim_indexes['date'] = range(
                 dim_indexes['date']
                 + 1
@@ -523,20 +533,22 @@ class Multimet(Dataset):
         # There is no need for this except that it is how basedataset works, and everything else expects
         # the trailing dim. Remove this dependency in the future.
 
-    def _extract_targets(self, item: int) -> np.ndarray:
-        dim_indexes = self._sample_index[item].copy()
-        dim_indexes['date'] = self._calc_date_range(item, lead=True)
+    def _extract_targets(self, sample_index: dict[str, int]) -> np.ndarray:
+        dim_indexes = sample_index.copy()
+        dim_indexes['date'] = self._calc_date_range(sample_index, lead=True)
         features = self._extract_dataset(
             self._dataset, self._target_features, dim_indexes
         )
         return np.stack([features[e] for e in self._target_features], axis=-1)
 
-    def _extract_per_basin_stds(self, item: int) -> np.ndarray:
+    def _extract_per_basin_stds(
+        self, sample_index: dict[str, int]
+    ) -> np.ndarray:
         assert self._per_basin_target_stds is not None
         features = self._extract_dataset(
             self._per_basin_target_stds,
             self._target_features,
-            {'basin': self._sample_index[item]['basin']},
+            {'basin': sample_index['basin']},
         )
         return np.expand_dims(
             np.stack([features[e] for e in self._target_features], axis=-1),
@@ -685,10 +697,8 @@ class Multimet(Dataset):
         LOGGER.debug('merge')
         ds = xr.merge(datasets, join='outer')
 
-        LOGGER.debug('chunk')
-        ds = ds.chunk('auto')
-        LOGGER.debug('unify_chunks')
-        ds = ds.unify_chunks()
+        LOGGER.debug('rechunk')
+        ds = rechunk(ds)
 
         return ds
 
@@ -750,12 +760,21 @@ class Multimet(Dataset):
         return product_dss
 
     def _load_hindcast_as_csv(self) -> xr.Dataset:
-        return load_caravan_timeseries_together(
+        """Load hindcast data and add a 0-day lead_time dimension."""
+        ds = load_caravan_timeseries_together(
             data_dir=self._dynamics_data_path,
             basins=self._basins,
             target_features=self._hindcast_features,
             csv=True,
         )
+        
+        # Expand dimensions to include a 0-day lead time coordinate
+        ds = ds.expand_dims(lead_time=[pd.Timedelta(0, unit='D')])
+        
+        # Match the units attribute from the forecast loading logic
+        ds['lead_time'].attrs['units'] = 'timedelta (days)'
+        
+        return ds
 
     def _load_forecast_as_csv(self) -> xr.Dataset:
         """Load Caravan-Multimet data for forecast features with file fallback logic.
@@ -795,9 +814,15 @@ class Multimet(Dataset):
                 if lead_time_file_path.exists():
                     
                     # Load and set time column as index. Column names (lead times) become data.
-                    df = pd.read_csv(lead_time_file_path, index_col=0, parse_dates=True)
+                    # Load directly as float32 to save memory (avoids astype() copying later)
+                    df = pd.read_csv(
+                        lead_time_file_path, 
+                        index_col=0, 
+                        parse_dates=True, 
+                        dtype='float32'
+                    )
                     df.index.name = 'date'
-                    
+
                     # Melt lead times from columns into a new dimension/level
                     # The column headers (lead times) are currently strings, e.g., '0', '1', '2'
                     ds_melt = df.stack().to_frame(name=feature)
@@ -808,9 +833,9 @@ class Multimet(Dataset):
                     
                     # Convert lead_time from string/int to Timedelta for consistency.
                     if 'lead_time' in da.coords:
-                        # Assuming the numbers in the column headers represent lead time in hours ('h').
-                        da['lead_time'] = pd.to_timedelta(da['lead_time'].astype(int), unit='h')
-                        da['lead_time'].attrs['units'] = 'timedelta (hours)'
+                        # Convert column headers to represent lead time in days ('D').
+                        da['lead_time'] = pd.to_timedelta(da['lead_time'].astype(int), unit='D')
+                        da['lead_time'].attrs['units'] = 'timedelta (days)'
 
 
                 # --- 2. Fallback to file without lead time (Structure: rows=date, cols=feature) ---
@@ -820,7 +845,12 @@ class Multimet(Dataset):
                     if basin not in basin_fallback_cache:
                         if fallback_file_path.exists():
                             # Load and set time column as index (only once per basin)
-                            df_fallback = pd.read_csv(fallback_file_path, index_col=0, parse_dates=True)
+                            df_fallback = pd.read_csv(
+                                fallback_file_path,
+                                index_col=0,
+                                parse_dates=True,
+                                dtype='float32'
+                            )
                             df_fallback.index.name = 'date'
                             basin_fallback_cache[basin] = df_fallback
                         else:
@@ -935,7 +965,7 @@ class Multimet(Dataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, basin).
         """
-        if self._cfg.load_target_features_parallel_processes < 2:
+        if self._cfg.experimental_load_target_features_parallel_processes < 2:
             return load_caravan_timeseries_together(
                 self._targets_data_path,
                 self._basins,
@@ -964,7 +994,7 @@ class Multimet(Dataset):
 
         batch_size = math.ceil(
             len(self._basins)
-            / self._cfg.load_target_features_parallel_processes
+            / self._cfg.experimental_load_target_features_parallel_processes
         )
         batches = itertools.batched(self._basins, batch_size)
         processes = tuple(map(create_loader_process, batches))
@@ -1065,7 +1095,7 @@ def _convert_to_tensor(
 
 @functools.cache
 def _open_zarr(path: Path) -> xr.Dataset:
-    path = str(path).replace('gs:/', 'gs://')
+    path = path.as_posix().replace('gs:/', 'gs://')
     return xr.open_zarr(store=path, chunks='auto', decode_timedelta=True)
 
 
@@ -1141,3 +1171,6 @@ class SampleIndexer:
 
     def get_column(self, dim: str):
         return next(v for (k, v) in self._aligned_indices if k == dim)
+
+def rechunk(ds: xr.Dataset | xr.DataTree) -> xr.Dataset:
+    return ds.chunk('auto').unify_chunks()

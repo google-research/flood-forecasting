@@ -680,10 +680,12 @@ class Config(object):
         return self._cfg.get('use_swap_memory', None)
 
     @property
-    def load_target_features_parallel_processes(self) -> int:
-        return max(
-            1, self._cfg.get('load_target_features_parallel_processes') or 1
+    def experimental_load_target_features_parallel_processes(self) -> int:
+        """Return num processes to load target features' netCDFs in parallel."""
+        value = self._cfg.get(
+            'experimental_load_target_features_parallel_processes'
         )
+        return max(1, value or 1)
 
     @property
     def predict_last_n(self) -> int | dict[str, int]:

@@ -22,7 +22,6 @@ General experiment configurations
 -  ``device``: Device to use, e.g., ``cuda:0``, ``cpu``, or ``mps``.
 -  ``cache``: A dictionary with keys ``enabled`` (bool) and ``byte_limit`` (int) to control opportunistic caching of data.
 -  ``use_swap_memory``: True/False. Whether to enable ``distributed.p2p.storage.disk`` explicitly for dask.
--  ``load_target_features_parallel_processes``: Integer. Number of processes to use to load target features' netCDF files in parallel.
 
 Validation settings
 -------------------
@@ -154,7 +153,7 @@ Logger settings
    a value of 5 saves 50ms per iteration on average which translates to 1.5h
    given 2000 updates for 30 epocs.
 
--  ``save_git_diff``: If set to True and GoogleHydrology is a git repository
+-  ``save_git_diff``: If set to True and OpenHydroNet is a git repository
    with uncommitted changes, the git diff will be stored in the run directory.
    When using this option, make sure that your run and data directories are either
    not located inside the git repository, or that they are part of the ``.gitignore`` file.

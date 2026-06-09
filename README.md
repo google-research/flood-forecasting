@@ -1,12 +1,20 @@
-# **Flood Forecasting**
+# **OpenHydroNet: Riverine Flood Forecasting**
 
-### **🌊 This repository implements the state-of-the-art models that power [Google FloodHub](https://sites.research.google/floods/).**
+## **🌊 This repository implements the state-of-the-art models that power [Google FloodHub](https://sites.research.google/floods/).**
 
 This is not an officially supported Google product. This project is not eligible for the Google Open Source Software Vulnerability Rewards Program.
 
 The repository provides open-source replication of Google’s global flood-forecasting models. By open-sourcing these models, we aim to foster transparency, enable in-house integration in production systems, and accelerate academic research.
 
 This repository is a fork of [NeuralHydrology](https://github.com/neuralhydrology/neuralhydrology), which has been heavily modified and extended to support forecast sequences using the specific model architectures that are used operationally in the Google FloodHub.
+
+## 📖 Documentation
+
+Detailed instructions on how to configure, train, and evaluate OpenHydroNet models can be found on our official documentation page:
+👉 **[openhydronet.readthedocs.io](https://openhydronet.readthedocs.io/)**
+
+Watch our high-level video introduction to the interactive tutorial on YouTube:
+[OpenHydroNet Tutorial Video](https://www.youtube.com/watch?v=431Kr3mxidU)
 
 ## **Models**
 
@@ -52,7 +60,7 @@ We recommend using **Conda** to manage dependencies like PyTorch and CUDA.
 
 ## **🚀 Tutorial Notebook**
 
-The most direct way to explore this repository is through our interactive tutorial: [**GoogleHydrology Tutorial Notebook**](https://www.google.com/search?q=./GoogleHydrology_Evaluation_Notebook_with_Fine_Tuning.ipynb).
+The most direct way to explore this repository is through our interactive tutorial: [**OpenHydroNet Tutorial Notebook**](https://colab.research.google.com/github/google-research/flood-forecasting/blob/main/tutorial/OpenHydroNet_Tutorial.ipynb).
 
 **What you will learn:**
 
@@ -61,11 +69,11 @@ The most direct way to explore this repository is through our interactive tutori
 * **Visualizing Results:** Compare model hydrographs against observed discharge data.
 
 **Run it now:** 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/google-research/flood-forecasting/blob/main/GoogleHydrology_Evaluation_Notebook_with_Fine_Tuning.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/google-research/flood-forecasting/blob/main/tutorial/OpenHydroNet_Tutorial.ipynb)
 
 ## **Data Setup**
 
-GoogleHydrology uses the [Caravan](https://www.nature.com/articles/s41597-023-01975-w) dataset for streamflow observations and static catchment attributes.
+OpenHydroNet uses the [Caravan](https://www.nature.com/articles/s41597-023-01975-w) dataset for streamflow observations and static catchment attributes.
 
 ### **1\. Download Caravan (NetCDF Version)**
 

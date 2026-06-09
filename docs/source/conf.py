@@ -37,9 +37,9 @@ about = {}
 with open('../../googlehydrology/__about__.py', 'r') as fp:
     exec(fp.read(), about)
 
-project = 'GoogleHydrology'
+project = 'OpenHydroNet'
 copyright = f'{datetime.datetime.now().year}, Google Research'
-author = 'Grey Nearing, adapted from work by Frederik Kratzert'
+author = 'Grey Nearing, adapted from work by Frederik Kratzert and others.'
 
 # The full version, including alpha/beta/rc tags
 release = about['__version__']
@@ -85,7 +85,7 @@ html_static_path = ['_static']
 
 # -- Napoleon autodoc options -------------------------------------------------
 napoleon_numpy_docstring = True
-
+nbsphinx_execute = 'never'
 
 def copy_notebooks(app):
     """Copies notebooks from the tutorial directory to the source directory."""
@@ -95,7 +95,7 @@ def copy_notebooks(app):
     
     # Mapping: Source relative to tutorial/ -> Destination relative to tutorial/
     notebooks = {
-        'googlehydrology-tutorial.ipynb': 'googlehydrology-tutorial.ipynb',
+        'OpenHydroNet_Tutorial.ipynb': 'OpenHydroNet_Tutorial.ipynb',
     }
 
     if not tutorial_dir.exists():

@@ -16,49 +16,48 @@
 # conda env create -f environments/conda.yml
 
 name: googlehydrology
-channels:  # Order matters
+channels:  # Keep order
   - pytorch
   - nvidia
   - conda-forge
   - defaults
 dependencies:
-  - absl-py
-  - bokeh
-  - cachey
-  - cuda-toolkit 
+  - absl-py=2.3.*
+  - bokeh=3.8.1
+  - cachey=0.2.1
+  - cuda-toolkit=12.4.*
   - cuda-version=12.4
-  - dask
-  - gcsfs
-  - geopandas
+  - dask=2025.12.0
+  - gcsfs=2025.12.*
+  - geopandas=1.1.*
   - gh
-  - h5netcdf
-  - h5py
-  - hdf5
+  - h5netcdf=1.7.3
+  - h5py=3.15.1  # Sets the underlying C library "hdf5", letting h5py set it.
   - ipython
   - jupyter
-  - matplotlib
-  - more-itertools
-  - nbsphinx
-  - netcdf4
-  - numpy
-  - pandas
-  - parso
-  - pydantic
+  - matplotlib=3.10.*
+  - more-itertools=10.8.*
+  - nbsphinx=0.9.8
+  - netcdf4=1.7.3
+  - numpy=2.4.*
+  - pandas=2.3.*
+  - parso=0.8.5
+  - pydantic=2.12.*
   - pytest
   - pytest-cov
   - pytest-xdist
-  - python=3.12
-  - pytorch
+  - python=3.12.*
+  - pytorch=2.5.1
   - pytorch-cuda=12.4
-  - ruamel.yaml
+  - ruamel.yaml=0.18.17
   - ruff
-  - scipy
+  - scipy=1.16.*
   - seaborn
-  - sphinx
-  - sphinx-rtd-theme
-  - tensorboard
-  - torchaudio
-  - torchvision
-  - tqdm
-  - xarray
-  - zarr
+  - sphinx=8.2.3
+  - sphinx-rtd-theme=3.0.2
+  - tensorboard=2.20.*
+  - torchaudio=2.5.1
+  - torchvision=0.20.1
+  - tqdm=4.67.*
+  - xarray=2025.12.0
+  - zarr=3.1.5
