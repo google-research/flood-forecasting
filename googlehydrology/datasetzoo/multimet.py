@@ -60,21 +60,17 @@ TENSOR_VARS = [
 ]
 MULTIMET_MINIMUM_LEAD_TIME = 1
 
-# Caravan Multimet products that are available in the GCS zarr store
-KNOWN_GCS_PRODUCTS = {
-    "CHIRPS",
-    "CHIRPS_GEFS",
-    "CPC",
-    "ERA5_LAND",
-    "GRAPHCAST",
-    "HRES",
-    "IMERG"
-}
-
 # Aliases for multimet product names with inconsistent naming conventions
 PRODUCT_ALIASES = {
-    "ERA5LAND": "ERA5_LAND",
-    "CHIRPSGEFS": "CHIRPS_GEFS"
+    'chirps': 'CHIRPS',
+    'chirpsgefs': 'CHIRPS_GEFS',
+    'cpc': 'CPC',
+    'era5land': 'ERA5_LAND',
+    'graphcast': 'GRAPHCAST',
+    'hres': 'HRES',
+    'imerg': 'IMERG',
+}
+
 
 class MultimetDataLoader(torch.utils.data.DataLoader):
     """Custom DataLoader that handles lazy data loading.
@@ -356,15 +352,6 @@ class Multimet(Dataset):
         LOGGER.debug(f'Dataset size: {sizeof(self._dataset) / 1024**2} MB')
         LOGGER.debug(f'Dataset on disk: {self._dataset.nbytes / 1024**2} MB')
         LOGGER.debug(f'Sample index size: {sizeof(indices) / 1024**2} MB')
-
-        # TODO(future) :: Move above to the scalar compute block
-        LOGGER.debug('scaler check zero scale')
-        self.scaler.check_zero_scale()
-        LOGGER.debug('scaler save')
-
-        # Don't save the scaler if we are finetuning
-        if not cfg.is_finetuning:
-            self.scaler.save()  
 
         # Create sample index lookup table for `__getitem__`.
         LOGGER.debug('create sample index')
@@ -720,15 +707,24 @@ class Multimet(Dataset):
         return self._load_hindcast_as_zarr()
 
     def _load_hindcast_as_zarr(self) -> list[xr.Dataset]:
-        # Prepare hindcast features to load, including the masks of union_mapping
-        features = set(self._hindcast_features) | set(
-            (self._union_mapping or {}).values()
-        )
-
-        # Separate products and bands for each product from feature names.
-        product_bands = _get_products_and_bands_from_feature_dict(
+        # Separate products and bands for each product from the configured
+        # hindcast inputs.
+        product_bands = _get_products_and_bands_from_features(
             self._hindcast_inputs
         )
+
+        # Also load fallback variables used by union_mapping. This preserves the
+        # previous behavior where fallback features did not have to be listed
+        # explicitly in hindcast_inputs.
+        if self._union_mapping:
+            union_product_bands = _get_products_and_bands_from_feature_strings(
+                self._union_mapping.values()
+            )
+            for product, bands in union_product_bands.items():
+                product_bands.setdefault(product, [])
+                for band in bands:
+                    if band not in product_bands[product]:
+                        product_bands[product].append(band)
 
         # Initialize storage for product/band dataframes that will eventually be concatenated.
         product_dss = []
@@ -765,12 +761,21 @@ class Multimet(Dataset):
         return product_dss
 
     def _load_hindcast_as_csv(self) -> xr.Dataset:
-        return load_caravan_timeseries_together(
+        """Load hindcast data and add a 0-day lead_time dimension."""
+        ds = load_caravan_timeseries_together(
             data_dir=self._dynamics_data_path,
             basins=self._basins,
             target_features=self._hindcast_features,
             csv=True,
         )
+        
+        # Expand dimensions to include a 0-day lead time coordinate
+        ds = ds.expand_dims(lead_time=[pd.Timedelta(0, unit='D')])
+        
+        # Match the units attribute from the forecast loading logic
+        ds['lead_time'].attrs['units'] = 'timedelta (days)'
+        
+        return ds
 
     def _load_forecast_as_csv(self) -> xr.Dataset:
         """Load Caravan-Multimet data for forecast features with file fallback logic.
@@ -793,7 +798,7 @@ class Multimet(Dataset):
         base_dir = self._dynamics_data_path / 'timeseries' / 'csv'
         
         # Cache for fallback files, loaded only once per basin for efficiency
-        basin_fallback_cache: Dict[str, pd.DataFrame] = {}
+        basin_fallback_cache: dict[str, pd.DataFrame] = {}
 
         # Load data for the selected products, bands, and basins.
         for basin in self._basins:
@@ -810,9 +815,15 @@ class Multimet(Dataset):
                 if lead_time_file_path.exists():
                     
                     # Load and set time column as index. Column names (lead times) become data.
-                    df = pd.read_csv(lead_time_file_path, index_col=0, parse_dates=True)
+                    # Load directly as float32 to save memory (avoids astype() copying later)
+                    df = pd.read_csv(
+                        lead_time_file_path, 
+                        index_col=0, 
+                        parse_dates=True, 
+                        dtype='float32'
+                    )
                     df.index.name = 'date'
-                    
+
                     # Melt lead times from columns into a new dimension/level
                     # The column headers (lead times) are currently strings, e.g., '0', '1', '2'
                     ds_melt = df.stack().to_frame(name=feature)
@@ -823,9 +834,9 @@ class Multimet(Dataset):
                     
                     # Convert lead_time from string/int to Timedelta for consistency.
                     if 'lead_time' in da.coords:
-                        # Assuming the numbers in the column headers represent lead time in hours ('h').
-                        da['lead_time'] = pd.to_timedelta(da['lead_time'].astype(int), unit='h')
-                        da['lead_time'].attrs['units'] = 'timedelta (hours)'
+                        # Convert column headers to represent lead time in days ('D').
+                        da['lead_time'] = pd.to_timedelta(da['lead_time'].astype(int), unit='D')
+                        da['lead_time'].attrs['units'] = 'timedelta (days)'
 
 
                 # --- 2. Fallback to file without lead time (Structure: rows=date, cols=feature) ---
@@ -835,7 +846,12 @@ class Multimet(Dataset):
                     if basin not in basin_fallback_cache:
                         if fallback_file_path.exists():
                             # Load and set time column as index (only once per basin)
-                            df_fallback = pd.read_csv(fallback_file_path, index_col=0, parse_dates=True)
+                            df_fallback = pd.read_csv(
+                                fallback_file_path,
+                                index_col=0,
+                                parse_dates=True,
+                                dtype='float32'
+                            )
                             df_fallback.index.name = 'date'
                             basin_fallback_cache[basin] = df_fallback
                         else:
@@ -906,7 +922,7 @@ class Multimet(Dataset):
             Dataset containing the loaded features with dimensions (date, lead_time, basin).
         """
         # Separate products and bands for each product from feature names.
-        product_bands = _get_products_and_bands_from_feature_dict(
+        product_bands = _get_products_and_bands_from_features(
             self._forecast_inputs
         )
 
@@ -1080,46 +1096,85 @@ def _convert_to_tensor(
 
 @functools.cache
 def _open_zarr(path: Path) -> xr.Dataset:
-    path = str(path).replace('gs:/', 'gs://')
+    path = path.as_posix().replace('gs:/', 'gs://')
     return xr.open_zarr(store=path, chunks='auto', decode_timedelta=True)
 
 
-def _get_products_and_bands_from_feature_dict(feature_dict):
+def _normalize_product_key(product: str) -> str:
+    return product.lower().replace("_", "").replace("-", "")
 
+
+def _canonical_product_name(product: str) -> str:
+    return PRODUCT_ALIASES.get(_normalize_product_key(product), product)
+
+
+def _product_name_from_feature(feature: str) -> str:
+    normalized_feature = _normalize_product_key(feature)
+    for alias in sorted(PRODUCT_ALIASES, key=len, reverse=True):
+        if normalized_feature.startswith(alias):
+            return PRODUCT_ALIASES[alias]
+
+    return feature.split('_')[0].upper()
+
+
+def _get_products_and_bands_from_feature_strings(
+    features: Iterable[str],
+) -> dict[str, list[str]]:
     """
-    Processes feature dictionary to create a mapping of product to band(s).
+    Processes feature strings to create a dictionary of product to band(s).
 
     Parameters
     ----------
-    feature_dict : dict[str, list[str]]
-        Dictionary where keys are product names from the config and values
-        are lists of features belonging to that product.
+    features : Iterable[str]
+        Feature names in the format '<product>_<band>'.
 
     Returns
     -------
     dict[str, list[str]]
-        Keys are normalized product names and values are lists of features
-        for that product.
+        Keys are canonical product names and values are lists of features.
+        Feature names are preserved.
     """
-
     product_bands = {}
-    for raw_key, features in feature_dict.items():
-        # Normalize: Uppercase, replace hyphens with underscores
-        norm_key = raw_key.upper().replace("-", "_")
-
-        # Try alias mapping first
-        product = PRODUCT_ALIASES.get(norm_key, norm_key)
-
-        # If it's a known product, use canonical name
-        # (e.g., user says 'era5land', but dataset is 'ERA5_LAND')
-        for known in KNOWN_GCS_PRODUCTS:
-            if product.replace("_", "") == known.replace("_", ""):
-                product = known
-                break
-
-        product_bands[product] = features
-
+    for feature in features:
+        product = _product_name_from_feature(feature)
+        product_bands.setdefault(product, []).append(feature)
     return product_bands
+
+
+def _get_products_and_bands_from_features(
+    features: dict[str, list[str]] | Iterable[str],
+) -> dict[str, list[str]]:
+    """
+    Create a mapping of product names to feature bands.
+
+    Parameters
+    ----------
+    features : dict[str, list[str]] | Iterable[str]
+        Either:
+
+        - A dictionary where keys are product names from the config and
+          values are lists of features belonging to that product, or
+
+        - A flat iterable of feature names in the format
+          '<product>_<band>'.
+
+    Returns
+    -------
+    dict[str, list[str]]
+        Dictionary mapping canonical product names to their associated
+        feature bands.
+    """
+    if isinstance(features, dict):
+        return {
+            _canonical_product_name(product): bands
+            for product, bands in features.items()
+        }
+
+    product_bands = _get_products_and_bands_from_feature_strings(features)
+    return {
+        _canonical_product_name(product): bands
+        for product, bands in product_bands.items()
+    }
 
 
 class SampleIndexer:
@@ -1156,6 +1211,7 @@ class SampleIndexer:
 
     def get_column(self, dim: str):
         return next(v for (k, v) in self._aligned_indices if k == dim)
+
 
 def rechunk(ds: xr.Dataset | xr.DataTree) -> xr.Dataset:
     return ds.chunk('auto').unify_chunks()
