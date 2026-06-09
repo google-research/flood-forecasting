@@ -62,8 +62,13 @@ MULTIMET_MINIMUM_LEAD_TIME = 1
 
 # Aliases for multimet product names with inconsistent naming conventions
 PRODUCT_ALIASES = {
-    'era5land': 'ERA5_LAND',
+    'chirps': 'CHIRPS',
     'chirpsgefs': 'CHIRPS_GEFS',
+    'cpc': 'CPC',
+    'era5land': 'ERA5_LAND',
+    'graphcast': 'GRAPHCAST',
+    'hres': 'HRES',
+    'imerg': 'IMERG',
     'gefsv12': 'GEFSv12_ens01',
     'gefs': 'GEFSv12_ens01',
 }
