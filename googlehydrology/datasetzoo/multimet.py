@@ -60,25 +60,14 @@ TENSOR_VARS = [
 ]
 MULTIMET_MINIMUM_LEAD_TIME = 1
 
-# Caravan Multimet products that are available in the GCS zarr store
-KNOWN_GCS_PRODUCTS = {
-    "CHIRPS",
-    "CHIRPS_GEFS",
-    "CPC",
-    "ERA5_LAND",
-    "GRAPHCAST",
-    "HRES",
-    "IMERG",
-    "GEFSv12_ens01"
-}
-
 # Aliases for multimet product names with inconsistent naming conventions
 PRODUCT_ALIASES = {
-    "ERA5LAND": "ERA5_LAND",
-    "CHIRPSGEFS": "CHIRPS_GEFS",
-    "GEFSV12": "GEFSv12_ens01",
-    "GEFS": "GEFSv12_ens01",
+    'era5land': 'ERA5_LAND',
+    'chirpsgefs': 'CHIRPS_GEFS',
+    'gefsv12': 'GEFSv12_ens01',
+    'gefs': 'GEFSv12_ens01',
 }
+
 
 class MultimetDataLoader(torch.utils.data.DataLoader):
     """Custom DataLoader that handles lazy data loading.
@@ -721,7 +710,7 @@ class Multimet(Dataset):
         )
 
         # Separate products and bands for each product from feature names.
-        product_bands = _get_products_and_bands_from_feature_dict(
+        product_bands = _get_products_and_bands_from_features(
             self._hindcast_inputs
         )
 
@@ -921,7 +910,7 @@ class Multimet(Dataset):
             Dataset containing the loaded features with dimensions (date, lead_time, basin).
         """
         # Separate products and bands for each product from feature names.
-        product_bands = _get_products_and_bands_from_feature_dict(
+        product_bands = _get_products_and_bands_from_features(
             self._forecast_inputs
         )
 
@@ -1099,42 +1088,74 @@ def _open_zarr(path: Path) -> xr.Dataset:
     return xr.open_zarr(store=path, chunks='auto', decode_timedelta=True)
 
 
-def _get_products_and_bands_from_feature_dict(feature_dict):
+def _normalize_product_key(product: str) -> str:
+    return product.lower().replace("_", "").replace("-", "")
 
+
+def _canonical_product_name(product: str) -> str:
+    return PRODUCT_ALIASES.get(_normalize_product_key(product), product)
+
+
+def _get_products_and_bands_from_feature_strings(
+    features: Iterable[str],
+) -> dict[str, list[str]]:
     """
-    Processes feature dictionary to create a mapping of product to band(s).
+    Processes feature strings to create a dictionary of product to band(s).
 
     Parameters
     ----------
-    feature_dict : dict[str, list[str]]
-        Dictionary where keys are product names from the config and values
-        are lists of features belonging to that product.
+    features : list[str]
+        A list of features in the format `<product>_<band>. This is the format for feature
+        names in the Multimet dataset.
 
     Returns
     -------
     dict[str, list[str]]
-        Keys are normalized product names and values are lists of features
-        for that product.
+        Keys are product names and values are a list of features for that product. Features
+        remain in the format <product>_<band>.
     """
-
     product_bands = {}
-    for raw_key, features in feature_dict.items():
-        # Normalize: Uppercase, replace hyphens with underscores
-        norm_key = raw_key.upper().replace("-", "_")
-
-        # Try alias mapping first
-        product = PRODUCT_ALIASES.get(norm_key, norm_key)
-
-        # If it's a known product, use canonical name
-        # (e.g., user says 'era5land', but dataset is 'ERA5_LAND')
-        for known in KNOWN_GCS_PRODUCTS:
-            if product.replace("_", "") == known.replace("_", ""):
-                product = known
-                break
-
-        product_bands[product] = features
-
+    for feature in features:
+        product = feature.split('_')[0]
+        product = _canonical_product_name(product)
+        product_bands.setdefault(product, []).append(feature)
     return product_bands
+
+
+def _get_products_and_bands_from_features(
+    features: dict[str, list[str]] | Iterable[str],
+) -> dict[str, list[str]]:
+    """
+    Create a mapping of product names to feature bands.
+
+    Parameters
+    ----------
+    features : dict[str, list[str]] | Iterable[str]
+        Either:
+
+        - A dictionary where keys are product names from the config and
+          values are lists of features belonging to that product, or
+
+        - A flat iterable of feature names in the format
+          '<product>_<band>'.
+
+    Returns
+    -------
+    dict[str, list[str]]
+        Dictionary mapping canonical product names to their associated
+        feature bands.
+    """
+    if isinstance(features, dict):
+        return {
+            _canonical_product_name(product): bands
+            for product, bands in features.items()
+        }
+
+    product_bands = _get_products_and_bands_from_feature_strings(features)
+    return {
+        _canonical_product_name(product): bands
+        for product, bands in product_bands.items()
+    }
 
 
 class SampleIndexer:
