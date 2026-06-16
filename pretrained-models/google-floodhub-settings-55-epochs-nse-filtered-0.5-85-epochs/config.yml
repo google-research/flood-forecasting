@@ -1,0 +1,228 @@
+allzero_samples_are_invalid: false
+batch_size: 512
+cache:
+  enabled: false
+  byte_limit: 10000000000
+clip_gradient_norm: 1
+clip_targets_to_zero:
+- streamflow
+commit_hash: aa3340c
+dataset: multimet
+detect_anomaly: false
+device: cuda:0
+dynamics_data_dir: ~/multimet
+epochs: 125
+experiment_name: google-floodhub-settings-nse-filtered-0.5
+forecast_embedding:
+  type: fc
+  hiddens:
+  - 20
+  - 20
+  - 20
+  - 20
+  activation:
+  - tanh
+  - tanh
+  - tanh
+  - linear
+  dropout: 0.0
+forecast_inputs:
+  hres:
+  - hres_surface_net_solar_radiation
+  - hres_surface_net_thermal_radiation
+  - hres_surface_pressure
+  - hres_temperature_2m
+  - hres_total_precipitation
+  graphcast:
+  - graphcast_temperature_2m
+  - graphcast_total_precipitation
+forecast_overlap: 365
+head: cmal
+hidden_size: 512
+hindcast_embedding:
+  type: fc
+  hiddens:
+  - 100
+  - 20
+  activation:
+  - tanh
+  - linear
+  dropout: 0.0
+hindcast_inputs:
+  hres:
+  - hres_surface_net_solar_radiation
+  - hres_surface_net_thermal_radiation
+  - hres_surface_pressure
+  - hres_temperature_2m
+  - hres_total_precipitation
+  graphcast:
+  - graphcast_temperature_2m
+  - graphcast_total_precipitation
+  imerg:
+  - imerg_precipitation
+  cpc:
+  - cpc_precipitation
+img_log_dir: 
+  ~/flood-forecasting/pretrained-models/google-floodhub-settings-55-epochs-nse-filtered-0.5-85-epochs/img_log
+initial_forget_bias: 3
+initial_learning_rate: 0.0005
+lead_time: 7
+learning_rate_drop_factor: 0.5
+learning_rate_epochs_drop: 200
+learning_rate_strategy: ReduceLROnPlateau
+log_loss_every_nth_update: 50
+logging_level: INFO
+loss: cmalloss
+max_updates_per_epoch: 2000
+metrics:
+- NSE
+- KGE
+model: mean_embedding_forecast_lstm
+n_distributions: 3
+n_samples: 7500
+negative_sample_handling: clip
+num_workers: 0
+number_of_basins: 4287
+optimizer: Adam
+output_dropout: 0.4
+package_version: 1.12.0
+predict_last_n: 8
+print_warnings_once: true
+run_dir: 
+  ~/flood-forecasting/pretrained-models/google-floodhub-settings-55-epochs-nse-filtered-0.5-85-epochs
+seed: 155681
+seq_length: 365
+static_attributes:
+- p_mean
+- pet_mean_ERA5_LAND
+- aridity_ERA5_LAND
+- frac_snow
+- moisture_index_ERA5_LAND
+- seasonality_ERA5_LAND
+- high_prec_freq
+- high_prec_dur
+- low_prec_freq
+- low_prec_dur
+- aet_mm_syr
+- ari_ix_sav
+- crp_pc_sse
+- ele_mt_sav
+- ero_kh_sav
+- for_pc_sse
+- gdp_ud_ssu
+- gla_pc_sse
+- glc_pc_s01
+- glc_pc_s02
+- glc_pc_s03
+- glc_pc_s04
+- glc_pc_s06
+- glc_pc_s07
+- glc_pc_s08
+- glc_pc_s09
+- glc_pc_s10
+- glc_pc_s11
+- glc_pc_s12
+- glc_pc_s13
+- glc_pc_s14
+- glc_pc_s15
+- glc_pc_s16
+- glc_pc_s17
+- glc_pc_s18
+- glc_pc_s19
+- glc_pc_s20
+- glc_pc_s21
+- glc_pc_s22
+- hft_ix_s09
+- hft_ix_s93
+- inu_pc_slt
+- inu_pc_smn
+- inu_pc_smx
+- ire_pc_sse
+- kar_pc_sse
+- lka_pc_sse
+- nli_ix_sav
+- pac_pc_sse
+- pet_mm_syr
+- pnv_pc_s01
+- pnv_pc_s02
+- pnv_pc_s03
+- pnv_pc_s04
+- pnv_pc_s05
+- pnv_pc_s06
+- pnv_pc_s07
+- pnv_pc_s08
+- pnv_pc_s09
+- pnv_pc_s10
+- pnv_pc_s11
+- pnv_pc_s12
+- pnv_pc_s13
+- pnv_pc_s14
+- pnv_pc_s15
+- ppd_pk_sav
+- pre_mm_syr
+- prm_pc_sse
+- rdd_mk_sav
+- snw_pc_syr
+- swc_pc_syr
+- tmp_dc_syr
+- urb_pc_sse
+- wet_pc_s01
+- wet_pc_s02
+- wet_pc_s03
+- wet_pc_s04
+- wet_pc_s05
+- wet_pc_s06
+- wet_pc_s07
+- wet_pc_s08
+- wet_pc_s09
+- wet_pc_sg1
+- wet_pc_sg2
+statics_data_dir: ~/Caravan-nc
+statics_embedding:
+  type: fc
+  hiddens:
+  - 100
+  - 100
+  - 20
+  activation:
+  - tanh
+  - tanh
+  - linear
+  dropout: 0.0
+target_noise_std: 0.005
+target_variables:
+- streamflow
+targets_data_dir: ~/Caravan-nc
+test_basin_file: 
+  ~/flood-forecasting/example-configs/filtered_basins_nse_gt_0.5.txt
+test_end_date: 30/09/2023
+test_start_date: 01/01/1982
+tester_sample_reduction: median
+tester_skip_obs_all_nan: true
+timestep_counter: true
+train_basin_file: 
+  ~/flood-forecasting/example-configs/filtered_basins_nse_gt_0.5.txt
+train_dir: 
+  ~/flood-forecasting/pretrained-models/google-floodhub-settings-55-epochs-nse-filtered-0.5-85-epochs/train_data
+train_end_date: 30/09/2023
+train_start_date: 01/01/1982
+union_mapping:
+  cpc_precipitation: era5land_total_precipitation
+  imerg_precipitation: era5land_total_precipitation
+  graphcast_temperature_2m: era5land_temperature_2m
+  graphcast_total_precipitation: era5land_total_precipitation
+  hres_surface_net_solar_radiation: era5land_surface_net_solar_radiation
+  hres_surface_net_thermal_radiation: era5land_surface_net_thermal_radiation
+  hres_surface_pressure: era5land_surface_pressure
+  hres_temperature_2m: era5land_temperature_2m
+  hres_total_precipitation: era5land_total_precipitation
+validate_every: 5
+validate_n_random_basins: 100
+validation_basin_file: 
+  ~/flood-forecasting/example-configs/filtered_basins_nse_gt_0.5.txt
+validation_end_date: 30/09/2023
+validation_start_date: 01/01/1982
+weight_init_opts:
+- lstm-ih-xavier
+- lstm-hh-orthogonal
+- fc-xavier
