@@ -115,12 +115,8 @@ def test_mixture_params_to_quantiles(sample_cmal_params):
     mu, b, tau, pi = sample_cmal_params
     quantiles = cmal_deterministic._mixture_params_to_quantiles(mu, b, tau, pi)
     assert quantiles.shape == (2, 5, 9)
-
-    # Check quantiles are strictly monotonically increasing along last dim
-    for b_idx in range(2):
-        for s_idx in range(5):
-            q_vals = quantiles[b_idx, s_idx]
-            assert torch.all(q_vals[1:] >= q_vals[:-1])
+    # Check quantiles are monotonically increasing along quantile dimension
+    assert torch.all(quantiles[..., 1:] >= quantiles[..., :-1])
 
 
 @pytest.mark.unit
