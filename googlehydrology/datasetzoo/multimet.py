@@ -729,21 +729,21 @@ class Multimet(Dataset):
         return product_dss
 
     def _load_hindcast_as_csv(self) -> xr.Dataset:
-        """Load hindcast data and add a 0-day lead_time dimension."""
-        ds = load_caravan_timeseries_together(
+        """Load dimension-faithful hindcasts and union-source features."""
+        features = list(
+            dict.fromkeys(
+                [
+                    *self._hindcast_features,
+                    *(self._union_mapping or {}).values(),
+                ]
+            )
+        )
+        return load_caravan_timeseries_together(
             data_dir=self._dynamics_data_path,
             basins=self._basins,
-            target_features=self._hindcast_features,
+            target_features=features,
             csv=True,
         )
-        
-        # Expand dimensions to include a 0-day lead time coordinate
-        ds = ds.expand_dims(lead_time=[pd.Timedelta(0, unit='D')])
-        
-        # Match the units attribute from the forecast loading logic
-        ds['lead_time'].attrs['units'] = 'timedelta (days)'
-        
-        return ds
 
     def _load_forecast_as_csv(self) -> xr.Dataset:
         """Load Caravan-Multimet data for forecast features with file fallback logic.

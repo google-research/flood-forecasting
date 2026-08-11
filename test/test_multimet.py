@@ -12,19 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
-import numpy as np
-import pandas as pd
-import xarray as xr
-import torch
 import re
 from pathlib import Path
-from unittest.mock import patch, MagicMock, call
 from typing import Callable
+from unittest.mock import MagicMock, call, patch
 
+import numpy as np
+import pandas as pd
+import pytest
+import torch
+import xarray as xr
+
+from googlehydrology.datautils.union_features import union_features
 from googlehydrology.datasetzoo.multimet import Multimet
 from googlehydrology.utils.config import Config
-from googlehydrology.utils.errors import NoTrainDataError, NoEvaluationDataError
+from googlehydrology.utils.errors import NoEvaluationDataError, NoTrainDataError
 
 
 # --- Helper for Config attributes ---
@@ -179,6 +181,86 @@ def mock_load_data_return(get_config, sample_basins, sample_dates):
 
 
 # --- Tests for Multimet ---
+
+
+def test_csv_hindcast_loads_union_mapping_sources(tmp_path: Path):
+    dataset = Multimet.__new__(Multimet)
+    dataset._dynamics_data_path = tmp_path
+    dataset._basins = ['basin_01']
+    dataset._hindcast_features = ['cpc_precipitation']
+    dataset._union_mapping = {
+        'cpc_precipitation': 'era5land_total_precipitation'
+    }
+    dates = pd.date_range('2000-01-01', periods=2)
+    loaded = xr.Dataset(
+        {
+            'cpc_precipitation': (
+                ('basin', 'date'),
+                [[np.nan, 2.0]],
+            ),
+            'era5land_total_precipitation': (
+                ('basin', 'date'),
+                [[1.0, 3.0]],
+            ),
+        },
+        coords={'basin': ['basin_01'], 'date': dates},
+    )
+
+    with patch(
+        'googlehydrology.datasetzoo.multimet.'
+        'load_caravan_timeseries_together',
+        return_value=loaded,
+    ) as loader:
+        result = dataset._load_hindcast_as_csv()
+
+    loader.assert_called_once_with(
+        data_dir=tmp_path,
+        basins=['basin_01'],
+        target_features=[
+            'cpc_precipitation',
+            'era5land_total_precipitation',
+        ],
+        csv=True,
+    )
+    unioned = union_features(result, dataset._union_mapping)
+    assert unioned['cpc_precipitation'].values.tolist() == [[1.0, 2.0]]
+
+
+def test_csv_hindcast_does_not_lower_forecast_minimum_lead(tmp_path: Path):
+    dataset = Multimet.__new__(Multimet)
+    dataset._dynamics_data_path = tmp_path
+    dataset._basins = ['basin_01']
+    dataset._hindcast_features = ['hindcast_i1']
+    dataset._union_mapping = {}
+    dates = pd.date_range('2000-01-01', periods=2)
+    loaded = xr.Dataset(
+        {'hindcast_i1': (('basin', 'date'), [[1.0, 2.0]])},
+        coords={'basin': ['basin_01'], 'date': dates},
+    )
+    forecast = xr.Dataset(
+        {
+            'forecast_i1': (
+                ('basin', 'date', 'lead_time'),
+                [[[1.0, 2.0], [3.0, 4.0]]],
+            )
+        },
+        coords={
+            'basin': ['basin_01'],
+            'date': dates,
+            'lead_time': pd.to_timedelta([1, 2], unit='D'),
+        },
+    )
+
+    with patch(
+        'googlehydrology.datasetzoo.multimet.'
+        'load_caravan_timeseries_together',
+        return_value=loaded,
+    ):
+        hindcast = dataset._load_hindcast_as_csv()
+
+    merged = xr.merge([hindcast, forecast], join='outer')
+    assert 'lead_time' not in merged['hindcast_i1'].dims
+    assert merged['lead_time'].min() == pd.Timedelta(days=1)
 
 
 # Patching `Multimet._load_data` because it's a NotImplementedError in the base class
