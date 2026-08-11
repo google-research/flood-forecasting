@@ -9,7 +9,6 @@ Submodules
 
    googlehydrology.datasetzoo.caravan
    googlehydrology.datasetzoo.datasetregistry
-   googlehydrology.datasetzoo.mfdata_loader
    googlehydrology.datasetzoo.multimet
 
 Module contents
