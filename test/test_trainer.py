@@ -15,6 +15,7 @@
 """Unit tests for googlehydrology.training helpers and BaseTrainer."""
 
 from unittest.mock import MagicMock
+
 import pytest
 import torch
 import torch.nn as nn
@@ -35,7 +36,10 @@ from googlehydrology.training.loss import (
 @pytest.mark.unit
 def test_get_optimizer_all_types():
     model = nn.Linear(5, 2)
-    optimizers = ['adam', 'adamw', 'sgd', 'asgd', 'rmsprop', 'adagrad', 'adadelta', 'adamax']
+    optimizers = [
+        'adam', 'adamw', 'sgd', 'asgd',
+        'rmsprop', 'adagrad', 'adadelta', 'adamax',
+    ]
     for opt_name in optimizers:
         cfg = MagicMock()
         cfg.optimizer = opt_name
@@ -44,7 +48,10 @@ def test_get_optimizer_all_types():
         assert isinstance(opt, torch.optim.Optimizer)
 
     # Unsupported optimizer
-    cfg_invalid = MagicMock(optimizer='invalid_optimizer', initial_learning_rate=0.001)
+    cfg_invalid = MagicMock(
+        optimizer='invalid_optimizer',
+        initial_learning_rate=0.001,
+    )
     with pytest.raises(NotImplementedError, match='not implemented'):
         get_optimizer(model, cfg_invalid)
 

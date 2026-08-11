@@ -35,7 +35,10 @@ def test_lstm_init():
     lstm_init(
         lstms=[lstm],
         forget_bias=1.5,
-        weight_opts=[WeightInitOpt.LSTM_IH_XAVIER, WeightInitOpt.LSTM_HH_ORTHOGONAL],
+        weight_opts=[
+            WeightInitOpt.LSTM_IH_XAVIER,
+            WeightInitOpt.LSTM_HH_ORTHOGONAL,
+        ],
     )
     # Check forget bias initialized
     sl = _forget_gate_slice(lstm)

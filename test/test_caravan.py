@@ -15,6 +15,7 @@
 """Unit tests for googlehydrology.datasetzoo.caravan."""
 
 from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -25,7 +26,7 @@ from googlehydrology.datasetzoo import caravan
 
 @pytest.fixture
 def mock_caravan_dir(tmp_path):
-    """Create synthetic Caravan directory structure with attributes and timeseries."""
+    """Create Caravan directory structure with attributes and timeseries."""
     root = tmp_path / 'caravan_data'
     attr_dir = root / 'attributes' / 'camelsus'
     attr_dir.mkdir(parents=True)
@@ -47,7 +48,10 @@ def mock_caravan_dir(tmp_path):
         ds = xr.Dataset(
             {
                 'streamflow': (['date'], np.random.rand(10).astype(np.float32)),
-                'precipitation': (['date'], np.random.rand(10).astype(np.float32)),
+                'precipitation': (
+                    ['date'],
+                    np.random.rand(10).astype(np.float32),
+                ),
             },
             coords={'date': dates},
         )
@@ -76,7 +80,9 @@ def test_load_caravan_attributes(mock_caravan_dir):
     assert 'area' in ds.data_vars or 'area' in ds.coords
 
     # Subdataset loading
-    ds_sub = caravan.load_caravan_attributes(data_dir=mock_caravan_dir, subdataset='camelsus')
+    ds_sub = caravan.load_caravan_attributes(
+        data_dir=mock_caravan_dir, subdataset='camelsus'
+    )
     assert len(ds_sub['basin']) == 2
 
     # Specific basins
@@ -88,7 +94,9 @@ def test_load_caravan_attributes(mock_caravan_dir):
 
     # Missing subdataset error
     with pytest.raises(FileNotFoundError, match='No subdataset non_existent'):
-        caravan.load_caravan_attributes(data_dir=mock_caravan_dir, subdataset='non_existent')
+        caravan.load_caravan_attributes(
+            data_dir=mock_caravan_dir, subdataset='non_existent'
+        )
 
     # Missing basin in attribute file error
     with pytest.raises(ValueError, match='missing static attributes'):
@@ -100,9 +108,10 @@ def test_load_caravan_attributes(mock_caravan_dir):
 
 @pytest.mark.unit
 def test_load_csvs_as_ds(mock_caravan_dir):
+    ts_csv = mock_caravan_dir / 'timeseries' / 'csv' / 'camelsus'
     csv_paths = {
-        'camelsus_01022500': mock_caravan_dir / 'timeseries' / 'csv' / 'camelsus' / 'camelsus_01022500.csv',
-        'camelsus_01547700': mock_caravan_dir / 'timeseries' / 'csv' / 'camelsus' / 'camelsus_01547700.csv',
+        'camelsus_01022500': ts_csv / 'camelsus_01022500.csv',
+        'camelsus_01547700': ts_csv / 'camelsus_01547700.csv',
     }
     ds = caravan.load_csvs_as_ds(csv_paths)
     assert 'basin' in ds.dims or 'basin' in ds.coords
