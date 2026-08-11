@@ -103,7 +103,7 @@ def get_loss_obj(cfg: Config) -> loss.BaseLoss:
         loss_obj = loss.MaskedNSELoss(cfg)
     elif cfg.loss.lower() == 'rmse':
         loss_obj = loss.MaskedRMSELoss(cfg)
-    elif cfg.loss.lower() == 'cmalloss':
+    elif cfg.loss.lower() in ['cmalloss', 'cmal']:
         loss_obj = loss.MaskedCMALLoss(cfg)
     else:
         raise NotImplementedError(
