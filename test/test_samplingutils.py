@@ -15,6 +15,7 @@
 """Unit tests for googlehydrology.utils.samplingutils."""
 
 from unittest.mock import MagicMock
+
 import numpy as np
 import pytest
 import torch
@@ -119,7 +120,10 @@ def test_handle_negative_values_truncate():
 @pytest.mark.unit
 def test_handle_negative_values_invalid_mode():
     cfg = MagicMock(negative_sample_handling='unsupported_mode')
-    with pytest.raises(NotImplementedError, match='not supported for handling negative samples'):
+    with pytest.raises(
+        NotImplementedError,
+        match='not supported for handling negative samples',
+    ):
         samplingutils._handle_negative_values(
             cfg=cfg,
             values=torch.tensor([1.0]),
@@ -146,7 +150,9 @@ def test_sampling_setup_dropout_checks(mock_model):
     mock_model.dropout.p = 0.0  # Invalid for mc_dropout
     data = {'y': torch.zeros(2, 5, 1)}
 
-    with pytest.raises(RuntimeError, match='requires a dropout rate larger than 0.0'):
+    with pytest.raises(
+        RuntimeError, match='requires a dropout rate larger than 0.0'
+    ):
         samplingutils._SamplingSetup(mock_model, data, head='cmal')
 
     mock_model.dropout.p = 1.0  # Invalid >= 1.0
@@ -183,7 +189,9 @@ def test_sample_cmal(mock_model, mock_scaler):
 def test_sample_pointpredictions_dispatch(mock_model, mock_scaler):
     mock_model.cfg.head = 'unsupported_head'
     data = {'y_1D': torch.zeros(2, 5, 1)}
-    with pytest.raises(NotImplementedError, match='Sampling mode not supported'):
+    with pytest.raises(
+        NotImplementedError, match='Sampling mode not supported'
+    ):
         samplingutils.sample_pointpredictions(
             model=mock_model,
             data=data,

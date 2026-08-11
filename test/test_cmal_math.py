@@ -48,11 +48,15 @@ def test_cdf_and_pdf_properties():
     assert pdf_median.item() > 0.0
 
     # CDF at large negative value should be close to 0
-    cdf_low, _ = cmal_deterministic._cdf_and_pdf(torch.tensor([-10.0]), mu, b, tau)
+    cdf_low, _ = cmal_deterministic._cdf_and_pdf(
+        torch.tensor([-10.0]), mu, b, tau
+    )
     assert cdf_low.item() < 0.01
 
     # CDF at large positive value should be close to 1
-    cdf_high, _ = cmal_deterministic._cdf_and_pdf(torch.tensor([10.0]), mu, b, tau)
+    cdf_high, _ = cmal_deterministic._cdf_and_pdf(
+        torch.tensor([10.0]), mu, b, tau
+    )
     assert cdf_high.item() > 0.99
 
     # Monotonicity check
@@ -80,7 +84,9 @@ def test_mixture_cdf_and_pdf(sample_cmal_params):
     mu, b, tau, pi = sample_cmal_params
     x = torch.zeros(2, 5, 1)
 
-    cdf_mix, pdf_mix = cmal_deterministic._mixture_cdf_and_pdf(x, mu, b, tau, pi)
+    cdf_mix, pdf_mix = cmal_deterministic._mixture_cdf_and_pdf(
+        x, mu, b, tau, pi
+    )
     assert cdf_mix.shape == (2, 5, 1)
     assert pdf_mix.shape == (2, 5, 1)
     # Since mu=0, tau=0.5 for all components, CDF at 0 should be 0.5
@@ -97,7 +103,9 @@ def test_search_quantile(sample_cmal_params):
     pi_exp = torch.unsqueeze(pi, dim=3)
 
     q = torch.tensor([0.5]).view(1, 1, 1, 1)
-    median = cmal_deterministic._search_quantile(q, mu_exp, b_exp, tau_exp, pi_exp)
+    median = cmal_deterministic._search_quantile(
+        q, mu_exp, b_exp, tau_exp, pi_exp
+    )
     # Median of symmetric mixture centered at 0 should be ~0
     assert torch.allclose(median, torch.tensor(0.0), atol=1e-3)
 

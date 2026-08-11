@@ -25,11 +25,16 @@ from googlehydrology.utils.errors import AllNaNError
 
 @pytest.fixture
 def sample_timeseries():
-    """Create synthetic observed and simulated DataArrays with a datetime coordinate."""
+    """Create synthetic observed and simulated series with a datetime coord."""
     dates = pd.date_range('2020-01-01', periods=365, freq='D')
     t = np.linspace(0, 4 * np.pi, 365)
     # Synthetic hydrograph with distinct peaks and baseflow
-    obs_values = 10.0 + 5.0 * np.sin(t) + 3.0 * np.cos(2 * t) + np.maximum(0, 15.0 * np.sin(4 * t))
+    obs_values = (
+        10.0
+        + 5.0 * np.sin(t)
+        + 3.0 * np.cos(2 * t)
+        + np.maximum(0, 15.0 * np.sin(4 * t))
+    )
     obs_values = np.maximum(0.1, obs_values)  # Ensure positive discharge
 
     # Add small noise for simulated series
@@ -59,7 +64,9 @@ def test_get_available_metrics():
 def test_validate_inputs_mismatched_shape():
     obs = xr.DataArray(np.array([1.0, 2.0, 3.0]))
     sim = xr.DataArray(np.array([1.0, 2.0]))
-    with pytest.raises(RuntimeError, match='Shapes of observations and simulations must match'):
+    with pytest.raises(
+        RuntimeError, match='Shapes of observations and simulations must match'
+    ):
         metrics._validate_inputs(obs, sim)
 
 
@@ -67,21 +74,29 @@ def test_validate_inputs_mismatched_shape():
 def test_validate_inputs_multi_dim():
     obs = xr.DataArray(np.ones((5, 2)))
     sim = xr.DataArray(np.ones((5, 2)))
-    with pytest.raises(RuntimeError, match='Metrics only defined for time series'):
+    with pytest.raises(
+        RuntimeError, match='Metrics only defined for time series'
+    ):
         metrics._validate_inputs(obs, sim)
 
 
 @pytest.mark.unit
 def test_all_nan_error():
     dates = pd.date_range('2020-01-01', periods=10, freq='D')
-    obs = xr.DataArray(np.full(10, np.nan), coords={'date': dates}, dims=['date'])
+    obs = xr.DataArray(
+        np.full(10, np.nan), coords={'date': dates}, dims=['date']
+    )
     sim = xr.DataArray(np.ones(10), coords={'date': dates}, dims=['date'])
 
     with pytest.raises(AllNaNError, match='All observed values are NaN'):
         metrics.calculate_all_metrics(obs, sim)
 
-    obs_valid = xr.DataArray(np.ones(10), coords={'date': dates}, dims=['date'])
-    sim_all_nan = xr.DataArray(np.full(10, np.nan), coords={'date': dates}, dims=['date'])
+    obs_valid = xr.DataArray(
+        np.ones(10), coords={'date': dates}, dims=['date']
+    )
+    sim_all_nan = xr.DataArray(
+        np.full(10, np.nan), coords={'date': dates}, dims=['date']
+    )
 
     with pytest.raises(AllNaNError, match='All simulated values are NaN'):
         metrics.calculate_all_metrics(obs_valid, sim_all_nan)
@@ -105,13 +120,19 @@ def test_metrics_perfect_prediction(sample_timeseries):
     assert np.isclose(metrics.fdc_flv(obs, sim), 0.0, atol=1e-5)
     assert np.isclose(metrics.mean_peak_timing(obs, sim, resolution='1D'), 0.0)
     assert np.isclose(metrics.missed_peaks(obs, sim, resolution='1D'), 0.0)
-    assert np.isclose(metrics.mean_absolute_percentage_peak_error(obs, sim), 0.0)
+    assert np.isclose(
+        metrics.mean_absolute_percentage_peak_error(obs, sim), 0.0
+    )
 
 
 @pytest.mark.unit
 def test_metrics_mean_prediction(sample_timeseries):
     obs, _ = sample_timeseries
-    sim = xr.DataArray(np.full_like(obs.values, obs.mean().values), coords=obs.coords, dims=obs.dims)
+    sim = xr.DataArray(
+        np.full_like(obs.values, obs.mean().values),
+        coords=obs.coords,
+        dims=obs.dims,
+    )
 
     # For constant mean prediction, NSE = 0
     assert np.isclose(metrics.nse(obs, sim), 0.0, atol=1e-6)
@@ -146,7 +167,9 @@ def test_kge_custom_weights(sample_timeseries):
     assert np.isfinite(kge_val)
 
     # Invalid weights length
-    with pytest.raises(ValueError, match='Weights of the KGE must be a list of three values'):
+    with pytest.raises(
+        ValueError, match='Weights of the KGE must be a list of three values'
+    ):
         metrics.kge(obs, sim, weights=[1.0, 1.0])
 
 
@@ -167,7 +190,9 @@ def test_fdc_bounds_errors(sample_timeseries):
         metrics.fdc_fms(obs, sim, lower=-0.1, upper=0.7)
     with pytest.raises(ValueError, match='upper and lower have to be in range'):
         metrics.fdc_fms(obs, sim, lower=0.2, upper=1.5)
-    with pytest.raises(ValueError, match='The lower threshold has to be smaller than the upper'):
+    with pytest.raises(
+        ValueError, match='The lower threshold has to be smaller than the upper'
+    ):
         metrics.fdc_fms(obs, sim, lower=0.8, upper=0.5)
 
     # FHV invalid fraction
@@ -216,24 +241,37 @@ def test_peak_metrics_timing_and_missed():
     assert timing_error > 0.0
 
     # Test missed peaks
-    missed_frac = metrics.missed_peaks(obs, sim, window=5, resolution='1D', percentile=90)
+    missed_frac = metrics.missed_peaks(
+        obs, sim, window=5, resolution='1D', percentile=90
+    )
     assert missed_frac == 0.0
 
     # If sim has no peaks
-    sim_flat = xr.DataArray(np.zeros(500), coords={'date': dates}, dims=['date'])
-    assert metrics.missed_peaks(obs, sim_flat, window=5, resolution='1D', percentile=90) == 1.0
+    sim_flat = xr.DataArray(
+        np.zeros(500), coords={'date': dates}, dims=['date']
+    )
+    assert (
+        metrics.missed_peaks(
+            obs, sim_flat, window=5, resolution='1D', percentile=90
+        )
+        == 1.0
+    )
 
 
 @pytest.mark.unit
 def test_calculate_metrics_dispatcher(sample_timeseries):
     obs, sim = sample_timeseries
-    selected = ['NSE', 'kge', 'RMSE', 'beta-kge', 'beta-nse', 'alpha-nse', 'pearson-r',
-                'fhv', 'fms', 'flv', 'peak-timing', 'missed-peaks', 'peak-mape', 'mse']
+    selected = [
+        'NSE', 'kge', 'RMSE', 'beta-kge', 'beta-nse', 'alpha-nse', 'pearson-r',
+        'fhv', 'fms', 'flv', 'peak-timing', 'missed-peaks', 'peak-mape', 'mse',
+    ]
     res = metrics.calculate_metrics(obs, sim, metrics=selected, resolution='1D')
     assert len(res) == len(selected)
 
     # Test 'all' keyword
-    res_all = metrics.calculate_metrics(obs, sim, metrics=['all'], resolution='1D')
+    res_all = metrics.calculate_metrics(
+        obs, sim, metrics=['all'], resolution='1D'
+    )
     assert len(res_all) >= 13
 
     # Test unknown metric error

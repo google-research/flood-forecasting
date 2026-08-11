@@ -15,6 +15,7 @@
 """Unit tests for googlehydrology.modelzoo architectures and layers."""
 
 from unittest.mock import MagicMock
+
 import pytest
 import torch
 import torch.nn as nn
@@ -63,7 +64,9 @@ def test_positional_encoding_sum():
 
 @pytest.mark.unit
 def test_positional_encoding_invalid_type():
-    with pytest.raises(RuntimeError, match='Unrecognized positional encoding type'):
+    with pytest.raises(
+        RuntimeError, match='Unrecognized positional encoding type'
+    ):
         PositionalEncoding(
             embedding_dim=16,
             position_type='invalid_type',
@@ -73,7 +76,9 @@ def test_positional_encoding_invalid_type():
 
 @pytest.mark.unit
 def test_fc_empty_hidden_sizes():
-    with pytest.raises(ValueError, match='hidden_sizes must at least have one entry'):
+    with pytest.raises(
+        ValueError, match='hidden_sizes must at least have one entry'
+    ):
         FC(input_size=10, hidden_sizes=[])
 
 
@@ -108,7 +113,9 @@ def test_fc_activations_and_shapes():
     assert out.shape == (4, 3)
 
     # Unsupported activation
-    with pytest.raises(NotImplementedError, match='currently not supported as activation'):
+    with pytest.raises(
+        NotImplementedError, match='currently not supported as activation'
+    ):
         FC(input_size=10, hidden_sizes=[20, 3], activation='invalid_act')
 
 
@@ -161,7 +168,9 @@ def test_base_model_methods(monkeypatch):
         'googlehydrology.modelzoo.basemodel.sample_pointpredictions',
         mock_sample_fn,
     )
-    monkeypatch.setattr('googlehydrology.modelzoo.basemodel.Scaler', MagicMock())
+    monkeypatch.setattr(
+        'googlehydrology.modelzoo.basemodel.Scaler', MagicMock()
+    )
 
     cfg = MagicMock()
     cfg.target_variables = ['streamflow']
