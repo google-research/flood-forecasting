@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Callable
 
 import pytest
-import torch
 
 from googlehydrology.utils.config import Config
 from test import Fixture

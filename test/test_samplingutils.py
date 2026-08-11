@@ -22,7 +22,6 @@ import torch
 import xarray as xr
 
 from googlehydrology.utils import samplingutils
-from googlehydrology.utils.config import Config
 
 
 @pytest.fixture
