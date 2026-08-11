@@ -137,13 +137,7 @@ def get_regularization_obj(
             reg_weight = 1.0
         else:
             reg_name, reg_weight = reg_item
-        if reg_name == 'tie_frequencies':
-            regularization_modules.append(
-                regularization.TiedFrequencyMSERegularization(
-                    cfg=cfg, weight=reg_weight
-                )
-            )
-        elif reg_name == 'forecast_overlap':
+        if reg_name == 'forecast_overlap':
             regularization_modules.append(
                 regularization.ForecastOverlapMSERegularization(
                     cfg=cfg, weight=reg_weight

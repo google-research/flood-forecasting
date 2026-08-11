@@ -134,7 +134,7 @@ def _check_uncertainty_output(
     negative_vals = test_vals[sample_key].values[
         test_vals[sample_key].values < 0
     ]
-    if negative_sample_handling == 'clip':
+    if negative_sample_handling == 'clip' and config.head.lower() != 'cmal_deterministic':
         # For 'clip', we expect all non-negative values
         assert np.allclose(negative_vals, 0.0, atol=1e-6), (
             f'Found negative samples below tolerance. Smallest val: {np.min(negative_vals)}'

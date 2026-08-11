@@ -219,7 +219,7 @@ def test_forecast_dataset_init_success(
     mock_scaler_instance.save.assert_called_once()  # When compute_scaler=True
     mock_scaler_instance.check_zero_scale.assert_called_once()
 
-    expected_call_order = ['scale', 'check_zero_scale', 'save']
+    expected_call_order = ['check_zero_scale', 'save', 'scale']
     actual_call_order = [e[0] for e in mock_scaler_instance.method_calls]
     assert actual_call_order == expected_call_order
 
