@@ -17,6 +17,7 @@
 import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
 import pytest
 
 from googlehydrology.utils.logging_utils import (
@@ -30,9 +31,15 @@ from googlehydrology.utils.logging_utils import (
 @pytest.mark.unit
 def test_warning_once_filter():
     filt = WarningOnceFilter()
-    record1 = logging.LogRecord('test', logging.WARNING, 'test.py', 10, 'duplicate msg', (), None)
-    record2 = logging.LogRecord('test', logging.WARNING, 'test.py', 10, 'duplicate msg', (), None)
-    record_info = logging.LogRecord('test', logging.INFO, 'test.py', 10, 'info msg', (), None)
+    record1 = logging.LogRecord(
+        'test', logging.WARNING, 'test.py', 10, 'duplicate msg', (), None
+    )
+    record2 = logging.LogRecord(
+        'test', logging.WARNING, 'test.py', 10, 'duplicate msg', (), None
+    )
+    record_info = logging.LogRecord(
+        'test', logging.INFO, 'test.py', 10, 'info msg', (), None
+    )
 
     # First warning passes
     assert filt.filter(record1) is True

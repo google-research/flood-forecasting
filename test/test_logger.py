@@ -15,6 +15,7 @@
 """Unit tests for googlehydrology.training.logger."""
 
 from unittest.mock import MagicMock
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -77,7 +78,12 @@ def test_logger_figures(mock_config, tmp_path):
     fig, ax = plt.subplots()
     ax.plot([1, 2, 3], [4, 5, 6])
 
-    logger.log_figures(figures=[fig], freq='1D', preamble='test', suffix='hydrograph.png')
+    logger.log_figures(
+        figures=[fig],
+        freq='1D',
+        preamble='test',
+        suffix='hydrograph.png',
+    )
     img_files = list((tmp_path / 'img_log').glob('*'))
     assert len(img_files) > 0
     plt.close(fig)
