@@ -73,24 +73,23 @@ The most direct way to explore this repository is through our interactive tutori
 
 ## **Data Setup**
 
-OpenHydroNet uses the [Caravan](https://www.nature.com/articles/s41597-023-01975-w) dataset for streamflow observations and static catchment attributes.
+OpenHydroNet standardizes entirely on the high-performance, cloud-native **Zarr** format for streamflow targets, static attributes, meteorological forcings, and normalizer scalers.
 
-### **1\. Download Caravan (NetCDF Version)**
+### **1. Caravan Data (Zarr Format)**
 
-A small sample is provided in tutorial/data/Caravan-nc. For full runs:
+Caravan data is structured into modular Zarr stores:
+* `attributes.zarr`: Catchment static attributes (area, elevation, soil, geology).
+* `streamflow.zarr`: Gauge streamflow observations.
 
-1. Visit the [Zenodo repository](https://doi.org/10.5281/zenodo.6522634).  
-2. Download the **NetCDF version** (Caravan-nc.tar.gz).  
-3. Unpack it locally:  
+If you have downloaded the legacy Caravan NetCDF/CSV dataset from [Zenodo](https://doi.org/10.5281/zenodo.6522634), convert it to Zarr in a single step using the built-in CLI:
 
-   ```
-   mkdir -p ~/data/  
-   tar -xvzf Caravan-nc.tar.gz -C ~/data/
-   ```
+```bash
+run convert-caravan --caravan-dir ~/data/Caravan-nc --output-dir ~/data/Caravan-zarr
+```
 
-### **2\. MultiMet Data**
+### **2. MultiMet Dynamics Data**
 
-The MultiMet forcing data extension is accessed directly from **Google Cloud Storage**. Ensure your configuration points to: gs://caravan-multimet/v1.1
+The MultiMet meteorological forcing data extension is accessed directly from **Google Cloud Storage** or local disk. Point your configuration to: `gs://caravan-multimet/v1.1` (or your local dynamics directory).
 
 ## **Usage**
 
@@ -124,8 +123,9 @@ Experiments are defined by YAML files. Update the following paths in your config
 
 * run\_dir: Where weights and logs are saved.  
 * train\_basin\_file: Path to the list of basin IDs.  
-* targets\_data\_dir / statics\_data\_dir: Path to your local Caravan NetCDF data.  
-* dynamics\_data\_dir: Path to forcing data (e.g., gs://caravan-multimet/v1.1).
+* data\_dir: Path to your root directory containing `attributes.zarr`, `streamflow.zarr`, and dynamic meteorological data (e.g., `~/data/Caravan-zarr`).
+* statics\_data\_path / targets\_data\_path: Optional paths to individual component Zarr stores.
+* dynamics\_data\_path: Path to forcing data (e.g., `gs://caravan-multimet/v1.1` or local directory).
 
 ### **Example Configurations**
 
