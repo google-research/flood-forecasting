@@ -22,6 +22,28 @@ ignore = [
 
 
 [tool.ruff.format]
-quote-style = "single"
-line-ending = "lf"
+quote-style = 'single'
+line-ending = 'lf'
 docstring-code-format = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["test"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--tb=short",
+    "-ra",
+]
+markers = [
+    "unit: fast unit tests",
+    "integration: end-to-end workflow integration tests",
+    "slow: tests taking significant execution time",
+    "gpu: tests requiring CUDA GPU acceleration",
+]
+filterwarnings = [
+    "ignore:More than 20 figures have been opened:RuntimeWarning",
+    "ignore:'A' is deprecated and will be removed in a future version:FutureWarning",
+    "ignore:The return type of `Dataset.dims` will be changed:FutureWarning",
+]
