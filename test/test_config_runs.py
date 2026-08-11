@@ -26,9 +26,21 @@ from pytest import approx
 
 from googlehydrology.datasetzoo import caravan
 from googlehydrology.evaluation.evaluate import start_evaluation
+from googlehydrology.modelzoo.mean_embedding_forecast_lstm import (
+    MeanEmbeddingForecastLSTM,
+)
 from googlehydrology.training.train import start_training
 from googlehydrology.utils.config import Config
 from test import Fixture
+
+
+def test_tutorial_finetune_modules_are_valid():
+    """Ensure the tutorial only requests fine-tuneable model modules."""
+    config = Config(Path('tutorial/configs/finetune-config.yml'))
+
+    assert set(config.finetune_modules).issubset(
+        MeanEmbeddingForecastLSTM.module_parts
+    )
 
 
 def test_forecast_daily_regression(

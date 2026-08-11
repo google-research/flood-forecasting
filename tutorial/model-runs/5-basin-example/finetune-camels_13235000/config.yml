@@ -16,7 +16,7 @@ dynamics_data_dir: gs:/caravan-multimet/v1.1
 epochs: 25
 experiment_name: finetune-camels_13235000
 finetune_modules:
-- static_attributes_fc
+- static_embedding_fc
 - head
 forecast_embedding:
   type: fc
