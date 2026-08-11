@@ -40,7 +40,7 @@ jobs:
         with:
           activate-environment: googlehydrology
           environment-file: environments/environment_cpu.yml
-          python-version: "3.10"
+          python-version: "3.12"
           auto-activate-base: false
       - run: |
-          pytest --cov=googlehydrology
+          pytest -m "not gpu" --cov=googlehydrology --cov-report=xml --cov-report=term-missing
