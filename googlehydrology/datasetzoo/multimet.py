@@ -738,12 +738,30 @@ class Multimet(Dataset):
                 ]
             )
         )
-        return load_caravan_timeseries_together(
+        dataset = load_caravan_timeseries_together(
             data_dir=self._dynamics_data_path,
             basins=self._basins,
             target_features=features,
             csv=True,
         )
+        forecast_origin_features = [
+            feature
+            for feature in self._hindcast_features
+            if feature in self._forecast_features
+        ]
+        plain_features = [
+            feature
+            for feature in features
+            if feature not in forecast_origin_features
+        ]
+        datasets = [dataset[plain_features]]
+        if forecast_origin_features:
+            forecast_origin = dataset[forecast_origin_features].expand_dims(
+                lead_time=[pd.Timedelta(1, unit='D')]
+            )
+            forecast_origin['lead_time'].attrs['units'] = 'timedelta (days)'
+            datasets.append(forecast_origin)
+        return xr.merge(datasets, join='outer')
 
     def _load_forecast_as_csv(self) -> xr.Dataset:
         """Load Caravan-Multimet data for forecast features with file fallback logic.

@@ -188,6 +188,7 @@ def test_csv_hindcast_loads_union_mapping_sources(tmp_path: Path):
     dataset._dynamics_data_path = tmp_path
     dataset._basins = ['basin_01']
     dataset._hindcast_features = ['cpc_precipitation']
+    dataset._forecast_features = []
     dataset._union_mapping = {
         'cpc_precipitation': 'era5land_total_precipitation'
     }
@@ -226,22 +227,34 @@ def test_csv_hindcast_loads_union_mapping_sources(tmp_path: Path):
     assert unioned['cpc_precipitation'].values.tolist() == [[1.0, 2.0]]
 
 
-def test_csv_hindcast_does_not_lower_forecast_minimum_lead(tmp_path: Path):
+def test_csv_hindcast_preserves_forecast_origin_lead_semantics(
+    tmp_path: Path,
+):
     dataset = Multimet.__new__(Multimet)
     dataset._dynamics_data_path = tmp_path
     dataset._basins = ['basin_01']
-    dataset._hindcast_features = ['hindcast_i1']
+    dataset._hindcast_features = ['cpc_precipitation', 'hres_temperature_2m']
+    dataset._forecast_features = ['hres_temperature_2m']
     dataset._union_mapping = {}
-    dates = pd.date_range('2000-01-01', periods=2)
+    dates = pd.date_range('2000-01-01', periods=4)
     loaded = xr.Dataset(
-        {'hindcast_i1': (('basin', 'date'), [[1.0, 2.0]])},
+        {
+            'cpc_precipitation': (
+                ('basin', 'date'),
+                [[10.0, 20.0, 30.0, 40.0]],
+            ),
+            'hres_temperature_2m': (
+                ('basin', 'date'),
+                [[100.0, 200.0, 300.0, 400.0]],
+            ),
+        },
         coords={'basin': ['basin_01'], 'date': dates},
     )
     forecast = xr.Dataset(
         {
             'forecast_i1': (
                 ('basin', 'date', 'lead_time'),
-                [[[1.0, 2.0], [3.0, 4.0]]],
+                np.ones((1, 4, 2)),
             )
         },
         coords={
@@ -259,8 +272,32 @@ def test_csv_hindcast_does_not_lower_forecast_minimum_lead(tmp_path: Path):
         hindcast = dataset._load_hindcast_as_csv()
 
     merged = xr.merge([hindcast, forecast], join='outer')
-    assert 'lead_time' not in merged['hindcast_i1'].dims
+    assert 'lead_time' not in merged['cpc_precipitation'].dims
+    assert pd.Timedelta(
+        hindcast['hres_temperature_2m']['lead_time'].values[0]
+    ) == pd.Timedelta(days=1)
     assert merged['lead_time'].min() == pd.Timedelta(days=1)
+
+    dataset._dataset = hindcast
+    dataset._data_cache = {}
+    dataset._seq_length = 2
+    dataset._hindcast_features_with_lead_time = ['hres_temperature_2m']
+    dataset._hindcast_features_without_lead_time = ['cpc_precipitation']
+    sample = dataset._extract_hindcasts({'basin': 0, 'date': 2})
+
+    np.testing.assert_array_equal(
+        sample['cpc_precipitation'].squeeze(-1), [20.0, 30.0]
+    )
+    np.testing.assert_array_equal(
+        sample['hres_temperature_2m'].squeeze(-1), [100.0, 200.0]
+    )
+    np.testing.assert_array_equal(
+        dates[[1, 2]], pd.to_datetime(['2000-01-02', '2000-01-03'])
+    )
+    np.testing.assert_array_equal(
+        dates[[0, 1]] + pd.Timedelta(days=1),
+        pd.to_datetime(['2000-01-02', '2000-01-03']),
+    )
 
 
 # Patching `Multimet._load_data` because it's a NotImplementedError in the base class
