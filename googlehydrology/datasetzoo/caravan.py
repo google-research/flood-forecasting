@@ -304,7 +304,9 @@ def _load_attribute_files_of_subdatasets(
             df.drop(
                 columns=(e for e in df.columns if e not in features), inplace=True
             )
-        return df.to_xarray().chunk('auto')
+        return df.to_xarray().chunk(
+            {'basin': -1}
+        )  # Uses underlying numpy arrays in df
 
     dss = map(
         process,

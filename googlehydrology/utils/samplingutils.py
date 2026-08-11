@@ -191,6 +191,8 @@ class _SamplingSetup:
 
         # Certain models don't have embedding_net(s)
         implied_statics_embedding, implied_dynamics_embedding = None, None
+        implied_forecast_statics_embedding, implied_forecast_dynamics_embedding = None, None
+        implied_hindcast_statics_embedding, implied_hindcast_dynamics_embedding = None, None
         if hasattr(model, 'forecast_embedding_net'):
             implied_forecast_statics_embedding = (
                 model.forecast_embedding_net.statics_embedding_p_dropout

@@ -1,0 +1,60 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# How to install:
+# conda env create -f environments/environment_cpu.yml
+
+name: googlehydrology
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12.*
+  - pytorch=2.5.*
+  - cpuonly
+  - torchaudio=2.5.*
+  - torchvision=0.20.*
+  - absl-py=2.3.*
+  - bokeh=3.8.*
+  - cachey=0.2.*
+  - dask=2025.12.*
+  - gcsfs=2025.12.*
+  - geopandas=1.1.*
+  - gh
+  - h5netcdf=1.7.*
+  - h5py=3.15.*
+  - ipython
+  - jupyter
+  - matplotlib=3.10.*
+  - more-itertools=10.8.*
+  - nbsphinx=0.9.*
+  - netcdf4=1.7.*
+  - numpy=2.4.*
+  - pandas=2.3.*
+  - parso=0.8.*
+  - pydantic=2.12.*
+  - pytest
+  - pytest-cov
+  - pytest-xdist
+  - ruamel.yaml=0.18.*
+  - ruff
+  - scipy=1.16.*
+  - seaborn
+  - sphinx=8.2.*
+  - sphinx-rtd-theme=3.0.*
+  - tensorboard=2.20.*
+  - tqdm=4.67.*
+  - xarray=2025.12.*
+  - zarr=3.1.*
