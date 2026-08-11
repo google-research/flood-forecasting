@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import dataclasses
+from pathlib import Path
 from typing import Iterable
 
 import numpy as np
@@ -244,23 +245,125 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             for name, fc in self.shared_embeddings_fc.items()
         ]
 
+        state = getattr(self, '_preloaded_state', None)
+        if state is None:
+            hot_start_path = getattr(self.cfg, 'hot_start_path', None)
+            if hot_start_path is not None and Path(hot_start_path).is_file():
+                state = dict(np.load(hot_start_path, allow_pickle=False))
+
+        h_hind_init = None
+        h_fore_init = None
+        if state is not None:
+            device = static_embedding.device
+            dtype = static_embedding.dtype
+            h_hind_init = (
+                torch.from_numpy(state['h_hindcast']).to(
+                    device=device, dtype=dtype
+                ),
+                torch.from_numpy(state['c_hindcast']).to(
+                    device=device, dtype=dtype
+                ),
+            )
+            h_fore_init = (
+                torch.from_numpy(state['h_forecast']).to(
+                    device=device, dtype=dtype
+                ),
+                torch.from_numpy(state['c_forecast']).to(
+                    device=device, dtype=dtype
+                ),
+            )
+
+
         hindcast_state = self._calc_lstm(
             lstm=self.hindcast_lstm,
             embeddings=hindcast_embeddings + shared_embeddings,
             static_embedding=static_embedding,
+            initial_state=h_hind_init,
         )
         forecast_state = self._calc_lstm(
             lstm=self.forecast_lstm,
             embeddings=forecast_embeddings + shared_embeddings,
             static_embedding=static_embedding,
             other_inputs=hindcast_state,
+            initial_state=h_fore_init,
         )
 
         head = self._calc_head(forecast_state)
+        
 
         return head
 
+    @torch.no_grad()
+    def save_state(
+        self,
+        data: dict[str, torch.Tensor | dict[str, torch.Tensor]],
+        path: str | Path,
+    ) -> None:
+        """Perform a partial forward pass and save state for a hot start at path.
+
+        Parameters
+        ----------
+        data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
+            Dictionary containing input features as key-value pairs.
+        path : str | Path
+            The file path where the state should be saved (.npz format).
+        """
+        forward_data = ForwardData.from_forward_data(data, self.config_data)
+
+        static_embedding = self._calc_static_embedding(forward_data)
+
+        hindcast_embeddings = [
+            self._calc_dynamic_embedding(
+                embedding_network=fc,
+                dynamic_data=forward_data.hindcast_features[name],
+                static_embedding=static_embedding,
+                append_nan=True,
+            )[:, : self.seq_length, :]
+            for name, fc in self.hindcast_embeddings_fc.items()
+        ]
+        forecast_embeddings = [
+            self._calc_dynamic_embedding(
+                embedding_network=fc,
+                dynamic_data=forward_data.forecast_features[name],
+                static_embedding=static_embedding,
+                append_nan=False,
+            )[:, : self.seq_length, :]
+            for name, fc in self.forecast_embeddings_fc.items()
+        ]
+        shared_embeddings = [
+            self._calc_dynamic_embedding(
+                embedding_network=fc,
+                dynamic_data=forward_data.forecast_features[name],
+                static_embedding=static_embedding,
+                append_nan=False,
+            )[:, : self.seq_length, :]
+            for name, fc in self.shared_embeddings_fc.items()
+        ]
+
+        hindcast_state, (h_hind, c_hind) = self._calc_lstm(
+            lstm=self.hindcast_lstm,
+            embeddings=hindcast_embeddings + shared_embeddings,
+            static_embedding=static_embedding,
+            return_state=True,
+        )
+        forecast_state, (h_fore, c_fore) = self._calc_lstm(
+            lstm=self.forecast_lstm,
+            embeddings=forecast_embeddings + shared_embeddings,
+            static_embedding=static_embedding,
+            other_inputs=hindcast_state,
+            return_state=True,
+        )
+
+        np.savez_compressed(
+            path,
+            h_hindcast=h_hind.detach().cpu().numpy(),
+            c_hindcast=c_hind.detach().cpu().numpy(),
+            h_forecast=h_fore.detach().cpu().numpy(),
+            c_forecast=c_fore.detach().cpu().numpy(),
+        )
+
     def _make_static_embedding_repeated(
+
         self, time_length: int, static_embedding: torch.Tensor
     ) -> torch.Tensor:
         """Returns the attributes repeated w.r.t the time length."""
@@ -338,7 +441,9 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         embeddings: Iterable[torch.Tensor],
         static_embedding: torch.Tensor,
         other_inputs: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+        initial_state: tuple[torch.Tensor, torch.Tensor] | None = None,
+        return_state: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         masked_mean_embeddings = self._masked_mean(embeddings)
         if other_inputs is not None:
             masked_mean_embeddings = torch.cat(
@@ -347,8 +452,14 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         lstm_inputs = self._append_static_embedding(
             masked_mean_embeddings, static_embedding
         )
-        output, _ = lstm(input=lstm_inputs)
+        if initial_state is not None:
+            output, hx = lstm(input=lstm_inputs, hx=initial_state)
+        else:
+            output, hx = lstm(input=lstm_inputs)
+        if return_state:
+            return output, hx
         return output
+
 
     def _calc_head(
         self, forecast_state: torch.Tensor

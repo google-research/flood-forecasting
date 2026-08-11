@@ -13,6 +13,9 @@
 # limitations under the License.
 
 
+from pathlib import Path
+
+import numpy as np
 import torch
 import torch.nn as nn
 
@@ -47,6 +50,7 @@ class BaseModel(nn.Module):
             scaler_dir=(cfg.base_run_dir if cfg.is_finetuning else cfg.run_dir),
             calculate_scaler=False,
         )
+        self._preloaded_state = None
 
     def sample(
         self,
@@ -96,6 +100,32 @@ class BaseModel(nn.Module):
             Model output and potentially any intermediate states and activations as a dictionary.
         """
         raise NotImplementedError
+
+    def save_state(
+        self,
+        data: dict[str, torch.Tensor | dict[str, torch.Tensor]],
+        path: str | Path,
+    ) -> None:
+        """Save the hot start state of the model.
+
+        Parameters
+        ----------
+        data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
+            Dictionary containing input features as key-value pairs.
+        path : str | Path
+            The file path where the state should be saved (npz recommended).
+        """
+        raise NotImplementedError
+
+    def load_state_from_disk(self, path: str | Path) -> None:
+        """Pre-load a hot start state archive from disk into memory.
+
+        Parameters
+        ----------
+        path : str | Path
+            Path to the .npz state file to load.
+        """
+        self._preloaded_state = dict(np.load(path, allow_pickle=False))
 
     def pre_model_hook(
         self, data: dict[str, torch.Tensor], is_train: bool

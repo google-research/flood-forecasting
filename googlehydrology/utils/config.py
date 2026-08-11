@@ -129,6 +129,7 @@ class Config(object):
             new_name = re.sub(' ', '', new_name)
 
             self._cfg['experiment_name'] = new_name
+            
 
     def as_dict(self) -> dict:
         """Return run configuration as dictionary.
@@ -736,6 +737,10 @@ class Config(object):
     def seq_length(self) -> int | dict[str, int]:
         return self._get_value_verbose('seq_length')
 
+    @seq_length.setter
+    def seq_length(self, val: int | dict[str, int]) -> None:
+        self._cfg['seq_length'] = val
+
     @property
     def static_attributes(self) -> list[str]:
         return self._as_default_list(self._cfg['static_attributes'])
@@ -800,6 +805,23 @@ class Config(object):
     @train_dir.setter
     def train_dir(self, folder: Path):
         self._cfg['train_dir'] = folder
+
+    @property
+    def hot_start_path(self) -> Path | None:
+        val = self._cfg.get('hot_start_path', None)
+        return Path(val).expanduser() if val else None
+
+    @hot_start_path.setter
+    def hot_start_path(self, path: str | Path | None) -> None:
+        self._cfg['hot_start_path'] = Path(path).expanduser() if path else None
+
+    @property
+    def save_state(self) -> bool:
+        return bool(self._cfg.get('save_state', False))
+
+    @save_state.setter
+    def save_state(self, val: bool) -> None:
+        self._cfg['save_state'] = bool(val)
 
     @property
     def train_end_date(self) -> list[pd.Timestamp]:
