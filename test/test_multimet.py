@@ -181,6 +181,49 @@ def mock_load_data_return(get_config, sample_basins, sample_dates):
 # --- Tests for Multimet ---
 
 
+def test_csv_forecast_rejects_historical_file_fallback(tmp_path: Path):
+    basin = 'local_1'
+    directory = tmp_path / 'timeseries' / 'csv' / 'local'
+    directory.mkdir(parents=True)
+    pd.DataFrame(
+        {'forecast_i1': [1.0]},
+        index=pd.Index([pd.Timestamp('2000-01-01')], name='date'),
+    ).to_csv(directory / f'{basin}.csv')
+    dataset = Multimet.__new__(Multimet)
+    dataset._dynamics_data_path = tmp_path
+    dataset._basins = [basin]
+    dataset._forecast_features = ['forecast_i1']
+    dataset.lead_time = 2
+
+    with pytest.raises(
+        ValueError,
+        match='basin-wide historical CSV cannot be used',
+    ):
+        dataset._load_forecast_as_csv()
+
+
+def test_csv_forecast_loads_dedicated_lead_file(tmp_path: Path):
+    basin = 'local_1'
+    directory = tmp_path / 'timeseries' / 'csv' / 'local'
+    directory.mkdir(parents=True)
+    pd.DataFrame(
+        {1: [1.0], 2: [2.0]},
+        index=pd.Index([pd.Timestamp('2000-01-01')], name='date'),
+    ).to_csv(directory / f'forecast_i1_{basin}.csv')
+    dataset = Multimet.__new__(Multimet)
+    dataset._dynamics_data_path = tmp_path
+    dataset._basins = [basin]
+    dataset._forecast_features = ['forecast_i1']
+    dataset.lead_time = 2
+
+    loaded = dataset._load_forecast_as_csv()
+
+    assert loaded['lead_time'].dt.days.values.tolist() == [1, 2]
+    assert loaded['forecast_i1'].sel(basin=basin).values.tolist() == [
+        [1.0, 2.0]
+    ]
+
+
 # Patching `Multimet._load_data` because it's a NotImplementedError in the base class
 # and needs to return a concrete Dataset for the rest of __init__ to function.
 @patch('googlehydrology.datasetzoo.multimet.load_basin_file')

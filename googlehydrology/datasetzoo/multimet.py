@@ -746,13 +746,10 @@ class Multimet(Dataset):
         return ds
 
     def _load_forecast_as_csv(self) -> xr.Dataset:
-        """Load Caravan-Multimet data for forecast features with file fallback logic.
+        """Load forecast CSVs with issue dates as rows and leads as columns.
 
-        Tries to load {feature}_{basin}.csv (issue date=rows, lead time=columns).
-        If not found, tries to load {basin}.csv (issue date=rows, features=columns, lead_time=0).
-        If neither file is found, a ValueError is raised.
-        
-        Note: File loading and processing errors will now propagate as exceptions (e.g., FileNotFoundError, pandas errors).
+        Forecast inputs require a dedicated ``{feature}_{basin}.csv`` because
+        the basin-wide historical CSV has no forecast lead semantics.
 
         Returns
         -------
@@ -765,9 +762,6 @@ class Multimet(Dataset):
         # Base path for timeseries data
         base_dir = self._dynamics_data_path / 'timeseries' / 'csv'
         
-        # Cache for fallback files, loaded only once per basin for efficiency
-        basin_fallback_cache: Dict[str, pd.DataFrame] = {}
-
         # Load data for the selected products, bands, and basins.
         for basin in self._basins:
             # subdataset_name is often the first part of the basin name (e.g., 'basinA' for 'basinA_sub1')
@@ -776,83 +770,36 @@ class Multimet(Dataset):
 
             for feature in self._forecast_features:
                 
-                # --- 1. Try file with lead time (Structure: rows=date, cols=lead_time) ---
+                # Structure: rows=issue date, columns=lead time.
                 lead_time_file_path = basin_dir / f'{feature}_{basin}.csv'
-                da = None
-                
-                if lead_time_file_path.exists():
-                    
-                    # Load and set time column as index. Column names (lead times) become data.
-                    # Load directly as float32 to save memory (avoids astype() copying later)
-                    df = pd.read_csv(
-                        lead_time_file_path, 
-                        index_col=0, 
-                        parse_dates=True, 
-                        dtype='float32'
+                if not lead_time_file_path.exists():
+                    raise ValueError(
+                        f"Forecast feature '{feature}' for basin '{basin}' "
+                        "requires an issue-date by lead-time CSV at "
+                        f"{lead_time_file_path}. The basin-wide historical "
+                        "CSV cannot be used as a forecast fallback."
                     )
-                    df.index.name = 'date'
 
-                    # Melt lead times from columns into a new dimension/level
-                    # The column headers (lead times) are currently strings, e.g., '0', '1', '2'
-                    ds_melt = df.stack().to_frame(name=feature)
-                    ds_melt.index.names = ['date', 'lead_time']
-                    
-                    # Convert to xarray DataArray. lead_time will be coordinate.
-                    da = ds_melt[feature].to_xarray().to_dataset()
-                    
-                    # Convert lead_time from string/int to Timedelta for consistency.
-                    if 'lead_time' in da.coords:
-                        # Convert column headers to represent lead time in days ('D').
-                        da['lead_time'] = pd.to_timedelta(da['lead_time'].astype(int), unit='D')
-                        da['lead_time'].attrs['units'] = 'timedelta (days)'
-
-
-                # --- 2. Fallback to file without lead time (Structure: rows=date, cols=feature) ---
-                else:
-                    fallback_file_path = basin_dir / f'{basin}.csv'
-                    
-                    if basin not in basin_fallback_cache:
-                        if fallback_file_path.exists():
-                            # Load and set time column as index (only once per basin)
-                            df_fallback = pd.read_csv(
-                                fallback_file_path,
-                                index_col=0,
-                                parse_dates=True,
-                                dtype='float32'
-                            )
-                            df_fallback.index.name = 'date'
-                            basin_fallback_cache[basin] = df_fallback
-                        else:
-                            raise ValueError(
-                                f"Required data file not found for feature '{feature}' in basin '{basin}'. "
-                                f"Neither the primary file ({lead_time_file_path}) "
-                                f"nor the fallback file ({fallback_file_path}) exists."
-                            )
-                    
-                    # Use the cached DataFrame
-                    df = basin_fallback_cache[basin]
-                    
-                    if feature not in df.columns:
-                        raise ValueError(f"Feature '{feature}' not found in fallback file {fallback_file_path}.")
-
-                    # Select the required feature and assign lead_time = 0 as a Timedelta
-                    # Using .copy() here is necessary to avoid SettingWithCopyWarning
-                    df_feature = df[[feature]].copy() 
-                    df_feature['lead_time'] = pd.Timedelta(0) 
-                    
-                    # Set lead_time as a new index level to create a 2D structure (date, lead_time)
-                    da = df_feature.set_index('lead_time', append=True).to_xarray()
-                
-                # --- 3. Finalize and Store DataArray ---
-                if da is not None:
-                    # Add basin as a coordinate, which will be promoted to a dimension during merge
-                    da = da.expand_dims(basin=[basin])
-                    
-                    # Select/slice lead times 
-                    if hasattr(self, '_lead_time_slice') and callable(self._lead_time_slice):
-                        da = da.sel(lead_time=self._lead_time_slice())
-                    
-                    all_feature_das.append(da)
+                df = pd.read_csv(
+                    lead_time_file_path,
+                    index_col=0,
+                    parse_dates=True,
+                    dtype='float32'
+                )
+                df.index.name = 'date'
+                ds_melt = df.stack().to_frame(name=feature)
+                ds_melt.index.names = ['date', 'lead_time']
+                da = ds_melt[feature].to_xarray().to_dataset()
+                da['lead_time'] = pd.to_timedelta(
+                    da['lead_time'].astype(int), unit='D'
+                )
+                da['lead_time'].attrs['units'] = 'timedelta (days)'
+                da = da.expand_dims(basin=[basin])
+                if hasattr(self, '_lead_time_slice') and callable(
+                    self._lead_time_slice
+                ):
+                    da = da.sel(lead_time=self._lead_time_slice())
+                all_feature_das.append(da)
         
         # --- 4. Combine all loaded DataArrays ---
         # Combine merges datasets along coordinates that differ (like basin),
