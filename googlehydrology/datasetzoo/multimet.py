@@ -33,6 +33,7 @@ from torch.utils.data import Dataset
 
 from googlehydrology.datasetzoo.caravan import (
     load_caravan_attributes,
+    load_caravan_timeseries,
     load_caravan_timeseries_together,
 )
 from googlehydrology.datautils.scaler import Scaler
@@ -688,15 +689,32 @@ class Multimet(Dataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, basin).
         """
-        if self._cfg.load_as_csv:
-            return [self._load_hindcast_as_csv()]
         return self._load_hindcast_as_zarr()
 
     def _load_hindcast_as_zarr(self) -> list[xr.Dataset]:
+        """Load Caravan-Multimet data for hindcast features.
+
+        Returns
+        -------
+        list[xr.Dataset]
+            Datasets containing the loaded hindcast features.
+        """
         # Prepare hindcast features to load, including the masks of union_mapping
         features = set(self._hindcast_features) | set(
             (self._union_mapping or {}).values()
         )
+
+        # Check if single unified dynamics zarr store contains the features
+        single_store_path = _find_single_dynamics_zarr_path(self._dynamics_data_path)
+        if single_store_path is not None:
+            ds = _open_zarr(single_store_path)
+            available_features = [f for f in features if f in ds.data_vars]
+            if available_features:
+                if 'lead_time' in ds:
+                    ds = ds.sel(basin=self._basins, lead_time=self._lead_time_slice())
+                else:
+                    ds = ds.sel(basin=self._basins)
+                return [ds[available_features]]
 
         # Separate products and bands for each product from feature names.
         product_bands = _get_products_and_bands_from_feature_strings(
@@ -708,9 +726,7 @@ class Multimet(Dataset):
 
         # Load data for the selected products, bands, and basins.
         for product, bands in product_bands.items():
-            product_path = (
-                self._dynamics_data_path / product / 'timeseries.zarr'
-            )
+            product_path = _find_product_zarr_path(self._dynamics_data_path, product)
             product_ds = _open_zarr(product_path)
             
             if 'lead_time' in product_ds:
@@ -728,147 +744,6 @@ class Multimet(Dataset):
 
         return product_dss
 
-    def _load_hindcast_as_csv(self) -> xr.Dataset:
-        """Load hindcast data and add a 0-day lead_time dimension."""
-        ds = load_caravan_timeseries_together(
-            data_dir=self._dynamics_data_path,
-            basins=self._basins,
-            target_features=self._hindcast_features,
-            csv=True,
-        )
-        
-        # Expand dimensions to include a 0-day lead time coordinate
-        ds = ds.expand_dims(lead_time=[pd.Timedelta(0, unit='D')])
-        
-        # Match the units attribute from the forecast loading logic
-        ds['lead_time'].attrs['units'] = 'timedelta (days)'
-        
-        return ds
-
-    def _load_forecast_as_csv(self) -> xr.Dataset:
-        """Load Caravan-Multimet data for forecast features with file fallback logic.
-
-        Tries to load {feature}_{basin}.csv (issue date=rows, lead time=columns).
-        If not found, tries to load {basin}.csv (issue date=rows, features=columns, lead_time=0).
-        If neither file is found, a ValueError is raised.
-        
-        Note: File loading and processing errors will now propagate as exceptions (e.g., FileNotFoundError, pandas errors).
-
-        Returns
-        -------
-        xr.Dataset
-            Dataset containing the loaded features with dimensions (date, lead_time, basin).
-        """
-        # Initialize storage for all DataArrays, which will be merged/combined
-        all_feature_das = []
-
-        # Base path for timeseries data
-        base_dir = self._dynamics_data_path / 'timeseries' / 'csv'
-        
-        # Cache for fallback files, loaded only once per basin for efficiency
-        basin_fallback_cache: Dict[str, pd.DataFrame] = {}
-
-        # Load data for the selected products, bands, and basins.
-        for basin in self._basins:
-            # subdataset_name is often the first part of the basin name (e.g., 'basinA' for 'basinA_sub1')
-            subdataset_name = basin.split('_')[0]
-            basin_dir = base_dir / subdataset_name
-
-            for feature in self._forecast_features:
-                
-                # --- 1. Try file with lead time (Structure: rows=date, cols=lead_time) ---
-                lead_time_file_path = basin_dir / f'{feature}_{basin}.csv'
-                da = None
-                
-                if lead_time_file_path.exists():
-                    
-                    # Load and set time column as index. Column names (lead times) become data.
-                    # Load directly as float32 to save memory (avoids astype() copying later)
-                    df = pd.read_csv(
-                        lead_time_file_path, 
-                        index_col=0, 
-                        parse_dates=True, 
-                        dtype='float32'
-                    )
-                    df.index.name = 'date'
-
-                    # Melt lead times from columns into a new dimension/level
-                    # The column headers (lead times) are currently strings, e.g., '0', '1', '2'
-                    ds_melt = df.stack().to_frame(name=feature)
-                    ds_melt.index.names = ['date', 'lead_time']
-                    
-                    # Convert to xarray DataArray. lead_time will be coordinate.
-                    da = ds_melt[feature].to_xarray().to_dataset()
-                    
-                    # Convert lead_time from string/int to Timedelta for consistency.
-                    if 'lead_time' in da.coords:
-                        # Convert column headers to represent lead time in days ('D').
-                        da['lead_time'] = pd.to_timedelta(da['lead_time'].astype(int), unit='D')
-                        da['lead_time'].attrs['units'] = 'timedelta (days)'
-
-
-                # --- 2. Fallback to file without lead time (Structure: rows=date, cols=feature) ---
-                else:
-                    fallback_file_path = basin_dir / f'{basin}.csv'
-                    
-                    if basin not in basin_fallback_cache:
-                        if fallback_file_path.exists():
-                            # Load and set time column as index (only once per basin)
-                            df_fallback = pd.read_csv(
-                                fallback_file_path,
-                                index_col=0,
-                                parse_dates=True,
-                                dtype='float32'
-                            )
-                            df_fallback.index.name = 'date'
-                            basin_fallback_cache[basin] = df_fallback
-                        else:
-                            raise ValueError(
-                                f"Required data file not found for feature '{feature}' in basin '{basin}'. "
-                                f"Neither the primary file ({lead_time_file_path}) "
-                                f"nor the fallback file ({fallback_file_path}) exists."
-                            )
-                    
-                    # Use the cached DataFrame
-                    df = basin_fallback_cache[basin]
-                    
-                    if feature not in df.columns:
-                        raise ValueError(f"Feature '{feature}' not found in fallback file {fallback_file_path}.")
-
-                    # Select the required feature and assign lead_time = 0 as a Timedelta
-                    # Using .copy() here is necessary to avoid SettingWithCopyWarning
-                    df_feature = df[[feature]].copy() 
-                    df_feature['lead_time'] = pd.Timedelta(0) 
-                    
-                    # Set lead_time as a new index level to create a 2D structure (date, lead_time)
-                    da = df_feature.set_index('lead_time', append=True).to_xarray()
-                
-                # --- 3. Finalize and Store DataArray ---
-                if da is not None:
-                    # Add basin as a coordinate, which will be promoted to a dimension during merge
-                    da = da.expand_dims(basin=[basin])
-                    
-                    # Select/slice lead times 
-                    if hasattr(self, '_lead_time_slice') and callable(self._lead_time_slice):
-                        da = da.sel(lead_time=self._lead_time_slice())
-                    
-                    all_feature_das.append(da)
-        
-        # --- 4. Combine all loaded DataArrays ---
-        # Combine merges datasets along coordinates that differ (like basin),
-        # and combines variables that share coordinates (like features).
-        final_ds = xr.combine_by_coords(
-            all_feature_das, 
-            coords=['basin'], # Combine along the basin dimension
-            data_vars='all',   # Include all unique data variables (features)
-            compat='override'
-        )
-        
-        # Transpose to (date, lead_time, basin, ...)
-        final_ds = final_ds.transpose('date', 'lead_time', 'basin', ...)
-
-        return final_ds
-
     def _load_forecast_features(self) -> list[xr.Dataset]:
         """Load Caravan-Multimet data for forecast features.
 
@@ -877,8 +752,6 @@ class Multimet(Dataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, lead_time, basin).
         """
-        if self._cfg.load_as_csv:
-            return [self._load_forecast_as_csv()]
         return self._load_forecast_as_zarr()
 
     def _load_forecast_as_zarr(self) -> list[xr.Dataset]:
@@ -889,6 +762,19 @@ class Multimet(Dataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, lead_time, basin).
         """
+        # Check if single unified dynamics zarr store contains the forecast features
+        single_store_path = _find_single_dynamics_zarr_path(self._dynamics_data_path)
+        if single_store_path is not None:
+            ds = _open_zarr(single_store_path)
+            available_features = [f for f in self._forecast_features if f in ds.data_vars]
+            if available_features:
+                if 'lead_time' not in ds:
+                    raise ValueError(
+                        f'Lead times do not exist in forecast dataset at {single_store_path}.'
+                    )
+                ds = ds.sel(basin=self._basins, lead_time=self._lead_time_slice())
+                return [ds[available_features]]
+
         # Separate products and bands for each product from feature names.
         product_bands = _get_products_and_bands_from_feature_strings(
             features=self._forecast_features
@@ -899,9 +785,7 @@ class Multimet(Dataset):
 
         # Load data for the selected products, bands, and basins.
         for product, bands in product_bands.items():
-            product_path = (
-                self._dynamics_data_path / product / 'timeseries.zarr'
-            )
+            product_path = _find_product_zarr_path(self._dynamics_data_path, product)
             product_ds = _open_zarr(product_path)
 
             # If this is a forecast product, extract only leadtime 0 for hindcasts.
@@ -925,41 +809,12 @@ class Multimet(Dataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, basin).
         """
-        if self._cfg.experimental_load_target_features_parallel_processes < 2:
-            return load_caravan_timeseries_together(
-                self._targets_data_path,
-                self._basins,
-                self._target_features,
-                csv=self._cfg.load_as_csv,
-            )
-
-        def create_loader_process(basins: Iterable[str]) -> subprocess.Popen:
-            return subprocess.Popen(
-                [
-                    sys.executable,
-                    Path(__file__).parent / 'mfdata_loader.py',
-                    f'--data_dir={self._targets_data_path}',
-                    f'--basins={",".join(basins)}',
-                    f'--target_features={",".join(self._target_features)}',
-                    f'--csv={self._cfg.load_as_csv}',
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-
-        def wait_loader_result(process: subprocess.Popen) -> xr.Dataset:
-            stdout, stderr = process.communicate()
-            assert process.returncode == 0, f'mfdata_loader failure: {stderr}'
-            return pickle.loads(stdout)
-
-        batch_size = math.ceil(
-            len(self._basins)
-            / self._cfg.experimental_load_target_features_parallel_processes
+        return load_caravan_timeseries(
+            data_dir=self._targets_data_path,
+            basins=self._basins,
+            target_features=self._target_features,
+            csv=self._cfg.load_as_csv,
         )
-        batches = itertools.batched(self._basins, batch_size)
-        processes = tuple(map(create_loader_process, batches))
-        results = tuple(map(wait_loader_result, processes))
-        return xr.concat(results, dim='basin', join='outer')
 
     def _load_static_features(self) -> xr.Dataset:
         """Load Caravan static attributes.
@@ -1051,6 +906,47 @@ def _convert_to_tensor(
     if isinstance(value, np.ndarray):
         return torch.from_numpy(value)
     raise ValueError(f'Unrecognized data type: {type(value)}')
+
+
+def _find_single_dynamics_zarr_path(dynamics_path: Path | str) -> Path | None:
+    path_str = str(dynamics_path)
+    if path_str.startswith('gs://') or path_str.startswith('gs:/'):
+        if path_str.endswith('.zarr'):
+            return Path(path_str)
+        return None
+
+    p = Path(dynamics_path)
+    if p.suffix == '.zarr' or (p / '.zgroup').exists() or (p / 'zarr.json').exists() or (p / '.zmetadata').exists():
+        return p
+    if (p / 'timeseries.zarr').exists() and not any(sub.is_dir() for sub in p.glob('*') if sub.name != 'timeseries.zarr'):
+        return p / 'timeseries.zarr'
+    return None
+
+
+def _find_product_zarr_path(dynamics_path: Path | str, product: str) -> Path:
+    path_str = str(dynamics_path)
+    if path_str.startswith('gs://') or path_str.startswith('gs:/'):
+        return Path(f"{path_str.rstrip('/')}/{product}/timeseries.zarr")
+
+    p = Path(dynamics_path)
+    product_path = p / product / 'timeseries.zarr'
+    if product_path.exists():
+        return product_path
+    if (p / product).exists() and (
+        (p / product).suffix == '.zarr'
+        or (p / product / '.zgroup').exists()
+        or (p / product / 'zarr.json').exists()
+        or (p / product / '.zmetadata').exists()
+    ):
+        return p / product
+    # Try case-insensitive matching
+    if p.is_dir():
+        for sub in p.glob('*'):
+            if sub.is_dir() and sub.name.lower().replace('_', '') == product.lower().replace('_', ''):
+                if (sub / 'timeseries.zarr').exists():
+                    return sub / 'timeseries.zarr'
+                return sub
+    return product_path
 
 
 @functools.cache
