@@ -18,7 +18,6 @@ from unittest.mock import MagicMock
 
 import pytest
 import torch
-import torch.nn as nn
 
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.modelzoo.fc import FC

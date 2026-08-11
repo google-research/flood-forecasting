@@ -21,7 +21,6 @@ import pytest
 import torch
 
 from googlehydrology.training.loss import (
-    BaseLoss,
     MaskedCMALLoss,
     MaskedMSELoss,
     MaskedNSELoss,

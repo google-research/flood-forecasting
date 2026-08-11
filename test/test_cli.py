@@ -89,6 +89,7 @@ def test_run_dispatch_start_run():
 
         run.start_run(config=cfg, gpu=-1)
         assert cfg.device == 'cpu'
+        assert mock_train.call_count == 2
 
 
 @pytest.mark.unit

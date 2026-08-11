@@ -15,15 +15,12 @@
 """Unit tests for googlehydrology.utils.logging_utils."""
 
 import logging
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 from googlehydrology.utils.logging_utils import (
     WarningOnceFilter,
     get_git_hash,
-    save_git_diff,
     setup_logging,
 )
 
@@ -59,20 +56,26 @@ def test_get_git_hash():
 @pytest.mark.unit
 def test_setup_logging(tmp_path):
     log_file = tmp_path / 'test_run.log'
-    # Clear existing handlers to allow basicConfig re-init
     root_logger = logging.getLogger()
-    for h in list(root_logger.handlers):
-        root_logger.removeHandler(h)
+    original_handlers = list(root_logger.handlers)
+    try:
+        for h in original_handlers:
+            root_logger.removeHandler(h)
 
-    setup_logging(
-        log_file=str(log_file),
-        level=logging.INFO,
-        print_warnings_once=True,
-    )
-    logging.info('Test log line')
-    for h in root_logger.handlers:
-        h.flush()
+        setup_logging(
+            log_file=str(log_file),
+            level=logging.INFO,
+            print_warnings_once=True,
+        )
+        logging.info('Test log line')
+        for h in root_logger.handlers:
+            h.flush()
 
-    assert log_file.exists()
-    content = log_file.read_text()
-    assert 'Test log line' in content or 'initialized' in content
+        assert log_file.exists()
+        content = log_file.read_text()
+        assert 'Test log line' in content or 'initialized' in content
+    finally:
+        for h in list(root_logger.handlers):
+            root_logger.removeHandler(h)
+        for h in original_handlers:
+            root_logger.addHandler(h)
