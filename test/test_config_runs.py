@@ -29,17 +29,38 @@ from googlehydrology.evaluation.evaluate import start_evaluation
 from googlehydrology.modelzoo.mean_embedding_forecast_lstm import (
     MeanEmbeddingForecastLSTM,
 )
+from googlehydrology.training.basetrainer import BaseTrainer
 from googlehydrology.training.train import start_training
 from googlehydrology.utils.config import Config
 from test import Fixture
 
 
-def test_tutorial_finetune_modules_are_valid():
-    """Ensure the tutorial only requests fine-tuneable model modules."""
-    config = Config(Path('tutorial/configs/finetune-config.yml'))
+def test_tutorial_finetune_modules_are_valid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ensure the tutorial modules resolve to trainable model parameters."""
+    monkeypatch.setattr(
+        'googlehydrology.modelzoo.basemodel.Scaler',
+        lambda **_kwargs: None,
+    )
+    config = Config(Path('tutorial/model-runs/5-basin-example/config.yml'))
+    config.update_config(Path('tutorial/configs/finetune-config.yml'))
+    model = MeanEmbeddingForecastLSTM(config)
+    trainer = BaseTrainer.__new__(BaseTrainer)
+    trainer.cfg = config
+    trainer.model = model
+    trainer._freeze_model_parts()
 
-    assert set(config.finetune_modules).issubset(
-        MeanEmbeddingForecastLSTM.module_parts
+    trainable_names = {
+        name
+        for name, parameter in model.named_parameters()
+        if parameter.requires_grad
+    }
+    assert any(name.startswith('static_embedding_fc.') for name in trainable_names)
+    assert any(name.startswith('head.') for name in trainable_names)
+    assert all(
+        name.startswith(('static_embedding_fc.', 'head.'))
+        for name in trainable_names
     )
 
 
