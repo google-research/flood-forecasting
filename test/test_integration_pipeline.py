@@ -15,7 +15,6 @@
 """Integration tests for GoogleHydrology training and evaluation pipeline."""
 
 from pathlib import Path
-import pickle
 import shutil
 import tempfile
 from typing import Any
