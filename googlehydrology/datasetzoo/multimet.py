@@ -61,6 +61,17 @@ TENSOR_VARS = [
 ]
 MULTIMET_MINIMUM_LEAD_TIME = 1
 
+# Aliases for multimet product names with inconsistent naming conventions
+PRODUCT_ALIASES = {
+    'chirps': 'CHIRPS',
+    'chirpsgefs': 'CHIRPS_GEFS',
+    'cpc': 'CPC',
+    'era5land': 'ERA5_LAND',
+    'graphcast': 'GRAPHCAST',
+    'hres': 'HRES',
+    'imerg': 'IMERG',
+}
+
 class MultimetDataLoader(torch.utils.data.DataLoader):
     """Custom DataLoader that handles lazy data loading.
 
@@ -166,6 +177,8 @@ class Multimet(Dataset):
             raise ValueError('hindcast_inputs must be supplied.')
         self._forecast_features = flatten_feature_list(cfg.forecast_inputs)
         self._hindcast_features = flatten_feature_list(cfg.hindcast_inputs)
+        self._hindcast_inputs = cfg.hindcast_inputs
+        self._forecast_inputs = cfg.forecast_inputs
         self._union_mapping = cfg.union_mapping
 
         # Feature data paths by type. This allows the option to load some data from cloud and some locally.
@@ -699,14 +712,12 @@ class Multimet(Dataset):
         list[xr.Dataset]
             Datasets containing the loaded hindcast features.
         """
-        # Prepare hindcast features to load, including the masks of union_mapping
-        features = set(self._hindcast_features) | set(
-            (self._union_mapping or {}).values()
-        )
-
         # Check if single unified dynamics zarr store contains the features
         single_store_path = _find_single_dynamics_zarr_path(self._dynamics_data_path)
         if single_store_path is not None:
+            features = set(self._hindcast_features) | set(
+                (self._union_mapping or {}).values()
+            )
             ds = _open_zarr(single_store_path)
             available_features = [f for f in features if f in ds.data_vars]
             if available_features:
@@ -716,22 +727,48 @@ class Multimet(Dataset):
                     ds = ds.sel(basin=self._basins)
                 return [ds[available_features]]
 
-        # Separate products and bands for each product from feature names.
-        product_bands = _get_products_and_bands_from_feature_strings(
-            features=features
+        # Separate products and bands for each product from the configured
+        # hindcast inputs.
+        product_bands = _get_products_and_bands_from_features(
+            self._hindcast_inputs
         )
+
+        # Also load fallback variables used by union_mapping.
+        if self._union_mapping:
+            union_product_bands = _get_products_and_bands_from_feature_strings(
+                self._union_mapping.values()
+            )
+            for product, bands in union_product_bands.items():
+                product_bands.setdefault(product, [])
+                for band in bands:
+                    if band not in product_bands[product]:
+                        product_bands[product].append(band)
 
         # Initialize storage for product/band dataframes that will eventually be concatenated.
         product_dss = []
 
         # Load data for the selected products, bands, and basins.
         for product, bands in product_bands.items():
-            product_path = _find_product_zarr_path(self._dynamics_data_path, product)
+            product_path = _find_product_zarr_path(
+                self._dynamics_data_path, product
+            )
+            LOGGER.info(
+                "Loading hindcast product '%s' with bands %s", product, bands
+            )
             product_ds = _open_zarr(product_path)
-            
+
+            missing = set(bands) - set(product_ds.data_vars)
+            if missing:
+                raise ValueError(
+                    f"Requested features {missing} not found in product "
+                    f"'{product}'. Available variables: "
+                    f"{list(product_ds.data_vars)}"
+                )
+
             if 'lead_time' in product_ds:
-                # The same product may be used both for forecast and hindcast features. For hindcast, we load it with the
-                # full lead_time similar to forecast, and filter the minimal lead_time values during sampling.
+                # The same product may be used both for forecast and hindcast
+                # features. For hindcast, we load it with the full lead_time
+                # similar to forecast, and filter minimal lead_time in sampling.
                 product_ds = product_ds.sel(
                     basin=self._basins, lead_time=self._lead_time_slice()
                 )
@@ -739,7 +776,6 @@ class Multimet(Dataset):
                 product_ds = product_ds.sel(basin=self._basins)
 
             product_ds = product_ds[bands]
-
             product_dss.append(product_ds)
 
         return product_dss
@@ -750,7 +786,7 @@ class Multimet(Dataset):
         Returns
         -------
         xr.Dataset
-            Dataset containing the loaded features with dimensions (date, lead_time, basin).
+            Dataset containing loaded features with dimensions (date, lead_time, basin).
         """
         return self._load_forecast_as_zarr()
 
@@ -760,35 +796,55 @@ class Multimet(Dataset):
         Returns
         -------
         xr.Dataset
-            Dataset containing the loaded features with dimensions (date, lead_time, basin).
+            Dataset containing loaded features with dimensions (date, lead_time, basin).
         """
-        # Check if single unified dynamics zarr store contains the forecast features
-        single_store_path = _find_single_dynamics_zarr_path(self._dynamics_data_path)
+        # Check if single unified dynamics zarr store contains forecast features
+        single_store_path = _find_single_dynamics_zarr_path(
+            self._dynamics_data_path
+        )
         if single_store_path is not None:
             ds = _open_zarr(single_store_path)
-            available_features = [f for f in self._forecast_features if f in ds.data_vars]
+            available_features = [
+                f for f in self._forecast_features if f in ds.data_vars
+            ]
             if available_features:
                 if 'lead_time' not in ds:
                     raise ValueError(
-                        f'Lead times do not exist in forecast dataset at {single_store_path}.'
+                        f'Lead times do not exist in forecast dataset at '
+                        f'{single_store_path}.'
                     )
-                ds = ds.sel(basin=self._basins, lead_time=self._lead_time_slice())
+                ds = ds.sel(
+                    basin=self._basins, lead_time=self._lead_time_slice()
+                )
                 return [ds[available_features]]
 
-        # Separate products and bands for each product from feature names.
-        product_bands = _get_products_and_bands_from_feature_strings(
-            features=self._forecast_features
+        # Separate products and bands for each product from configured inputs.
+        product_bands = _get_products_and_bands_from_features(
+            self._forecast_inputs
         )
 
-        # Initialize storage for product/band dataframes that will eventually be concatenated.
+        # Initialize storage for product/band dataframes to concatenate.
         product_dss = []
 
         # Load data for the selected products, bands, and basins.
         for product, bands in product_bands.items():
-            product_path = _find_product_zarr_path(self._dynamics_data_path, product)
+            product_path = _find_product_zarr_path(
+                self._dynamics_data_path, product
+            )
+            LOGGER.info(
+                "Loading forecast product '%s' with bands %s", product, bands
+            )
             product_ds = _open_zarr(product_path)
 
-            # If this is a forecast product, extract only leadtime 0 for hindcasts.
+            missing = set(bands) - set(product_ds.data_vars)
+            if missing:
+                raise ValueError(
+                    f"Requested features {missing} not found in product "
+                    f"'{product}'. Available variables: "
+                    f"{list(product_ds.data_vars)}"
+                )
+
+            # If this is a forecast product, extract only leadtime 0.
             if 'lead_time' not in product_ds:
                 raise ValueError(
                     f'Lead times do not exist for forecast product ({product}).'
@@ -970,31 +1026,76 @@ def _open_zarr(path: Path) -> xr.Dataset:
     return xr.open_zarr(store=store, chunks='auto', decode_timedelta=True)
 
 
+def _normalize_product_key(product: str) -> str:
+    return product.lower().replace('_', '').replace('-', '')
+
+
+def _canonical_product_name(product: str) -> str:
+    return PRODUCT_ALIASES.get(_normalize_product_key(product), product)
+
+
+def _product_name_from_feature(feature: str) -> str:
+    normalized_feature = _normalize_product_key(feature)
+    for alias in sorted(PRODUCT_ALIASES, key=len, reverse=True):
+        if normalized_feature.startswith(alias):
+            return PRODUCT_ALIASES[alias]
+
+    return feature.split('_')[0].upper()
+
+
 def _get_products_and_bands_from_feature_strings(
     features: Iterable[str],
 ) -> dict[str, list[str]]:
-    """
-    Processes feature strings to create a dictionary of product to band(s).
+    """Processes feature strings to create a dictionary of product to band(s).
 
     Parameters
     ----------
-    features : list[str]
-        A list features in the format `<product>_<band>. This is the format for feature
-        names in the Multimet dataset.
+    features : Iterable[str]
+        Feature names in the format '<product>_<band>'.
 
     Returns
     -------
     dict[str, list[str]]
-        Keys are product names and values are a list of features for that product. Features
-        remain in the format <product>_<band>.
+        Keys are canonical product names and values are lists of features.
+        Feature names are preserved.
     """
     product_bands = {}
     for feature in features:
-        product = feature.split('_')[0].upper()
-        if product == 'ERA5LAND':
-            product = 'ERA5_LAND'
+        product = _product_name_from_feature(feature)
         product_bands.setdefault(product, []).append(feature)
     return product_bands
+
+
+def _get_products_and_bands_from_features(
+    features: dict[str, list[str]] | Iterable[str],
+) -> dict[str, list[str]]:
+    """Create a mapping of product names to feature bands.
+
+    Parameters
+    ----------
+    features : dict[str, list[str]] | Iterable[str]
+        Either:
+        - A dictionary where keys are product names from the config and
+          values are lists of features belonging to that product, or
+        - A flat iterable of feature names in the format '<product>_<band>'.
+
+    Returns
+    -------
+    dict[str, list[str]]
+        Dictionary mapping canonical product names to their associated
+        feature bands.
+    """
+    if isinstance(features, dict):
+        return {
+            _canonical_product_name(product): bands
+            for product, bands in features.items()
+        }
+
+    product_bands = _get_products_and_bands_from_feature_strings(features)
+    return {
+        _canonical_product_name(product): bands
+        for product, bands in product_bands.items()
+    }
 
 class SampleIndexer:
     """Reorg columns to rows.

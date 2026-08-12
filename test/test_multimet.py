@@ -650,3 +650,52 @@ def test_forecast_dataset_no_forecast_features_renames_key(
     assert 'x_d' in sample
     assert 'x_d_hindcast' not in sample
     assert 'x_d_forecast' not in sample
+
+
+def test_product_name_parsing_and_normalization():
+    from googlehydrology.datasetzoo.multimet import (
+        _canonical_product_name,
+        _get_products_and_bands_from_feature_strings,
+        _get_products_and_bands_from_features,
+        _normalize_product_key,
+        _product_name_from_feature,
+    )
+
+    assert _normalize_product_key('CHIRPS_GEFS') == 'chirpsgefs'
+    assert _normalize_product_key('era5-land') == 'era5land'
+
+    assert _canonical_product_name('chirps_gefs') == 'CHIRPS_GEFS'
+    assert _canonical_product_name('chirpsgefs') == 'CHIRPS_GEFS'
+    assert _canonical_product_name('ERA5_LAND') == 'ERA5_LAND'
+    assert _canonical_product_name('era5land') == 'ERA5_LAND'
+    assert _canonical_product_name('graphcast') == 'GRAPHCAST'
+
+    # Feature string parsing with underscores
+    assert (
+        _product_name_from_feature('chirps_gefs_precipitation')
+        == 'CHIRPS_GEFS'
+    )
+    assert _product_name_from_feature('CHIRPS_GEFS_precip') == 'CHIRPS_GEFS'
+    assert _product_name_from_feature('era5_land_temperature') == 'ERA5_LAND'
+    assert _product_name_from_feature('era5land_temperature') == 'ERA5_LAND'
+    assert _product_name_from_feature('cpc_precip') == 'CPC'
+
+    # Flat string feature list
+    features = ['chirps_gefs_precip', 'era5_land_temperature', 'cpc_precip']
+    pb = _get_products_and_bands_from_feature_strings(features)
+    assert 'CHIRPS_GEFS' in pb
+    assert 'ERA5_LAND' in pb
+    assert 'CPC' in pb
+    assert pb['CHIRPS_GEFS'] == ['chirps_gefs_precip']
+    assert pb['ERA5_LAND'] == ['era5_land_temperature']
+
+    # Dict-formatted inputs
+    dict_features = {
+        'chirps_gefs': ['precip'],
+        'era5land': ['temperature'],
+    }
+    pb_dict = _get_products_and_bands_from_features(dict_features)
+    assert pb_dict == {
+        'CHIRPS_GEFS': ['precip'],
+        'ERA5_LAND': ['temperature'],
+    }
