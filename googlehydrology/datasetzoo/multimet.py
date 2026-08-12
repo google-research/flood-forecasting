@@ -1055,8 +1055,14 @@ def _convert_to_tensor(
 
 @functools.cache
 def _open_zarr(path: Path) -> xr.Dataset:
-    path = path.as_posix().replace('gs:/', 'gs://')
-    return xr.open_zarr(store=path, chunks='auto', decode_timedelta=True)
+    str_path = str(path)
+    if str_path.startswith('gs:') or str_path.startswith('gs/'):
+        store = path.as_posix().replace('gs:/', 'gs://')
+    else:
+        store = str_path
+    return xr.open_zarr(
+        store=store, chunks='auto', decode_timedelta=True, consolidated=False
+    )
 
 
 def _get_products_and_bands_from_feature_strings(
