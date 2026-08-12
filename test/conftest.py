@@ -28,14 +28,26 @@ from test import Fixture
 def cleanup_resources_after_test():
     """Closes all logging handlers, open matplotlib figures, and forces GC."""
     yield
-    # Close & remove FileHandlers from root logger to avoid Windows file locks.
-    root_logger = logging.getLogger()
-    for handler in list(root_logger.handlers):
+    # Close & remove FileHandlers from root logger and named loggers.
+    for handler in list(logging.root.handlers):
         if isinstance(handler, logging.FileHandler):
             handler.close()
-            root_logger.removeHandler(handler)
+            logging.root.removeHandler(handler)
+    for logger in list(logging.Logger.manager.loggerDict.values()):
+        if isinstance(logger, logging.Logger):
+            for handler in list(logger.handlers):
+                if isinstance(handler, logging.FileHandler):
+                    handler.close()
+                    logger.removeHandler(handler)
     # Close any open matplotlib figures
     plt.close('all')
+    # Clear lru_cache on _open_zarr to release cached dataset file handles
+    try:
+        from googlehydrology.datasetzoo.multimet import _open_zarr
+
+        _open_zarr.cache_clear()
+    except Exception:
+        pass
     # Force garbage collection to release unreferenced file descriptors
     gc.collect()
 

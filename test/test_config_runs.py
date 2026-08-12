@@ -181,5 +181,5 @@ def get_basin_results(run_dir: Path, epoch: int) -> xr.Dataset:
         if len(matches) != 1:
             pytest.fail(f'Results file not found in {run_dir}.')
         target_path = matches[0]
-    ds = xr.open_zarr(str(target_path), consolidated=False)
-    return ds.load()
+    with xr.open_zarr(str(target_path), consolidated=False) as ds:
+        return ds.load()
