@@ -563,6 +563,7 @@ def test_scaler_load_from_file_raises_error_for_zero_scale(tmp_scaler_dir):
     )
     os.makedirs(tmp_scaler_dir, exist_ok=True)
     zero_scale_ds.to_zarr(scaler_file_path, mode='w')
+    zero_scale_ds.close()
 
     # Now try to load this scaler and expect a ValueError
     with pytest.raises(

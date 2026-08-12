@@ -77,12 +77,14 @@ def test_load_caravan_attributes(mock_caravan_dir):
     assert 'basin' in ds.coords
     assert len(ds['basin']) == 2
     assert 'area' in ds.data_vars or 'area' in ds.coords
+    ds.close()
 
     # Subdataset loading
     ds_sub = caravan.load_caravan_attributes(
         data_dir=mock_caravan_dir, subdataset='camelsus'
     )
     assert len(ds_sub['basin']) == 2
+    ds_sub.close()
 
     # Specific basins
     ds_basin = caravan.load_caravan_attributes(
@@ -90,6 +92,7 @@ def test_load_caravan_attributes(mock_caravan_dir):
         basins=['camelsus_01022500'],
     )
     assert len(ds_basin['basin']) == 1
+    ds_basin.close()
 
     # Missing subdataset error
     with pytest.raises(FileNotFoundError, match='No subdataset non_existent'):
@@ -116,6 +119,7 @@ def test_load_csvs_as_ds(mock_caravan_dir):
     assert 'basin' in ds.dims or 'basin' in ds.coords
     assert 'date' in ds.dims or 'date' in ds.coords
     assert 'streamflow' in ds.data_vars
+    ds.close()
 
 
 @pytest.mark.unit

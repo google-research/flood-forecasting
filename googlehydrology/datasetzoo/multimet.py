@@ -951,8 +951,12 @@ def _find_product_zarr_path(dynamics_path: Path | str, product: str) -> Path:
 
 @functools.cache
 def _open_zarr(path: Path) -> xr.Dataset:
-    path_str = path.as_posix().replace('gs:/', 'gs://')
-    return xr.open_zarr(store=path_str, chunks='auto', decode_timedelta=True)
+    str_path = str(path)
+    if str_path.startswith('gs:') or str_path.startswith('gs/'):
+        store = path.as_posix().replace('gs:/', 'gs://')
+    else:
+        store = str_path
+    return xr.open_zarr(store=store, chunks='auto', decode_timedelta=True)
 
 
 def _get_products_and_bands_from_feature_strings(
