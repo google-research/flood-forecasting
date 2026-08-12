@@ -30,6 +30,7 @@ test_end_date: 31/12/2017
 
 seed: 111
 device: cpu
+compile: False
 
 # --- Validation configuration ---------------------------------------------------------------------
 validate_every: 1
