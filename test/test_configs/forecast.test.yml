@@ -81,7 +81,7 @@ seq_length: 30
 
 num_workers: 0
 log_interval: 5
-log_tensorboard: True
+log_tensorboard: False
 log_n_figures: 2
 save_weights_every: 1
 save_validation_results: False
