@@ -37,7 +37,7 @@ This tutorial is structured to provide insights into five core areas of hydrolog
    * **KGE** (Kling-Gupta Efficiency)
 
 5. **Impact of Static Attributes**
-   Explore the role of static basin attributes (like basin area) and learn how targeted fine-tuning of the ``static_attributes_fc`` embedding layer of the :ref:`Mean Embedding Forecast LSTM <mean-embedding-forecast-lstm>` can address performance discrepancies.
+   Explore the role of static basin attributes (like basin area) and learn how targeted fine-tuning of the ``static_embedding_fc`` embedding layer of the :ref:`Mean Embedding Forecast LSTM <mean-embedding-forecast-lstm>` can address performance discrepancies.
 
 This notebook is designed as an educational exercise rather than a performance benchmark. To ensure the code runs quickly in a standard environment (like Google Colab), the experiment is restricted to a "toy" dataset of only 5 training basins. Because State-of-the-Art (SOTA) global models typically require data from hundreds or thousands of basins to learn universal hydrologic behaviors and relationships, this 5-basin model will **not** yield state-of-the-art results. Specifically, a model trained on such a small sample size lacks the "experience" to understand basins in different climates or terrains. You will observe that performance metrics (NSE/KGE) on the 3 "ungauged" basins (basins not seen during training) are significantly lower than the training set. This is expected behavior from a model trained on a small (5-basin) dataset.
 
