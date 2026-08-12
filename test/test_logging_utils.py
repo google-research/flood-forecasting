@@ -76,6 +76,7 @@ def test_setup_logging(tmp_path):
         assert 'Test log line' in content or 'initialized' in content
     finally:
         for h in list(root_logger.handlers):
+            h.close()
             root_logger.removeHandler(h)
         for h in original_handlers:
             root_logger.addHandler(h)

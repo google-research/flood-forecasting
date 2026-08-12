@@ -12,13 +12,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
+import logging
 from pathlib import Path
 from typing import Callable
 
+import matplotlib.pyplot as plt
 import pytest
 
 from googlehydrology.utils.config import Config
 from test import Fixture
+
+
+@pytest.fixture(autouse=True)
+def cleanup_resources_after_test():
+    """Closes all logging handlers, open matplotlib figures, and forces GC."""
+    yield
+    # Close & remove FileHandlers from root logger to avoid Windows file locks.
+    root_logger = logging.getLogger()
+    for handler in list(root_logger.handlers):
+        if isinstance(handler, logging.FileHandler):
+            handler.close()
+            root_logger.removeHandler(handler)
+    # Close any open matplotlib figures
+    plt.close('all')
+    # Force garbage collection to release unreferenced file descriptors
+    gc.collect()
 
 
 def pytest_addoption(parser):
@@ -51,7 +70,9 @@ def get_config(tmpdir: Fixture[str]) -> Fixture[Callable[[str], dict]]:
     """
 
     def _get_config(name):
-        config_file = Path(f'./test/test_configs/{name}.test.yml')
+        config_file = (
+            Path(__file__).parent / 'test_configs' / f'{name}.test.yml'
+        )
         if not config_file.is_file():
             raise ValueError(f'Test config file not found at {config_file}.')
         config = Config(config_file)

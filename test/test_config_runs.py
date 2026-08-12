@@ -108,8 +108,9 @@ def test_forecast_daily_regression(
 def _check_results(config: Config, basin: str, discharge: pd.Series = None):
     """Perform basic sanity checks of model predictions.
 
-    Checks that the results file has the correct date range, that the observed discharge in the file is correct, and
-    that there are no NaN predictions.
+    Checks that the results file has the correct date range, that the
+    observed discharge in the file is correct, and that there are no
+    NaN predictions.
 
     Parameters
     ----------
@@ -118,8 +119,8 @@ def _check_results(config: Config, basin: str, discharge: pd.Series = None):
     basin : str
         Id of a basin for which to check the results
     discharge : pd.Series, optional
-        If provided, will check that the stored discharge obs match this series. Else, will compare to the discharge
-        loaded from disk.
+        If provided, will check that the stored discharge obs match this series.
+        Else, will compare to the discharge loaded from disk.
     """
     test_start_date, test_end_date = get_test_start_end_dates(config)
 
@@ -133,9 +134,11 @@ def _check_results(config: Config, basin: str, discharge: pd.Series = None):
     )
 
     if discharge is None:
-        discharge = caravan.load_caravan_timeseries_together(
+        discharge_ds = caravan.load_caravan_timeseries_together(
             config.data_dir, [basin], config.target_variables, csv=False
-        ).to_dataframe()
+        )
+        discharge = discharge_ds.to_dataframe()
+        discharge_ds.close()
 
     if hasattr(config, 'lead_time'):
         results = results.isel(time_step=0).squeeze()
@@ -144,7 +147,9 @@ def _check_results(config: Config, basin: str, discharge: pd.Series = None):
 
     results_array = results[f'{config.target_variables[0]}_obs'].values
     idx = pd.IndexSlice
-    discharge_slice = discharge.loc[idx[basin, test_start_date:test_end_date], 'streamflow']
+    discharge_slice = discharge.loc[
+        idx[basin, test_start_date:test_end_date], 'streamflow'
+    ]
     discharge_array = discharge_slice.values
 
     assert discharge_array == approx(results_array, nan_ok=True)
@@ -167,9 +172,14 @@ def get_test_start_end_dates(
 
 
 def get_basin_results(run_dir: Path, epoch: int) -> xr.Dataset:
-    results_file = list(
-        run_dir.glob(f'test/model_epoch{str(epoch).zfill(3)}/test_results.zarr')
-    )
-    if len(results_file) != 1:
-        pytest.fail('Results file not found.')
-    return xr.open_zarr(str(results_file[0]), consolidated=False)
+    epoch_str = f'model_epoch{str(epoch).zfill(3)}'
+    target_path = run_dir / 'test' / epoch_str / 'test_results.zarr'
+    if not target_path.exists():
+        matches = list(run_dir.glob(f'**/{epoch_str}/test_results.zarr'))
+        if not matches:
+            matches = list(run_dir.glob('**/test_results.zarr'))
+        if len(matches) != 1:
+            pytest.fail(f'Results file not found in {run_dir}.')
+        target_path = matches[0]
+    ds = xr.open_zarr(str(target_path), consolidated=False)
+    return ds.load()
