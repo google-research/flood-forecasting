@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Utilities to convert legacy Caravan NetCDF/CSV datasets into unified Zarr format."""
+"""Utilities to convert legacy Caravan NetCDF/CSV into unified Zarr format."""
 
 import itertools
 import logging
@@ -54,13 +54,19 @@ def convert_caravan_attributes(
     if subdatasets:
         csv_files = []
         for sub in subdatasets:
-            sub_dir = attributes_dir / sub if (attributes_dir / sub).is_dir() else attributes_dir
+            sub_dir = (
+                attributes_dir / sub
+                if (attributes_dir / sub).is_dir()
+                else attributes_dir
+            )
             csv_files.extend(list(sub_dir.glob('*.csv')))
     else:
         csv_files = list(attributes_dir.glob('**/*.csv'))
 
     if not csv_files:
-        raise FileNotFoundError(f'No attribute CSV files found in {attributes_dir}')
+        raise FileNotFoundError(
+            f'No attribute CSV files found in {attributes_dir}'
+        )
 
     # Process each CSV
     dfs = []
@@ -78,10 +84,12 @@ def convert_caravan_attributes(
             df[num_cols] = df[num_cols].astype(np.float32)
             dfs.append(df)
         except Exception as e:
-            LOGGER.warning(f'Error reading {csv_file}: {e}')
+            LOGGER.warning('Error reading %s: %s', csv_file, e)
 
     if not dfs:
-        raise ValueError(f'Could not extract valid attribute data from {attributes_dir}')
+        raise ValueError(
+            f'Could not extract valid attribute data from {attributes_dir}'
+        )
 
     # Merge dataframes
     combined_df = dfs[0]
@@ -89,11 +97,11 @@ def convert_caravan_attributes(
         combined_df = combined_df.combine_first(df)
 
     ds = combined_df.to_xarray()
-    
+
     # Save as Zarr
     output_zarr_path.parent.mkdir(parents=True, exist_ok=True)
     ds.to_zarr(output_zarr_path, mode='w', consolidated=True)
-    LOGGER.info(f'Successfully wrote attributes Zarr to {output_zarr_path}')
+    LOGGER.info('Successfully wrote attributes Zarr to %s', output_zarr_path)
     return ds
 
 
@@ -102,7 +110,7 @@ def convert_caravan_timeseries(
     output_zarr_path: Path | str,
     variables: Sequence[str] | None = None,
 ) -> xr.Dataset:
-    """Converts individual Caravan timeseries NetCDF/CSV files into a consolidated Zarr store.
+    """Converts Caravan timeseries NetCDF/CSV files into a single Zarr store.
 
     Parameters
     ----------
@@ -111,7 +119,7 @@ def convert_caravan_timeseries(
     output_zarr_path : Path | str
         Destination path for the unified timeseries Zarr store.
     variables : Sequence[str], optional
-        List of variables to extract (e.g., ['streamflow']). If None, extracts all variables.
+        Variables to extract (e.g. ['streamflow']). If None, extracts all.
 
     Returns
     -------
@@ -123,11 +131,15 @@ def convert_caravan_timeseries(
 
     # Find all NC files first, then fallback to CSV files
     nc_files = sorted(list(timeseries_dir.glob('**/*.nc')))
-    csv_files = sorted(list(timeseries_dir.glob('**/*.csv'))) if not nc_files else []
+    csv_files = (
+        sorted(list(timeseries_dir.glob('**/*.csv'))) if not nc_files else []
+    )
     files = nc_files if nc_files else csv_files
 
     if not files:
-        raise FileNotFoundError(f'No timeseries files (.nc or .csv) found in {timeseries_dir}')
+        raise FileNotFoundError(
+            f'No timeseries files (.nc or .csv) found in {timeseries_dir}'
+        )
 
     datasets = []
     basins = []
@@ -156,13 +168,15 @@ def convert_caravan_timeseries(
         basins.append(basin_id)
 
     # Align dates across all basins
-    combined_ds = xr.concat(datasets, dim=pd.Index(basins, name='basin'), join='outer')
+    combined_ds = xr.concat(
+        datasets, dim=pd.Index(basins, name='basin'), join='outer'
+    )
 
     # Save to Zarr
     output_zarr_path.parent.mkdir(parents=True, exist_ok=True)
     combined_ds = combined_ds.chunk('auto')
     combined_ds.to_zarr(output_zarr_path, mode='w', consolidated=True)
-    LOGGER.info(f'Successfully wrote timeseries Zarr to {output_zarr_path}')
+    LOGGER.info('Successfully wrote timeseries Zarr to %s', output_zarr_path)
     return combined_ds
 
 
@@ -192,8 +206,14 @@ def convert_caravan_to_zarr(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Attributes
-    attr_dir = caravan_dir / 'attributes' if (caravan_dir / 'attributes').exists() else caravan_dir
-    attr_ds = convert_caravan_attributes(attr_dir, output_dir / 'attributes.zarr')
+    attr_dir = (
+        caravan_dir / 'attributes'
+        if (caravan_dir / 'attributes').exists()
+        else caravan_dir
+    )
+    attr_ds = convert_caravan_attributes(
+        attr_dir, output_dir / 'attributes.zarr'
+    )
 
     # Timeseries / Targets
     ts_dir = (

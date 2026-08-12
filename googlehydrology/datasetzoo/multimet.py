@@ -916,9 +916,19 @@ def _find_single_dynamics_zarr_path(dynamics_path: Path | str) -> Path | None:
         return None
 
     p = Path(dynamics_path)
-    if p.suffix == '.zarr' or (p / '.zgroup').exists() or (p / 'zarr.json').exists() or (p / '.zmetadata').exists():
+    is_zarr = (
+        p.suffix == '.zarr'
+        or (p / '.zgroup').exists()
+        or (p / 'zarr.json').exists()
+        or (p / '.zmetadata').exists()
+    )
+    if is_zarr:
         return p
-    if (p / 'timeseries.zarr').exists() and not any(sub.is_dir() for sub in p.glob('*') if sub.name != 'timeseries.zarr'):
+    has_timeseries = (p / 'timeseries.zarr').exists()
+    has_other_dirs = any(
+        sub.is_dir() for sub in p.glob('*') if sub.name != 'timeseries.zarr'
+    )
+    if has_timeseries and not has_other_dirs:
         return p / 'timeseries.zarr'
     return None
 
@@ -941,8 +951,9 @@ def _find_product_zarr_path(dynamics_path: Path | str, product: str) -> Path:
         return p / product
     # Try case-insensitive matching
     if p.is_dir():
+        product_norm = product.lower().replace('_', '')
         for sub in p.glob('*'):
-            if sub.is_dir() and sub.name.lower().replace('_', '') == product.lower().replace('_', ''):
+            if sub.is_dir() and sub.name.lower().replace('_', '') == product_norm:
                 if (sub / 'timeseries.zarr').exists():
                     return sub / 'timeseries.zarr'
                 return sub
