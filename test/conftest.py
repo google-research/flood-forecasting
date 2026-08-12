@@ -19,9 +19,12 @@ from typing import Callable
 
 import matplotlib.pyplot as plt
 import pytest
+import torch._dynamo
 
 from googlehydrology.utils.config import Config
 from test import Fixture
+
+torch._dynamo.config.suppress_errors = True
 
 
 def _cleanup_all_open_resources():
