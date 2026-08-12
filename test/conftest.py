@@ -24,11 +24,8 @@ from googlehydrology.utils.config import Config
 from test import Fixture
 
 
-@pytest.fixture(autouse=True)
-def cleanup_resources_after_test():
+def _cleanup_all_open_resources():
     """Closes all logging handlers, open matplotlib figures, and forces GC."""
-    yield
-    # Close & remove FileHandlers from root logger and named loggers.
     for handler in list(logging.root.handlers):
         if isinstance(handler, logging.FileHandler):
             handler.close()
@@ -39,17 +36,27 @@ def cleanup_resources_after_test():
                 if isinstance(handler, logging.FileHandler):
                     handler.close()
                     logger.removeHandler(handler)
-    # Close any open matplotlib figures
     plt.close('all')
-    # Clear lru_cache on _open_zarr to release cached dataset file handles
     try:
         from googlehydrology.datasetzoo.multimet import _open_zarr
 
         _open_zarr.cache_clear()
     except Exception:
         pass
-    # Force garbage collection to release unreferenced file descriptors
     gc.collect()
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_teardown(item, nextitem):
+    """Run resource cleanup before any fixtures are torn down."""
+    _cleanup_all_open_resources()
+
+
+@pytest.fixture(autouse=True)
+def cleanup_resources_after_test():
+    """Closes all logging handlers, open matplotlib figures, and forces GC."""
+    yield
+    _cleanup_all_open_resources()
 
 
 def pytest_addoption(parser):
@@ -65,15 +72,15 @@ def pytest_addoption(parser):
 
 
 @pytest.fixture
-def get_config(tmpdir: Fixture[str]) -> Fixture[Callable[[str], dict]]:
+def get_config(tmp_path: Fixture[Path]) -> Fixture[Callable[[str], dict]]:
     """Provides a function to fetch a run config specified by name.
 
     The fetched run configuration will use a tmp folder as its run directory.
 
     Parameters
     ----------
-    tmpdir : Fixture[str]
-        Name of the tmp directory to use in the run configuration.
+    tmp_path : Fixture[Path]
+        Tmp directory to use in the run configuration.
 
     Returns
     -------
@@ -88,7 +95,7 @@ def get_config(tmpdir: Fixture[str]) -> Fixture[Callable[[str], dict]]:
         if not config_file.is_file():
             raise ValueError(f'Test config file not found at {config_file}.')
         config = Config(config_file)
-        config.run_dir = Path(tmpdir)
+        config.run_dir = tmp_path
         return config
 
     return _get_config
