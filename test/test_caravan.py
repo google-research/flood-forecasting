@@ -54,6 +54,7 @@ def mock_caravan_dir(tmp_path):
             coords={'date': dates},
         )
         ds.to_netcdf(ts_nc_dir / f'{basin}.nc')
+        ds.close()
 
     # Timeseries CSV
     ts_csv_dir = root / 'timeseries' / 'csv' / 'camelsus'
@@ -129,6 +130,7 @@ def test_load_caravan_timeseries_together_netcdf(mock_caravan_dir):
     assert 'basin' in ds.coords
     assert 'streamflow' in ds.data_vars
     assert len(ds['basin']) == 2
+    ds.close()
 
 
 @pytest.mark.unit
@@ -141,6 +143,7 @@ def test_load_caravan_timeseries_together_csv(mock_caravan_dir):
         csv=True,
     )
     assert 'streamflow' in ds.data_vars
+    ds.close()
 
 
 @pytest.mark.unit
