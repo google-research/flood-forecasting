@@ -17,6 +17,7 @@
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
 import pytest
 
 from googlehydrology import run, run_scheduler
@@ -25,25 +26,35 @@ from googlehydrology import run, run_scheduler
 @pytest.mark.unit
 def test_run_get_args_valid_modes():
     # Train mode
-    with patch.object(sys, 'argv', ['run.py', 'train', '--config-file', 'test_config.yml']):
+    with patch.object(
+        sys, 'argv', ['run.py', 'train', '--config-file', 'test_config.yml']
+    ):
         args = run._get_args()
         assert args['mode'] == 'train'
         assert args['config_file'] == 'test_config.yml'
 
     # Continue training mode
-    with patch.object(sys, 'argv', ['run.py', 'continue_training', '--run-dir', '/tmp/run']):
+    with patch.object(
+        sys, 'argv', ['run.py', 'continue_training', '--run-dir', '/tmp/run']
+    ):
         args = run._get_args()
         assert args['mode'] == 'continue_training'
         assert args['run_dir'] == '/tmp/run'
 
     # Evaluate mode
-    with patch.object(sys, 'argv', ['run.py', 'evaluate', '--run-dir', '/tmp/run', '--period', 'test']):
+    with patch.object(
+        sys,
+        'argv',
+        ['run.py', 'evaluate', '--run-dir', '/tmp/run', '--period', 'test'],
+    ):
         args = run._get_args()
         assert args['mode'] == 'evaluate'
         assert args['period'] == 'test'
 
     # Infer mode
-    with patch.object(sys, 'argv', ['run.py', 'infer', '--run-dir', '/tmp/run']):
+    with patch.object(
+        sys, 'argv', ['run.py', 'infer', '--run-dir', '/tmp/run']
+    ):
         args = run._get_args()
         assert args['mode'] == 'infer'
 
@@ -57,7 +68,9 @@ def test_run_get_args_missing_required_args():
 
     # Continue training missing run dir
     with patch.object(sys, 'argv', ['run.py', 'continue_training']):
-        with pytest.raises(ValueError, match='Missing path to run directory file'):
+        with pytest.raises(
+            ValueError, match='Missing path to run directory file'
+        ):
             run._get_args()
 
     # Evaluate missing run dir
@@ -76,13 +89,20 @@ def test_run_dispatch_start_run():
 
         run.start_run(config=cfg, gpu=-1)
         assert cfg.device == 'cpu'
+        assert mock_train.call_count == 2
 
 
 @pytest.mark.unit
 def test_run_dispatch_eval_run():
     cfg = MagicMock()
     with patch('googlehydrology.run.start_evaluation') as mock_eval:
-        run.eval_run(config=cfg, run_dir=Path('/tmp/run'), period='test', epoch=1, gpu=-1)
+        run.eval_run(
+            config=cfg,
+            run_dir=Path('/tmp/run'),
+            period='test',
+            epoch=1,
+            gpu=-1,
+        )
         assert cfg.device == 'cpu'
         mock_eval.assert_called_once()
 

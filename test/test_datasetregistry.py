@@ -15,6 +15,7 @@
 """Unit tests for googlehydrology.datasetzoo.datasetregistry."""
 
 from unittest.mock import MagicMock
+
 import pytest
 from torch.utils.data import Dataset
 
@@ -71,7 +72,9 @@ def test_dataset_registry_invalid_type():
 def test_dataset_registry_unimplemented_dataset():
     registry = DatasetRegistry()
     cfg = MagicMock(dataset='unregistered_dataset')
-    with pytest.raises(NotImplementedError, match='No dataset class implemented'):
+    with pytest.raises(
+        NotImplementedError, match='No dataset class implemented'
+    ):
         registry.instantiate_dataset(
             cfg=cfg,
             is_train=True,

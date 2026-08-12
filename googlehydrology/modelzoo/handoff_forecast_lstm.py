@@ -83,8 +83,19 @@ class HandoffForecastLSTM(BaseModel):
             if cfg.head not in ['regression']:
                 raise ValueError('Forecast overlap regularization only works with a regression head.')
            
-        self.hindcast_inputs = cfg.hindcast_inputs
-        self.forecast_inputs = cfg.forecast_inputs
+        if isinstance(cfg.hindcast_inputs, dict):
+            self.hindcast_inputs = [
+                f for feats in cfg.hindcast_inputs.values() for f in feats
+            ]
+        else:
+            self.hindcast_inputs = cfg.hindcast_inputs
+
+        if isinstance(cfg.forecast_inputs, dict):
+            self.forecast_inputs = [
+                f for feats in cfg.forecast_inputs.values() for f in feats
+            ]
+        else:
+            self.forecast_inputs = cfg.forecast_inputs
         
         # Determines whether there is an overlap between forecast and hindcast, which,
         # if present, is used for regularization.
@@ -113,11 +124,11 @@ class HandoffForecastLSTM(BaseModel):
         if cfg.hindcast_embedding is not None:
             self.hindcast_embedding_net = self._create_fc(
                 embedding_spec=cfg.hindcast_embedding,
-                input_size=len(cfg.hindcast_inputs)
+                input_size=len(self.hindcast_inputs)
             )
             hindcast_embedding_output_size = self.hindcast_embedding_net.output_size
         else:
-            hindcast_embedding_output_size = len(cfg.hindcast_inputs)
+            hindcast_embedding_output_size = len(self.hindcast_inputs)
             self.hindcast_embedding_net = nn.Identity(
                 hindcast_embedding_output_size,
                 hindcast_embedding_output_size    
@@ -133,11 +144,11 @@ class HandoffForecastLSTM(BaseModel):
         if cfg.forecast_embedding is not None:
             self.forecast_embedding_net = self._create_fc(
                 embedding_spec=cfg.forecast_embedding,
-                input_size=len(cfg.forecast_inputs)
+                input_size=len(self.forecast_inputs)
             )
             forecast_embedding_output_size = self.forecast_embedding_net.output_size
         else:
-            forecast_embedding_output_size = len(cfg.forecast_inputs)
+            forecast_embedding_output_size = len(self.forecast_inputs)
             self.forecast_embedding_net = nn.Identity(
                 forecast_embedding_output_size,
                 forecast_embedding_output_size

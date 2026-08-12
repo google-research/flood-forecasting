@@ -15,12 +15,12 @@
 """Unit tests for googlehydrology.training.loss and regularization."""
 
 from unittest.mock import MagicMock
+
 import numpy as np
 import pytest
 import torch
 
 from googlehydrology.training.loss import (
-    BaseLoss,
     MaskedCMALLoss,
     MaskedMSELoss,
     MaskedNSELoss,
@@ -80,7 +80,10 @@ def test_base_loss_target_weights(dummy_config):
 
     # Weight length mismatch error
     dummy_config.target_loss_weights = [0.5]
-    with pytest.raises(ValueError, match='Number of weights must be equal to the number of target variables'):
+    with pytest.raises(
+        ValueError,
+        match='Number of weights must be equal to the number of target',
+    ):
         MaskedMSELoss(dummy_config)
 
 
@@ -99,7 +102,8 @@ def test_masked_mse_loss(dummy_config):
     data = {'y': y}
 
     total_loss, all_losses = loss_fn(prediction, data)
-    # Valid differences: (2-1)=1 -> 1^2=1; (6-4)=2 -> 2^2=4; (8-10)=-2 -> (-2)^2=4
+    # Valid differences:
+    # (2-1)=1 -> 1^2=1; (6-4)=2 -> 2^2=4; (8-10)=-2 -> (-2)^2=4
     # Mean of squared errors = (1 + 4 + 4) / 3 = 3.0
     # MaskedMSE multiplies by 0.5 -> 1.5
     assert np.isclose(total_loss.item(), 1.5)
@@ -211,5 +215,6 @@ def test_multi_frequency_loss():
     }
 
     total_loss, _ = loss_fn(prediction, data)
-    # Only 1D considered: (2-1)^2 = 1, (3-3)^2 = 0 -> Mean=0.5 -> 0.5 * 0.5 = 0.25
+    # Only 1D considered: (2-1)^2 = 1, (3-3)^2 = 0 -> Mean = 0.5
+    # Scaled loss: 0.5 * 0.5 = 0.25
     assert np.isclose(total_loss.item(), 0.25)

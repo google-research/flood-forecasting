@@ -190,66 +190,100 @@ class _SamplingSetup:
         dropout_modules = [model.dropout.p]
 
         # Certain models don't have embedding_net(s)
-        implied_statics_embedding, implied_dynamics_embedding = None, None
-        implied_forecast_statics_embedding, implied_forecast_dynamics_embedding = None, None
-        implied_hindcast_statics_embedding, implied_hindcast_dynamics_embedding = None, None
+        implied_statics_embedding = None
+        implied_dynamics_embedding = None
+        implied_forecast_statics_embedding = None
+        implied_forecast_dynamics_embedding = None
+        implied_hindcast_statics_embedding = None
+        implied_hindcast_dynamics_embedding = None
         if hasattr(model, 'forecast_embedding_net'):
-            implied_forecast_statics_embedding = (
-                model.forecast_embedding_net.statics_embedding_p_dropout
+            implied_forecast_dynamics_embedding = getattr(
+                model.forecast_embedding_net,
+                'dynamics_embedding_p_dropout',
+                getattr(model.forecast_embedding_net, 'dropout', None),
             )
-            implied_forecast_dynamics_embedding = (
-                model.forecast_embedding_net.dynamics_embedding_p_dropout
+            implied_forecast_statics_embedding = getattr(
+                model.forecast_embedding_net,
+                'statics_embedding_p_dropout',
+                None,
             )
-            dropout_modules += [
-                implied_forecast_statics_embedding,
-                implied_forecast_dynamics_embedding,
-            ]
+            if implied_forecast_dynamics_embedding is not None:
+                dropout_modules.append(implied_forecast_dynamics_embedding)
+            if implied_forecast_statics_embedding is not None:
+                dropout_modules.append(implied_forecast_statics_embedding)
         if hasattr(model, 'hindcast_embedding_net'):
-            implied_hindcast_statics_embedding = (
-                model.hindcast_embedding_net.statics_embedding_p_dropout
+            implied_hindcast_dynamics_embedding = getattr(
+                model.hindcast_embedding_net,
+                'dynamics_embedding_p_dropout',
+                getattr(model.hindcast_embedding_net, 'dropout', None),
             )
-            implied_hindcast_dynamics_embedding = (
-                model.hindcast_embedding_net.dynamics_embedding_p_dropout
+            implied_hindcast_statics_embedding = getattr(
+                model.hindcast_embedding_net,
+                'statics_embedding_p_dropout',
+                None,
             )
-            dropout_modules += [
-                implied_hindcast_statics_embedding,
-                implied_hindcast_dynamics_embedding,
-            ]
+            if implied_hindcast_dynamics_embedding is not None:
+                dropout_modules.append(implied_hindcast_dynamics_embedding)
+            if implied_hindcast_statics_embedding is not None:
+                dropout_modules.append(implied_hindcast_statics_embedding)
+        if hasattr(model, 'statics_embedding_net'):
+            implied_statics_embedding = getattr(
+                model.statics_embedding_net,
+                'statics_embedding_p_dropout',
+                getattr(model.statics_embedding_net, 'dropout', None),
+            )
+            if implied_statics_embedding is not None:
+                dropout_modules.append(implied_statics_embedding)
         if hasattr(model, 'embedding_net'):
-            implied_statics_embedding = (
-                model.embedding_net.statics_embedding_p_dropout
+            implied_statics_embedding = getattr(
+                model.embedding_net,
+                'statics_embedding_p_dropout',
+                None,
             )
-            implied_dynamics_embedding = (
-                model.embedding_net.dynamics_embedding_p_dropout
+            implied_dynamics_embedding = getattr(
+                model.embedding_net,
+                'dynamics_embedding_p_dropout',
+                None,
             )
-            dropout_modules += [
-                implied_statics_embedding,
-                implied_dynamics_embedding,
-            ]
+            if implied_statics_embedding is not None:
+                dropout_modules.append(implied_statics_embedding)
+            if implied_dynamics_embedding is not None:
+                dropout_modules.append(implied_dynamics_embedding)
 
         max_implied_dropout = max(dropout_modules)
         # check lower bound dropout:
         if cfg.mc_dropout and max_implied_dropout <= 0.0:
-            raise RuntimeError(f"""{cfg.model} with `mc_dropout` activated requires a dropout rate larger than 0.0
-                               The current implied dropout-rates are:
-                                  - model: {cfg.output_dropout}
-                                  - statics_embedding: {implied_statics_embedding}
-                                  - dynamics_embedding: {implied_dynamics_embedding}
-                                  - statics_forecast_embedding: {implied_forecast_statics_embedding}
-                                  - dynamics_forecast_embedding: {implied_forecast_dynamics_embedding}
-                                  - statics_hindcast_embedding: {implied_hindcast_statics_embedding}
-                                  - dynamics_hindcast_embedding: {implied_hindcast_dynamics_embedding}""")
+            raise RuntimeError(
+                f'{cfg.model} with `mc_dropout` activated requires a dropout'
+                ' rate larger than 0.0. Implied dropout-rates:\n'
+                f'  - model: {cfg.output_dropout}\n'
+                f'  - statics_embedding: {implied_statics_embedding}\n'
+                f'  - dynamics_embedding: {implied_dynamics_embedding}\n'
+                '  - statics_forecast_embedding: '
+                f'{implied_forecast_statics_embedding}\n'
+                '  - dynamics_forecast_embedding: '
+                f'{implied_forecast_dynamics_embedding}\n'
+                '  - statics_hindcast_embedding: '
+                f'{implied_hindcast_statics_embedding}\n'
+                '  - dynamics_hindcast_embedding: '
+                f'{implied_hindcast_dynamics_embedding}'
+            )
         # check upper bound dropout:
         if cfg.mc_dropout and max_implied_dropout >= 1.0:
-            raise RuntimeError(f"""The maximal dropout-rate is 1. Please check your dropout-settings:
-                               The current implied dropout-rates are:
-                                  - model: {cfg.output_dropout}
-                                  - statics_embedding: {implied_statics_embedding}
-                                  - dynamics_embedding: {implied_dynamics_embedding}
-                                  - statics_forecast_embedding: {implied_forecast_statics_embedding}
-                                  - dynamics_forecast_embedding: {implied_forecast_dynamics_embedding}
-                                  - statics_hindcast_embedding: {implied_hindcast_statics_embedding}
-                                  - dynamics_hindcast_embedding: {implied_hindcast_dynamics_embedding}""")
+            raise RuntimeError(
+                'The maximal dropout-rate is 1. Please check your settings:\n'
+                f'  - model: {cfg.output_dropout}\n'
+                f'  - statics_embedding: {implied_statics_embedding}\n'
+                f'  - dynamics_embedding: {implied_dynamics_embedding}\n'
+                '  - statics_forecast_embedding: '
+                f'{implied_forecast_statics_embedding}\n'
+                '  - dynamics_forecast_embedding: '
+                f'{implied_forecast_dynamics_embedding}\n'
+                '  - statics_hindcast_embedding: '
+                f'{implied_hindcast_statics_embedding}\n'
+                '  - dynamics_hindcast_embedding: '
+                f'{implied_hindcast_dynamics_embedding}'
+            )
 
         # assign setup properties:
         self.cfg = cfg

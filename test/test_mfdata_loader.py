@@ -14,9 +14,10 @@
 
 """Unit tests for googlehydrology.datasetzoo.mfdata_loader."""
 
-import io
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
+
 from absl import flags
+from absl.testing import flagsaver
 import pytest
 import xarray as xr
 
@@ -29,11 +30,21 @@ FLAGS = flags.FLAGS
 def test_mfdata_loader_main():
     mock_ds = xr.Dataset({'streamflow': [1.0, 2.0]})
 
-    FLAGS(['mfdata_loader.py', '--data_dir=/tmp/data', '--basins=b1', '--target_features=streamflow'])
-
-    with patch('googlehydrology.datasetzoo.mfdata_loader.load_caravan_timeseries_together', return_value=mock_ds) as mock_load, \
-         patch('sys.stdout.buffer.write') as mock_write:
-
+    with (
+        flagsaver.flagsaver(),
+        patch(
+            'googlehydrology.datasetzoo.mfdata_loader.'
+            'load_caravan_timeseries_together',
+            return_value=mock_ds,
+        ) as mock_load,
+        patch('sys.stdout.buffer.write') as mock_write,
+    ):
+        FLAGS([
+            'mfdata_loader.py',
+            '--data_dir=/tmp/data',
+            '--basins=b1',
+            '--target_features=streamflow',
+        ])
         mfdata_loader.main([])
         mock_load.assert_called_once()
         mock_write.assert_called_once()
