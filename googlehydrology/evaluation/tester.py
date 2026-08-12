@@ -163,10 +163,19 @@ class BaseTester(object):
         """Load weights of a certain (or the last) epoch into the model."""
         weight_file = self._get_weight_file(epoch)
 
-        LOGGER.info(f'Using the model weights from {weight_file}')
-        self.model.load_state_dict(
-            torch.load(weight_file, map_location=self.device, weights_only=True)
+        LOGGER.info('Using the model weights from %s', weight_file)
+        state_dict = torch.load(
+            weight_file, map_location=self.device, weights_only=True
         )
+        # Drop `_orig_mod.` prefix introduced by torch.compile when the model
+        # was trained with compile=True.
+        if any(k.startswith('_orig_mod.') for k in state_dict):
+            state_dict = {
+                (k[len('_orig_mod.'):] if k.startswith('_orig_mod.') else k): v
+                for k, v in state_dict.items()
+            }
+        target_model = getattr(self.model, '_orig_mod', self.model)
+        target_model.load_state_dict(state_dict)
 
     def _get_dataset_all(self) -> Dataset:
         """Get dataset for all basins."""

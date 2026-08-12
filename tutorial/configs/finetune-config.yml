@@ -61,7 +61,7 @@ finetune_modules:
 # -- Active Modules (Weights WILL be updated) --
 # 1. Static Attribute Embedding: Learns how this specific basin's fixed
 #    descriptors (soil, elevation, etc.) uniquely influence its hydrology.
-- static_attributes_fc
+- static_embedding_fc
 # 2. Output Head: Adapts the final scaling and bias of predictions to match
 #    the specific magnitude of streamflow in this basin.
 - head

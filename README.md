@@ -65,7 +65,7 @@ The most direct way to explore this repository is through our interactive tutori
 **What you will learn:**
 
 * **Model Evaluation:** Load pre-trained Google Hydrology models and calculate performance metrics (NSE, KGE) on real-world basin data.  
-* **Fine-Tuning for Performance:** Learn how to fine-tune the `static_attributes_fc` layer. This is a powerful technique for improving predictions on "outlier" basins (e.g., basins with unusual sizes or geology) without retraining the entire model.  
+* **Fine-Tuning for Performance:** Learn how to fine-tune the `static_embedding_fc` layer. This is a powerful technique for improving predictions on "outlier" basins (e.g., basins with unusual sizes or geology) without retraining the entire model.
 * **Visualizing Results:** Compare model hydrographs against observed discharge data.
 
 **Run it now:** 
