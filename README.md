@@ -109,6 +109,12 @@ Calculate performance metrics (NSE, KGE) on the test set:
    run evaluate --run-dir /path/to/your/model_run/
    ```
 
+To run evaluation with test-time 4D-Var Data Assimilation:
+
+   ```
+   run evaluate --run-dir /path/to/your/model_run/ --data-assimilation
+   ```
+
 ### **Inference**
 
 Generate predictions (without skipping NaN observations):

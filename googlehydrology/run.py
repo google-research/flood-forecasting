@@ -61,6 +61,12 @@ def _get_args() -> dict:
         type=int,
         help="GPU id to use. Overrides config argument 'device'. Use a value < 0 for CPU.",
     )
+    parser.add_argument(
+        '--data-assimilation',
+        action='store_true',
+        default=False,
+        help='Enable Data Assimilation state-updating during evaluation and inference.',
+    )
     args = vars(parser.parse_args())
 
     if (args['mode'] in ['convert_caravan', 'convert-caravan']):
@@ -152,6 +158,7 @@ def _main():
             period=args['period'],
             epoch=args['epoch'],
             gpu=args['gpu'],
+            data_assimilation=args.get('data_assimilation', False),
         )
     else:
         raise RuntimeError(f'Unknown mode {args["mode"]}')
@@ -256,6 +263,7 @@ def eval_run(
     period: str,
     epoch: int = None,
     gpu: int = None,
+    data_assimilation: bool = False,
 ):
     """Start evaluating a trained model.
 
@@ -272,6 +280,8 @@ def eval_run(
     gpu : int, optional
         GPU id to use. Will override config argument 'device'. A value less than zero indicates CPU.
         Don't use this argument if you want to use the device as specified in the config file e.g. MPS.
+    data_assimilation : bool, optional
+        Whether to enable Data Assimilation state-updating during evaluation.
 
     """
     # check if a GPU has been specified as command line argument. If yes, overwrite config
@@ -280,7 +290,13 @@ def eval_run(
     if gpu is not None and gpu < 0:
         config.device = 'cpu'
 
-    start_evaluation(cfg=config, run_dir=run_dir, epoch=epoch, period=period)
+    start_evaluation(
+        cfg=config,
+        run_dir=run_dir,
+        epoch=epoch,
+        period=period,
+        data_assimilation=data_assimilation,
+    )
 
 
 if __name__ == '__main__':

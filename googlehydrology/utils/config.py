@@ -26,6 +26,8 @@ import pydantic
 import pydantic.dataclasses
 from ruamel.yaml import YAML
 
+from googlehydrology.utils.assimilationconfig import AssimilationConfig
+
 T = TypeVar('T')
 U = TypeVar('U')
 
@@ -99,6 +101,28 @@ class Config(object):
 
         if not (self._cfg.get('dev_mode', False) or dev_mode):
             Config._check_cfg_keys(self._cfg)
+
+        # check if assimilation specifications are part of the config, if yes, create AssimilationConfig instance once
+        if ("assimilation_config" in self._cfg.keys()) and (self._cfg["assimilation_config"] is not None):
+            da_cfg = self._cfg["assimilation_config"].copy() if isinstance(self._cfg["assimilation_config"], dict) else self._cfg["assimilation_config"]
+            if isinstance(da_cfg, dict):
+                if "predict_last_n" not in da_cfg and "predict_last_n" in self._cfg:
+                    p_n = self.predict_last_n
+                    p_val = list(p_n.values())[0] if isinstance(p_n, dict) else p_n
+                    da_cfg["predict_last_n"] = int(p_val)
+                if "seq_length" not in da_cfg and "seq_length" in self._cfg:
+                    s_n = self.seq_length
+                    s_val = list(s_n.values())[0] if isinstance(s_n, dict) else s_n
+                    da_cfg["seq_length"] = int(s_val)
+                if "target_variables" not in da_cfg and "target_variables" in self._cfg:
+                    da_cfg["target_variables"] = self._cfg["target_variables"]
+                self._assimilation_config = AssimilationConfig(da_cfg)
+            elif isinstance(da_cfg, AssimilationConfig):
+                self._assimilation_config = da_cfg
+            else:
+                self._assimilation_config = None
+        else:
+            self._assimilation_config = None
 
         # Adjust experiment name
         if 'experiment_name' in self._cfg and self._cfg['experiment_name']:
@@ -220,6 +244,28 @@ class Config(object):
         new_config = Config(yml_path_or_dict, dev_mode=dev_mode)
 
         self._cfg.update(new_config.as_dict())
+
+        # check if assimilation specifications are part of the config, if yes, create AssimilationConfig instance once
+        if ("assimilation_config" in self._cfg.keys()) and (self._cfg["assimilation_config"] is not None):
+            da_cfg = self._cfg["assimilation_config"].copy() if isinstance(self._cfg["assimilation_config"], dict) else self._cfg["assimilation_config"]
+            if isinstance(da_cfg, dict):
+                if "predict_last_n" not in da_cfg and "predict_last_n" in self._cfg:
+                    p_n = self.predict_last_n
+                    p_val = list(p_n.values())[0] if isinstance(p_n, dict) else p_n
+                    da_cfg["predict_last_n"] = int(p_val)
+                if "seq_length" not in da_cfg and "seq_length" in self._cfg:
+                    s_n = self.seq_length
+                    s_val = list(s_n.values())[0] if isinstance(s_n, dict) else s_n
+                    da_cfg["seq_length"] = int(s_val)
+                if "target_variables" not in da_cfg and "target_variables" in self._cfg:
+                    da_cfg["target_variables"] = self._cfg["target_variables"]
+                self._assimilation_config = AssimilationConfig(da_cfg)
+            elif isinstance(da_cfg, AssimilationConfig):
+                self._assimilation_config = da_cfg
+            else:
+                self._assimilation_config = None
+        else:
+            self._assimilation_config = None
 
     def _get_value_verbose(
         self, key: str
@@ -555,6 +601,15 @@ class Config(object):
         self._cfg['is_finetuning'] = flag
 
     @property
+    def compute_scaler(self) -> bool:
+        val = self._cfg.get('compute_scaler', None)
+        return (not self.is_finetuning) if val is None else bool(val)
+
+    @compute_scaler.setter
+    def compute_scaler(self, flag: bool):
+        self._cfg['compute_scaler'] = flag
+
+    @property
     def lead_time(self) -> int:
         return self._cfg.get('lead_time', 0)
 
@@ -884,6 +939,10 @@ class Config(object):
     def compile(self) -> bool:
         return self._cfg.get('compile', True)
 
+    @property
+    def assimilation_config(self) -> AssimilationConfig | None:
+        return getattr(self, '_assimilation_config', None)
+
     def _get_embedding_spec(
         self, embedding_spec: dict | None
     ) -> EmbeddingSpec | None:
@@ -901,6 +960,8 @@ class Config(object):
             activation=activation,
             dropout=embedding_spec.get('dropout', 0.0),
         )
+
+
 
 
 def create_random_name():
