@@ -115,6 +115,7 @@ def test_handoff_forecast_lstm_hot_start(mock_check, mock_load, tmp_path):
     cfg.seq_length = 0
     cfg.hot_start_path = str(state_path)
     model.seq_length = 0
+    model.load_state_from_disk(state_path)
 
     hot_data = {}
     hot_data['x_d_hindcast'] = {
@@ -177,6 +178,7 @@ def test_mean_embedding_forecast_lstm_hot_start(mock_check, mock_load, tmp_path)
     cfg.seq_length = 0
     cfg.hot_start_path = str(state_path)
     model.seq_length = 0
+    model.load_state_from_disk(state_path)
 
     hot_data = {}
     hot_data['x_d_hindcast'] = {
@@ -267,5 +269,136 @@ def test_hot_start_batch_size_validation(tmp_path):
         ValueError, match='Hot-start inference requires batch_size=1'
     ):
         RegressionTester(cfg, run_dir=tmp_path, init_model=False)
+
+
+@patch('googlehydrology.datautils.scaler.Scaler.load')
+@patch('googlehydrology.datautils.scaler.Scaler.check_zero_scale')
+def test_multi_basin_state_isolation(mock_check, mock_load, tmp_path):
+    cfg_dict = get_base_cfg(tmp_path)
+    cfg = Config(cfg_dict, dev_mode=True)
+    model = HandoffForecastLSTM(cfg)
+
+    state_path = tmp_path / 'state_basin_a.npz'
+    dummy_data = {
+        'x_d_hindcast': {
+            'pr_day_gridmet': torch.rand(1, cfg.seq_length, 1),
+            'tmmn_day_gridmet': torch.rand(1, cfg.seq_length, 1),
+        },
+        'x_d_forecast': {
+            'pr_day_gridmet': torch.rand(
+                1, cfg.lead_time + cfg.forecast_overlap, 1
+            ),
+            'tmmn_day_gridmet': torch.rand(
+                1, cfg.lead_time + cfg.forecast_overlap, 1
+            ),
+        },
+        'x_s': torch.rand(1, len(cfg.static_attributes)),
+    }
+    model.save_state(dummy_data, state_path)
+
+    # Basin A: Loads state
+    model.load_state_from_disk(state_path)
+    assert model._preloaded_state is not None
+
+    # Basin B: Resets state between basins
+    model.reset_state()
+    assert model._preloaded_state is None
+
+
+@patch('googlehydrology.datautils.scaler.Scaler.load')
+@patch('googlehydrology.datautils.scaler.Scaler.check_zero_scale')
+def test_cold_start_output_shape(mock_check, mock_load, tmp_path):
+    cfg_dict = get_base_cfg(tmp_path)
+    cfg = Config(cfg_dict, dev_mode=True)
+    model = HandoffForecastLSTM(cfg)
+    model.eval()
+
+    device = next(model.parameters()).device
+    batch_size = 2
+    data = {
+        'x_d_hindcast': {
+            'pr_day_gridmet': torch.rand(
+                batch_size, cfg.seq_length, 1, device=device
+            ),
+            'tmmn_day_gridmet': torch.rand(
+                batch_size, cfg.seq_length, 1, device=device
+            ),
+        },
+        'x_d_forecast': {
+            'pr_day_gridmet': torch.rand(
+                batch_size,
+                cfg.lead_time + cfg.forecast_overlap,
+                1,
+                device=device,
+            ),
+            'tmmn_day_gridmet': torch.rand(
+                batch_size,
+                cfg.lead_time + cfg.forecast_overlap,
+                1,
+                device=device,
+            ),
+        },
+        'x_s': torch.rand(
+            batch_size, len(cfg.static_attributes), device=device
+        ),
+    }
+    with torch.no_grad():
+        cold_preds = model(data)
+
+    # In cold start, output must have length == seq_length
+    assert cold_preds['y_hat'].shape[1] == cfg.seq_length
+
+
+@patch('googlehydrology.datautils.scaler.Scaler.load')
+@patch('googlehydrology.datautils.scaler.Scaler.check_zero_scale')
+def test_forecast_overlap_variations(mock_check, mock_load, tmp_path):
+    # Test with forecast_overlap = 0
+    cfg_dict = get_base_cfg(tmp_path)
+    cfg_dict['forecast_overlap'] = 0
+    cfg = Config(cfg_dict, dev_mode=True)
+    model = HandoffForecastLSTM(cfg)
+    model.eval()
+
+    device = next(model.parameters()).device
+    batch_size = 2
+    data = {
+        'x_d_hindcast': {
+            'pr_day_gridmet': torch.rand(
+                batch_size, cfg.seq_length, 1, device=device
+            ),
+            'tmmn_day_gridmet': torch.rand(
+                batch_size, cfg.seq_length, 1, device=device
+            ),
+        },
+        'x_d_forecast': {
+            'pr_day_gridmet': torch.rand(
+                batch_size, cfg.lead_time, 1, device=device
+            ),
+            'tmmn_day_gridmet': torch.rand(
+                batch_size, cfg.lead_time, 1, device=device
+            ),
+        },
+        'x_s': torch.rand(
+            batch_size, len(cfg.static_attributes), device=device
+        ),
+    }
+    state_path = tmp_path / 'state_no_overlap.npz'
+    model.save_state(data, state_path)
+
+    cfg.seq_length = 0
+    cfg.hot_start_path = str(state_path)
+    model.seq_length = 0
+    model.load_state_from_disk(state_path)
+
+    hot_data = {
+        'x_d_hindcast': {
+            k: v[:, 0:0, :] for k, v in data['x_d_hindcast'].items()
+        },
+        'x_d_forecast': data['x_d_forecast'],
+        'x_s': data['x_s'],
+    }
+    with torch.no_grad():
+        hot_preds = model(hot_data)
+    assert hot_preds['y_hat'].shape[1] == cfg.lead_time
 
 
