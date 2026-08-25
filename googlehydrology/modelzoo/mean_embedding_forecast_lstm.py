@@ -246,32 +246,32 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         ]
 
         state = getattr(self, '_preloaded_state', None)
-        if state is None:
-            hot_start_path = getattr(self.cfg, 'hot_start_path', None)
-            if hot_start_path is not None and Path(hot_start_path).is_file():
-                state = dict(np.load(hot_start_path, allow_pickle=False))
-
         h_hind_init = None
         h_fore_init = None
         if state is not None:
             device = static_embedding.device
             dtype = static_embedding.dtype
-            h_hind_init = (
-                torch.from_numpy(state['h_hindcast']).to(
-                    device=device, dtype=dtype
-                ),
-                torch.from_numpy(state['c_hindcast']).to(
-                    device=device, dtype=dtype
-                ),
-            )
-            h_fore_init = (
-                torch.from_numpy(state['h_forecast']).to(
-                    device=device, dtype=dtype
-                ),
-                torch.from_numpy(state['c_forecast']).to(
-                    device=device, dtype=dtype
-                ),
-            )
+            h_hind_arr = state.get('h_hindcast', state.get('h_hind'))
+            c_hind_arr = state.get('c_hindcast', state.get('c_hind'))
+            h_fore_arr = state.get('h_forecast', state.get('h_fore'))
+            c_fore_arr = state.get('c_forecast', state.get('c_fore'))
+
+            def _to_3d_tensor(arr):
+                t = torch.from_numpy(arr).to(device=device, dtype=dtype)
+                while t.ndim < 3:
+                    t = t.unsqueeze(0)
+                return t
+
+            if h_hind_arr is not None and c_hind_arr is not None:
+                h_hind_init = (
+                    _to_3d_tensor(h_hind_arr),
+                    _to_3d_tensor(c_hind_arr),
+                )
+            if h_fore_arr is not None and c_fore_arr is not None:
+                h_fore_init = (
+                    _to_3d_tensor(h_fore_arr),
+                    _to_3d_tensor(c_fore_arr),
+                )
 
 
         hindcast_state = self._calc_lstm(
@@ -361,6 +361,16 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             h_forecast=h_fore.detach().cpu().numpy(),
             c_forecast=c_fore.detach().cpu().numpy(),
         )
+
+    def load_state_from_disk(self, path: str | Path) -> None:
+        """Pre-load a hot start state archive from disk into memory.
+
+        Parameters
+        ----------
+        path : str | Path
+            Path to the .npz state file to load.
+        """
+        self._preloaded_state = dict(np.load(path, allow_pickle=False))
 
     def _make_static_embedding_repeated(
 

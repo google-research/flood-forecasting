@@ -276,36 +276,34 @@ class HandoffForecastLSTM(BaseModel):
         
         # Run the hindcast LSTM. This happens in two parts. First, the true hindcast
         # or spin-up, then the part the overlaps with the forecast. This is necessary
-        # to extract the hidden and cell states at the point of the handoff.
         state = getattr(self, '_preloaded_state', None)
-        if state is None:
-            hot_start_path = getattr(self.cfg, 'hot_start_path', None)
-            if hot_start_path is not None and Path(hot_start_path).is_file():
-                state = dict(np.load(hot_start_path, allow_pickle=False))
-
         hindcast_initial_state = None
         forecast_initial_state = None
         is_hot_start = False
         if state is not None:
             device = forecast_embeddings.device
             dtype = forecast_embeddings.dtype
-            h_hindcast = torch.from_numpy(state['h_hindcast']).to(
-                device=device, dtype=dtype
-            )
-            c_hindcast = torch.from_numpy(state['c_hindcast']).to(
-                device=device, dtype=dtype
-            )
-            hindcast_initial_state = (h_hindcast, c_hindcast)
+            h_hind_arr = state.get('h_hindcast', state.get('h_hind'))
+            c_hind_arr = state.get('c_hindcast', state.get('c_hind'))
+            h_fore_arr = state.get('h_forecast', state.get('h_fore'))
+            c_fore_arr = state.get('c_forecast', state.get('c_fore'))
 
-            # For MeanEmbedding or models that preserve both
-            if 'h_forecast' in state:
-                h_forecast = torch.from_numpy(state['h_forecast']).to(
-                    device=device, dtype=dtype
+            def _to_3d_tensor(arr):
+                t = torch.from_numpy(arr).to(device=device, dtype=dtype)
+                while t.ndim < 3:
+                    t = t.unsqueeze(0)
+                return t
+
+            if h_hind_arr is not None and c_hind_arr is not None:
+                hindcast_initial_state = (
+                    _to_3d_tensor(h_hind_arr),
+                    _to_3d_tensor(c_hind_arr),
                 )
-                c_forecast = torch.from_numpy(state['c_forecast']).to(
-                    device=device, dtype=dtype
+            if h_fore_arr is not None and c_fore_arr is not None:
+                forecast_initial_state = (
+                    _to_3d_tensor(h_fore_arr),
+                    _to_3d_tensor(c_fore_arr),
                 )
-                forecast_initial_state = (h_forecast, c_forecast)
 
             # Even if overlap is > 0, if seq_length == 0 on a hot start we have 0
             # hindcast elements. We flag this so we can bypass spinup processing.
@@ -424,7 +422,7 @@ class HandoffForecastLSTM(BaseModel):
                     y_hindcast_overlap[key], 
                     y_forecast[key][:, -self.lead_time :, :]
                 ], dim=1
-            )
+            )[:, -self.seq_length :, :]
             for key in y_forecast
         }
         
@@ -548,3 +546,13 @@ class HandoffForecastLSTM(BaseModel):
             h_forecast=h_fore_final.detach().cpu().numpy(),
             c_forecast=c_fore_final.detach().cpu().numpy(),
         )
+
+    def load_state_from_disk(self, path: str | Path) -> None:
+        """Pre-load a hot start state archive from disk into memory.
+
+        Parameters
+        ----------
+        path : str | Path
+            Path to the .npz state file to load.
+        """
+        self._preloaded_state = dict(np.load(path, allow_pickle=False))
