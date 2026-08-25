@@ -92,6 +92,13 @@ class BaseTester(object):
                 f'Invalid period {period}. Must be one of ["train", "validation", "test"]'
             )
 
+        if getattr(self.cfg, 'hot_start_path', None) is not None:
+            if self.cfg.batch_size != 1:
+                raise ValueError(
+                    f'Hot-start inference requires batch_size=1 per basin. '
+                    f'Got batch_size={self.cfg.batch_size}.'
+                )
+
         # determine device
         self._set_device()
 
@@ -666,13 +673,28 @@ class BaseTester(object):
                 if basin not in basins:
                     continue
 
+                model.reset_state()
+                # Pre-load hot-start state for this basin if configured
+                if getattr(self.cfg, 'hot_start_path', None) is not None:
+                    state_path = self.cfg.hot_start_path
+                    if state_path.is_dir():
+                        basin_state = state_path / f'state_{basin}.npz'
+                        if not basin_state.exists():
+                            basin_state = state_path / f'{basin}.npz'
+                    else:
+                        basin_state = state_path
+                    if basin_state.exists():
+                        model.load_state_from_disk(basin_state)
+
                 preds = {}
                 obs = {}
                 dates = {}
                 losses = []
                 mean_losses = {}
+                last_data = None
 
                 for data in samples:
+                    last_data = data
                     for key in data:
                         if key.startswith('x_d'):
                             data[key] = {
@@ -718,6 +740,17 @@ class BaseTester(object):
                             )
 
                     losses.append(loss)
+
+                # Save hot-start state for this basin if configured
+                if (
+                    getattr(self.cfg, 'save_state', False)
+                    and last_data is not None
+                    and not self.cfg.is_train
+                ):
+                    save_dir = self.run_dir / 'hot_start_states'
+                    save_dir.mkdir(parents=True, exist_ok=True)
+                    state_save_path = save_dir / f'state_{basin}.npz'
+                    model.save_state(last_data, state_save_path)
 
                 # set to NaN explicitly if all losses are NaN to avoid RuntimeWarning
                 if len(losses) == 0:
