@@ -108,6 +108,8 @@ class BaseModel(nn.Module):
     ) -> None:
         """Save the hot start state of the model.
 
+        Default implementation is a no-op for models that do not support state persistence.
+
         Parameters
         ----------
         data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
@@ -115,17 +117,23 @@ class BaseModel(nn.Module):
         path : str | Path
             The file path where the state should be saved (npz recommended).
         """
-        raise NotImplementedError
+        pass
 
     def load_state_from_disk(self, path: str | Path) -> None:
         """Pre-load a hot start state archive from disk into memory.
 
+        Default implementation is a no-op for models that do not support state persistence.
+
         Parameters
         ----------
         path : str | Path
-            Path to the .npz state file to load.
+            Path to the state file to load.
         """
-        self._preloaded_state = dict(np.load(path, allow_pickle=False))
+        pass
+
+    def reset_state(self) -> None:
+        """Reset in-memory hot-start state between basins."""
+        self._preloaded_state = None
 
     def pre_model_hook(
         self, data: dict[str, torch.Tensor], is_train: bool
