@@ -666,6 +666,7 @@ class BaseTester(object):
                 if basin not in basins:
                     continue
 
+                model.reset_state()
                 # Pre-load hot-start state for this basin if configured
                 if getattr(self.cfg, 'hot_start_path', None) is not None:
                     state_path = self.cfg.hot_start_path
