@@ -15,8 +15,8 @@
 """Integration tests for GoogleHydrology training and evaluation pipeline."""
 
 from pathlib import Path
+import gc
 import shutil
-import tempfile
 from typing import Any
 
 import numpy as np
@@ -35,9 +35,9 @@ from googlehydrology.utils.config import Config
 
 
 @pytest.fixture(scope='module')
-def integration_data_env():
+def integration_data_env(tmp_path_factory: pytest.TempPathFactory):
     """Builds a temporary dynamic dataset environment using tutorial NetCDFs."""
-    tmp_dir = tempfile.mkdtemp(prefix='hydrology_integration_')
+    tmp_dir = tmp_path_factory.mktemp('hydrology_integration')
     base_path = Path(__file__).resolve().parent.parent
     nc_dir = base_path / 'tutorial' / 'Caravan-nc'
     train_basin_file = (
@@ -61,13 +61,15 @@ def integration_data_env():
     lead_times = pd.to_timedelta(np.arange(8), unit='D')
     ds_forecast = ds.expand_dims(lead_time=lead_times).copy()
 
-    dynamics_dir = Path(tmp_dir) / 'dynamics'
+    dynamics_dir = tmp_dir / 'dynamics'
     era5_zarr = dynamics_dir / 'ERA5_LAND' / 'timeseries.zarr'
     era5_zarr.parent.mkdir(parents=True, exist_ok=True)
     ds_forecast.to_zarr(era5_zarr, consolidated=True)
+    ds.close()
+    ds_forecast.close()
 
     env_info = {
-        'tmp_dir': tmp_dir,
+        'tmp_dir': str(tmp_dir),
         'nc_dir': str(nc_dir.resolve()),
         'dynamics_dir': str(dynamics_dir.resolve()),
         'train_basin_file': str(train_basin_file.resolve()),
@@ -76,7 +78,14 @@ def integration_data_env():
 
     yield env_info
 
-    shutil.rmtree(tmp_dir, ignore_errors=True)
+    try:
+        from googlehydrology.datasetzoo.multimet import _open_zarr
+
+        _open_zarr.cache_clear()
+    except Exception:
+        pass
+    gc.collect()
+    shutil.rmtree(tmp_dir)
 
 
 def _get_base_config_dict(
@@ -191,20 +200,24 @@ def test_mean_embedding_forecast_lstm_regression_pipeline(
     assert (test_eval_dir / 'test_metrics.csv').is_file()
 
     # Verify results contents and metrics values
-    ds_pred = xr.open_zarr(
+    with xr.open_zarr(
         test_eval_dir / 'test_results.zarr', consolidated=False
-    )
-    assert 'streamflow_sim' in ds_pred
-    assert 'streamflow_obs' in ds_pred
-    assert not np.all(np.isnan(ds_pred['streamflow_sim'].values))
+    ) as ds_pred:
+        assert 'streamflow_sim' in ds_pred
+        assert 'streamflow_obs' in ds_pred
+        sim_vals = ds_pred['streamflow_sim'].values
+        assert np.all(np.isfinite(sim_vals)), 'Predictions contain NaNs or Infs'
+        assert sim_vals.shape[0] == 8  # 8 basins
 
     # Read metrics summary CSV
     df_metrics = pd.read_csv(test_eval_dir / 'test_metrics.csv')
-    assert not df_metrics.empty
+    assert len(df_metrics) == 8, 'Metrics missing for evaluated basins'
     assert 'NSE' in df_metrics.columns
     assert 'KGE' in df_metrics.columns
     assert 'RMSE' in df_metrics.columns
-    assert np.all(np.isfinite(df_metrics['NSE'].dropna().values))
+    assert not df_metrics['NSE'].isna().all(), 'NSE metrics are all NaN'
+    assert np.all(np.isfinite(df_metrics['NSE'].values)), 'NSE contains non-finite values'
+    assert np.all(df_metrics['RMSE'].values >= 0.0), 'RMSE contains negative values'
 
 
 @pytest.mark.integration
@@ -245,12 +258,13 @@ def test_handoff_forecast_lstm_cmal_pipeline(integration_data_env, tmp_path):
     test_eval_dir = actual_run_dir / 'test' / 'model_epoch001'
     assert (test_eval_dir / 'test_results.zarr').is_dir()
 
-    ds_pred = xr.open_zarr(
+    with xr.open_zarr(
         test_eval_dir / 'test_results.zarr', consolidated=False
-    )
-    assert 'streamflow_sim' in ds_pred
-    # CMAL predictions must have non-NaN values
-    assert np.any(np.isfinite(ds_pred['streamflow_sim'].values))
+    ) as ds_pred:
+        assert 'streamflow_sim' in ds_pred
+        sim_vals = ds_pred['streamflow_sim'].values
+        assert np.all(np.isfinite(sim_vals)), 'CMAL predictions contain NaNs or Infs'
+        assert sim_vals.shape[0] == 8  # 8 basins
 
 
 @pytest.mark.integration
@@ -298,13 +312,15 @@ def test_continue_training_and_finetuning_pipeline(
         ckpt_epoch2, weights_only=True, map_location='cpu'
     )
 
-    # Weights must update from epoch 1 to epoch 2
-    weight_diff = False
-    for k in weights_epoch1:
-        if not torch.equal(weights_epoch1[k], weights_epoch2[k]):
-            weight_diff = True
-            break
-    assert weight_diff, 'Model weights did not change after continue_run'
+    # Weights must remain finite and update from epoch 1 to epoch 2
+    for k in weights_epoch2:
+        assert torch.all(torch.isfinite(weights_epoch2[k])), f'Weight {k} contains NaN/Inf'
+
+    lstm_weights_updated = any(
+        not torch.equal(weights_epoch1[k], weights_epoch2[k])
+        for k in weights_epoch1 if 'lstm' in k
+    )
+    assert lstm_weights_updated, 'LSTM weights did not update during continue_run'
 
     # 3. Test finetune with frozen feature embeddings (only train head)
     finetune_dir = str(tmp_path / 'runs_finetune_child')
@@ -328,12 +344,20 @@ def test_continue_training_and_finetuning_pipeline(
         ckpt_finetuned, weights_only=True, map_location='cpu'
     )
 
-    # Static embedding and LSTM weights must remain FROZEN
+    # Static embedding and LSTM weights must remain FROZEN while head weights update
+    head_updated = False
     for k in weights_finetuned:
         if 'static_embedding_fc' in k or 'hindcast_lstm' in k:
             assert torch.equal(weights_finetuned[k], weights_epoch1[k]), (
                 f'Frozen parameter {k} changed during finetuning!'
             )
+        elif 'head' in k:
+            assert torch.all(torch.isfinite(weights_finetuned[k])), (
+                f'Head parameter {k} contains NaN/Inf'
+            )
+            if not torch.equal(weights_finetuned[k], weights_epoch1[k]):
+                head_updated = True
+    assert head_updated, 'Unfrozen head parameters did not update during finetuning!'
 
 
 @pytest.mark.integration
@@ -354,6 +378,16 @@ def test_inference_mode_without_ground_truth(integration_data_env, tmp_path):
     start_evaluation(cfg=cfg, run_dir=actual_run_dir, epoch=1, period='test')
     test_eval_dir = actual_run_dir / 'test' / 'model_epoch001'
     assert (test_eval_dir / 'test_results.zarr').is_dir()
+
+    with xr.open_zarr(
+        test_eval_dir / 'test_results.zarr', consolidated=False
+    ) as ds_pred:
+        assert 'streamflow_sim' in ds_pred
+        sim_vals = ds_pred['streamflow_sim'].values
+        assert np.all(np.isfinite(sim_vals)), (
+            'Inference predictions contain NaNs or Infs'
+        )
+        assert sim_vals.shape[0] == 8  # 8 basins
 
 
 @pytest.mark.integration
@@ -407,22 +441,20 @@ def test_numerical_determinism_with_fixed_seed(
     start_evaluation(cfg=cfg_1, run_dir=actual_dir_1, epoch=1, period='test')
     start_evaluation(cfg=cfg_2, run_dir=actual_dir_2, epoch=1, period='test')
 
-    ds_pred_1 = xr.open_zarr(
+    with xr.open_zarr(
         actual_dir_1 / 'test' / 'model_epoch001' / 'test_results.zarr',
         consolidated=False,
-    )
-    ds_pred_2 = xr.open_zarr(
+    ) as ds_pred_1, xr.open_zarr(
         actual_dir_2 / 'test' / 'model_epoch001' / 'test_results.zarr',
         consolidated=False,
-    )
-
-    np.testing.assert_allclose(
-        ds_pred_1['streamflow_sim'].values,
-        ds_pred_2['streamflow_sim'].values,
-        rtol=1e-5,
-        atol=1e-5,
-        err_msg='Evaluated predictions differed between identical seed runs!',
-    )
+    ) as ds_pred_2:
+        np.testing.assert_allclose(
+            ds_pred_1['streamflow_sim'].values,
+            ds_pred_2['streamflow_sim'].values,
+            rtol=1e-5,
+            atol=1e-5,
+            err_msg='Evaluated predictions differed between identical seed runs!',
+        )
 
 
 @pytest.mark.integration

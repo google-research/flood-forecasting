@@ -22,6 +22,7 @@ from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.modelzoo.fc import FC
 from googlehydrology.modelzoo.head import get_head
 from googlehydrology.utils.config import Config, EmbeddingSpec, WeightInitOpt
+from googlehydrology.utils.configutils import flatten_feature_list
 from googlehydrology.utils.lstm_utils import lstm_init
 
 FC_XAVIER = WeightInitOpt.FC_XAVIER
@@ -86,19 +87,8 @@ class HandoffForecastLSTM(BaseModel):
             if cfg.head not in ['regression']:
                 raise ValueError('Forecast overlap regularization only works with a regression head.')
            
-        if isinstance(cfg.hindcast_inputs, dict):
-            self.hindcast_inputs = [
-                f for feats in cfg.hindcast_inputs.values() for f in feats
-            ]
-        else:
-            self.hindcast_inputs = cfg.hindcast_inputs
-
-        if isinstance(cfg.forecast_inputs, dict):
-            self.forecast_inputs = [
-                f for feats in cfg.forecast_inputs.values() for f in feats
-            ]
-        else:
-            self.forecast_inputs = cfg.forecast_inputs
+        self.hindcast_inputs = flatten_feature_list(cfg.hindcast_inputs)
+        self.forecast_inputs = flatten_feature_list(cfg.forecast_inputs)
         
         # Determines whether there is an overlap between forecast and hindcast, which,
         # if present, is used for regularization.
