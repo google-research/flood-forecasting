@@ -62,7 +62,7 @@ def sample_pointpredictions(
     if model.cfg.head.lower() == 'cmal':
         samples = sample_cmal(model, data, n_samples, scaler, outputs=outputs)
     elif model.cfg.head.lower() == 'cmal_deterministic':
-        samples = sample_cmal_deterministic(model, data, outputs=outputs)
+        samples = sample_cmal_deterministic(model, data, scaler=scaler, outputs=outputs)
     elif model.cfg.head.lower() == 'regression':  # regression head assumes mcd
         assert not outputs, 'regression self creates outputs'
         samples = sample_mcd(model, data, n_samples, scaler)
@@ -133,15 +133,20 @@ def _handle_negative_values(
         case 'clip':
             return torch.clamp(values, min=normalized_zero)
         case 'truncate':
+            values = values.clone()
             values_smaller_zero = values < normalized_zero
             try_count = 0
             while torch.any(values_smaller_zero.flatten()):
-                values[values_smaller_zero] = sample_values(values_smaller_zero)
+                resampled = sample_values(values_smaller_zero)
+                if resampled.shape == values.shape:
+                    values[values_smaller_zero] = resampled[values_smaller_zero]
+                else:
+                    values[values_smaller_zero] = resampled
                 values_smaller_zero = values < normalized_zero
                 try_count += 1
                 if try_count >= cfg.negative_sample_max_retries:
                     break
-            return values
+            return torch.clamp(values, min=normalized_zero)
         case '' | 'none':
             return values
         case _:
@@ -185,64 +190,100 @@ class _SamplingSetup:
         dropout_modules = [model.dropout.p]
 
         # Certain models don't have embedding_net(s)
-        implied_statics_embedding, implied_dynamics_embedding = None, None
+        implied_statics_embedding = None
+        implied_dynamics_embedding = None
+        implied_forecast_statics_embedding = None
+        implied_forecast_dynamics_embedding = None
+        implied_hindcast_statics_embedding = None
+        implied_hindcast_dynamics_embedding = None
         if hasattr(model, 'forecast_embedding_net'):
-            implied_forecast_statics_embedding = (
-                model.forecast_embedding_net.statics_embedding_p_dropout
+            implied_forecast_dynamics_embedding = getattr(
+                model.forecast_embedding_net,
+                'dynamics_embedding_p_dropout',
+                getattr(model.forecast_embedding_net, 'dropout', None),
             )
-            implied_forecast_dynamics_embedding = (
-                model.forecast_embedding_net.dynamics_embedding_p_dropout
+            implied_forecast_statics_embedding = getattr(
+                model.forecast_embedding_net,
+                'statics_embedding_p_dropout',
+                None,
             )
-            dropout_modules += [
-                implied_forecast_statics_embedding,
-                implied_forecast_dynamics_embedding,
-            ]
+            if implied_forecast_dynamics_embedding is not None:
+                dropout_modules.append(implied_forecast_dynamics_embedding)
+            if implied_forecast_statics_embedding is not None:
+                dropout_modules.append(implied_forecast_statics_embedding)
         if hasattr(model, 'hindcast_embedding_net'):
-            implied_hindcast_statics_embedding = (
-                model.hindcast_embedding_net.statics_embedding_p_dropout
+            implied_hindcast_dynamics_embedding = getattr(
+                model.hindcast_embedding_net,
+                'dynamics_embedding_p_dropout',
+                getattr(model.hindcast_embedding_net, 'dropout', None),
             )
-            implied_hindcast_dynamics_embedding = (
-                model.hindcast_embedding_net.dynamics_embedding_p_dropout
+            implied_hindcast_statics_embedding = getattr(
+                model.hindcast_embedding_net,
+                'statics_embedding_p_dropout',
+                None,
             )
-            dropout_modules += [
-                implied_hindcast_statics_embedding,
-                implied_hindcast_dynamics_embedding,
-            ]
+            if implied_hindcast_dynamics_embedding is not None:
+                dropout_modules.append(implied_hindcast_dynamics_embedding)
+            if implied_hindcast_statics_embedding is not None:
+                dropout_modules.append(implied_hindcast_statics_embedding)
+        if hasattr(model, 'statics_embedding_net'):
+            implied_statics_embedding = getattr(
+                model.statics_embedding_net,
+                'statics_embedding_p_dropout',
+                getattr(model.statics_embedding_net, 'dropout', None),
+            )
+            if implied_statics_embedding is not None:
+                dropout_modules.append(implied_statics_embedding)
         if hasattr(model, 'embedding_net'):
-            implied_statics_embedding = (
-                model.embedding_net.statics_embedding_p_dropout
+            implied_statics_embedding = getattr(
+                model.embedding_net,
+                'statics_embedding_p_dropout',
+                None,
             )
-            implied_dynamics_embedding = (
-                model.embedding_net.dynamics_embedding_p_dropout
+            implied_dynamics_embedding = getattr(
+                model.embedding_net,
+                'dynamics_embedding_p_dropout',
+                None,
             )
-            dropout_modules += [
-                implied_statics_embedding,
-                implied_dynamics_embedding,
-            ]
+            if implied_statics_embedding is not None:
+                dropout_modules.append(implied_statics_embedding)
+            if implied_dynamics_embedding is not None:
+                dropout_modules.append(implied_dynamics_embedding)
 
         max_implied_dropout = max(dropout_modules)
         # check lower bound dropout:
         if cfg.mc_dropout and max_implied_dropout <= 0.0:
-            raise RuntimeError(f"""{cfg.model} with `mc_dropout` activated requires a dropout rate larger than 0.0
-                               The current implied dropout-rates are:
-                                  - model: {cfg.output_dropout}
-                                  - statics_embedding: {implied_statics_embedding}
-                                  - dynamics_embedding: {implied_dynamics_embedding}
-                                  - statics_forecast_embedding: {implied_forecast_statics_embedding}
-                                  - dynamics_forecast_embedding: {implied_forecast_dynamics_embedding}
-                                  - statics_hindcast_embedding: {implied_hindcast_statics_embedding}
-                                  - dynamics_hindcast_embedding: {implied_hindcast_dynamics_embedding}""")
+            raise RuntimeError(
+                f'{cfg.model} with `mc_dropout` activated requires a dropout'
+                ' rate larger than 0.0. Implied dropout-rates:\n'
+                f'  - model: {cfg.output_dropout}\n'
+                f'  - statics_embedding: {implied_statics_embedding}\n'
+                f'  - dynamics_embedding: {implied_dynamics_embedding}\n'
+                '  - statics_forecast_embedding: '
+                f'{implied_forecast_statics_embedding}\n'
+                '  - dynamics_forecast_embedding: '
+                f'{implied_forecast_dynamics_embedding}\n'
+                '  - statics_hindcast_embedding: '
+                f'{implied_hindcast_statics_embedding}\n'
+                '  - dynamics_hindcast_embedding: '
+                f'{implied_hindcast_dynamics_embedding}'
+            )
         # check upper bound dropout:
         if cfg.mc_dropout and max_implied_dropout >= 1.0:
-            raise RuntimeError(f"""The maximal dropout-rate is 1. Please check your dropout-settings:
-                               The current implied dropout-rates are:
-                                  - model: {cfg.output_dropout}
-                                  - statics_embedding: {implied_statics_embedding}
-                                  - dynamics_embedding: {implied_dynamics_embedding}
-                                  - statics_forecast_embedding: {implied_forecast_statics_embedding}
-                                  - dynamics_forecast_embedding: {implied_forecast_dynamics_embedding}
-                                  - statics_hindcast_embedding: {implied_hindcast_statics_embedding}
-                                  - dynamics_hindcast_embedding: {implied_hindcast_dynamics_embedding}""")
+            raise RuntimeError(
+                'The maximal dropout-rate is 1. Please check your settings:\n'
+                f'  - model: {cfg.output_dropout}\n'
+                f'  - statics_embedding: {implied_statics_embedding}\n'
+                f'  - dynamics_embedding: {implied_dynamics_embedding}\n'
+                '  - statics_forecast_embedding: '
+                f'{implied_forecast_statics_embedding}\n'
+                '  - dynamics_forecast_embedding: '
+                f'{implied_forecast_dynamics_embedding}\n'
+                '  - statics_hindcast_embedding: '
+                f'{implied_hindcast_statics_embedding}\n'
+                '  - dynamics_hindcast_embedding: '
+                f'{implied_hindcast_dynamics_embedding}'
+            )
 
         # assign setup properties:
         self.cfg = cfg
@@ -362,10 +403,11 @@ def sample_mcd(
 def sample_cmal_deterministic(
     model: 'BaseModel',
     data: dict[str, torch.Tensor],
+    scaler: Scaler | None = None,
     *,
     outputs: dict[str, torch.Tensor] | None = None,
 ) -> dict[str, torch.Tensor]:
-    """Sample 10 point predictions with the Countable Mixture of Asymmetric Laplacians (CMAL) head.
+    """Sample point predictions with the Countable Mixture of Asymmetric Laplacians (CMAL) deterministic head.
 
     Note: If the config setting 'mc_dropout' is true this function will force the model to train mode (`model.train()`)
     and not set it back to its original state.
@@ -376,6 +418,8 @@ def sample_cmal_deterministic(
         A model with a CMAL head.
     data : dict[str, torch.Tensor]
         Dictionary, containing input features as key-value pairs.
+    scaler : Scaler, optional
+        Scaler of the run.
     outputs, optional
         Model forward result
 
@@ -384,7 +428,7 @@ def sample_cmal_deterministic(
     dict[str, torch.Tensor]
         Dictionary, containing the sampled model outputs for the `predict_last_n` (config argument) time steps of
         each frequency. The shape of the output tensor for each frequency is
-        ``[batch size, predict_last_n, n_samples]``.
+        ``[batch size, predict_last_n, 1]``.
     """
     setup = _SamplingSetup(model, data, 'cmal_deterministic')
 
@@ -399,17 +443,55 @@ def sample_cmal_deterministic(
     # Map output frequencies to final sample tensors:
     samples = {}
 
+    if scaler is not None and setup.cfg.negative_sample_handling:
+        normalized_zeros = _calc_normalized_zero_thresholds(
+            scaler=scaler,
+            targets=setup.cfg.target_variables,
+            device=next(model.parameters()).device,
+            dtype=next(model.parameters()).dtype,
+        )
+    else:
+        normalized_zeros = None
+
     # Loop over all model output frequencies (e.g., 'daily', 'hourly').
     for freq_suffix in setup.freq_suffixes:
-        mu = pred[f'mu{freq_suffix}']  # means
-        b = pred[f'b{freq_suffix}']  # scales
-        tau = pred[f'tau{freq_suffix}']  # asymmetries
-        pi = pred[f'pi{freq_suffix}']  # weights
+        frequency_last_n = _get_frequency_last_n(
+            setup.cfg.predict_last_n, freq_suffix, setup.cfg.use_frequencies
+        )
+        mu = pred[f'mu{freq_suffix}'][:, -frequency_last_n:, :]  # means
+        b = pred[f'b{freq_suffix}'][:, -frequency_last_n:, :]  # scales
+        tau = pred[f'tau{freq_suffix}'][:, -frequency_last_n:, :]  # asymmetries
+        pi = pred[f'pi{freq_suffix}'][:, -frequency_last_n:, :]  # weights
 
-        sample_points = [
-            cmal_deterministic.generate_predictions(mu, b, tau, pi)
-        ]
-        samples[f'y_hat{freq_suffix}'] = torch.stack(sample_points, 2)
+        sample_points = []
+        for nth_target in range(setup.number_of_targets):
+            mu_target = _subset_target(mu, nth_target, setup.cfg.n_distributions)
+            b_target = _subset_target(b, nth_target, setup.cfg.n_distributions)
+            tau_target = _subset_target(tau, nth_target, setup.cfg.n_distributions)
+            pi_target = _subset_target(pi, nth_target, setup.cfg.n_distributions)
+
+            pred_target = cmal_deterministic.generate_predictions(
+                mu_target,
+                b_target,
+                tau_target,
+                pi_target,
+            )
+            # pred_target is [batch, time, 10] -> permute to [batch, 10, time]
+            pred_target_p = pred_target.permute(0, 2, 1)
+            if normalized_zeros is not None:
+                pred_bounded = _handle_negative_values(
+                    setup.cfg,
+                    pred_target_p,
+                    sample_values=lambda _: pred_target_p,
+                    normalized_zero=normalized_zeros[nth_target],
+                )
+            else:
+                pred_bounded = pred_target_p
+            # Permute back to [batch, time, 10]
+            sample_points.append(pred_bounded.permute(0, 2, 1))
+
+        # [batch, time, target, 10]
+        samples[f'y_hat{freq_suffix}'] = torch.stack(sample_points, dim=2)
 
     return samples
 

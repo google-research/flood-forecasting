@@ -199,12 +199,18 @@ class BaseTrainer(object):
             LOGGER.info(
                 f'Starting training from Checkpoint {self.cfg.checkpoint_path}'
             )
-            self.model.load_state_dict(
-                torch.load(
-                    str(self.cfg.checkpoint_path),
-                    map_location=self.device,
-                    weights_only=True,
-                )
+            state_dict = torch.load(
+                str(self.cfg.checkpoint_path),
+                map_location=self.device,
+                weights_only=True,
+            )
+            if any(k.startswith('_orig_mod.') for k in state_dict):
+                state_dict = {
+                    (k[len('_orig_mod.'):] if k.startswith('_orig_mod.') else k): v
+                    for k, v in state_dict.items()
+                }
+            getattr(self.model, '_orig_mod', self.model).load_state_dict(
+                state_dict
             )
         elif self.cfg.checkpoint_path is None and self.cfg.is_finetuning:
             # the default for finetuning is the last model state
@@ -215,12 +221,18 @@ class BaseTrainer(object):
                 )
             ][-1]
             LOGGER.info(f'Starting training from checkpoint {checkpoint_path}')
-            self.model.load_state_dict(
-                torch.load(
-                    str(checkpoint_path),
-                    map_location=self.device,
-                    weights_only=True,
-                )
+            state_dict = torch.load(
+                str(checkpoint_path),
+                map_location=self.device,
+                weights_only=True,
+            )
+            if any(k.startswith('_orig_mod.') for k in state_dict):
+                state_dict = {
+                    (k[len('_orig_mod.'):] if k.startswith('_orig_mod.') else k): v
+                    for k, v in state_dict.items()
+                }
+            getattr(self.model, '_orig_mod', self.model).load_state_dict(
+                state_dict
             )
 
         # Freeze model parts from pre-trained model.
@@ -398,9 +410,15 @@ class BaseTrainer(object):
         )
 
         LOGGER.info(f'Continue training from epoch {int(epoch)}')
-        self.model.load_state_dict(
-            torch.load(weight_path, map_location=self.device, weights_only=True)
+        state_dict = torch.load(
+            weight_path, map_location=self.device, weights_only=True
         )
+        if any(k.startswith('_orig_mod.') for k in state_dict):
+            state_dict = {
+                (k[len('_orig_mod.'):] if k.startswith('_orig_mod.') else k): v
+                for k, v in state_dict.items()
+            }
+        getattr(self.model, '_orig_mod', self.model).load_state_dict(state_dict)
         self.optimizer.load_state_dict(
             torch.load(
                 str(optimizer_path), map_location=self.device, weights_only=True

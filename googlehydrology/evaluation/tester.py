@@ -26,6 +26,7 @@ import pandas as pd
 import torch
 import torch.cuda
 import xarray
+import zarr
 from torch.amp import autocast
 from torch.utils.data import Dataset
 
@@ -179,7 +180,8 @@ class BaseTester(object):
             state_dict = {
                 k[len('_orig_mod.'):]: v for k, v in state_dict.items()
             }
-        self.model.load_state_dict(state_dict)
+        target_model = getattr(self.model, '_orig_mod', self.model)
+        target_model.load_state_dict(state_dict)
 
     def _get_dataset_all(self) -> Dataset:
         """Get dataset for all basins."""
@@ -504,6 +506,17 @@ class BaseTester(object):
                 for name, metric in freq_metrics.items():
                     median = np.nanmedian(metric)
                     LOGGER.info('%s %s median=%f', freq, name, median)
+
+        # Consolidate metadata for the output Zarr store if one was created
+        if self.cfg.inference_mode and self.period == 'test' and save_results:
+            parent_directory = self._parent_directory_for_results(epoch)
+            result_file = parent_directory / f'{self.period}_results.zarr'
+            if result_file.exists():
+                try:
+                    zarr.consolidate_metadata(str(result_file))
+                    LOGGER.debug('Consolidated metadata for %s', result_file)
+                except Exception as e:
+                    LOGGER.warning('Could not consolidate metadata for %s: %s', result_file, e)
 
     def _calc_exclude_basins(self) -> Iterator[str]:
         if not self.cfg.tester_skip_obs_all_nan:

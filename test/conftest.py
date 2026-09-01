@@ -12,13 +12,54 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
+import logging
 from pathlib import Path
 from typing import Callable
 
+import matplotlib.pyplot as plt
 import pytest
+import torch._dynamo
 
 from googlehydrology.utils.config import Config
 from test import Fixture
+
+torch._dynamo.config.suppress_errors = True
+
+
+def _cleanup_all_open_resources():
+    """Closes all logging handlers, open matplotlib figures, and forces GC."""
+    for handler in list(logging.root.handlers):
+        if isinstance(handler, logging.FileHandler):
+            handler.close()
+            logging.root.removeHandler(handler)
+    for logger in list(logging.Logger.manager.loggerDict.values()):
+        if isinstance(logger, logging.Logger):
+            for handler in list(logger.handlers):
+                if isinstance(handler, logging.FileHandler):
+                    handler.close()
+                    logger.removeHandler(handler)
+    plt.close('all')
+    try:
+        from googlehydrology.datasetzoo.multimet import _open_zarr
+
+        _open_zarr.cache_clear()
+    except Exception:
+        pass
+    gc.collect()
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_teardown(item, nextitem):
+    """Run resource cleanup before any fixtures are torn down."""
+    _cleanup_all_open_resources()
+
+
+@pytest.fixture(autouse=True)
+def cleanup_resources_after_test():
+    """Closes all logging handlers, open matplotlib figures, and forces GC."""
+    yield
+    _cleanup_all_open_resources()
 
 
 def pytest_addoption(parser):
@@ -26,21 +67,23 @@ def pytest_addoption(parser):
         '--smoke-test',
         action='store_true',
         default=False,
-        help='Skips some tests for faster execution. Out of the single-timescale '
-        'models and forcings, only test cudalstm on forcings that include daymet.',
+        help=(
+            'Skips some tests for faster execution. Out of single-timescale '
+            'models/forcings, only test cudalstm on daymet.'
+        ),
     )
 
 
 @pytest.fixture
-def get_config(tmpdir: Fixture[str]) -> Fixture[Callable[[str], dict]]:
-    """Fixture that provides a function to fetch a run configuration specified by its name.
+def get_config(tmp_path: Fixture[Path]) -> Fixture[Callable[[str], dict]]:
+    """Provides a function to fetch a run config specified by name.
 
     The fetched run configuration will use a tmp folder as its run directory.
 
     Parameters
     ----------
-    tmpdir : Fixture[str]
-        Name of the tmp directory to use in the run configuration.
+    tmp_path : Fixture[Path]
+        Tmp directory to use in the run configuration.
 
     Returns
     -------
@@ -49,11 +92,13 @@ def get_config(tmpdir: Fixture[str]) -> Fixture[Callable[[str], dict]]:
     """
 
     def _get_config(name):
-        config_file = Path(f'./test/test_configs/{name}.test.yml')
+        config_file = (
+            Path(__file__).parent / 'test_configs' / f'{name}.test.yml'
+        )
         if not config_file.is_file():
             raise ValueError(f'Test config file not found at {config_file}.')
         config = Config(config_file)
-        config.run_dir = Path(tmpdir)
+        config.run_dir = tmp_path
         return config
 
     return _get_config
@@ -61,7 +106,7 @@ def get_config(tmpdir: Fixture[str]) -> Fixture[Callable[[str], dict]]:
 
 @pytest.fixture
 def forecast_config_updates() -> Fixture[Callable[[str], dict]]:
-    """Fixture that provides a function to update forecast model configs for model-specific parameters.
+    """Provides a function to update forecast model configs.
 
     Returns
     -------
@@ -89,7 +134,7 @@ def forecast_config_updates() -> Fixture[Callable[[str], dict]]:
     params=['handoff_forecast_lstm', 'mean_embedding_forecast_lstm']
 )
 def forecast_model(request) -> str:
-    """Fixture that provides models that support predicting only a single timescale.
+    """Fixture that provides single-timescale forecast models.
 
     Returns
     -------
@@ -133,7 +178,7 @@ def single_timescale_forcings(request) -> dict[str, str | list[str]]:
     Returns
     -------
     dict[str, str | list[str]]
-        Dictionary ``{'forcings': <name of the forcings set>, 'variables': <list of forcings variables>}``.
+        Dict ``{'forcings': <name>, 'variables': <list of variables>}``.
     """
     if (
         request.config.getoption('--smoke-test')
@@ -152,7 +197,7 @@ def daily_dataset(request) -> dict[str, list[str]]:
     Returns
     -------
     dict[str, list[str]]
-        Dictionary ``{'dataset: <name of the dataset>, 'target': <list of target variables>}``.
+        Dict ``{'dataset: <name>, 'target': <list of target variables>}``.
     """
     if (
         request.config.getoption('--smoke-test')

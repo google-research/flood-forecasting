@@ -39,10 +39,12 @@ def _get_args() -> dict:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         'mode',
-        choices=['train', 'continue_training', 'finetune', 'evaluate', 'infer'],
+        choices=['train', 'continue_training', 'finetune', 'evaluate', 'infer', 'convert_caravan', 'convert-caravan'],
     )
     parser.add_argument('--config-file', type=str)
     parser.add_argument('--run-dir', type=str)
+    parser.add_argument('--caravan-dir', type=str, help='Path to legacy Caravan dataset root')
+    parser.add_argument('--output-dir', type=str, help='Destination directory for converted Zarr dataset')
     parser.add_argument(
         '--epoch',
         type=int,
@@ -61,6 +63,11 @@ def _get_args() -> dict:
     )
     args = vars(parser.parse_args())
 
+    if (args['mode'] in ['convert_caravan', 'convert-caravan']):
+        if args['caravan_dir'] is None or args['output_dir'] is None:
+            raise ValueError('--caravan-dir and --output-dir are required for convert-caravan')
+        return args
+
     if (args['mode'] in ['train', 'finetune']) and (
         args['config_file'] is None
     ):
@@ -77,6 +84,13 @@ def _get_args() -> dict:
 
 def _main():
     args = _get_args()
+
+    if args['mode'] in ['convert_caravan', 'convert-caravan']:
+        from googlehydrology.datautils.convert import convert_caravan_to_zarr
+        convert_caravan_to_zarr(args['caravan_dir'], args['output_dir'])
+        print(f"Successfully converted Caravan dataset to Zarr in {args['output_dir']}")
+        return
+
     config = Config(
         Path(args['config_file'] or Path(args['run_dir']) / 'config.yml')
     )
