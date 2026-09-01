@@ -84,7 +84,7 @@ def get_optimizer(
 def get_loss_obj(cfg: Config) -> loss.BaseLoss:
     """Get loss object, depending on the run configuration.
 
-    Currently supported are 'MSE', 'NSE', 'RMSE', 'CMALLoss'.
+    Currently supported are 'MSE', 'NSE', 'RMSE', 'CMALLoss' (or 'CMAL').
 
     Parameters
     ----------
@@ -107,7 +107,7 @@ def get_loss_obj(cfg: Config) -> loss.BaseLoss:
         loss_obj = loss.MaskedCMALLoss(cfg)
     else:
         raise NotImplementedError(
-            f'{cfg.loss} not implemented or not linked in `get_loss()`'
+            f'{cfg.loss} not implemented or not linked in `get_loss_obj()`'
         )
 
     return loss_obj

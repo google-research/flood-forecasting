@@ -63,6 +63,7 @@ def test_get_loss_obj():
         'rmse': MaskedRMSELoss,
         'nse': MaskedNSELoss,
         'cmalloss': MaskedCMALLoss,
+        'cmal': MaskedCMALLoss,
     }
     for loss_name, expected_class in loss_types.items():
         cfg = MagicMock()
