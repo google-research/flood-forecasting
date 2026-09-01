@@ -1060,8 +1060,12 @@ def _open_zarr(path: Path) -> xr.Dataset:
         store = path.as_posix().replace('gs:/', 'gs://')
     else:
         store = str_path
+    is_cloud = str_path.startswith(('gs:', 'gs/'))
     return xr.open_zarr(
-        store=store, chunks='auto', decode_timedelta=True, consolidated=False
+        store=store,
+        chunks='auto',
+        decode_timedelta=True,
+        consolidated=True if is_cloud else False,
     )
 
 
