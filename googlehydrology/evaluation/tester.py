@@ -173,13 +173,13 @@ class BaseTester(object):
         state_dict = torch.load(
             weight_file, map_location=self.device, weights_only=True
         )
-        # Drop `_orig_mod.` prefix introduced by torch.compile when the model
-        # was trained with compile=True but is now loaded without compilation.
+        # Drop `_orig_mod.` prefix introduced by torch.compile to normalize keys.
         if any(k.startswith('_orig_mod.') for k in state_dict):
             state_dict = {
                 k[len('_orig_mod.'):]: v for k, v in state_dict.items()
             }
-        self.model.load_state_dict(state_dict)
+        model_to_load = getattr(self.model, '_orig_mod', self.model)
+        model_to_load.load_state_dict(state_dict)
 
     def _get_dataset_all(self) -> Dataset:
         """Get dataset for all basins."""

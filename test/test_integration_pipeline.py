@@ -38,7 +38,7 @@ from googlehydrology.utils.config import Config
 def integration_data_env(tmp_path_factory: pytest.TempPathFactory):
     """Builds a temporary dynamic dataset environment using tutorial NetCDFs."""
     tmp_dir = tmp_path_factory.mktemp('hydrology_integration')
-    base_path = Path(__file__).resolve().parent.parent
+    base_path = Path(__file__).parent.parent
     nc_dir = base_path / 'tutorial' / 'Caravan-nc'
     train_basin_file = (
         base_path / 'tutorial' / 'basin-lists' / '5-basin-train.txt'
@@ -149,6 +149,7 @@ def _get_base_config_dict(
         'forecast_overlap': 10,
         'timestep_counter': True,
         'output_dropout': 0.0,
+        'compile': False,
         'device': 'cpu',
         'seed': 42,
         'loss': 'MSE',
