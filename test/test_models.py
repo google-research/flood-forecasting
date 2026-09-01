@@ -193,3 +193,39 @@ def test_base_model_methods(monkeypatch):
     samples = model.sample(data, n_samples=5)
     assert 'y_hat' in samples
     mock_sample_fn.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('save_compiled', [True, False])
+@pytest.mark.parametrize('eval_compiled', [True, False])
+def test_tester_load_weights_torch_compile_compatibility(
+    tmp_path, save_compiled, eval_compiled
+):
+    from googlehydrology.evaluation.tester import BaseTester
+
+    class DummyModel(torch.nn.Module):
+
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(2, 2)
+
+        def forward(self, x):
+            return self.linear(x)
+
+    model = DummyModel()
+    if save_compiled:
+        model = torch.compile(model)
+
+    weight_path = tmp_path / 'model_epoch001.pt'
+    torch.save(model.state_dict(), weight_path)
+
+    tester = BaseTester.__new__(BaseTester)
+    tester.run_dir = tmp_path
+    tester.device = 'cpu'
+    eval_model = DummyModel()
+    if eval_compiled:
+        eval_model = torch.compile(eval_model)
+    tester.model = eval_model
+
+    tester._load_weights(epoch=1)
+

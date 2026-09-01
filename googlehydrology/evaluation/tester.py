@@ -180,7 +180,8 @@ class BaseTester(object):
             state_dict = {
                 k[len('_orig_mod.'):]: v for k, v in state_dict.items()
             }
-        self.model.load_state_dict(state_dict)
+        target_model = getattr(self.model, '_orig_mod', self.model)
+        target_model.load_state_dict(state_dict)
 
     def _get_dataset_all(self) -> Dataset:
         """Get dataset for all basins."""
