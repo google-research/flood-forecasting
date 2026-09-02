@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import contextlib
 import functools
 import itertools
 import logging
@@ -322,12 +323,44 @@ class Multimet(Dataset):
         LOGGER.debug('scale data')
         self._dataset = self.scaler.scale(self._dataset)
 
-        if not cfg.lazy_load:
-            LOGGER.debug('[eager load] compute dataset')
+        LOGGER.debug(f'Dataset size: {self._dataset.nbytes / 1024**2} MB')
+        LOGGER.debug('# forecast dataset init complete (%s)', self._period)
+
+        self._dataset_all = self._dataset
+        del self._dataset
+
+    def unload_basins(self) -> None:
+        with contextlib.suppress(AttributeError):
+            del self._dataset
+        with contextlib.suppress(AttributeError):
+            del self._sample_index
+        with contextlib.suppress(AttributeError):
+            del self._num_samples
+        with contextlib.suppress(AttributeError):
+            del self._per_basin_target_stds
+
+    def load_basins(self, basins: list[str] | None = None) -> None:
+        self._data_cache: dict[str, xr.DataArray] = {}
+        self.unload_basins()
+
+        if basins is None:
+            self._dataset = self._dataset_all
+        else:
+            LOGGER.debug('[limit %d basins] (%s)', len(basins), self._period)
+            self._dataset = self._dataset_all.sel(basin=basins)
+
+        if not self._cfg.lazy_load:
+            LOGGER.debug('[eager load] compute dataset (%s)', self._period)
             (self._dataset,) = dask.compute(self._dataset)
             memory.release()
         else:
-            LOGGER.debug('[lazy load] not computing dataset')
+            LOGGER.debug('[lazy load] not computing dataset (%s)', self._period)
+
+        LOGGER.debug(
+            'Dataset size: %f MB (%s)',
+            self._dataset.nbytes / 1024**2,
+            self._period,
+        )
 
         LOGGER.debug('create valid sample mask and indices plan')
         valid_sample_mask, indices = self._create_valid_sample_mask()
@@ -335,9 +368,11 @@ class Multimet(Dataset):
         (indices,) = dask.compute(indices)
         memory.release()
 
-        LOGGER.debug(f'Dataset size: {sizeof(self._dataset) / 1024**2} MB')
-        LOGGER.debug(f'Dataset on disk: {self._dataset.nbytes / 1024**2} MB')
-        LOGGER.debug(f'Sample index size: {sizeof(indices) / 1024**2} MB')
+        LOGGER.debug(
+            'Sample index size: %f MB (%s)',
+            sizeof(indices) / 1024**2,
+            self._period,
+        )
 
         # Create sample index lookup table for `__getitem__`.
         LOGGER.debug('create sample index')
@@ -347,7 +382,7 @@ class Multimet(Dataset):
         # TODO (future) :: Find a better way to decide whether to calculate these. At least keep a list of
         # losses that require them somewhere like `training.__init__.py`. Perhaps simply always calculate.
         self._per_basin_target_stds = None
-        if cfg.loss.lower() in ['nse']:
+        if self._cfg.loss.lower() in ['nse']:
             LOGGER.debug('create per_basin_target_stds')
             self._per_basin_target_stds = self._dataset[
                 self._target_features
@@ -359,10 +394,6 @@ class Multimet(Dataset):
                 ],
                 skipna=True,
             )
-
-        self._data_cache: dict[str, xr.DataArray] = {}
-
-        LOGGER.debug('forecast dataset init complete (%s)', self._period)
 
     def __len__(self) -> int:
         return self._num_samples
