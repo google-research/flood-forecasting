@@ -212,28 +212,41 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         dict[str, torch.Tensor]
             Model outputs and intermediate states as a dictionary from CMAL head.
         """
+        return_state_history = data.get('return_state_history', False)
         forward_data = ForwardData.from_forward_data(data, self.config_data)
 
-        static_embedding = self._calc_static_embedding(forward_data)
+        static_embedding = None
+        if static_embedding is None:
+            static_embedding = self._calc_static_embedding(forward_data)
 
-        hindcast_embeddings = [
-            self._calc_dynamic_embedding(
-                embedding_network=fc,
-                dynamic_data=forward_data.hindcast_features[name],
-                static_embedding=static_embedding,
-                append_nan=True,
-            )
-            for name, fc in self.hindcast_embeddings_fc.items()
-        ]
-        forecast_embeddings = [
-            self._calc_dynamic_embedding(
-                embedding_network=fc,
-                dynamic_data=forward_data.forecast_features[name],
-                static_embedding=static_embedding,
-                append_nan=False,
-            )
-            for name, fc in self.forecast_embeddings_fc.items()
-        ]
+        hindcast_dyn_emb = None
+        if hindcast_dyn_emb is None:
+            hindcast_embeddings = [
+                self._calc_dynamic_embedding(
+                    embedding_network=fc,
+                    dynamic_data=forward_data.hindcast_features[name],
+                    static_embedding=static_embedding,
+                    append_nan=True,
+                )
+                for name, fc in self.hindcast_embeddings_fc.items()
+            ]
+        else:
+            hindcast_embeddings = hindcast_dyn_emb
+
+        forecast_dyn_emb = None
+        if forecast_dyn_emb is None:
+            forecast_embeddings = [
+                self._calc_dynamic_embedding(
+                    embedding_network=fc,
+                    dynamic_data=forward_data.forecast_features[name],
+                    static_embedding=static_embedding,
+                    append_nan=False,
+                )
+                for name, fc in self.forecast_embeddings_fc.items()
+            ]
+        else:
+            forecast_embeddings = forecast_dyn_emb
+
         # Shared embeddings are using the forecast data
         shared_embeddings = [
             self._calc_dynamic_embedding(
@@ -273,23 +286,65 @@ class MeanEmbeddingForecastLSTM(BaseModel):
                     _to_3d_tensor(c_fore_arr),
                 )
 
-
-        hindcast_state = self._calc_lstm(
-            lstm=self.hindcast_lstm,
-            embeddings=hindcast_embeddings + shared_embeddings,
-            static_embedding=static_embedding,
-            initial_state=h_hind_init,
+        h_0_hc = data.get('h_0_hindcast', data.get('h_0', data.get('h_n', None)))
+        c_0_hc = data.get('c_0_hindcast', data.get('c_0', data.get('c_n', None)))
+        hx_hc = (
+            (h_0_hc, c_0_hc)
+            if (h_0_hc is not None and c_0_hc is not None)
+            else h_hind_init
         )
-        forecast_state = self._calc_lstm(
+
+        h_0_fc = data.get('h_0_forecast', data.get('h_0', data.get('h_n', None)))
+        c_0_fc = data.get('c_0_forecast', data.get('c_0', data.get('c_n', None)))
+        hx_fc = (
+            (h_0_fc, c_0_fc)
+            if (h_0_fc is not None and c_0_fc is not None)
+            else h_fore_init
+        )
+
+        hindcast_state, (h_n_hc, c_n_hc) = self._calc_lstm(
+            lstm=self.hindcast_lstm,
+            embeddings=(
+                hindcast_embeddings
+                if isinstance(hindcast_dyn_emb, torch.Tensor)
+                else (hindcast_embeddings + shared_embeddings)
+            ),
+            static_embedding=static_embedding,
+            hx=hx_hc,
+            return_state=True,
+            return_state_history=return_state_history,
+        )
+        forecast_state, (h_n_fc, c_n_fc) = self._calc_lstm(
             lstm=self.forecast_lstm,
-            embeddings=forecast_embeddings + shared_embeddings,
+            embeddings=(
+                forecast_embeddings
+                if isinstance(forecast_dyn_emb, torch.Tensor)
+                else (forecast_embeddings + shared_embeddings)
+            ),
             static_embedding=static_embedding,
             other_inputs=hindcast_state,
-            initial_state=h_fore_init,
+            hx=hx_fc,
+            return_state=True,
+            return_state_history=return_state_history,
         )
 
         head = self._calc_head(forecast_state)
-        
+        head['h_n'] = h_n_fc
+        head['c_n'] = c_n_fc
+        head['h_n_hindcast'] = h_n_hc
+        head['c_n_hindcast'] = c_n_hc
+        head['h_n_forecast'] = h_n_fc
+        head['c_n_forecast'] = c_n_fc
+        head['hindcast_embedding'] = (
+            hindcast_embeddings
+            if isinstance(hindcast_dyn_emb, torch.Tensor)
+            else self._masked_mean(hindcast_embeddings + shared_embeddings)
+        )
+        head['forecast_embedding'] = (
+            forecast_embeddings
+            if isinstance(forecast_dyn_emb, torch.Tensor)
+            else self._masked_mean(forecast_embeddings + shared_embeddings)
+        )
 
         return head
 
@@ -408,10 +463,10 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         """Pad the embedding tensor with nan value to timespan of hindcast and forecast."""
         # Dimension 0 is the batch size. Note the batch size may change during training.
         batch_size = embedding.shape[0]
-        # Dimension 1 is the time dimension. Pad nan to the full sequence length plus lead time.
-        nan_padding_length = (
-            self.seq_length + self.lead_time - embedding.shape[1]
-        )
+        # Dimension 1 is the time dimension. Pad nan by self.lead_time to match forecast embedding dimension.
+        nan_padding_length = self.lead_time
+        if nan_padding_length <= 0:
+            return embedding
         # Dimension 2 is the length of embedding vector.
         embedding_size = embedding.shape[2]
         nan_padding = self._make_nan_padding(
@@ -448,13 +503,18 @@ class MeanEmbeddingForecastLSTM(BaseModel):
     def _calc_lstm(
         self,
         lstm: nn.LSTM,
-        embeddings: Iterable[torch.Tensor],
+        embeddings: Iterable[torch.Tensor] | torch.Tensor,
         static_embedding: torch.Tensor,
         other_inputs: torch.Tensor | None = None,
+        hx: tuple[torch.Tensor, torch.Tensor] | None = None,
         initial_state: tuple[torch.Tensor, torch.Tensor] | None = None,
         return_state: bool = False,
+        return_state_history: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
-        masked_mean_embeddings = self._masked_mean(embeddings)
+        if isinstance(embeddings, torch.Tensor):
+            masked_mean_embeddings = embeddings
+        else:
+            masked_mean_embeddings = self._masked_mean(embeddings)
         if other_inputs is not None:
             masked_mean_embeddings = torch.cat(
                 [masked_mean_embeddings, other_inputs], dim=-1
@@ -462,14 +522,43 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         lstm_inputs = self._append_static_embedding(
             masked_mean_embeddings, static_embedding
         )
-        if initial_state is not None:
-            output, hx = lstm(input=lstm_inputs, hx=initial_state)
-        else:
-            output, hx = lstm(input=lstm_inputs)
-        if return_state:
-            return output, hx
-        return output
+        init_hx = hx if hx is not None else initial_state
 
+        if return_state_history:
+            outputs = []
+            h_list = []
+            c_list = []
+            curr_hx = init_hx
+            seq_len = lstm_inputs.shape[1]
+            for t in range(seq_len):
+                x_t = lstm_inputs[:, t : t + 1, :]
+                out_t, curr_hx = lstm(input=x_t, hx=curr_hx)
+                outputs.append(out_t)
+                h_list.append(curr_hx[0])
+                c_list.append(curr_hx[1])
+            output = torch.cat(outputs, dim=1)
+            h_seq = torch.stack(h_list, dim=2)
+            c_seq = torch.stack(c_list, dim=2)
+            return output, (h_seq, c_seq)
+        else:
+            if init_hx is not None:
+                output, hx_out = lstm(input=lstm_inputs, hx=init_hx)
+            else:
+                output, hx_out = lstm(input=lstm_inputs)
+            if return_state:
+                return output, hx_out
+            return output
+
+    @property
+    def state_var_names(self) -> list[str]:
+        return [
+            'h_n',
+            'c_n',
+            'h_n_hindcast',
+            'c_n_hindcast',
+            'h_n_forecast',
+            'c_n_forecast',
+        ]
 
     def _calc_head(
         self, forecast_state: torch.Tensor
@@ -533,7 +622,7 @@ class ForwardData:
             static_features=data['x_s'],
             hindcast_features={
                 name: _concat_tensors_from_dict(
-                    data['x_d_hindcast'], keys=features
+                    data.get('x_d_hindcast', data.get('x_d')), keys=features
                 )
                 for name, features in config_data.hindcast_inputs_grouped.items()
             },
