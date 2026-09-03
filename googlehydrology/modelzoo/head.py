@@ -13,13 +13,66 @@
 # limitations under the License.
 
 import logging
+from typing import Any, Dict
 
+import numpy as np
 import torch
 import torch.nn as nn
 
+from googlehydrology.utils.cmal_deterministic import generate_predictions
 from googlehydrology.utils.config import Config
 
 LOGGER = logging.getLogger(__name__)
+CMAL_MEDIAN_INDEX = 5
+
+
+def ensure_y_hat(pred: Any, use_median: bool = True) -> Dict[str, Any]:
+    """Ensures prediction dictionary contains 'y_hat' using CMAL median (q0.5) or mean."""
+    if not isinstance(pred, dict):
+        return {'y_hat': pred}
+    res = dict(pred)
+    if (
+        'mu' in res
+        and 'pi' in res
+        and 'b' in res
+        and 'tau' in res
+        and isinstance(res['mu'], torch.Tensor)
+    ):
+        y_mean = calc_cmal_mean(res['mu'], res['b'], res['tau'], res['pi'])
+        if use_median:
+            try:
+                cmal_summary = generate_predictions(
+                    res['mu'], res['b'], res['tau'], res['pi']
+                )
+                y_med = cmal_summary[..., CMAL_MEDIAN_INDEX : CMAL_MEDIAN_INDEX + 1]
+                # Element-wise NaN/Inf masking: substitute mean for non-finite entries
+                invalid_mask = torch.isnan(y_med) | torch.isinf(y_med)
+                if invalid_mask.any():
+                    LOGGER.warning(
+                        'CMAL median prediction contained non-finite values (NaN/Inf);'
+                        ' masking invalid entries with calc_cmal_mean.'
+                    )
+                    res['y_hat'] = torch.where(invalid_mask, y_mean, y_med)
+                else:
+                    res['y_hat'] = y_med
+                return res
+            except (RuntimeError, ArithmeticError, ValueError) as e:
+                LOGGER.warning(
+                    f'CMAL generate_predictions raised exception ({e}); falling back to'
+                    ' calc_cmal_mean.'
+                )
+        res['y_hat'] = y_mean
+        return res
+    if 'y_hat' not in res:
+        if 'mu' in res and 'pi' in res:
+            res['y_hat'] = torch.sum(res['pi'] * res['mu'], dim=-1, keepdim=True)
+        elif 'mu' in res:
+            mu = res['mu']
+            if isinstance(mu, torch.Tensor):
+                res['y_hat'] = mu if mu.ndim == 3 else mu.unsqueeze(-1)
+            elif isinstance(mu, np.ndarray):
+                res['y_hat'] = mu if mu.ndim == 3 else np.expand_dims(mu, -1)
+    return res
 
 
 def get_head(
@@ -107,6 +160,23 @@ class Regression(nn.Module):
         return {'y_hat': self.net(x)}
 
 
+def calc_cmal_mean(
+    mu: torch.Tensor,
+    b: torch.Tensor,
+    tau: torch.Tensor,
+    pi: torch.Tensor,
+    eps: float = 1e-6,
+) -> torch.Tensor:
+    """Calculates the exact expected value (mean) of a CMAL mixture distribution.
+
+    E[X] = sum( pi_k * ( mu_k + b_k * (1 - 2*tau_k) / (tau_k * (1 - tau_k)) ) )
+    """
+    denom = tau * (1.0 - tau) + eps
+    shift = b * (1.0 - 2.0 * tau) / denom
+    shift = torch.clamp(shift, min=-10.0, max=10.0)
+    return torch.sum(pi * (mu + shift), dim=-1, keepdim=True)
+
+
 class CMAL(nn.Module):
     """Countable Mixture of Asymmetric Laplacians.
 
@@ -150,8 +220,7 @@ class CMAL(nn.Module):
         Returns
         -------
         dict[str, torch.Tensor]
-            Dictionary, containing the mixture component parameters and weights; where the key 'mu'stores the means,
-            the key 'b' the scale parameters, the key 'tau' the skewness parameters, and the key 'pi' the weights).
+            Dictionary, containing the mixture component parameters, weights, and expected value ('y_hat').
         """
         h = torch.relu(self.fc1(x))
         h = self.fc2(h)
@@ -168,4 +237,7 @@ class CMAL(nn.Module):
             p_latent, dim=-1
         ) + self._eps  # sum(pi) = 1 & pi > 0
 
-        return {'mu': m, 'b': b, 'tau': t, 'pi': p}
+        y_hat = calc_cmal_mean(m, b, t, p)
+
+        return {'mu': m, 'b': b, 'tau': t, 'pi': p, 'y_hat': y_hat}
+

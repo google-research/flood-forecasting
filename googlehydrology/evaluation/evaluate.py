@@ -19,7 +19,11 @@ from googlehydrology.utils.config import Config
 
 
 def start_evaluation(
-    cfg: Config, run_dir: Path, epoch: int = None, period: str = 'test'
+    cfg: Config,
+    run_dir: Path,
+    epoch: int = None,
+    period: str = 'test',
+    data_assimilation: bool = False,
 ):
     """Start evaluation of a trained network
 
@@ -33,6 +37,8 @@ def start_evaluation(
         Define a specific epoch to evaluate. By default, the weights of the last epoch are used.
     period : {'train', 'validation', 'test'}, optional
         The period to evaluate, by default 'test'.
+    data_assimilation : bool, optional
+        If True, runs evaluation with data assimilation. Default is False.
 
     """
     tester = get_tester(
@@ -42,4 +48,6 @@ def start_evaluation(
         epoch=epoch,
         save_results=True,
         metrics=cfg.metrics,
+        data_assimilation=data_assimilation,
     )
+
