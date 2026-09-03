@@ -21,6 +21,8 @@ from googlehydrology.modelzoo.mean_embedding_forecast_lstm import (
 )
 from googlehydrology.utils.config import Config
 
+ASSIMILATION_MODELS = ['mean_embedding_forecast_lstm']
+
 
 def get_model(cfg: Config) -> nn.Module:
     """Get model object, depending on the run configuration.
@@ -35,6 +37,9 @@ def get_model(cfg: Config) -> nn.Module:
     nn.Module
         A new model instance of the type specified in the config.
     """
+    if cfg.model.lower() not in ASSIMILATION_MODELS and cfg.assimilation_config:
+        raise ValueError(f"Model {cfg.model} does not support data assimilation.")
+
     if cfg.model.lower() == 'handoff_forecast_lstm':
         model = HandoffForecastLSTM(cfg=cfg)
     elif cfg.model.lower() == 'mean_embedding_forecast_lstm':
