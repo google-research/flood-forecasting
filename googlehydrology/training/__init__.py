@@ -23,55 +23,69 @@ from googlehydrology.utils.config import Config
 LOGGER = logging.getLogger(__name__)
 
 
+from typing import Iterable, Union
+
+
 def get_optimizer(
-    model: torch.nn.Module, cfg: Config, *, is_gpu: bool = False
+    model: Union[torch.nn.Module, Iterable[torch.Tensor]], cfg: Config, *, is_gpu: bool = False
 ) -> torch.optim.Optimizer:
     """Get specific optimizer object, depending on the run configuration.
 
     Parameters
     ----------
-    model : torch.nn.Module
-        The model to be optimized.
+    model : torch.nn.Module or Iterable[torch.Tensor]
+        The model to be optimized or an iterable of parameters/tensors.
     cfg : Config
         The run configuration.
 
     Returns
     -------
     torch.optim.Optimizer
-        Optimizer object that can be used for model training.
+        Optimizer object that can be used for model training or data assimilation.
     """
+    params = model.parameters() if hasattr(model, 'parameters') else model
+
+    # Resolve learning rate
+    lr = getattr(cfg, 'initial_learning_rate', None)
+    if lr is None:
+        if hasattr(cfg, 'learning_rate'):
+            lr_val = cfg.learning_rate
+            lr = lr_val[0] if isinstance(lr_val, dict) else lr_val
+        else:
+            lr = 0.01  # default fallback
+
     if cfg.optimizer.lower() == 'adam':
         optimizer = torch.optim.Adam(
-            model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu
+            params, lr=lr, fused=is_gpu
         )
     elif cfg.optimizer.lower() == 'adamw':
         optimizer = torch.optim.AdamW(
-            model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu
+            params, lr=lr, fused=is_gpu
         )
     elif cfg.optimizer.lower() == 'sgd':
         optimizer = torch.optim.SGD(
-            model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu
+            params, lr=lr, fused=is_gpu
         )
     elif cfg.optimizer.lower() == 'asgd':
         optimizer = torch.optim.ASGD(
-            model.parameters(), lr=cfg.initial_learning_rate
+            params, lr=lr
         )
     elif cfg.optimizer.lower() == 'rmsprop':
         optimizer = torch.optim.RMSprop(
-            model.parameters(), lr=cfg.initial_learning_rate
+            params, lr=lr
         )
     elif cfg.optimizer.lower() == 'adagrad':
         optimizer = torch.optim.Adagrad(
-            model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu
+            params, lr=lr, fused=is_gpu
         )
     elif cfg.optimizer.lower() == 'adadelta':
         optimizer = torch.optim.Adadelta(
-            model.parameters(),
-            lr=cfg.initial_learning_rate,
+            params,
+            lr=lr,
         )
     elif cfg.optimizer.lower() == 'adamax':
         optimizer = torch.optim.Adamax(
-            model.parameters(), lr=cfg.initial_learning_rate
+            params, lr=lr
         )
     else:
         raise NotImplementedError(
