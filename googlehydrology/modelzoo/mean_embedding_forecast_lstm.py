@@ -215,11 +215,11 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         return_state_history = data.get('return_state_history', False)
         forward_data = ForwardData.from_forward_data(data, self.config_data)
 
-        static_embedding = None
+        static_embedding = data.get('static_embedding', None)
         if static_embedding is None:
             static_embedding = self._calc_static_embedding(forward_data)
 
-        hindcast_dyn_emb = None
+        hindcast_dyn_emb = data.get('hindcast_embedding', None)
         if hindcast_dyn_emb is None:
             hindcast_embeddings = [
                 self._calc_dynamic_embedding(
@@ -233,7 +233,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         else:
             hindcast_embeddings = hindcast_dyn_emb
 
-        forecast_dyn_emb = None
+        forecast_dyn_emb = data.get('forecast_embedding', None)
         if forecast_dyn_emb is None:
             forecast_embeddings = [
                 self._calc_dynamic_embedding(
@@ -335,6 +335,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         head['c_n_hindcast'] = c_n_hc
         head['h_n_forecast'] = h_n_fc
         head['c_n_forecast'] = c_n_fc
+        head['static_embedding'] = static_embedding
         head['hindcast_embedding'] = (
             hindcast_embeddings
             if isinstance(hindcast_dyn_emb, torch.Tensor)

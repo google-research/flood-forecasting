@@ -164,6 +164,14 @@ class AssimilationConfig:
         return float(self._cfg.get("clip_gradient_norm", 1.0))
 
     @property
+    def bg_stat_weight(self) -> float:
+        return float(self._cfg.get("bg_stat_weight", 1e-6))
+
+    @property
+    def bg_dyn_weight(self) -> float:
+        return float(self._cfg.get("bg_dyn_weight", 0.01))
+
+    @property
     def precip_min_clip(self) -> float:
         return float(self._cfg.get("precip_min_clip", -3.0))
 

@@ -706,6 +706,38 @@ class AssimilationTest(unittest.TestCase):
         self.assertIn('hindcast_metrics_post', res)
 
     @patch('googlehydrology.modelzoo.basemodel.Scaler')
+    def test_itemised_type2_embedded_all_da_with_mean_embedding_forecast_lstm(self, mock_scaler):
+        """Itemised Test: Type 2 Embedded DA (embedded_all: static, hindcast, forecast) with MeanEmbeddingForecastLSTM."""
+        model, data = self._create_mef_model_and_data()
+        da_cfg_dict = {
+            'seq_length': 14,
+            'history': 2,
+            'assimilation_window': 1,
+            'assimilation_lead_time': 2,
+            'learning_rate': 0.05,
+            'epochs': 5,
+            'loss': 'MSE',
+            'optimizer': 'Adam',
+            'assimilation_targets': ['embedded_all'],
+            'bg_stat_weight': 1e-4,
+            'bg_dyn_weight': 0.01,
+            'target_variables': ['streamflow'],
+            'predict_last_n': 2,
+        }
+        da_cfg = AssimilationConfig(da_cfg_dict)
+        assim = Assimilation(da_cfg)
+        res = assim.assimilate(model, data, verbose=False)
+        self.assertIn('y_hat', res)
+        self.assertEqual(res['y_hat'].shape[1], 14)
+        self.assertIn('static_embedding', res)
+        self.assertIn('hindcast_embedding', res)
+        self.assertIn('forecast_embedding', res)
+        self.assertIsNotNone(res['static_embedding'])
+        self.assertIsNotNone(res['hindcast_embedding'])
+        self.assertIsNotNone(res['forecast_embedding'])
+        self.assertTrue(all(p.requires_grad for p in model.parameters()))
+
+    @patch('googlehydrology.modelzoo.basemodel.Scaler')
     def test_itemised_type3_precipitation_forcing_da_with_mean_embedding_forecast_lstm(self, mock_scaler):
         """Itemised Test: Type 3 Precipitation Forcing DA with MeanEmbeddingForecastLSTM."""
         model, data = self._create_mef_model_and_data()
