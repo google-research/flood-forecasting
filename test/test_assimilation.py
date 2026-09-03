@@ -705,6 +705,112 @@ class AssimilationTest(unittest.TestCase):
         self.assertIn('hindcast_metrics_pre', res)
         self.assertIn('hindcast_metrics_post', res)
 
+    @patch('googlehydrology.modelzoo.basemodel.Scaler')
+    def test_itemised_type3_precipitation_forcing_da_with_mean_embedding_forecast_lstm(self, mock_scaler):
+        """Itemised Test: Type 3 Precipitation Forcing DA with MeanEmbeddingForecastLSTM."""
+        model, data = self._create_mef_model_and_data()
+        da_cfg_dict = {
+            'seq_length': 14,
+            'history': 2,
+            'assimilation_window': 1,
+            'assimilation_lead_time': 2,
+            'learning_rate': 0.05,
+            'epochs': 5,
+            'loss': 'MSE',
+            'optimizer': 'Adam',
+            'assimilation_targets': ['precip'],
+            'precip_min_clip': -3.0,
+            'target_variables': ['streamflow'],
+            'predict_last_n': 2,
+        }
+        da_cfg = AssimilationConfig(da_cfg_dict)
+        assim = Assimilation(da_cfg)
+        res = assim.assimilate(model, data, verbose=False)
+        self.assertIn('y_hat', res)
+        self.assertEqual(res['y_hat'].shape[1], 14)
+        self.assertIn('precip', res)
+        self.assertIsNotNone(res['precip'])
+        self.assertTrue((res['precip'] >= -3.0).all())
+        self.assertTrue(all(p.requires_grad for p in model.parameters()))
+
+    @patch('googlehydrology.modelzoo.basemodel.Scaler')
+    def test_precipitation_da_multimet_updates_all_4_precip_variables(self, mock_scaler):
+        """Verifies that MultiMet precipitation DA optimizes all 4 precipitation variables."""
+        model, data = self._create_mef_model_and_data()
+        multimet_extra = [
+            'hres_surface_net_solar_radiation',
+            'hres_temperature_2m',
+            'hres_total_precipitation',
+            'graphcast_total_precipitation',
+            'imerg_precipitation',
+            'cpc_precipitation',
+        ]
+        for k in multimet_extra:
+            data['x_d_hindcast'][k] = torch.randn_like(data['x_d_hindcast']['era5_precip'])
+            data['x_d_forecast'][k] = torch.randn_like(data['x_d_forecast']['hres_precip'])
+
+        da_cfg_dict = {
+            'seq_length': 14,
+            'history': 2,
+            'assimilation_window': 1,
+            'assimilation_lead_time': 2,
+            'learning_rate': 0.05,
+            'epochs': 5,
+            'loss': 'MSE',
+            'optimizer': 'Adam',
+            'assimilation_targets': ['precip'],
+            'precip_forcing_keys': [
+                'hres_total_precipitation',
+                'graphcast_total_precipitation',
+                'imerg_precipitation',
+                'cpc_precipitation',
+            ],
+            'precip_min_clip': -3.0,
+            'target_variables': ['streamflow'],
+            'predict_last_n': 2,
+        }
+        assim = Assimilation(AssimilationConfig(da_cfg_dict))
+        res = assim.assimilate(model, data, verbose=False)
+        self.assertIn('precip_dict', res)
+        self.assertEqual(
+            set(res['precip_dict'].keys()),
+            {'hres_total_precipitation', 'graphcast_total_precipitation', 'imerg_precipitation', 'cpc_precipitation'},
+        )
+        self.assertEqual(len(res['precip_dict']), 4)
+
+    def test_precipitation_da_raises_value_error_when_no_precip_key(self):
+        """Verifies that precipitation DA raises ValueError instead of silently falling back to radiation/temp."""
+        class MockModel(torch.nn.Module):
+            def forward(self, d):
+                return {'y_hat': torch.zeros(1, 14, 1)}
+
+        model = MockModel()
+        data = {
+            'x_d_hindcast': {
+                'hres_surface_net_solar_radiation': torch.randn(1, 12, 1),
+                'hres_temperature_2m': torch.randn(1, 12, 1),
+            },
+            'y': torch.ones(1, 14, 1),
+        }
+        da_cfg_dict = {
+            'seq_length': 14,
+            'history': 2,
+            'assimilation_window': 1,
+            'assimilation_lead_time': 2,
+            'learning_rate': 0.05,
+            'epochs': 5,
+            'loss': 'MSE',
+            'optimizer': 'Adam',
+            'assimilation_targets': ['precip'],
+            'target_variables': ['streamflow'],
+            'predict_last_n': 2,
+        }
+        assim = Assimilation(AssimilationConfig(da_cfg_dict))
+        with self.assertRaises(ValueError):
+            assim.assimilate(model, data, verbose=False)
+
 
 if __name__ == '__main__':
     unittest.main()
+
+

@@ -326,9 +326,103 @@ class Assimilation(object):
                     chunk_data['last_prediction'] = last_prediction_curr
 
                 # -------------------------------------------------------------
+                # 2B. PRECIPITATION FORCING DATA ASSIMILATION
+                # -------------------------------------------------------------
+                if da_type == 'precip':
+                    with torch.no_grad():
+                        pre_pred = ensure_y_hat(model(chunk_data), use_median=True)
+                        p_pre_sub = pre_pred['y_hat'][:, :win_len, :]
+                        if p_pre_sub.ndim == 2: p_pre_sub = p_pre_sub.unsqueeze(-1)
+                        p_pre_chunks.append(p_pre_sub)
+
+                    hind_dict = chunk_data.get('x_d_hindcast', chunk_data.get('x_d', None))
+                    precip_keys = []
+                    if isinstance(hind_dict, dict):
+                        cfg_keys = getattr(self.cfg, 'precip_forcing_keys', None)
+                        if cfg_keys is None:
+                            single_key = getattr(self.cfg, 'precip_forcing_key', None)
+                            if single_key:
+                                cfg_keys = [single_key] if isinstance(single_key, str) else list(single_key)
+                        if cfg_keys:
+                            precip_keys = [k for k in cfg_keys if k in hind_dict]
+                        else:
+                            precip_keys = [
+                                k for k in hind_dict.keys()
+                                if any(p in k.lower() for p in ['precip', 'tp', 'prcp', 'rain'])
+                            ]
+                        if not precip_keys:
+                            raise ValueError(
+                                "Precipitation DA ('precip') failed: no precipitation forcing key "
+                                f"found in hindcast inputs. Available keys: {list(hind_dict.keys())}."
+                            )
+
+                    precip_opts = {
+                        k: hind_dict[k].clone().detach().requires_grad_(True)
+                        for k in precip_keys
+                        if isinstance(hind_dict.get(k), torch.Tensor)
+                    }
+                    if precip_opts:
+                        opt_vars = list(precip_opts.values())
+                        optimizer = get_optimizer(opt_vars, self.cfg)
+                        for pg in optimizer.param_groups: pg["lr"] = lr
+                        min_clip = getattr(self.cfg, 'precip_min_clip', -3.0)
+
+                        for epoch in range(self.epochs):
+                            optimizer.zero_grad()
+                            for k, p_opt in precip_opts.items():
+                                hind_dict[k] = p_opt
+                            chunk_data['c_0_hindcast'] = c_hc_curr
+                            chunk_data['h_0_hindcast'] = h_hc_curr
+                            chunk_data['c_0_forecast'] = c_fc_curr
+                            chunk_data['h_0_forecast'] = h_fc_curr
+                            if last_prediction_curr is not None:
+                                chunk_data['last_prediction'] = last_prediction_curr
+
+                            pred_dict = ensure_y_hat(model(chunk_data), use_median=False)
+                            p_sub = pred_dict['y_hat'][:, :win_len, :]
+                            if p_sub.ndim == 2: p_sub = p_sub.unsqueeze(-1)
+                            t_sub = chunk_data['y'][:, :win_len, :]
+
+                            mask = ~torch.isnan(t_sub) & ~torch.isnan(p_sub)
+                            if mask.any():
+                                loss = torch.mean((p_sub[mask] - t_sub[mask]) ** 2)
+                                if torch.isfinite(loss) and loss.requires_grad:
+                                    loss.backward()
+                                    if getattr(self.cfg, 'clip_gradient_norm', 0) > 0:
+                                        torch.nn.utils.clip_grad_norm_(opt_vars, self.cfg.clip_gradient_norm)
+                                    optimizer.step()
+                                    with torch.no_grad():
+                                        for p_opt in precip_opts.values():
+                                            p_opt.clamp_(min=min_clip)
+
+                        with torch.no_grad():
+                            for k, p_opt in precip_opts.items():
+                                hind_dict[k] = p_opt.detach()
+                            last_p_opt = precip_opts[precip_keys[0]].detach()
+                            last_p_opts = {k: p_opt.detach() for k, p_opt in precip_opts.items()}
+
+                    with torch.no_grad():
+                        rollout = ensure_y_hat(model(chunk_data), use_median=True)
+                        if 'last_prediction' in rollout:
+                            last_prediction_curr = rollout['last_prediction']
+
+                        p_roll = rollout['y_hat'][:, :win_len, :]
+                        if p_roll.ndim == 2: p_roll = p_roll.unsqueeze(-1)
+                        y_chunks.append(p_roll)
+
+                        for key in ['mu', 'b', 'tau', 'pi']:
+                            if key in rollout and isinstance(rollout[key], torch.Tensor):
+                                dist_chunks[key].append(rollout[key][:, :win_len, ...])
+
+                        c_hc_curr = rollout.get('c_n_hindcast', rollout.get('c_n'))
+                        h_hc_curr = rollout.get('h_n_hindcast', rollout.get('h_n'))
+                        c_fc_curr = rollout.get('c_n_forecast', rollout.get('c_n', c_hc_curr))
+                        h_fc_curr = rollout.get('h_n_forecast', rollout.get('h_n', h_hc_curr))
+
+                # -------------------------------------------------------------
                 # 2C. RECURRENT STATE DATA ASSIMILATION (DEFAULT)
                 # -------------------------------------------------------------
-                if True:
+                else:
                     c_hc_opt = c_hc_curr.clone().detach().requires_grad_(True) if (opt_c_hc and c_hc_curr is not None) else (c_hc_curr.clone().detach() if c_hc_curr is not None else None)
                     h_hc_opt = h_hc_curr.clone().detach().requires_grad_(True) if (opt_h_hc and h_hc_curr is not None) else (h_hc_curr.clone().detach() if h_hc_curr is not None else None)
                     c_fc_opt = c_fc_curr.clone().detach().requires_grad_(True) if (opt_c_fc and c_fc_curr is not None) else (c_fc_curr.clone().detach() if c_fc_curr is not None else None)
@@ -493,6 +587,11 @@ class Assimilation(object):
                 'hindcast_metrics_pre': metrics_pre,
                 'hindcast_metrics_post': metrics_post,
             }
+            if da_type == 'precip' and last_p_opt is not None:
+                res['precip'] = last_p_opt
+                if last_p_opts is not None:
+                    res['precip_dict'] = last_p_opts
+
             for key, chunks in dist_chunks.items():
                 if chunks:
                     res[key] = torch.cat(chunks, dim=1)[:, :total_len, ...]

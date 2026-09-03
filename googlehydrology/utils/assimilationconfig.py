@@ -163,3 +163,15 @@ class AssimilationConfig:
     def clip_gradient_norm(self) -> float:
         return float(self._cfg.get("clip_gradient_norm", 1.0))
 
+    @property
+    def precip_min_clip(self) -> float:
+        return float(self._cfg.get("precip_min_clip", -3.0))
+
+    @property
+    def precip_forcing_key(self) -> Union[str, None]:
+        return self._cfg.get("precip_forcing_key", None)
+
+    @property
+    def precip_forcing_keys(self) -> Union[List[str], None]:
+        val = self._cfg.get("precip_forcing_keys", None)
+        return self._as_default_list(val) if val is not None else None
