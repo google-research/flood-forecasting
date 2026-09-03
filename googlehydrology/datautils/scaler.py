@@ -21,7 +21,8 @@ import dask.array
 import pandas as pd
 import xarray as xr
 
-SCALER_FILE_NAME = 'scaler.nc'
+SCALER_FILE_NAME = 'scaler.zarr'
+LEGACY_SCALER_FILE_NAME = 'scaler.nc'
 
 
 def _calc_stats(dataset: xr.Dataset, needed: set[str]):
@@ -116,12 +117,21 @@ class Scaler:
                 self.calculate(dataset)
 
     def load(self):
-        scaler_file = self.scaler_dir / SCALER_FILE_NAME
-        if os.path.exists(scaler_file):
-            with open(scaler_file, 'rb') as f:
+        scaler_zarr = self.scaler_dir / SCALER_FILE_NAME
+        scaler_nc = self.scaler_dir / LEGACY_SCALER_FILE_NAME
+        if scaler_zarr.is_dir():
+            self.scaler = xr.open_zarr(scaler_zarr).load()
+        elif scaler_nc.exists():
+            with open(scaler_nc, 'rb') as f:
                 self.scaler = xr.load_dataset(f)
+        elif scaler_zarr.exists():
+            try:
+                self.scaler = xr.open_zarr(scaler_zarr).load()
+            except Exception:
+                with open(scaler_zarr, 'rb') as f:
+                    self.scaler = xr.load_dataset(f)
         else:
-            raise ValueError('Old scaler files are unsupported')
+            raise ValueError(f'Scaler file not found in {self.scaler_dir}')
 
     def calculate(
         self,
@@ -180,7 +190,7 @@ class Scaler:
 
         os.makedirs(self.scaler_dir, exist_ok=True)
         scaler_file = self.scaler_dir / SCALER_FILE_NAME
-        self.scaler.to_netcdf(scaler_file, engine='netcdf4')
+        self.scaler.to_zarr(scaler_file, mode='w')
 
     def check_zero_scale(self):
         _assert_computed(self.scaler)

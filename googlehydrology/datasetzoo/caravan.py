@@ -31,42 +31,80 @@ from googlehydrology.utils.tqdm import AutoRefreshTqdm as tqdm
 LOGGER = logging.getLogger(__name__)
 
 
+def _find_zarr_store(path: Path | str, preferred_names: list[str]) -> Path | None:
+    """Finds a Zarr store given a directory or file path."""
+    path_str = str(path)
+    if path_str.startswith('gs://') or path_str.startswith('gs:/'):
+        # For GCS paths, assume valid store if ends with zarr or subpath
+        if path_str.endswith('.zarr'):
+            return Path(path_str)
+        for name in preferred_names:
+            return Path(f"{path_str.rstrip('/')}/{name}")
+        return Path(path_str)
+
+    p = Path(path)
+    if p.suffix == '.zarr' or (p / '.zgroup').exists() or (p / 'zarr.json').exists() or (p / '.zmetadata').exists():
+        return p
+    for name in preferred_names:
+        candidate = p / name
+        if candidate.exists() and (
+            candidate.suffix == '.zarr'
+            or (candidate / '.zgroup').exists()
+            or (candidate / 'zarr.json').exists()
+            or (candidate / '.zmetadata').exists()
+        ):
+            return candidate
+    return None
+
+
 def load_caravan_attributes(
-    data_dir: Path,
+    data_dir: Path | str,
     basins: list[str] | None = None,
     subdataset: str | None = None,
     features: list[str] | None = None,
 ) -> xarray.Dataset:
     """Load the attributes of the Caravan dataset.
 
+    Supports Zarr stores (preferred) and legacy Caravan CSV directories.
+
     Parameters
     ----------
-    data_dir : Path
-        Path to the root directory of Caravan that has to include a sub-directory called 'attributes' which contain the
-        attributes of all sub-datasets in separate folders.
+    data_dir : Path | str
+        Path to attributes Zarr store or root directory of Caravan attributes.
     basins : list[str], optional
         If passed, returns only attributes for the basins specified in this list. Otherwise, the attributes of all
         basins are returned.
     subdataset : str, optional
-        If passed, returns only the attributes of one sub-dataset. Otherwise, the attributes of all sub-datasets are
-        loaded.
+        If passed (legacy CSV mode), returns only the attributes of one sub-dataset.
     features: list[str], optional
         If passed, will only return the specified features (columns) in the statics datasets.
-
-    Raises
-    ------
-    FileNotFoundError
-        If the requested sub-dataset does not exist or any sub-dataset for the requested basins is missing.
-    ValueError
-        If any of the requested basins does not exist in the attribute files or if both, basins and sub-dataset are
-        passed but at least one of the basins is not part of the corresponding sub-dataset.
 
     Returns
     -------
     xarray.Dataset
         A basin indexed Dataset with all attributes as coordinates.
     """
-    LOGGER.debug('')
+    LOGGER.debug('load caravan attributes')
+    zarr_store = _find_zarr_store(data_dir, ['attributes.zarr', 'attributes', 'statics.zarr', 'statics'])
+    if zarr_store is not None:
+        LOGGER.debug(f'Loading attributes from Zarr store: {zarr_store}')
+        store_path = zarr_store.as_posix().replace('gs:/', 'gs://')
+        ds = xarray.open_zarr(store_path, chunks='auto')
+        if features:
+            available_features = [f for f in features if f in ds.data_vars or f in ds.coords]
+            ds = ds[available_features]
+        if basins:
+            if 'basin' in ds.coords:
+                missing = set(basins).difference(ds.coords['basin'].data)
+                if missing:
+                    raise ValueError(
+                        f'{len(missing)} basins are missing static attributes: {", ".join(missing)}'
+                    )
+                ds = ds.sel(basin=basins)
+        return ds
+
+    # Legacy CSV loader fallback
+    data_dir = Path(data_dir)
     if subdataset:
         subdataset_dir = data_dir / 'attributes' / subdataset
         if not subdataset_dir.is_dir():
@@ -74,74 +112,104 @@ def load_caravan_attributes(
                 f'No subdataset {subdataset} found at {subdataset_dir}.'
             )
         subdataset_dirs = [subdataset_dir]
-
     else:
+        attr_dir = data_dir / 'attributes' if (data_dir / 'attributes').is_dir() else data_dir
         subdataset_dirs = [
-            d for d in (data_dir / 'attributes').glob('*') if d.is_dir()
+            d for d in attr_dir.glob('*') if d.is_dir()
         ]
 
     if basins:
-        # Get list of unique sub datasets from the basin strings.
         subdataset_names = list(set(x.split('_')[0] for x in basins))
-
-        # Make sure the subdatasets exist and are not in conflict with the subdataset argument, if passed.
         if subdataset:
-            # subdataset_names is only allowed to be size 1 in this case.
             if len(subdataset_names) > 1 or subdataset_names[0] != subdataset:
                 raise ValueError(
                     'At least one of the passed basins is not part of the passed subdataset.'
                 )
         else:
-            # Check if all subdatasets exist.
+            attr_dir = data_dir / 'attributes' if (data_dir / 'attributes').is_dir() else data_dir
             missing_subdatasets = [
                 s
                 for s in subdataset_names
-                if not (data_dir / 'attributes' / s).is_dir()
+                if not (attr_dir / s).is_dir()
             ]
-
             if missing_subdatasets:
                 raise FileNotFoundError(
                     f'Could not find subdataset directories for {missing_subdatasets}.'
                 )
-
-        # Subset subdataset_dirs to only the required subsets.
         subdataset_dirs = [
             s for s in subdataset_dirs if s.name in subdataset_names
         ]
 
-    # Load all required attribute files.
-    LOGGER.debug('load attribute files')
+    LOGGER.debug('load legacy attribute files')
     ds = _load_attribute_files_of_subdatasets(subdataset_dirs, features or [])
 
-    # If a specific list of basins is requested, subset the Dataset.
     if basins:
-        LOGGER.debug('missing')
-        # Check for any requested basins that are missing from the loaded data.
         missing = set(basins).difference(ds.coords['basin'].data)
         if missing:
             raise ValueError(
                 f'{len(missing)} basins are missing static attributes: {", ".join(missing)}'
             )
-
-        # Subset to only the requested basins.
         ds = ds.sel(basin=basins)
 
     return ds
 
 
-def load_csvs_as_ds(basin_to_path: dict[str, Path]) -> xarray.Dataset:
-    """Load timeseries data from CSV files into a single xarray Dataset.
+def load_caravan_timeseries(
+    data_dir: Path | str,
+    basins: list[str],
+    target_features: list[str],
+    *,
+    csv: bool = False,
+    batch_size: int = 500,
+) -> xarray.Dataset:
+    """Load the timeseries data of basins from the Caravan dataset.
+
+    Supports Zarr stores (preferred) and legacy multi-file NetCDF/CSV datasets.
 
     Parameters
     ----------
-    basin_to_path : dict[str, Path]
-        Mapping from basin ID to the CSV file path, one per basin.
+    data_dir : Path | str
+        Path to timeseries Zarr store or root directory of Caravan timeseries.
+    basins : list[str]
+        List of basin ID strings.
+    target_features : list[str]
+        The target variables to select.
+    csv: bool, optional
+        Whether to load CSV files instead of NC files (legacy mode).
+    batch_size : int, optional
+        Batch size for legacy multi-file loader.
 
     Returns
     -------
     xarray.Dataset
-        A combined Dataset with 'basin' as the new dimension.
+        A combined Dataset with 'basin' and 'date' coordinates.
     """
+    LOGGER.debug('load caravan timeseries')
+    zarr_store = _find_zarr_store(
+        data_dir, ['streamflow.zarr', 'targets.zarr', 'timeseries.zarr', 'timeseries']
+    )
+    if zarr_store is not None:
+        LOGGER.debug(f'Loading timeseries from Zarr store: {zarr_store}')
+        store_path = zarr_store.as_posix().replace('gs:/', 'gs://')
+        ds = xarray.open_zarr(store_path, chunks='auto')
+        if target_features:
+            available = [f for f in target_features if f in ds.data_vars]
+            ds = ds[available]
+        if basins:
+            ds = ds.sel(basin=basins)
+        return ds
+
+    return load_caravan_timeseries_together(
+        data_dir=Path(data_dir),
+        basins=basins,
+        target_features=target_features,
+        csv=csv,
+        batch_size=batch_size,
+    )
+
+
+def load_csvs_as_ds(basin_to_path: dict[str, Path]) -> xarray.Dataset:
+    """Load timeseries data from CSV files into a single xarray Dataset."""
     datas = (
         dd.read_csv(path, parse_dates=['date'], dtype=np.float32)
         for path in basin_to_path.values()
@@ -155,35 +223,10 @@ def load_caravan_timeseries_together(
     basins: list[str],
     target_features: list[str],
     *,
-    csv: bool,
+    csv: bool = False,
     batch_size: int = 500,
 ) -> xarray.Dataset:
-    """Load the timeseries data of basins from the Caravan dataset.
-
-    Parameters
-    ----------
-    data_dir : Path
-        Path to the root directory of Caravan that has to include a sub-directory
-        called 'timeseries'. This sub-directory has to contain another
-        sub-directory called either 'csv' or 'netcdf', depending on the choice
-        of the filetype argument. By default, netCDF files are loaded from the
-        'netcdf' subdirectory.
-    basins : list[str]
-        The Caravan gauge id strings in the form of {subdataset_name}_{gauge_id}.
-    target_features : list[str]
-        The target variables to select.
-    csv: bool
-        Whether to load CSV files instead of NC (netcdf) files.
-    batch_size : int
-        Basin combining is done in batches to nullify combine runtime & memory.
-        500 for 16k basins over 46yr date range results in 1GB peak memory used.
-        TODO(future): Add config arg if needed.
-
-    Raises
-    ------
-    FileNotFoundError
-        If no timeseries file exists for the basin.
-    """
+    """Legacy multi-file Caravan timeseries loader."""
     bar_off = logging.getLogger().level > logging.DEBUG
 
     def basin_to_path(basin: str) -> Path:
@@ -205,13 +248,12 @@ def load_caravan_timeseries_together(
 
     combine = functools.partial(
         xarray.combine_nested,
-        concat_dim='basin',  # make dim to concat by, to later assign ids in
-        coords='minimal',  # share dims structure: target features not static
-        compat='override',  # share same vars' nan structure instead of diffing
-        combine_attrs='override',  # take metadata from 1st file e.g. mod dates
+        concat_dim='basin',
+        coords='minimal',
+        compat='override',
+        combine_attrs='override',
     )
 
-    # Avoid recreating this 16k times:
     open_dataset_args = {'chunks': {'date': 'auto'}, 'engine': 'netcdf4'}
 
     def open_dataset(ds_path: Path) -> tuple[xarray.Dataset, float, float]:
@@ -232,7 +274,7 @@ def load_caravan_timeseries_together(
         start, end = min(starts), max(ends)
         date = pd.date_range(start=start, end=end, freq='D', name='date')
         datasets = [ds.reindex(date=date) for ds in datasets]
-        return combine(datasets, join='override')  # use 1st basin's date length
+        return combine(datasets, join='override')
 
     def batchify() -> Iterator[xarray.Dataset]:
         batches = map(process_batch, itertools.batched(paths, batch_size))
@@ -241,18 +283,13 @@ def load_caravan_timeseries_together(
             batches, desc='Gather', unit='batch', total=total, disable=bar_off
         )
 
-    # join='outer' aligns dates across batches
     return combine(tuple(batchify()), join='outer').assign_coords(basin=basins)
 
 
 def _load_attribute_files_of_subdatasets(
     datasets: list[Path], features: list[str]
 ) -> xarray.Dataset:
-    """Loads all attribute CSV files, indexing gauge_id to basin.
-
-    Converts float64 to float32.
-    """
-
+    """Loads all attribute CSV files, indexing gauge_id to basin."""
     @dask.delayed
     def process(csv_file: Path) -> xarray.Dataset:
         df64 = pd.read_csv(csv_file, index_col='gauge_id')
