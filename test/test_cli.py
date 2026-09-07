@@ -57,6 +57,23 @@ def test_run_get_args_valid_modes():
     ):
         args = run._get_args()
         assert args['mode'] == 'infer'
+        assert args['data_assimilation'] is False
+
+    # Infer mode with Data Assimilation
+    with patch.object(
+        sys,
+        'argv',
+        [
+            'run.py',
+            'infer',
+            '--run-dir',
+            '/tmp/run',
+            '--data-assimilation',
+        ],
+    ):
+        args = run._get_args()
+        assert args['mode'] == 'infer'
+        assert args['data_assimilation'] is True
 
 
 @pytest.mark.unit
@@ -102,9 +119,40 @@ def test_run_dispatch_eval_run():
             period='test',
             epoch=1,
             gpu=-1,
+            data_assimilation=True,
         )
         assert cfg.device == 'cpu'
-        mock_eval.assert_called_once()
+        mock_eval.assert_called_once_with(
+            cfg=cfg,
+            run_dir=Path('/tmp/run'),
+            epoch=1,
+            period='test',
+            data_assimilation=True,
+        )
+
+
+@pytest.mark.unit
+def test_run_main_infer_data_assimilation(tmp_path):
+    config_path = tmp_path / 'config.yml'
+    config_path.write_text('model: mean_embedding_forecast_lstm\n')
+    with patch.object(
+        sys,
+        'argv',
+        [
+            'run.py',
+            'infer',
+            '--run-dir',
+            str(tmp_path),
+            '--data-assimilation',
+        ],
+    ), patch('googlehydrology.run.eval_run') as mock_eval_run, \
+       patch('googlehydrology.run.setup_logging'):
+        run._main()
+        mock_eval_run.assert_called_once()
+        call_config = mock_eval_run.call_args[0][0]
+        assert call_config.inference_mode is True
+        assert call_config.tester_skip_obs_all_nan is False
+        assert mock_eval_run.call_args[1]['data_assimilation'] is True
 
 
 @pytest.mark.unit
