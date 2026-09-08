@@ -35,11 +35,10 @@ def lstm_init(
     """Initialize LSTM weights."""
     with torch.no_grad():
         for lstm in lstms:
-            if forget_bias is not None:
-                lstm.bias_hh_l0.data[_forget_gate_slice(lstm)] = forget_bias
-
             for name, param in lstm.named_parameters():
-                if 'weight_ih' in name and LSTM_IH_XAVIER in weight_opts:
+                if forget_bias is not None and name.startswith('bias_hh_'):
+                    param.data[_forget_gate_slice(lstm)] = forget_bias
+                elif 'weight_ih' in name and LSTM_IH_XAVIER in weight_opts:
                     nn.init.xavier_uniform_(param)
                 elif 'weight_hh' in name and LSTM_HH_ORTHOGONAL in weight_opts:
                     nn.init.orthogonal_(param)
