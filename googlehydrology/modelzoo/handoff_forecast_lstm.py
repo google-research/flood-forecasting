@@ -28,6 +28,13 @@ from googlehydrology.utils.lstm_utils import lstm_init
 FC_XAVIER = WeightInitOpt.FC_XAVIER
 
 
+def _concat_dynamic_features(
+    data: dict[str, torch.Tensor], feature_names: list[str]
+) -> torch.Tensor:
+    """Concatenate dynamic features in the model-defined feature order."""
+    return torch.cat([data[name] for name in feature_names], dim=-1)
+
+
 class HandoffForecastLSTM(BaseModel):
     """
     An encoder/decoder LSTM model class used for forecasting.
@@ -247,16 +254,12 @@ class HandoffForecastLSTM(BaseModel):
         """
 
         # Run the embedding layers.
-        hindcast_features = torch.cat(
-            [
-                t for f, t in data['x_d_hindcast'].items()
-                if f in self.hindcast_inputs
-            ], dim=-1)
-        forecast_features = torch.cat(
-            [
-                t for f, t in data['x_d_forecast'].items()
-                if f in self.forecast_inputs
-            ], dim=-1)
+        hindcast_features = _concat_dynamic_features(
+            data['x_d_hindcast'], self.hindcast_inputs
+        )
+        forecast_features = _concat_dynamic_features(
+            data['x_d_forecast'], self.forecast_inputs
+        )
 
         statics_embeddings = self.statics_embedding_net(data['x_s'])
         hindcast_embeddings = self.hindcast_embedding_net(hindcast_features)
@@ -454,13 +457,8 @@ class HandoffForecastLSTM(BaseModel):
             The file path where the state should be saved (.npz format).
         """
         # Run the embedding layers.
-        hindcast_features = torch.cat(
-            [
-                t
-                for f, t in data['x_d_hindcast'].items()
-                if f in self.hindcast_inputs
-            ],
-            dim=-1,
+        hindcast_features = _concat_dynamic_features(
+            data['x_d_hindcast'], self.hindcast_inputs
         )
 
         statics_embeddings = self.statics_embedding_net(data['x_s'])
@@ -477,13 +475,8 @@ class HandoffForecastLSTM(BaseModel):
         )
 
         # We run the exact same logic up to the final temporal state (Day D)
-        forecast_features = torch.cat(
-            [
-                t
-                for f, t in data['x_d_forecast'].items()
-                if f in self.forecast_inputs
-            ],
-            dim=-1,
+        forecast_features = _concat_dynamic_features(
+            data['x_d_forecast'], self.forecast_inputs
         )
 
         forecast_embeddings = self.forecast_embedding_net(forecast_features)
