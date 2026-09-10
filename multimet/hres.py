@@ -29,6 +29,18 @@ import zarr
 
 try:
   import gcsfs
+
+  def _safe_close_session(loop, session, asynchronous=False):
+    try:
+      if not session.closed:
+        connector = getattr(session, "_connector", None)
+        if connector is not None:
+          connector._close()
+        session._connector = None
+    except Exception:
+      pass
+
+  gcsfs.GCSFileSystem.close_session = staticmethod(_safe_close_session)
 except ImportError:
   gcsfs = None
 
