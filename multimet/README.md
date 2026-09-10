@@ -78,7 +78,69 @@ python -m multimet.runner \
 
 ---
 
-## 4. Relationship to Caravan MultiMet Paper (arXiv:2411.09459)
+## 4. dynamical.org Universal Catalog Loader with Icechunk Acceleration
+
+The `DynamicalDataLoader` provides direct, cloud-optimized access to all weather and climate datasets in the [dynamical.org catalog](https://dynamical.org/catalog/).
+
+### Icechunk Accelerated Geospatial Bounding
+All dynamical.org datasets are stored in **Zarr v3 with Icechunk transactional repositories** on AWS S3. Rather than downloading multi-terabyte global or regional grids, the loader computes spatial bounding slices from requested watershed geometries (or bounding box tuples) and applies lazy slicing (`.sel()`):
+- **1D Geographic Datasets** (e.g. `nasa-imerg-analysis-early`, `noaa-gfs-forecast`, `ecmwf-aifs-single-forecast`, `noaa-mrms-conus-analysis-hourly`): Monotonicity is detected automatically to handle descending vs. ascending latitudes, and bounding slices are queried directly in degrees.
+- **2D Projected Datasets** (e.g. `noaa-hrrr-analysis`, `noaa-hrrr-forecast-48-hour`, `eccc-hrdps-forecast`): Watershed boundaries are reprojected on the fly into native projected coordinates (e.g. Lambert Conformal Conic in meters or Rotated Pole) via `pyproj` using the dataset's CRS WKT.
+- **Icechunk Range Requests**: Icechunk translates coordinate slices to chunk index keys and issues S3 byte-range HTTP GET requests only for the intersecting chunks, loading local watershed cubes in seconds.
+
+### Python API Examples
+
+#### 1. Quick Load via `load_dynamical`
+
+```python
+from googlehydrology.multimet import load_dynamical
+
+# Load geographically-bounded gridded cube
+ds_cube = load_dynamical(
+    dataset_id="nasa-imerg-analysis-early",
+    watersheds="test/test_data/shapefiles/us/us_basin_shapes.geojson",
+    variables=["precipitation_surface"],
+    start_date="2023-01-01",
+    end_date="2023-01-05",
+    mode="cube",
+)
+
+# Extract catchment zonal timeseries directly
+ds_ts = load_dynamical(
+    dataset_id="nasa-imerg-analysis-early",
+    watersheds="test/test_data/shapefiles/us/us_basin_shapes.geojson",
+    variables=["precipitation_surface"],
+    start_date="2023-01-01",
+    end_date="2023-01-05",
+    mode="timeseries",
+)
+```
+
+#### 2. Advanced Usage with `DynamicalDataLoader` and `DynamicalExtractor`
+
+```python
+from googlehydrology.multimet import DynamicalDataLoader, DynamicalExtractor
+
+# Inspect catalog and dataset schema
+loader = DynamicalDataLoader("noaa-hrrr-analysis")
+info = loader.get_info()
+print(f"Grid type: {info.grid_type}, Variables: {info.variables}")
+
+# Extract catchment averages with BaseExtractor pipeline adapter
+extractor = DynamicalExtractor(
+    dataset_id="nasa-imerg-analysis-early",
+    variable_map={"precipitation_surface": "imerg_precipitation"},
+)
+basin_forcing = extractor.extract_for_basins(
+    basins_gdf="test/test_data/shapefiles/us/us_basin_shapes.geojson",
+    start_date="2023-01-01",
+    end_date="2023-01-02",
+)
+```
+
+---
+
+## 5. Relationship to Caravan MultiMet Paper (arXiv:2411.09459)
 
 The Caravan MultiMet paper (*"Caravan MultiMet: Extending Caravan with Multiple Weather Nowcasts and Forecasts"*, [arXiv:2411.09459](https://arxiv.org/abs/2411.09459)) describes the creation of a large-scale, pre-computed benchmark dataset covering thousands of global watersheds and hosted as static NetCDF and Zarr archives on Zenodo and Google Cloud Platform.
 

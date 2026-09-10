@@ -38,6 +38,9 @@ _LAZY_MODULE_MAPPING = {
     "ZonalWeightMatrix": f"{_PKG}.zonal",
     "calculate_fao56_penman_monteith_pet": f"{_PKG}.pet",
     "extract_multimet_serial": f"{_PKG}.runner",
+    "DynamicalDataLoader": f"{_PKG}.dynamical",
+    "DynamicalExtractor": f"{_PKG}.dynamical",
+    "load_dynamical": f"{_PKG}.dynamical",
 }
 
 __all__ = [
@@ -56,6 +59,9 @@ __all__ = [
     "ZonalWeightMatrix",
     "calculate_fao56_penman_monteith_pet",
     "extract_multimet_serial",
+    "DynamicalDataLoader",
+    "DynamicalExtractor",
+    "load_dynamical",
 ]
 
 
