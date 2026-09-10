@@ -24,10 +24,7 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
 import urllib.parse
 
 import geopandas as gpd
-try:
-  import h5py
-except ImportError:
-  h5py = None
+import h5py
 import numpy as np
 import pandas as pd
 import requests
@@ -46,15 +43,12 @@ def get_earthdata_credentials_from_netrc(
   path = netrc_path or os.path.expanduser("~/.netrc")
   if not os.path.exists(path):
     return None, None
-  try:
-    import netrc
-    n = netrc.netrc(path)
-    for host in ("urs.earthdata.nasa.gov", "gpm1.gesdisc.eosdis.nasa.gov"):
-      auth_info = n.authenticators(host)
-      if auth_info:
-        return auth_info[0], auth_info[2]
-  except Exception as e:
-    logging.warning("Failed to parse netrc at %s: %s", path, e)
+  import netrc
+  n = netrc.netrc(path)
+  for host in ("urs.earthdata.nasa.gov", "gpm1.gesdisc.eosdis.nasa.gov"):
+    auth_info = n.authenticators(host)
+    if auth_info:
+      return auth_info[0], auth_info[2]
   return None, None
 
 
@@ -125,35 +119,24 @@ def download_daily_imerg(
     session = EarthdataSession()
 
   os.makedirs(os.path.dirname(os.path.abspath(dest_path)), exist_ok=True)
-  tmp_path = dest_path + ".tmp"
-
-  try:
-    with session.get(url, stream=True, timeout=120) as resp:
-      if resp.status_code in (401, 403):
-        raise PermissionError(
-            f"NASA GES DISC returned HTTP {resp.status_code} Unauthorized for URL:\n  {url}\n\n"
-            "Access to NASA IMERG data requires NASA Earthdata Login authentication.\n"
-            "To resolve this, do one of the following:\n"
-            "1. Add your Earthdata credentials to ~/.netrc:\n"
-            "   machine urs.earthdata.nasa.gov login <username> password <password>\n"
-            "   chmod 600 ~/.netrc\n"
-            "2. Set the EARTHDATA_TOKEN (or EARTHDATA_USERNAME and EARTHDATA_PASSWORD) environment variable.\n"
-            "3. Or pre-download the daily NetCDF4 (.nc4) files to a local directory and pass --data_dir=<path>."
-        )
-      resp.raise_for_status()
-      with open(tmp_path, "wb") as f:
-        for chunk in resp.iter_content(chunk_size=1024 * 1024):
-          if chunk:
-            f.write(chunk)
-    os.replace(tmp_path, dest_path)
-    return dest_path
-  except Exception:
-    if os.path.exists(tmp_path):
-      try:
-        os.remove(tmp_path)
-      except OSError:
-        pass
-    raise
+  with session.get(url, stream=True, timeout=120) as resp:
+    if resp.status_code in (401, 403):
+      raise PermissionError(
+          f"NASA GES DISC returned HTTP {resp.status_code} Unauthorized for URL:\n  {url}\n\n"
+          "Access to NASA IMERG data requires NASA Earthdata Login authentication.\n"
+          "To resolve this, do one of the following:\n"
+          "1. Add your Earthdata credentials to ~/.netrc:\n"
+          "   machine urs.earthdata.nasa.gov login <username> password <password>\n"
+          "   chmod 600 ~/.netrc\n"
+          "2. Set the EARTHDATA_TOKEN (or EARTHDATA_USERNAME and EARTHDATA_PASSWORD) environment variable.\n"
+          "3. Or pre-download the daily NetCDF4 (.nc4) files to a local directory and pass --data_dir=<path>."
+      )
+    resp.raise_for_status()
+    with open(dest_path, "wb") as f:
+      for chunk in resp.iter_content(chunk_size=1024 * 1024):
+        if chunk:
+          f.write(chunk)
+  return dest_path
 
 
 def _weighted_mean_valid(vals: np.ndarray, weights: np.ndarray) -> float:
@@ -270,15 +253,7 @@ class IMERGExtractor(BaseExtractor):
     )
     url = f"{base_url.rstrip('/')}/{year}/{month:02d}/{filename}"
 
-    try:
-      return download_daily_imerg(url, cached_path, session=self.session)
-    except Exception as e:
-      if "404" in str(e):
-        alt_filename = f"3B-DAY-E.MS.MRG.3IMERG.{date_str}-S000000-E235959.V07.nc4"
-        alt_url = f"{base_url.rstrip('/')}/{year}/{month:02d}/{alt_filename}"
-        alt_dest = os.path.join(cache_dir, alt_filename)
-        return download_daily_imerg(alt_url, alt_dest, session=self.session)
-      raise
+    return download_daily_imerg(url, cached_path, session=self.session)
 
   def extract_day_from_nc4(
       self,
@@ -380,12 +355,9 @@ class IMERGExtractor(BaseExtractor):
     basin_has_nan = np.zeros(num_basins, dtype=bool)
 
     for fpath in imerg_files:
-      try:
-        with open(fpath, "rb") as f:
-          content = f.read()
-        grid_2d = self.parse_imerg_h5_bytes(content)
-      except Exception:
-        return {"imerg_precipitation": res}
+      with open(fpath, "rb") as f:
+        content = f.read()
+      grid_2d = self.parse_imerg_h5_bytes(content)
 
       for b_idx, b_id in enumerate(basin_ids):
         if b_id not in weights_dict:
@@ -412,13 +384,7 @@ class IMERGExtractor(BaseExtractor):
       weights_matrix: Optional[ZonalWeightMatrix] = None,
   ) -> xr.Dataset:
     """Extracts IMERG precipitation using dynamical.org cloud-optimized Zarr on S3."""
-    try:
-      import dynamical_catalog
-    except ImportError:
-      raise ImportError(
-          "dynamical_catalog is required for dynamical.org IMERG extraction. "
-          "Install via: pip install dynamical-catalog icechunk"
-      )
+    import dynamical_catalog
 
     ds = dynamical_catalog.open("nasa-imerg-analysis-early")
     basin_ids = list(basins_gdf.index)

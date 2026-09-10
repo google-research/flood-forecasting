@@ -36,27 +36,12 @@ from multimet.config import PRODUCT_BANDS
 from multimet.pet import calculate_fao56_penman_monteith_pet
 from multimet.zonal import ZonalWeightCalculator, ZonalWeightMatrix
 
-try:
-  import gcsfs
-
-  def _safe_close_session(loop, session, asynchronous=False):
-    try:
-      if not session.closed:
-        connector = getattr(session, "_connector", None)
-        if connector is not None:
-          connector._close()
-        session._connector = None
-    except Exception:
-      pass
-
-  gcsfs.GCSFileSystem.close_session = staticmethod(_safe_close_session)
-except ImportError:
-  gcsfs = None
+import gcsfs
 
 
 def open_wb2_era5_dataset(zarr_path: str) -> xr.Dataset:
   """Opens WeatherBench 2 ERA5 Zarr store."""
-  if gcsfs is not None and zarr_path.startswith("gs://"):
+  if zarr_path.startswith("gs://"):
     fs = gcsfs.GCSFileSystem(token="anon")
     store = fs.get_mapper(zarr_path.replace("gs://", ""))
     return xr.open_zarr(store, consolidated=True)
@@ -180,52 +165,36 @@ class ERA5LandExtractor(BaseExtractor):
 
     if not os.path.exists(grib_path):
       return fields
-    try:
-      # pylint: disable=g-import-not-at-top
-      import eccodes
-    except ImportError:
-      return fields
+    import eccodes
 
-    try:
-      with open(local_path, "rb") as f:
-        while True:
-          try:
-            gid = eccodes.codes_grib_new_from_file(f)
-          except (eccodes.CodesInternalError, OSError, EOFError):
-            break
-          if gid is None:
-            break
-          try:
-            short_name = eccodes.codes_get(gid, "shortName")
-            if short_name in [
-                "2t",
-                "2d",
-                "sp",
-                "10u",
-                "10v",
-                "tp",
-                "ssr",
-                "str",
-                "pev",
-                "sd",
-                "swvl1",
-                "swvl2",
-                "swvl3",
-                "swvl4",
-            ]:
-              vals = eccodes.codes_get_values(gid).reshape((1801, 3600))
-              # Mask missing values (ECMWF land mask is 9999.0)
-              vals = np.where(np.isclose(vals, 9999.0, atol=1e-2), np.nan, vals)
-              vals_shifted = vals[:, self.sort_lon_idx]
-              fields[short_name] = vals_shifted
-          finally:
-            eccodes.codes_release(gid)
-    finally:
-      if temp_download and os.path.exists(local_path):
-        try:
-          os.remove(local_path)
-        except OSError:
-          pass
+    with open(local_path, "rb") as f:
+      while True:
+        gid = eccodes.codes_grib_new_from_file(f)
+        if gid is None:
+          break
+        short_name = eccodes.codes_get(gid, "shortName")
+        if short_name in [
+            "2t",
+            "2d",
+            "sp",
+            "10u",
+            "10v",
+            "tp",
+            "ssr",
+            "str",
+            "pev",
+            "sd",
+            "swvl1",
+            "swvl2",
+            "swvl3",
+            "swvl4",
+        ]:
+          vals = eccodes.codes_get_values(gid).reshape((1801, 3600))
+          # Mask missing values (ECMWF land mask is 9999.0)
+          vals = np.where(np.isclose(vals, 9999.0, atol=1e-2), np.nan, vals)
+          vals_shifted = vals[:, self.sort_lon_idx]
+          fields[short_name] = vals_shifted
+        eccodes.codes_release(gid)
 
     return fields
 
@@ -645,10 +614,7 @@ class ERA5LandExtractor(BaseExtractor):
           :, valid_target_indices
       ] = pet_matrix
 
-    try:
-      ds_raw.close()
-    except Exception:
-      pass
+    ds_raw.close()
 
     data_vars = {
         band: (["basin", "date"], data_dict[band]) for band in expected_bands

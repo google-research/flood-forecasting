@@ -291,14 +291,10 @@ class MultiMetZarrWriter:
       ds_chunked.to_zarr(local_target, mode="w", consolidated=True)
     else:
       # Append along basin dimension
-      try:
-        existing_ds = xr.open_zarr(local_target)
-        existing_basins = set(existing_ds["basin"].values)
-      except (KeyError, OSError, zarr.errors.GroupNotFoundError):
-        existing_ds = None
-        existing_basins = set()
+      existing_ds = xr.open_zarr(local_target)
+      existing_basins = set(existing_ds["basin"].values)
 
-      if existing_ds is None or not existing_basins:
+      if not existing_basins:
         shutil.rmtree(local_target, ignore_errors=True)
         ds_chunked = ds_to_write.chunk(chunk_spec)
         ds_chunked.to_zarr(local_target, mode="w", consolidated=True)
