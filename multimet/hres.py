@@ -32,15 +32,15 @@ try:
 except ImportError:
   gcsfs = None
 
-from googlehydrology.multimet.base import BaseExtractor
-from googlehydrology.multimet.config import (
+from multimet.base import BaseExtractor
+from multimet.config import (
     DEFAULT_STORAGE_PATHS,
     FORECAST_LEAD_DAYS,
     PRODUCT_BANDS,
     PRODUCT_METADATA_ATTRS,
     Product,
 )
-from googlehydrology.multimet.zonal import ZonalWeightCalculator, ZonalWeightMatrix
+from multimet.zonal import ZonalWeightCalculator, ZonalWeightMatrix
 
 
 def open_wb2_hres_dataset(zarr_url: Union[str, xr.Dataset]) -> xr.Dataset:

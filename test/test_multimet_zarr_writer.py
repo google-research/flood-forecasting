@@ -20,11 +20,11 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-from googlehydrology.multimet.config import (
+from multimet.config import (
     PRODUCT_BANDS,
     Product,
 )
-from googlehydrology.multimet.zarr_writer import MultiMetZarrWriter
+from multimet.zarr_writer import MultiMetZarrWriter
 
 
 @pytest.fixture

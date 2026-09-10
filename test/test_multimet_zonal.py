@@ -19,8 +19,8 @@ import tempfile
 import numpy as np
 import pytest
 
-from googlehydrology.multimet.geometry import load_basin_geometries
-from googlehydrology.multimet.zonal import (
+from multimet.geometry import load_basin_geometries
+from multimet.zonal import (
     ZonalWeightCalculator,
     ZonalWeightMatrix,
 )

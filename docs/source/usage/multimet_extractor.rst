@@ -1,7 +1,7 @@
 MultiMet Forcing Extractor
 ===========================
 
-The **MultiMet Forcing Extractor** (``googlehydrology.multimet``) is a high-performance meteorological data extraction and harmonization pipeline. It ingests raw gridded meteorological datasets (reanalyses, satellite observations, numerical weather predictions, and machine learning weather models) and extracts catchment-averaged forcing time series standardized according to the **Caravan benchmark specification** (`Kratzert et al., 2023 <https://nature.com/articles/s41597-023-01960-w>`_; `Kratzert et al., 2024, arXiv:2411.09459 <https://arxiv.org/abs/2411.09459>`_).
+The **MultiMet Forcing Extractor** (``multimet``) is a high-performance meteorological data extraction and harmonization pipeline. It ingests raw gridded meteorological datasets (reanalyses, satellite observations, numerical weather predictions, and machine learning weather models) and extracts catchment-averaged forcing time series standardized according to the **Caravan benchmark specification** (`Kratzert et al., 2023 <https://nature.com/articles/s41597-023-01960-w>`_; `Kratzert et al., 2024, arXiv:2411.09459 <https://arxiv.org/abs/2411.09459>`_).
 
 Supported Meteorological Products
 ---------------------------------
@@ -41,7 +41,7 @@ Python API
 
 .. code-block:: python
 
-    from googlehydrology.multimet import extract_multimet_serial
+    from multimet import extract_multimet_serial
 
     stores = extract_multimet_serial(
         basins="path/to/basins.geojson",

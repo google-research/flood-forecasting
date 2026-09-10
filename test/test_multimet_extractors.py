@@ -22,26 +22,26 @@ import pytest
 import xarray as xr
 import zarr
 
-from googlehydrology.multimet.config import (
+from multimet.config import (
     PRODUCT_BANDS,
     Product,
 )
-from googlehydrology.multimet.cpc import CPCExtractor
-from googlehydrology.multimet.era5_land import ERA5LandExtractor
-from googlehydrology.multimet.geometry import load_basin_geometries
-from googlehydrology.multimet.graphcast import (
+from multimet.cpc import CPCExtractor
+from multimet.era5_land import ERA5LandExtractor
+from multimet.geometry import load_basin_geometries
+from multimet.graphcast import (
     GraphCastExtractor,
     _compute_basin_steps,
 )
-from googlehydrology.multimet.hres import (
+from multimet.hres import (
     HRESExtractor,
     _extract_accumulated_lead,
     _extract_instantaneous_lead,
 )
-from googlehydrology.multimet.imerg import IMERGExtractor
-from googlehydrology.multimet.pet import calculate_fao56_penman_monteith_pet
-from googlehydrology.multimet.runner import extract_multimet_serial
-from googlehydrology.multimet.zarr_writer import MultiMetZarrWriter
+from multimet.imerg import IMERGExtractor
+from multimet.pet import calculate_fao56_penman_monteith_pet
+from multimet.runner import extract_multimet_serial
+from multimet.zarr_writer import MultiMetZarrWriter
 
 
 @pytest.fixture

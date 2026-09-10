@@ -1,10 +1,10 @@
-googlehydrology.multimet package
+multimet package
 ================================
 
 Module contents
 ---------------
 
-.. automodule:: googlehydrology.multimet
+.. automodule:: multimet
    :members:
    :undoc-members:
    :show-inheritance:
@@ -12,98 +12,98 @@ Module contents
 Submodules
 ----------
 
-googlehydrology.multimet.base module
+multimet.base module
 ------------------------------------
 
-.. automodule:: googlehydrology.multimet.base
+.. automodule:: multimet.base
    :members:
    :undoc-members:
    :show-inheritance:
 
-googlehydrology.multimet.config module
+multimet.config module
 --------------------------------------
 
-.. automodule:: googlehydrology.multimet.config
+.. automodule:: multimet.config
    :members:
    :undoc-members:
    :show-inheritance:
 
-googlehydrology.multimet.geometry module
+multimet.geometry module
 ----------------------------------------
 
-.. automodule:: googlehydrology.multimet.geometry
+.. automodule:: multimet.geometry
    :members:
    :undoc-members:
    :show-inheritance:
 
-googlehydrology.multimet.zonal module
+multimet.zonal module
 -------------------------------------
 
-.. automodule:: googlehydrology.multimet.zonal
+.. automodule:: multimet.zonal
    :members:
    :undoc-members:
    :show-inheritance:
 
-googlehydrology.multimet.pet module
+multimet.pet module
 -----------------------------------
 
-.. automodule:: googlehydrology.multimet.pet
+.. automodule:: multimet.pet
    :members:
    :undoc-members:
    :show-inheritance:
 
-googlehydrology.multimet.zarr_writer module
+multimet.zarr_writer module
 -------------------------------------------
 
-.. automodule:: googlehydrology.multimet.zarr_writer
+.. automodule:: multimet.zarr_writer
    :members:
    :undoc-members:
    :show-inheritance:
 
-googlehydrology.multimet.era5_land module
+multimet.era5_land module
 -----------------------------------------
 
-.. automodule:: googlehydrology.multimet.era5_land
+.. automodule:: multimet.era5_land
    :members:
    :undoc-members:
    :show-inheritance:
 
-googlehydrology.multimet.cpc module
+multimet.cpc module
 -----------------------------------
 
-.. automodule:: googlehydrology.multimet.cpc
+.. automodule:: multimet.cpc
    :members:
    :undoc-members:
    :show-inheritance:
 
-googlehydrology.multimet.imerg module
+multimet.imerg module
 -------------------------------------
 
-.. automodule:: googlehydrology.multimet.imerg
+.. automodule:: multimet.imerg
    :members:
    :undoc-members:
    :show-inheritance:
 
-googlehydrology.multimet.hres module
+multimet.hres module
 ------------------------------------
 
-.. automodule:: googlehydrology.multimet.hres
+.. automodule:: multimet.hres
    :members:
    :undoc-members:
    :show-inheritance:
 
-googlehydrology.multimet.graphcast module
+multimet.graphcast module
 -----------------------------------------
 
-.. automodule:: googlehydrology.multimet.graphcast
+.. automodule:: multimet.graphcast
    :members:
    :undoc-members:
    :show-inheritance:
 
-googlehydrology.multimet.runner module
+multimet.runner module
 --------------------------------------
 
-.. automodule:: googlehydrology.multimet.runner
+.. automodule:: multimet.runner
    :members:
    :undoc-members:
    :show-inheritance:

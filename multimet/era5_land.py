@@ -29,12 +29,12 @@ import tqdm
 import fsspec
 import xarray as xr
 
-from googlehydrology.multimet.base import BaseExtractor
-from googlehydrology.multimet.config import DEFAULT_STORAGE_PATHS
-from googlehydrology.multimet.config import Product
-from googlehydrology.multimet.config import PRODUCT_BANDS
-from googlehydrology.multimet.pet import calculate_fao56_penman_monteith_pet
-from googlehydrology.multimet.zonal import ZonalWeightCalculator, ZonalWeightMatrix
+from multimet.base import BaseExtractor
+from multimet.config import DEFAULT_STORAGE_PATHS
+from multimet.config import Product
+from multimet.config import PRODUCT_BANDS
+from multimet.pet import calculate_fao56_penman_monteith_pet
+from multimet.zonal import ZonalWeightCalculator, ZonalWeightMatrix
 
 try:
   import gcsfs

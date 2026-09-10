@@ -5,3 +5,4 @@ googlehydrology
    :maxdepth: 4
 
    googlehydrology
+   multimet

@@ -22,7 +22,7 @@ import geopandas as gpd
 import pandas as pd
 import xarray as xr
 
-from googlehydrology.multimet.config import (
+from multimet.config import (
     PRODUCT_BANDS,
     PRODUCT_TYPES,
     Product,
