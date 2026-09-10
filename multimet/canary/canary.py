@@ -23,10 +23,11 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import sys
 import tempfile
 import time
-from typing import Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 # Ensure flood-forecasting-multimet repository root is in sys.path
 _CANDIDATE_ROOTS = [
@@ -111,6 +112,16 @@ if CHIRPSGEFSExtractor is not None and hasattr(Product, "CHIRPS_GEFS"):
   PRODUCT_MAP["CHIRPS_GEFS"] = (Product.CHIRPS_GEFS, CHIRPSGEFSExtractor)
 
 
+def _str2bool(v: Union[str, bool]) -> bool:
+  if isinstance(v, bool):
+    return v
+  if v.lower() in ("yes", "true", "t", "y", "1"):
+    return True
+  elif v.lower() in ("no", "false", "f", "n", "0"):
+    return False
+  raise argparse.ArgumentTypeError(f"Boolean value expected, got '{v}'.")
+
+
 def parse_canary_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
   parser = argparse.ArgumentParser(
       description="MultiMet Canary Extraction Runner",
@@ -160,8 +171,22 @@ def parse_canary_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespac
   )
   parser.add_argument(
       "--overwrite",
-      action="store_true",
-      help="Overwrite existing basins in destination Zarr stores.",
+      nargs="?",
+      const=True,
+      default=True,
+      type=_str2bool,
+      help=(
+          "If True, first deletes existing destination Zarr store for products"
+          " in this canary run before extracting (default: True). Pass"
+          " --no-overwrite to preserve/append existing data."
+      ),
+  )
+  parser.add_argument(
+      "--no-overwrite",
+      "--no_overwrite",
+      dest="overwrite",
+      action="store_false",
+      help="Do not delete existing Zarr stores before extracting.",
   )
   parser.add_argument(
       "--num_workers",
@@ -217,6 +242,7 @@ def run_canary(args: argparse.Namespace) -> None:
   print(f"  • Target Products   : {args.products}")
   print(f"  • Source Mode       : {args.source}")
   print(f"  • Date Range        : {args.start_date} to {args.end_date}")
+  print(f"  • Overwrite Mode    : {args.overwrite}")
   print("=" * 70)
 
   # 1. Load Geometries
@@ -231,8 +257,28 @@ def run_canary(args: argparse.Namespace) -> None:
   print(f"   Basin IDs: {basin_ids[:10]}{' ...' if len(basin_ids) > 10 else ''}")
 
   # 2. Parse Requested Products
-  raw_prods = [p.strip().upper() for p in args.products.split(",") if p.strip()]
+  raw_prods = list(
+      dict.fromkeys(
+          [p.strip().upper() for p in args.products.split(",") if p.strip()]
+      )
+  )
   writer = MultiMetZarrWriter(args.output_dir)
+
+  # 3. Handle Overwrite: Delete existing Zarr stores for products in this run
+  if args.overwrite:
+    for prod_name in raw_prods:
+      if prod_name in PRODUCT_MAP:
+        prod_enum, _ = PRODUCT_MAP[prod_name]
+        target_store = writer.get_store_path(prod_enum)
+        if os.path.exists(target_store):
+          print(
+              f"🗑️  [Overwrite] Deleting existing Zarr store for {prod_name}:"
+              f" {target_store}"
+          )
+          if os.path.isdir(target_store):
+            shutil.rmtree(target_store, ignore_errors=True)
+          else:
+            os.remove(target_store)
 
   results_summary = []
 
