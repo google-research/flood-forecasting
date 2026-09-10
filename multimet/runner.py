@@ -108,11 +108,8 @@ def extract_multimet_serial(
 
   loaded_weights: Optional[ZonalWeightMatrix] = None
   if weights_cache is not None and os.path.exists(weights_cache):
-    try:
-      loaded_weights = ZonalWeightMatrix.load(weights_cache)
-      logger.info("Loaded precomputed weight matrix from %s", weights_cache)
-    except Exception as e:
-      logger.warning("Failed to load weights cache at %s: %s", weights_cache, e)
+    loaded_weights = ZonalWeightMatrix.load(weights_cache)
+    logger.info("Loaded precomputed weight matrix from %s", weights_cache)
 
   for prod_name in target_prods:
     if prod_name not in PRODUCT_MAP:

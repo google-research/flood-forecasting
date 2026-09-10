@@ -27,22 +27,7 @@ import fsspec
 import xarray as xr
 import zarr
 
-try:
-  import gcsfs
-
-  def _safe_close_session(loop, session, asynchronous=False):
-    try:
-      if not session.closed:
-        connector = getattr(session, "_connector", None)
-        if connector is not None:
-          connector._close()
-        session._connector = None
-    except Exception:
-      pass
-
-  gcsfs.GCSFileSystem.close_session = staticmethod(_safe_close_session)
-except ImportError:
-  gcsfs = None
+import gcsfs
 
 from multimet.base import BaseExtractor
 from multimet.config import (
@@ -100,19 +85,15 @@ def _extract_instantaneous_lead(
   """Extracts and averages instantaneous slices over a 24h lead window."""
   if var_name not in z_root:
     return None
-  try:
-    var_slice = z_root[var_name][h_start:h_end, :, :]
-    expected_len = h_end - h_start
-    if var_slice.shape[0] != expected_len:
-      # Incomplete hourly slice: return None to propagate NaN
-      return None
-    var_mean = np.mean(var_slice, axis=0)[:, sort_lon_idx]
-    return (
-        _compute_zonal_mean(var_mean, basin_ids, weights_dict) * scale + offset
-    )
-  except (KeyError, IndexError, ValueError) as e:
-    logging.warning("Error reading %s from HRES Zarr: %s", var_name, e)
+  var_slice = z_root[var_name][h_start:h_end, :, :]
+  expected_len = h_end - h_start
+  if var_slice.shape[0] != expected_len:
+    # Incomplete hourly slice: return None to propagate NaN
     return None
+  var_mean = np.mean(var_slice, axis=0)[:, sort_lon_idx]
+  return (
+      _compute_zonal_mean(var_mean, basin_ids, weights_dict) * scale + offset
+  )
 
 
 def _extract_accumulated_lead(
@@ -130,28 +111,22 @@ def _extract_accumulated_lead(
   """Extracts differenced accumulations or hourly flux sums between lead end and start."""
   if var_name not in z_root:
     return None
-  try:
-    is_hourly_flux = "_1hr" in var_name.lower() or "tprate" in var_name.lower()
-    if is_hourly_flux:
-      slice_data = z_root[var_name][h_start:h_end, :, :]
-      val_diff = np.sum(slice_data, axis=0)[:, sort_lon_idx] * scale
-    else:
-      val_end = z_root[var_name][h_end, :, :][:, sort_lon_idx]
-      val_start = (
-          z_root[var_name][h_start, :, :][:, sort_lon_idx]
-          if h_start > t0_hours
-          else 0.0
-      )
-      val_diff = (val_end - val_start) * scale
-
-    if is_strictly_positive:
-      val_diff = np.where(val_diff < -1e-4, np.nan, np.maximum(0.0, val_diff))
-    return _compute_zonal_mean(val_diff, basin_ids, weights_dict)
-  except (KeyError, IndexError, ValueError) as e:
-    logging.warning(
-        "Error reading accumulated %s from HRES Zarr: %s", var_name, e
+  is_hourly_flux = "_1hr" in var_name.lower() or "tprate" in var_name.lower()
+  if is_hourly_flux:
+    slice_data = z_root[var_name][h_start:h_end, :, :]
+    val_diff = np.sum(slice_data, axis=0)[:, sort_lon_idx] * scale
+  else:
+    val_end = z_root[var_name][h_end, :, :][:, sort_lon_idx]
+    val_start = (
+        z_root[var_name][h_start, :, :][:, sort_lon_idx]
+        if h_start > t0_hours
+        else 0.0
     )
-    return None
+    val_diff = (val_end - val_start) * scale
+
+  if is_strictly_positive:
+    val_diff = np.where(val_diff < -1e-4, np.nan, np.maximum(0.0, val_diff))
+  return _compute_zonal_mean(val_diff, basin_ids, weights_dict)
 
 
 def extract_day_from_hres(
@@ -176,13 +151,7 @@ def extract_day_from_hres(
       for band in PRODUCT_BANDS[Product.HRES]
   }
 
-  try:
-    z_root = zarr.open_group(hres_zarr_path, mode="r")
-  except Exception as e:
-    logging.warning(
-        "Failed to open HRES Zarr group at %s: %s", hres_zarr_path, e
-    )
-    return res_dict
+  z_root = zarr.open_group(hres_zarr_path, mode="r")
 
   for d in range(1, 11):
     lead_idx = d - 1
@@ -421,11 +390,7 @@ class HRESExtractor(BaseExtractor):
     elif "total_precipitation" in sub:
       target_vars.append("total_precipitation")
 
-    try:
-      day_sub = sub.sel(time=time_target)[target_vars].compute()
-    except Exception as e:
-      logging.warning("Failed to compute WB2 HRES day slice for %s: %s", dt, e)
-      return res_dict
+    day_sub = sub.sel(time=time_target)[target_vars].compute()
 
     t2m_raw = day_sub["2m_temperature"].values - 273.15
     sp_raw = day_sub["surface_pressure"].values * 0.001
@@ -592,10 +557,7 @@ class HRESExtractor(BaseExtractor):
       if time_target not in pd.to_datetime(sub.time.values):
         continue
 
-      try:
-        day_sub = sub.sel(time=time_target)[target_vars].compute()
-      except Exception:
-        continue
+      day_sub = sub.sel(time=time_target)[target_vars].compute()
 
       t2m_raw = day_sub["2m_temperature"].values - 273.15
       sp_raw = day_sub["surface_pressure"].values * 0.001
@@ -636,10 +598,7 @@ class HRESExtractor(BaseExtractor):
             0.0, p_tp
         )
 
-    try:
-      ds_raw.close()
-    except Exception:
-      pass
+    ds_raw.close()
 
     data_vars = {}
     for band in expected_bands:

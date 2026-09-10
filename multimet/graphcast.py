@@ -25,22 +25,7 @@ import tqdm
 import fsspec
 import xarray as xr
 
-try:
-  import gcsfs
-
-  def _safe_close_session(loop, session, asynchronous=False):
-    try:
-      if not session.closed:
-        connector = getattr(session, "_connector", None)
-        if connector is not None:
-          connector._close()
-        session._connector = None
-    except Exception:
-      pass
-
-  gcsfs.GCSFileSystem.close_session = staticmethod(_safe_close_session)
-except ImportError:
-  gcsfs = None
+import gcsfs
 
 from multimet.base import BaseExtractor
 from multimet.config import (
@@ -125,100 +110,97 @@ def extract_day_from_graphcast(
       for band in PRODUCT_BANDS[Product.GRAPHCAST]
   }
 
-  try:
-    if graphcast_zarr_path.startswith("gs://"):
-      ds_raw = open_wb2_dataset(graphcast_zarr_path)
-    else:
-      ds_raw = xr.open_zarr(graphcast_zarr_path, decode_timedelta=False)
+  if graphcast_zarr_path.startswith("gs://"):
+    ds_raw = open_wb2_dataset(graphcast_zarr_path)
+  else:
+    ds_raw = xr.open_zarr(graphcast_zarr_path, decode_timedelta=False)
 
-    time_target = pd.Timestamp(f"{dt.strftime('%Y-%m-%d')}T00:00:00")
-    times_raw = pd.to_datetime(ds_raw.time.values)
-    if time_target in times_raw:
-      t_slice = ds_raw.sel(time=time_target)
-    elif dt in times_raw:
-      t_slice = ds_raw.sel(time=dt)
-    else:
-      return res_dict
-
-    for lt_day in range(1, 11):
-      lt_pos = lt_day - 1
-      step_start = (lt_day - 1) * 4
-      step_end = lt_day * 4
-      if step_end > len(ds_raw.prediction_timedelta):
-        continue
-      p_steps = slice(step_start, step_end)
-
-      if "2m_temperature" in ds_raw:
-        raw_grid = (
-            t_slice["2m_temperature"]
-            .isel(prediction_timedelta=p_steps)
-            .mean(dim="prediction_timedelta", skipna=False)
-            .values
-            - 273.15
-        )
-        if lat_flip:
-          raw_grid = raw_grid[::-1, :]
-        sorted_grid = raw_grid[:, sort_lon_idx]
-        for b_idx, b_id in enumerate(basin_ids):
-          if b_id in weights_dict:
-            lat_i, lon_i, w = weights_dict[b_id]
-            res_dict["graphcast_temperature_2m"][b_idx, lt_pos] = (
-                _weighted_mean_valid(sorted_grid[lat_i, lon_i], w)
-            )
-
-      if "10m_u_component_of_wind" in ds_raw:
-        raw_grid = (
-            t_slice["10m_u_component_of_wind"]
-            .isel(prediction_timedelta=p_steps)
-            .mean(dim="prediction_timedelta", skipna=False)
-            .values
-        )
-        if lat_flip:
-          raw_grid = raw_grid[::-1, :]
-        sorted_grid = raw_grid[:, sort_lon_idx]
-        for b_idx, b_id in enumerate(basin_ids):
-          if b_id in weights_dict:
-            lat_i, lon_i, w = weights_dict[b_id]
-            res_dict["graphcast_u_component_of_wind_10m"][b_idx, lt_pos] = (
-                _weighted_mean_valid(sorted_grid[lat_i, lon_i], w)
-            )
-
-      if "10m_v_component_of_wind" in ds_raw:
-        raw_grid = (
-            t_slice["10m_v_component_of_wind"]
-            .isel(prediction_timedelta=p_steps)
-            .mean(dim="prediction_timedelta", skipna=False)
-            .values
-        )
-        if lat_flip:
-          raw_grid = raw_grid[::-1, :]
-        sorted_grid = raw_grid[:, sort_lon_idx]
-        for b_idx, b_id in enumerate(basin_ids):
-          if b_id in weights_dict:
-            lat_i, lon_i, w = weights_dict[b_id]
-            res_dict["graphcast_v_component_of_wind_10m"][b_idx, lt_pos] = (
-                _weighted_mean_valid(sorted_grid[lat_i, lon_i], w)
-            )
-
-      if "total_precipitation_6hr" in ds_raw:
-        raw_grid = (
-            t_slice["total_precipitation_6hr"]
-            .isel(prediction_timedelta=p_steps)
-            .sum(dim="prediction_timedelta", skipna=False)
-            .values
-            * 1000.0
-        )
-        if lat_flip:
-          raw_grid = raw_grid[::-1, :]
-        sorted_grid = raw_grid[:, sort_lon_idx]
-        for b_idx, b_id in enumerate(basin_ids):
-          if b_id in weights_dict:
-            lat_i, lon_i, w = weights_dict[b_id]
-            res_dict["graphcast_total_precipitation"][b_idx, lt_pos] = (
-                _weighted_mean_valid(sorted_grid[lat_i, lon_i], w)
-            )
-  except Exception:
+  time_target = pd.Timestamp(f"{dt.strftime('%Y-%m-%d')}T00:00:00")
+  times_raw = pd.to_datetime(ds_raw.time.values)
+  if time_target in times_raw:
+    t_slice = ds_raw.sel(time=time_target)
+  elif dt in times_raw:
+    t_slice = ds_raw.sel(time=dt)
+  else:
     return res_dict
+
+  for lt_day in range(1, 11):
+    lt_pos = lt_day - 1
+    step_start = (lt_day - 1) * 4
+    step_end = lt_day * 4
+    if step_end > len(ds_raw.prediction_timedelta):
+      continue
+    p_steps = slice(step_start, step_end)
+
+    if "2m_temperature" in ds_raw:
+      raw_grid = (
+          t_slice["2m_temperature"]
+          .isel(prediction_timedelta=p_steps)
+          .mean(dim="prediction_timedelta", skipna=False)
+          .values
+          - 273.15
+      )
+      if lat_flip:
+        raw_grid = raw_grid[::-1, :]
+      sorted_grid = raw_grid[:, sort_lon_idx]
+      for b_idx, b_id in enumerate(basin_ids):
+        if b_id in weights_dict:
+          lat_i, lon_i, w = weights_dict[b_id]
+          res_dict["graphcast_temperature_2m"][b_idx, lt_pos] = (
+              _weighted_mean_valid(sorted_grid[lat_i, lon_i], w)
+          )
+
+    if "10m_u_component_of_wind" in ds_raw:
+      raw_grid = (
+          t_slice["10m_u_component_of_wind"]
+          .isel(prediction_timedelta=p_steps)
+          .mean(dim="prediction_timedelta", skipna=False)
+          .values
+      )
+      if lat_flip:
+        raw_grid = raw_grid[::-1, :]
+      sorted_grid = raw_grid[:, sort_lon_idx]
+      for b_idx, b_id in enumerate(basin_ids):
+        if b_id in weights_dict:
+          lat_i, lon_i, w = weights_dict[b_id]
+          res_dict["graphcast_u_component_of_wind_10m"][b_idx, lt_pos] = (
+              _weighted_mean_valid(sorted_grid[lat_i, lon_i], w)
+          )
+
+    if "10m_v_component_of_wind" in ds_raw:
+      raw_grid = (
+          t_slice["10m_v_component_of_wind"]
+          .isel(prediction_timedelta=p_steps)
+          .mean(dim="prediction_timedelta", skipna=False)
+          .values
+      )
+      if lat_flip:
+        raw_grid = raw_grid[::-1, :]
+      sorted_grid = raw_grid[:, sort_lon_idx]
+      for b_idx, b_id in enumerate(basin_ids):
+        if b_id in weights_dict:
+          lat_i, lon_i, w = weights_dict[b_id]
+          res_dict["graphcast_v_component_of_wind_10m"][b_idx, lt_pos] = (
+              _weighted_mean_valid(sorted_grid[lat_i, lon_i], w)
+          )
+
+    if "total_precipitation_6hr" in ds_raw:
+      raw_grid = (
+          t_slice["total_precipitation_6hr"]
+          .isel(prediction_timedelta=p_steps)
+          .sum(dim="prediction_timedelta", skipna=False)
+          .values
+          * 1000.0
+      )
+      if lat_flip:
+        raw_grid = raw_grid[::-1, :]
+      sorted_grid = raw_grid[:, sort_lon_idx]
+      for b_idx, b_id in enumerate(basin_ids):
+        if b_id in weights_dict:
+          lat_i, lon_i, w = weights_dict[b_id]
+          res_dict["graphcast_total_precipitation"][b_idx, lt_pos] = (
+              _weighted_mean_valid(sorted_grid[lat_i, lon_i], w)
+          )
 
   return res_dict
 
@@ -371,10 +353,7 @@ class GraphCastExtractor(BaseExtractor):
           "10m_u_component_of_wind",
           "10m_v_component_of_wind",
       ]
-      try:
-        day_sub = sub.sel(time=time_target)[target_vars].compute()
-      except Exception:
-        return res_dict
+      day_sub = sub.sel(time=time_target)[target_vars].compute()
 
       t2m_grid = day_sub["2m_temperature"].values - 273.15
       tp_grid = day_sub["total_precipitation_6hr"].values * 1000.0
@@ -472,10 +451,7 @@ class GraphCastExtractor(BaseExtractor):
         data_dict[band][:, d_pos, :] = day_res[band]
 
     for store_ds in self._opened_stores.values():
-      try:
-        store_ds.close()
-      except Exception:
-        pass
+      store_ds.close()
     self._opened_stores.clear()
     self._opened_subsets.clear()
 
@@ -533,16 +509,12 @@ class GraphCastExtractor(BaseExtractor):
     }
 
     # Setup coordinate indices
-    try:
-      ds_raw = xr.open_zarr(self.data_dir, decode_timedelta=False)
-      raw_lons = ds_raw.lon.values
-      converted_lons = np.where(raw_lons > 180.0, raw_lons - 360.0, raw_lons)
-      sort_lon_idx = np.argsort(converted_lons)
-      raw_lats = ds_raw.lat.values
-      lat_flip = bool(raw_lats[0] < raw_lats[-1])
-    except Exception:
-      sort_lon_idx = np.arange(1440)
-      lat_flip = False
+    ds_raw = xr.open_zarr(self.data_dir, decode_timedelta=False)
+    raw_lons = ds_raw.lon.values
+    converted_lons = np.where(raw_lons > 180.0, raw_lons - 360.0, raw_lons)
+    sort_lon_idx = np.argsort(converted_lons)
+    raw_lats = ds_raw.lat.values
+    lat_flip = bool(raw_lats[0] < raw_lats[-1])
 
     for d_pos, dt in enumerate(
         tqdm.tqdm(
