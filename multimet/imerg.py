@@ -34,9 +34,9 @@ import requests
 import tqdm
 import xarray as xr
 
-from googlehydrology.multimet.base import BaseExtractor
-from googlehydrology.multimet.config import DEFAULT_STORAGE_PATHS, Product
-from googlehydrology.multimet.zonal import ZonalWeightCalculator, ZonalWeightMatrix
+from multimet.base import BaseExtractor
+from multimet.config import DEFAULT_STORAGE_PATHS, Product
+from multimet.zonal import ZonalWeightCalculator, ZonalWeightMatrix
 
 
 def get_earthdata_credentials_from_netrc(

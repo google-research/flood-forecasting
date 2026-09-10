@@ -19,7 +19,7 @@ import pytest
 import geopandas as gpd
 from shapely.geometry import Polygon
 
-from googlehydrology.multimet.geometry import (
+from multimet.geometry import (
     get_bounding_box,
     load_basin_geometries,
 )

@@ -32,16 +32,16 @@ import geopandas as gpd
 import pandas as pd
 import xarray as xr
 
-from googlehydrology.multimet.base import BaseExtractor
-from googlehydrology.multimet.config import Product
-from googlehydrology.multimet.cpc import CPCExtractor
-from googlehydrology.multimet.era5_land import ERA5LandExtractor
-from googlehydrology.multimet.geometry import load_basin_geometries
-from googlehydrology.multimet.graphcast import GraphCastExtractor
-from googlehydrology.multimet.hres import HRESExtractor
-from googlehydrology.multimet.imerg import IMERGExtractor
-from googlehydrology.multimet.zarr_writer import MultiMetZarrWriter
-from googlehydrology.multimet.zonal import ZonalWeightMatrix
+from multimet.base import BaseExtractor
+from multimet.config import Product
+from multimet.cpc import CPCExtractor
+from multimet.era5_land import ERA5LandExtractor
+from multimet.geometry import load_basin_geometries
+from multimet.graphcast import GraphCastExtractor
+from multimet.hres import HRESExtractor
+from multimet.imerg import IMERGExtractor
+from multimet.zarr_writer import MultiMetZarrWriter
+from multimet.zonal import ZonalWeightMatrix
 
 logger = logging.getLogger(__name__)
 

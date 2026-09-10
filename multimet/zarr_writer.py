@@ -25,7 +25,7 @@ import pandas as pd
 import xarray as xr
 import zarr
 
-from googlehydrology.multimet.config import (
+from multimet.config import (
     DEFAULT_CHUNKS_FORECAST,
     DEFAULT_CHUNKS_NOWCAST,
     FORECAST_LEAD_DAYS,

@@ -95,7 +95,7 @@ OpenHydroNet supports the Caravan MultiMet forcing dataset, which enriches hydro
 * **Reference Paper:** Kratzert, Frederik, Martin Gauch, Grey Nearing, et al. *"Caravan MultiMet: Extending Caravan with Multiple Weather Nowcasts and Forecasts."* [arXiv:2411.09459](https://arxiv.org/abs/2411.09459) (2024).
 * **Pre-extracted Benchmark Data:** Pre-computed forcing time series for standard Caravan basins are hosted on Google Cloud Storage (`gs://caravan-multimet/v1.1`) and Zenodo ([Part 1](https://zenodo.org/records/14161235), [Part 2](https://zenodo.org/records/14161281)).
 
-#### **New: MultiMet Forcing Extractor (`googlehydrology.multimet`)**
+#### **New: MultiMet Forcing Extractor (`multimet`)**
 
 This repository now includes the open-source **MultiMet Extractor**, allowing researchers to extract and harmonize meteorological forcings directly from raw gridded weather products into Caravan-compliant Zarr stores.
 

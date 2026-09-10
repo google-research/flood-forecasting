@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # MultiMet Canary Runner (macOS)
-# Quick local execution of forcing extraction on macOS (Apple Silicon / Intel).
+# Quick local execution of forcing extraction on macOS.
 # ==============================================================================
 
 set -e
@@ -11,8 +11,19 @@ set -e
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFAULT_BASINS="${SCRIPT_DIR}/test/test_data/shapefiles/us/us_basin_shapes.geojson"
-DEFAULT_OUT="${TMPDIR:-/tmp}/multimet_canary"
+
+# Resolve basins file from candidates
+if [ -f "${SCRIPT_DIR}/wabash_test_data/shapefiles/us/us_basin_shapes.geojson" ]; then
+  DEFAULT_BASINS="${SCRIPT_DIR}/wabash_test_data/shapefiles/us/us_basin_shapes.geojson"
+elif [ -f "${SCRIPT_DIR}/../../test/test_data/shapefiles/us/us_basin_shapes.geojson" ]; then
+  DEFAULT_BASINS="${SCRIPT_DIR}/../../test/test_data/shapefiles/us/us_basin_shapes.geojson"
+elif [ -f "${HOME}/multimet/canary/wabash_test_data/shapefiles/us/us_basin_shapes.geojson" ]; then
+  DEFAULT_BASINS="${HOME}/multimet/canary/wabash_test_data/shapefiles/us/us_basin_shapes.geojson"
+else
+  DEFAULT_BASINS="${SCRIPT_DIR}/wabash_test_data/shapefiles/us/us_basin_shapes.geojson"
+fi
+
+DEFAULT_OUT="${SCRIPT_DIR}/output"
 DEFAULT_PRODUCTS="CPC"
 DEFAULT_START="2020-01-01"
 DEFAULT_END="2020-01-02"
@@ -20,6 +31,13 @@ DEFAULT_END="2020-01-02"
 echo "======================================================================"
 echo "🦅 MultiMet Local Canary Launcher (macOS)"
 echo "======================================================================"
+
+REPO_DIR="$(cd "${SCRIPT_DIR}/../.." 2>/dev/null && pwd || echo "")"
+if [ -d "${REPO_DIR}/multimet" ]; then
+  export PYTHONPATH="${REPO_DIR}:${PYTHONPATH}"
+elif [ -d "${HOME}/Projects/flood-forecasting-multimet/multimet" ]; then
+  export PYTHONPATH="${HOME}/Projects/flood-forecasting-multimet:${PYTHONPATH}"
+fi
 
 # Locate Python
 if command -v python3 >/dev/null 2>&1; then
@@ -31,9 +49,6 @@ else
   echo "Please activate your conda or virtual environment." >&2
   exit 1
 fi
-
-# Ensure the repository root is in PYTHONPATH
-export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}"
 
 if [ "$#" -eq 0 ]; then
   echo "No arguments provided. Running default canary test case:"

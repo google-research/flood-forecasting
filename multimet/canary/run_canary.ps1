@@ -3,8 +3,6 @@
     MultiMet Canary Extraction Runner for Windows PowerShell.
 .DESCRIPTION
     Runs local meteorological forcing extractions on Windows using PowerShell.
-.EXAMPLE
-    .\run_canary.ps1 --products CPC --start_date 2020-01-01 --end_date 2020-01-02
 #>
 
 [CmdletBinding()]
@@ -16,8 +14,14 @@ param(
 $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$DefaultBasins = Join-Path $ScriptDir "test\test_data\shapefiles\us\us_basin_shapes.geojson"
-$DefaultOut = if ($env:TEMP) { Join-Path $env:TEMP "multimet_canary" } else { Join-Path $env:LOCALAPPDATA "Temp\multimet_canary" }
+
+$DefaultBasins = if (Test-Path (Join-Path $ScriptDir "wabash_test_data\shapefiles\us\us_basin_shapes.geojson")) {
+    Join-Path $ScriptDir "wabash_test_data\shapefiles\us\us_basin_shapes.geojson"
+} else {
+    Join-Path $ScriptDir "..\..\test\test_data\shapefiles\us\us_basin_shapes.geojson"
+}
+
+$DefaultOut = Join-Path $ScriptDir "output"
 $DefaultProducts = "CPC"
 $DefaultStart = "2020-01-01"
 $DefaultEnd = "2020-01-02"
@@ -26,11 +30,11 @@ Write-Host "====================================================================
 Write-Host "MultiMet Local Canary Launcher (PowerShell)" -ForegroundColor Cyan
 Write-Host "======================================================================" -ForegroundColor Cyan
 
-# Set PYTHONPATH
-if ($env:PYTHONPATH) {
-    $env:PYTHONPATH = "$ScriptDir;$env:PYTHONPATH"
+$RepoDir = Join-Path $ScriptDir "..\.."
+if (Test-Path (Join-Path $RepoDir "multimet")) {
+    $env:PYTHONPATH = "$RepoDir;$ScriptDir;$env:PYTHONPATH"
 } else {
-    $env:PYTHONPATH = "$ScriptDir"
+    $env:PYTHONPATH = "$ScriptDir;$env:PYTHONPATH"
 }
 
 # Locate Python

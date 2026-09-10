@@ -11,7 +11,6 @@ Subpackages
    googlehydrology.datautils
    googlehydrology.evaluation
    googlehydrology.modelzoo
-   googlehydrology.multimet
    googlehydrology.training
    googlehydrology.utils
 

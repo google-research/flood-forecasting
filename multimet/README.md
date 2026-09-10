@@ -1,6 +1,6 @@
 # MultiMet Meteorological Forcing Extractor
 
-The `googlehydrology.multimet` module provides a high-performance, open-source meteorological data extraction and harmonization pipeline for hydrological modeling and flood forecasting.
+The `multimet` module provides a high-performance, open-source meteorological data extraction and harmonization pipeline for hydrological modeling and flood forecasting.
 
 It extracts catchment-averaged forcing time series from gridded meteorological products (reanalyses, satellite observations, NWP models, and machine learning weather models) and standardizes them to the **Caravan benchmark specification** ([Kratzert et al., 2023](https://nature.com/articles/s41597-023-01960-w); [Kratzert et al., 2024, arXiv:2411.09459](https://arxiv.org/abs/2411.09459)).
 
@@ -48,7 +48,7 @@ In this initial release, the extractor supports local serial extraction for **5 
 ### Python API
 
 ```python
-from googlehydrology.multimet import extract_multimet_serial
+from multimet import extract_multimet_serial
 
 # Run serial extraction for all 5 products
 output_stores = extract_multimet_serial(
@@ -67,7 +67,7 @@ for product, store_path in output_stores.items():
 ### Command-Line Interface (CLI)
 
 ```bash
-python -m googlehydrology.multimet.runner \
+python -m multimet.runner \
   --basins_path test/test_data/shapefiles/us/us_basin_shapes.geojson \
   --output_dir /tmp/multimet_extracted \
   --products CPC,ERA5_LAND,IMERG,HRES,GRAPHCAST \

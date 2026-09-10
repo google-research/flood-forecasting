@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,11 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Canary test script for running local MultiMet forcing extractions.
+"""MultiMet Canary Test Runner.
 
-Allows developers and researchers to quickly test forcing extraction for
-arbitrary date ranges, basin GeoJSON files, and target products locally on
-Cloudtop.
+Allows running local MultiMet forcing extractions over arbitrary catchment
+geometries and date ranges.
 """
 
 from __future__ import annotations
@@ -28,45 +28,58 @@ import tempfile
 import time
 from typing import Optional, Sequence
 
+# Ensure flood-forecasting-multimet repository root is in sys.path
+_CANDIDATE_ROOTS = [
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "../../Projects/flood-forecasting-multimet")),
+    os.path.expanduser("~/Projects/flood-forecasting-multimet"),
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "../flood-forecasting-multimet")),
+]
+for _root in _CANDIDATE_ROOTS:
+  if os.path.exists(os.path.join(_root, "multimet")):
+    if _root not in sys.path:
+      sys.path.insert(0, _root)
+    break
+
 import pandas as pd
 import xarray as xr
 
-from googlehydrology.multimet.config import Product
-from googlehydrology.multimet.cpc import CPCExtractor
-from googlehydrology.multimet.era5_land import ERA5LandExtractor
-from googlehydrology.multimet.geometry import load_basin_geometries
-from googlehydrology.multimet.graphcast import GraphCastExtractor
-from googlehydrology.multimet.hres import HRESExtractor
-from googlehydrology.multimet.imerg import IMERGExtractor
-from googlehydrology.multimet.zarr_writer import MultiMetZarrWriter
-from googlehydrology.multimet.zonal import ZonalWeightMatrix
+from multimet.config import Product
+from multimet.cpc import CPCExtractor
+from multimet.era5_land import ERA5LandExtractor
+from multimet.geometry import load_basin_geometries
+from multimet.graphcast import GraphCastExtractor
+from multimet.hres import HRESExtractor
+from multimet.imerg import IMERGExtractor
+from multimet.zarr_writer import MultiMetZarrWriter
+from multimet.zonal import ZonalWeightMatrix
 
 # Optional imports for upcoming PRs
 try:
-  from googlehydrology.multimet.chirps import CHIRPSExtractor
+  from multimet.chirps import CHIRPSExtractor
 except ImportError:
   CHIRPSExtractor = None
 
 try:
-  from googlehydrology.multimet.chirps_gefs import CHIRPSGEFSExtractor
+  from multimet.chirps_gefs import CHIRPSGEFSExtractor
 except ImportError:
   CHIRPSGEFSExtractor = None
 
 try:
-  from googlehydrology.multimet.parallel import extract_in_parallel
+  from multimet.parallel import extract_in_parallel
 except ImportError:
   extract_in_parallel = None
 
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _CANDIDATE_BASIN_PATHS = [
-    os.path.join(_BASE_DIR, "../../test/test_data/shapefiles/us/us_basin_shapes.geojson"),
-    os.path.join(_BASE_DIR, "test/test_data/shapefiles/us/us_basin_shapes.geojson"),
-    os.path.abspath("test/test_data/shapefiles/us/us_basin_shapes.geojson"),
+    os.path.join(_SCRIPT_DIR, "wabash_test_data/shapefiles/us/us_basin_shapes.geojson"),
+    os.path.expanduser("~/multimet/canary/wabash_test_data/shapefiles/us/us_basin_shapes.geojson"),
+    os.path.expanduser("~/Projects/flood-forecasting-multimet/test/test_data/shapefiles/us/us_basin_shapes.geojson"),
 ]
 DEFAULT_TEST_BASINS = next(
     (p for p in _CANDIDATE_BASIN_PATHS if os.path.exists(p)),
     _CANDIDATE_BASIN_PATHS[0],
 )
+DEFAULT_OUTPUT_DIR = os.path.join(_SCRIPT_DIR, "output")
 
 PRODUCT_MAP = {
     "CPC": (Product.CPC, CPCExtractor),
@@ -95,7 +108,7 @@ def parse_canary_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespac
   parser.add_argument(
       "--output_dir",
       type=str,
-      default=os.path.join(tempfile.gettempdir(), "multimet_canary"),
+      default=DEFAULT_OUTPUT_DIR,
       help="Directory to save extracted Zarr stores.",
   )
   parser.add_argument(

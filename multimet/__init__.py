@@ -19,12 +19,12 @@ from __future__ import annotations
 import importlib
 from typing import Any
 
-from googlehydrology.multimet.config import Product
-from googlehydrology.multimet.config import ProductType
-from googlehydrology.multimet.geometry import get_bounding_box
-from googlehydrology.multimet.geometry import load_basin_geometries
+from multimet.config import Product
+from multimet.config import ProductType
+from multimet.geometry import get_bounding_box
+from multimet.geometry import load_basin_geometries
 
-_PKG = "googlehydrology.multimet"
+_PKG = "multimet"
 
 _LAZY_MODULE_MAPPING = {
     "BaseExtractor": f"{_PKG}.base",

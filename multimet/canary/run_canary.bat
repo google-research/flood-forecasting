@@ -7,12 +7,14 @@ rem ============================================================================
 setlocal enabledelayedexpansion
 
 set "SCRIPT_DIR=%~dp0"
-set "DEFAULT_BASINS=%SCRIPT_DIR%test\test_data\shapefiles\us\us_basin_shapes.geojson"
-if not defined TEMP (
-  set "DEFAULT_OUT=%USERPROFILE%\AppData\Local\Temp\multimet_canary"
+
+if exist "%SCRIPT_DIR%wabash_test_data\shapefiles\us\us_basin_shapes.geojson" (
+  set "DEFAULT_BASINS=%SCRIPT_DIR%wabash_test_data\shapefiles\us\us_basin_shapes.geojson"
 ) else (
-  set "DEFAULT_OUT=%TEMP%\multimet_canary"
+  set "DEFAULT_BASINS=%SCRIPT_DIR%..\..\test\test_data\shapefiles\us\us_basin_shapes.geojson"
 )
+
+set "DEFAULT_OUT=%SCRIPT_DIR%output"
 set "DEFAULT_PRODUCTS=CPC"
 set "DEFAULT_START=2020-01-01"
 set "DEFAULT_END=2020-01-02"
@@ -21,11 +23,11 @@ echo ======================================================================
 echo MultiMet Local Canary Launcher (Windows)
 echo ======================================================================
 
-rem Ensure repo root is in PYTHONPATH
-if defined PYTHONPATH (
-  set "PYTHONPATH=%SCRIPT_DIR%;%PYTHONPATH%"
+set "REPO_DIR=%SCRIPT_DIR%..\.."
+if exist "%REPO_DIR%\multimet" (
+  set "PYTHONPATH=%REPO_DIR%;%SCRIPT_DIR%;%PYTHONPATH%"
 ) else (
-  set "PYTHONPATH=%SCRIPT_DIR%"
+  set "PYTHONPATH=%SCRIPT_DIR%;%PYTHONPATH%"
 )
 
 rem Find Python executable
