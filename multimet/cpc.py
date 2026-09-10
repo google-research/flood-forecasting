@@ -33,10 +33,7 @@ from multimet.base import BaseExtractor
 from multimet.config import DEFAULT_STORAGE_PATHS, Product
 from multimet.zonal import ZonalWeightCalculator, ZonalWeightMatrix
 
-try:
-  import netCDF4
-except ImportError:
-  netCDF4 = None
+import netCDF4
 
 import urllib.request
 
@@ -172,15 +169,12 @@ class CPCExtractor(BaseExtractor):
     """Extracts 1 day of CPC precipitation across all basins."""
     num_basins = len(basin_ids)
     res = np.full(num_basins, np.nan, dtype=np.float32)
-    try:
-      grid_2d = self.parse_cpc_file(cpc_file)
-      for b_idx, b_id in enumerate(basin_ids):
-        if b_id not in weights_dict:
-          continue
-        lat_idx, lon_idx, w = weights_dict[b_id]
-        res[b_idx] = _weighted_mean_valid(grid_2d[lat_idx, lon_idx], w)
-    except Exception:
-      return {"cpc_precipitation": res}
+    grid_2d = self.parse_cpc_file(cpc_file)
+    for b_idx, b_id in enumerate(basin_ids):
+      if b_id not in weights_dict:
+        continue
+      lat_idx, lon_idx, w = weights_dict[b_id]
+      res[b_idx] = _weighted_mean_valid(grid_2d[lat_idx, lon_idx], w)
     return {"cpc_precipitation": res}
 
   def extract_for_basins_psl(

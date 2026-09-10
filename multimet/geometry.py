@@ -99,10 +99,7 @@ def load_basin_geometries(
   def _ensure_valid(geom):
     if geom.is_valid:
       return geom
-    try:
-      return shapely.validation.make_valid(geom)
-    except Exception:
-      return geom.buffer(0)
+    return shapely.validation.make_valid(geom)
 
   gdf["geometry"] = gdf["geometry"].apply(_ensure_valid)
   return gdf
