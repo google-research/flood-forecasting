@@ -40,6 +40,8 @@ _LAZY_MODULE_MAPPING = {
     "extract_multimet_serial": f"{_PKG}.runner",
     "DynamicalDataLoader": f"{_PKG}.dynamical",
     "DynamicalExtractor": f"{_PKG}.dynamical",
+    "DynamicalIMERGExtractor": f"{_PKG}.dynamical",
+    "AIFSExtractor": f"{_PKG}.dynamical",
     "load_dynamical": f"{_PKG}.dynamical",
 }
 
@@ -61,6 +63,8 @@ __all__ = [
     "extract_multimet_serial",
     "DynamicalDataLoader",
     "DynamicalExtractor",
+    "DynamicalIMERGExtractor",
+    "AIFSExtractor",
     "load_dynamical",
 ]
 

@@ -22,15 +22,19 @@ import pytest
 import shapely.geometry as sg
 import xarray as xr
 
+from multimet.config import Product
 from multimet.dynamical import (
+    AIFSExtractor,
     DynamicalDataLoader,
     DynamicalDatasetInfo,
     DynamicalExtractor,
+    DynamicalIMERGExtractor,
     clear_catalog_cache,
     list_catalog_datasets,
     load_dynamical,
 )
 from multimet.geometry import load_basin_geometries
+from multimet.zarr_writer import MultiMetZarrWriter
 
 
 @pytest.fixture(scope="module")
@@ -255,4 +259,64 @@ def test_extract_basin_timeseries_projected(basins_gdf):
   assert list(ts_ds.basin.values) == list(basins_gdf.index)
   assert ts_ds["precipitation_surface"].shape == (len(basins_gdf), 2)
   assert not np.isnan(ts_ds["precipitation_surface"].values).all()
+
+
+def test_dynamical_imerg_extractor(basins_gdf, tmp_path):
+  """Tests DynamicalIMERGExtractor produces schema-compliant daily precipitation."""
+  extractor = DynamicalIMERGExtractor()
+  ds = extractor.extract_for_basins(
+      basins_gdf=basins_gdf,
+      start_date="2020-01-01",
+      end_date="2020-01-01",
+  )
+
+  assert isinstance(ds, xr.Dataset)
+  assert ds.dims == {"basin": len(basins_gdf), "date": 1}
+  assert "imerg_precipitation" in ds.data_vars
+  assert ds["imerg_precipitation"].dtype == np.float32
+  assert not np.isnan(ds["imerg_precipitation"].values).any()
+  assert (ds["imerg_precipitation"].values >= 0.0).all()
+
+  # Test single-day helper
+  day_res = extractor.extract_day(pd.Timestamp("2020-01-01"), basins_gdf)
+  assert "imerg_precipitation" in day_res
+  assert len(day_res["imerg_precipitation"]) == len(basins_gdf)
+
+  # Validate against MultiMetZarrWriter schema
+  writer = MultiMetZarrWriter(tmp_path)
+  writer.validate_dataset_schema(ds, Product.DYNAMICAL_IMERG)
+
+
+def test_aifs_extractor(basins_gdf, tmp_path):
+  """Tests AIFSExtractor produces schema-compliant 10-day daily forecasts."""
+  extractor = AIFSExtractor()
+  ds = extractor.extract_for_basins(
+      basins_gdf=basins_gdf,
+      start_date="2024-05-01",
+      end_date="2024-05-01",
+  )
+
+  assert isinstance(ds, xr.Dataset)
+  assert ds.dims == {"basin": len(basins_gdf), "date": 1, "lead_time": 10}
+  expected_bands = [
+      "aifs_temperature_2m",
+      "aifs_total_precipitation",
+      "aifs_u_component_of_wind_10m",
+      "aifs_v_component_of_wind_10m",
+  ]
+  for band in expected_bands:
+    assert band in ds.data_vars
+    assert ds[band].dtype == np.float32
+    assert not np.isnan(ds[band].values).any()
+
+  # Test single-day helper
+  day_res = extractor.extract_day(pd.Timestamp("2024-05-01"), basins_gdf)
+  for band in expected_bands:
+    assert band in day_res
+    assert day_res[band].shape == (len(basins_gdf), 10)
+
+  # Validate against MultiMetZarrWriter schema
+  writer = MultiMetZarrWriter(tmp_path)
+  writer.validate_dataset_schema(ds, Product.AIFS)
+
 

@@ -50,6 +50,7 @@ from multimet.geometry import load_basin_geometries
 from multimet.graphcast import GraphCastExtractor
 from multimet.hres import HRESExtractor
 from multimet.imerg import IMERGExtractor
+from multimet.dynamical import AIFSExtractor, DynamicalIMERGExtractor
 from multimet.zarr_writer import MultiMetZarrWriter
 from multimet.zonal import ZonalWeightMatrix
 
@@ -73,6 +74,9 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _CANDIDATE_BASIN_PATHS = [
     os.path.join(_SCRIPT_DIR, "wabash_test_data/shapefiles/us/us_basin_shapes.geojson"),
     os.path.expanduser("~/multimet/canary/wabash_test_data/shapefiles/us/us_basin_shapes.geojson"),
+    os.path.abspath(os.path.join(_SCRIPT_DIR, "../test/test_data/shapefiles/us/us_basin_shapes.geojson")),
+    os.path.abspath(os.path.join(_SCRIPT_DIR, "../../multimet/test/test_data/shapefiles/us/us_basin_shapes.geojson")),
+    os.path.expanduser("~/Projects/flood-forecasting-multimet/multimet/test/test_data/shapefiles/us/us_basin_shapes.geojson"),
     os.path.expanduser("~/Projects/flood-forecasting-multimet/test/test_data/shapefiles/us/us_basin_shapes.geojson"),
 ]
 DEFAULT_TEST_BASINS = next(
@@ -87,6 +91,8 @@ PRODUCT_MAP = {
     "ERA5_LAND": (Product.ERA5_LAND, ERA5LandExtractor),
     "HRES": (Product.HRES, HRESExtractor),
     "GRAPHCAST": (Product.GRAPHCAST, GraphCastExtractor),
+    "AIFS": (Product.AIFS, AIFSExtractor),
+    "DYNAMICAL_IMERG": (Product.DYNAMICAL_IMERG, DynamicalIMERGExtractor),
 }
 if CHIRPSExtractor is not None and hasattr(Product, "CHIRPS"):
   PRODUCT_MAP["CHIRPS"] = (Product.CHIRPS, CHIRPSExtractor)
@@ -228,22 +234,39 @@ def run_canary(args: argparse.Namespace) -> None:
     print(f"\n▶ Running extraction for: {prod_name}...")
     t_start = time.time()
 
+    prod_start = args.start_date
+    prod_end = args.end_date
+    if prod_name == "AIFS":
+      if pd.to_datetime(prod_start) < pd.to_datetime("2024-04-01"):
+        print(
+            f"  ℹ️ Note: AIFS operational forecasts begin on 2024-04-01."
+            f" Adjusting canary test dates from {prod_start}..{prod_end} to 2024-05-01..2024-05-02."
+        )
+        prod_start = "2024-05-01"
+        prod_end = "2024-05-02"
+
     try:
       if prod_name == "CPC":
         src = "psl" if args.source in ("public", "auto") else ("binary" if args.source == "local" else args.source)
         extractor_kwargs = {"source": src}
       elif prod_name == "IMERG":
-        src = "gesdisc" if args.source in ("public", "auto") else ("h5" if args.source == "local" else args.source)
-        extractor_kwargs = {
-            "source": src,
-            "username": args.earthdata_username,
-            "password": args.earthdata_password,
-            "token": args.earthdata_token,
-            "netrc_path": args.netrc_path,
-        }
+        if args.source in ("dynamical", "icechunk", "catalog"):
+          extractor_cls = DynamicalIMERGExtractor
+          extractor_kwargs = {"source": args.source}
+        else:
+          src = "gesdisc" if args.source in ("public", "auto") else ("h5" if args.source == "local" else args.source)
+          extractor_kwargs = {
+              "source": src,
+              "username": args.earthdata_username,
+              "password": args.earthdata_password,
+              "token": args.earthdata_token,
+              "netrc_path": args.netrc_path,
+          }
       elif prod_name in ("GRAPHCAST", "HRES", "ERA5_LAND"):
         src = "wb2" if args.source in ("public", "auto") else ("local" if args.source == "local" else args.source)
         extractor_kwargs = {"source": src}
+      elif prod_name in ("AIFS", "DYNAMICAL_IMERG"):
+        extractor_kwargs = {"source": args.source}
       else:
         extractor_kwargs = {}
 
@@ -272,8 +295,8 @@ def run_canary(args: argparse.Namespace) -> None:
         ds = extract_in_parallel(
             extractor_cls,
             gdf,
-            start_date=args.start_date,
-            end_date=args.end_date,
+            start_date=prod_start,
+            end_date=prod_end,
             num_workers=args.num_workers,
             chunk_freq=args.chunk_freq,
             weights_cache=weights_path,
@@ -290,7 +313,7 @@ def run_canary(args: argparse.Namespace) -> None:
           if os.path.exists(weights_path):
             print(f"  Loaded precomputed weights from: {weights_path}")
             weights = ZonalWeightMatrix.load(weights_path)
-          else:
+          elif extractor.lats is not None and extractor.lons is not None:
             print(f"  Precomputing weights matrix -> {weights_path}...")
             weights = ZonalWeightMatrix.from_geodataframe(
                 gdf, extractor.lats, extractor.lons, num_workers=4
@@ -300,8 +323,8 @@ def run_canary(args: argparse.Namespace) -> None:
 
         ds = extractor.extract_for_basins(
             gdf,
-            start_date=args.start_date,
-            end_date=args.end_date,
+            start_date=prod_start,
+            end_date=prod_end,
             weights_matrix=weights,
         )
         # Save to Zarr
@@ -310,8 +333,8 @@ def run_canary(args: argparse.Namespace) -> None:
         )
 
       elapsed = time.time() - t_start
-      start_dt = pd.to_datetime(args.start_date)
-      end_dt = pd.to_datetime(args.end_date)
+      start_dt = pd.to_datetime(prod_start)
+      end_dt = pd.to_datetime(prod_end)
       total_days = max(1, (end_dt - start_dt).days + 1)
       total_basin_days = len(basin_ids) * total_days
       throughput = total_basin_days / elapsed if elapsed > 0 else 0.0

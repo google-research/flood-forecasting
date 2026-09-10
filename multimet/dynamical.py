@@ -47,7 +47,13 @@ except ImportError:
   icechunk = None
 
 from multimet.base import BaseExtractor
-from multimet.config import Product, ProductType
+from multimet.config import (
+    FORECAST_LEAD_DAYS,
+    PRODUCT_BANDS,
+    PRODUCT_METADATA_ATTRS,
+    Product,
+    ProductType,
+)
 from multimet.geometry import get_bounding_box, load_basin_geometries
 from multimet.zonal import ZonalWeightCalculator, ZonalWeightMatrix
 
@@ -412,7 +418,12 @@ class DynamicalDataLoader:
     time_kwargs: Dict[str, Any] = {}
     if start_date is not None or end_date is not None:
       start_ts = pd.to_datetime(start_date) if start_date is not None else None
-      end_ts = pd.to_datetime(end_date) if end_date is not None else None
+      if end_date is not None:
+        end_ts = pd.to_datetime(end_date)
+        if isinstance(end_date, str) and len(end_date) <= 10 and "T" not in end_date:
+          end_ts = end_ts.replace(hour=23, minute=59, second=59)
+      else:
+        end_ts = None
       time_kwargs[self.time_dim] = slice(start_ts, end_ts)
 
     isel_kwargs: Dict[str, Any] = {}
@@ -674,6 +685,309 @@ class DynamicalExtractor(BaseExtractor):
           extracted[band].values = conv_fn(extracted[band].values)
 
     return extracted
+
+
+class DynamicalIMERGExtractor(BaseExtractor):
+  """MultiMet BaseExtractor for NASA IMERG Early via dynamical.org with Icechunk acceleration.
+
+  Extracts half-hourly precipitation flux (kg m-2 s-1), converts to daily accumulated
+  precipitation depth (mm/day), and applies exact zonal weighting over basin geometries.
+  """
+
+  def __init__(
+      self,
+      product: Optional[Product] = None,
+      source: str = "dynamical",
+      dataset_id: str = "nasa-imerg-analysis-early",
+      loader: Optional[DynamicalDataLoader] = None,
+      **kwargs,
+  ):
+    prod = product if product is not None else Product.DYNAMICAL_IMERG
+    super().__init__(prod)
+    self.source = source
+    self.dataset_id = dataset_id
+    self.loader = loader if loader is not None else DynamicalDataLoader(dataset_id)
+    self.lats: Optional[np.ndarray] = None
+    self.lons: Optional[np.ndarray] = None
+    self._init_coords()
+
+  def _init_coords(self) -> None:
+    try:
+      self.lats = self.loader.ds.latitude.values
+      self.lons = self.loader.ds.longitude.values
+    except Exception:
+      pass
+
+  def extract_for_basins(
+      self,
+      basins_gdf: gpd.GeoDataFrame,
+      start_date: Optional[Union[str, pd.Timestamp]] = None,
+      end_date: Optional[Union[str, pd.Timestamp]] = None,
+      weights_matrix: Optional[ZonalWeightMatrix] = None,
+  ) -> xr.Dataset:
+    """Extracts daily accumulated IMERG precipitation for given basins."""
+    basin_ids = list(basins_gdf.index)
+    start_dt = (
+        pd.to_datetime(start_date)
+        if start_date is not None
+        else pd.to_datetime("2000-06-01")
+    )
+    end_dt = pd.to_datetime(end_date) if end_date is not None else start_dt
+    date_idx = pd.date_range(start_dt, end_dt, freq="D")
+
+    # Load geographically clipped half-hourly cube from Icechunk
+    sub_ds = self.loader.load_spatial_subset(
+        watersheds=basins_gdf,
+        variables=["precipitation_surface"],
+        start_date=start_dt.strftime("%Y-%m-%d"),
+        end_date=end_dt.strftime("%Y-%m-%d"),
+        buffer=0.1,
+        compute=True,
+    )
+
+    sub_lats = sub_ds.latitude.values
+    sub_lons = sub_ds.longitude.values
+
+    if (
+        weights_matrix is not None
+        and weights_matrix.grid_shape == (len(sub_lats), len(sub_lons))
+        and np.allclose(weights_matrix.lats, sub_lats)
+        and np.allclose(weights_matrix.lons, sub_lons)
+    ):
+      matrix = weights_matrix
+    else:
+      dlat = (
+          abs(float(sub_lats[1] - sub_lats[0])) if len(sub_lats) > 1 else 0.1
+      )
+      dlon = (
+          abs(float(sub_lons[1] - sub_lons[0])) if len(sub_lons) > 1 else 0.1
+      )
+      matrix = ZonalWeightMatrix.from_geodataframe(
+          basins_gdf, sub_lats, sub_lons, cell_res_lat=dlat, cell_res_lon=dlon
+      )
+
+    # Convert half-hourly flux (kg m-2 s-1) to 30-min depth (mm), then resample to daily sum
+    daily_depth = (
+        (sub_ds["precipitation_surface"] * 1800.0)
+        .resample(time="1D")
+        .sum(dim="time")
+    )
+    reduced = matrix.reduce_3d(daily_depth.values)
+
+    precip_matrix = np.full(
+        (len(basin_ids), len(date_idx)), np.nan, dtype=np.float32
+    )
+    daily_times = pd.to_datetime(daily_depth.time.values)
+    for t_idx, t_val in enumerate(daily_times):
+      dt_day = pd.to_datetime(t_val.strftime("%Y-%m-%d"))
+      if dt_day in date_idx:
+        d_pos = date_idx.get_loc(dt_day)
+        precip_matrix[:, d_pos] = reduced[:, t_idx]
+
+    ds = xr.Dataset(
+        data_vars={
+            "imerg_precipitation": (
+                ["basin", "date"],
+                precip_matrix.astype(np.float32),
+            ),
+        },
+        coords={
+            "basin": basin_ids,
+            "date": date_idx.values,
+        },
+    )
+    if self.product in PRODUCT_METADATA_ATTRS:
+      ds.attrs.update(PRODUCT_METADATA_ATTRS[self.product])
+    ds.attrs["dynamical_dataset_id"] = self.dataset_id
+    return ds
+
+  def extract_day(
+      self,
+      dt: pd.Timestamp,
+      basins_gdf: gpd.GeoDataFrame,
+      weights_matrix: Optional[ZonalWeightMatrix] = None,
+      **kwargs,
+  ) -> Dict[str, np.ndarray]:
+    """Extracts 1 day of IMERG precipitation across basins."""
+    ds = self.extract_for_basins(
+        basins_gdf, start_date=dt, end_date=dt, weights_matrix=weights_matrix
+    )
+    return {"imerg_precipitation": ds["imerg_precipitation"].values[:, 0]}
+
+
+class AIFSExtractor(BaseExtractor):
+  """MultiMet BaseExtractor for ECMWF AIFS single-forecast via dynamical.org.
+
+  Extracts 10-day medium-range forecasts initialized at 00:00:00 UTC,
+  aggregates 6-hourly lead steps (steps 1..40) into 10 daily lead steps,
+  and applies exact zonal weighting over basin geometries.
+  """
+
+  def __init__(
+      self,
+      source: str = "dynamical",
+      dataset_id: str = "ecmwf-aifs-single-forecast",
+      loader: Optional[DynamicalDataLoader] = None,
+      **kwargs,
+  ):
+    super().__init__(Product.AIFS)
+    self.source = source
+    self.dataset_id = dataset_id
+    self.loader = (
+        loader if loader is not None else DynamicalDataLoader(dataset_id)
+    )
+    self.lats: Optional[np.ndarray] = None
+    self.lons: Optional[np.ndarray] = None
+    self._init_coords()
+
+  def _init_coords(self) -> None:
+    try:
+      self.lats = self.loader.ds.latitude.values
+      self.lons = self.loader.ds.longitude.values
+    except Exception:
+      pass
+
+  def extract_for_basins(
+      self,
+      basins_gdf: gpd.GeoDataFrame,
+      start_date: Optional[Union[str, pd.Timestamp]] = None,
+      end_date: Optional[Union[str, pd.Timestamp]] = None,
+      weights_matrix: Optional[ZonalWeightMatrix] = None,
+  ) -> xr.Dataset:
+    """Extracts 10-day daily AIFS forecasts for given basins."""
+    basin_ids = list(basins_gdf.index)
+    start_dt = (
+        pd.to_datetime(start_date)
+        if start_date is not None
+        else pd.to_datetime("2024-05-01")
+    )
+    end_dt = pd.to_datetime(end_date) if end_date is not None else start_dt
+    date_idx = pd.date_range(start_dt, end_dt, freq="D")
+    lead_steps = FORECAST_LEAD_DAYS[Product.AIFS]  # 10 days
+    lead_time_idx = pd.to_timedelta(range(1, lead_steps + 1), unit="D")
+
+    shape = (len(basin_ids), len(date_idx), lead_steps)
+    data_dict = {
+        "aifs_temperature_2m": np.full(shape, np.nan, dtype=np.float32),
+        "aifs_total_precipitation": np.full(shape, np.nan, dtype=np.float32),
+        "aifs_u_component_of_wind_10m": np.full(
+            shape, np.nan, dtype=np.float32
+        ),
+        "aifs_v_component_of_wind_10m": np.full(
+            shape, np.nan, dtype=np.float32
+        ),
+    }
+
+    # Load geographically clipped forecast cube from Icechunk: 41 steps (0..40 = 0..240h)
+    sub_ds = self.loader.load_spatial_subset(
+        watersheds=basins_gdf,
+        variables=[
+            "temperature_2m",
+            "precipitation_surface",
+            "wind_u_10m",
+            "wind_v_10m",
+        ],
+        start_date=start_dt.strftime("%Y-%m-%d"),
+        end_date=end_dt.strftime("%Y-%m-%d"),
+        lead_time_slice=slice(0, 41),
+        buffer=0.1,
+        compute=True,
+    )
+
+    if "init_time" in sub_ds.dims and len(sub_ds.init_time) > 0:
+      init_times = pd.to_datetime(sub_ds.init_time.values)
+      is_00z = init_times.hour == 0
+      sub_ds = sub_ds.isel(init_time=is_00z)
+
+    if len(sub_ds.init_time) > 0 and len(sub_ds.lead_time) >= 41:
+      sub_lats = sub_ds.latitude.values
+      sub_lons = sub_ds.longitude.values
+
+      if (
+          weights_matrix is not None
+          and weights_matrix.grid_shape == (len(sub_lats), len(sub_lons))
+          and np.allclose(weights_matrix.lats, sub_lats)
+          and np.allclose(weights_matrix.lons, sub_lons)
+      ):
+        matrix = weights_matrix
+      else:
+        dlat = (
+            abs(float(sub_lats[1] - sub_lats[0]))
+            if len(sub_lats) > 1
+            else 0.25
+        )
+        dlon = (
+            abs(float(sub_lons[1] - sub_lons[0]))
+            if len(sub_lons) > 1
+            else 0.25
+        )
+        matrix = ZonalWeightMatrix.from_geodataframe(
+            basins_gdf,
+            sub_lats,
+            sub_lons,
+            cell_res_lat=dlat,
+            cell_res_lon=dlon,
+        )
+
+      # 4D Zonal Reduction: (T, 41, H, W) -> (N_basins, T, 41)
+      red_t2m = matrix.reduce_4d(sub_ds["temperature_2m"].values)
+      red_pr = matrix.reduce_4d(sub_ds["precipitation_surface"].values)
+      red_u = matrix.reduce_4d(sub_ds["wind_u_10m"].values)
+      red_v = matrix.reduce_4d(sub_ds["wind_v_10m"].values)
+
+      sub_init_times = pd.to_datetime(sub_ds.init_time.values)
+      for t_idx, t_val in enumerate(sub_init_times):
+        dt_day = pd.to_datetime(t_val.strftime("%Y-%m-%d"))
+        if dt_day in date_idx:
+          d_pos = date_idx.get_loc(dt_day)
+          for lt_day in range(1, lead_steps + 1):
+            lt_pos = lt_day - 1
+            s_slice = slice((lt_day - 1) * 4 + 1, lt_day * 4 + 1)
+            data_dict["aifs_temperature_2m"][:, d_pos, lt_pos] = np.nanmean(
+                red_t2m[:, t_idx, s_slice], axis=-1
+            )
+            data_dict["aifs_total_precipitation"][:, d_pos, lt_pos] = (
+                np.nanmean(red_pr[:, t_idx, s_slice], axis=-1) * 86400.0
+            )
+            data_dict["aifs_u_component_of_wind_10m"][:, d_pos, lt_pos] = (
+                np.nanmean(red_u[:, t_idx, s_slice], axis=-1)
+            )
+            data_dict["aifs_v_component_of_wind_10m"][:, d_pos, lt_pos] = (
+                np.nanmean(red_v[:, t_idx, s_slice], axis=-1)
+            )
+
+    data_vars = {
+        band: (
+            ["basin", "date", "lead_time"],
+            data_dict[band].astype(np.float32),
+        )
+        for band in PRODUCT_BANDS[Product.AIFS]
+    }
+    ds = xr.Dataset(
+        data_vars=data_vars,
+        coords={
+            "basin": basin_ids,
+            "date": date_idx.values,
+            "lead_time": lead_time_idx.values,
+        },
+    )
+    if Product.AIFS in PRODUCT_METADATA_ATTRS:
+      ds.attrs.update(PRODUCT_METADATA_ATTRS[Product.AIFS])
+    ds.attrs["dynamical_dataset_id"] = self.dataset_id
+    return ds
+
+  def extract_day(
+      self,
+      dt: pd.Timestamp,
+      basins_gdf: gpd.GeoDataFrame,
+      weights_matrix: Optional[ZonalWeightMatrix] = None,
+      **kwargs,
+  ) -> Dict[str, np.ndarray]:
+    """Extracts 1 forecast initialization date across 10 lead days for AIFS."""
+    ds = self.extract_for_basins(
+        basins_gdf, start_date=dt, end_date=dt, weights_matrix=weights_matrix
+    )
+    return {band: ds[band].values[:, 0, :] for band in ds.data_vars}
 
 
 def load_dynamical(

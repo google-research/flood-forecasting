@@ -15,6 +15,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Resolve basins file from candidates
 if [ -f "${SCRIPT_DIR}/wabash_test_data/shapefiles/us/us_basin_shapes.geojson" ]; then
   DEFAULT_BASINS="${SCRIPT_DIR}/wabash_test_data/shapefiles/us/us_basin_shapes.geojson"
+elif [ -f "${SCRIPT_DIR}/../test/test_data/shapefiles/us/us_basin_shapes.geojson" ]; then
+  DEFAULT_BASINS="${SCRIPT_DIR}/../test/test_data/shapefiles/us/us_basin_shapes.geojson"
 elif [ -f "${SCRIPT_DIR}/../../test/test_data/shapefiles/us/us_basin_shapes.geojson" ]; then
   DEFAULT_BASINS="${SCRIPT_DIR}/../../test/test_data/shapefiles/us/us_basin_shapes.geojson"
 elif [ -f "${HOME}/multimet/canary/wabash_test_data/shapefiles/us/us_basin_shapes.geojson" ]; then

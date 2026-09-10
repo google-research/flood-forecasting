@@ -33,6 +33,8 @@ class Product(enum.Enum):
   CHIRPS_GEFS = "CHIRPS_GEFS"
   HRES = "HRES"
   GRAPHCAST = "GRAPHCAST"
+  AIFS = "AIFS"
+  DYNAMICAL_IMERG = "DYNAMICAL_IMERG"
 
 
 PRODUCT_TYPES: Mapping[Product, ProductType] = {
@@ -43,12 +45,15 @@ PRODUCT_TYPES: Mapping[Product, ProductType] = {
     Product.CHIRPS_GEFS: ProductType.FORECAST,
     Product.HRES: ProductType.FORECAST,
     Product.GRAPHCAST: ProductType.FORECAST,
+    Product.AIFS: ProductType.FORECAST,
+    Product.DYNAMICAL_IMERG: ProductType.NOWCAST,
 }
 
 FORECAST_LEAD_DAYS: Mapping[Product, int] = {
     Product.CHIRPS_GEFS: 16,
     Product.HRES: 10,
     Product.GRAPHCAST: 10,
+    Product.AIFS: 10,
 }
 
 # Target bands / data variable names per product in Caravan-MultiMet.
@@ -88,6 +93,13 @@ PRODUCT_BANDS: Mapping[Product, Tuple[str, ...]] = {
         "graphcast_u_component_of_wind_10m",
         "graphcast_v_component_of_wind_10m",
     ),
+    Product.AIFS: (
+        "aifs_temperature_2m",
+        "aifs_total_precipitation",
+        "aifs_u_component_of_wind_10m",
+        "aifs_v_component_of_wind_10m",
+    ),
+    Product.DYNAMICAL_IMERG: ("imerg_precipitation",),
 }
 
 # Canonical dataset global attributes matching Caravan MultiMet v1.1
@@ -243,6 +255,41 @@ PRODUCT_METADATA_ATTRS: Mapping[Product, Mapping[str, str]] = {
         ),
         "Version": "1.1",
     },
+    Product.AIFS: {
+        "Citation": (
+            "Lang, S., et al. (2024), AIFS - ECMWF's machine-learning data"
+            " assimilation and forecasting system. arXiv:2406.01465."
+        ),
+        "License": "CC-BY-4.0",
+        "Product": "ECMWF-AIFS",
+        "Released": "2024-04-01",
+        "Sources": (
+            "AIFS single-forecast dataset provided by ECMWF via dynamical.org."
+            " https://dynamical.org/catalog/ecmwf-aifs-single-forecast"
+        ),
+        "Units": (
+            "temperature_2m: 2m air temperature [°C]\n"
+            "total_precipitation: Total precipitation [mm]\n"
+            "u_component_of_wind_10m: U-component of wind at 10m [m/s]\n"
+            "v_component_of_wind_10m: V-component of wind at 10m [m/s]"
+        ),
+        "Version": "1.0",
+    },
+    Product.DYNAMICAL_IMERG: {
+        "Citation": (
+            "Huffman, G.J., et al. (2024), GPM IMERG Early Precipitation L3"
+            " Half Hourly 0.1 degree x 0.1 degree V07 via dynamical.org."
+        ),
+        "License": "https://gpm.nasa.gov/data/policy",
+        "Product": "IMERG v07 Early (dynamical.org)",
+        "Released": "2024-11-18",
+        "Sources": (
+            "IMERG-Early v07 from NASA GPM, accessed via dynamical.org Icechunk"
+            " catalog. https://dynamical.org/catalog/nasa-imerg-analysis-early"
+        ),
+        "Units": "precipitation [mm]",
+        "Version": "1.1",
+    },
 }
 
 # Storage path templates / defaults (aligned with flood-forecasting team).
@@ -293,6 +340,12 @@ DEFAULT_STORAGE_PATHS: Mapping[Product, Mapping[str, str]] = {
         "wb2_zarr": (
             "gs://weatherbench2/datasets/graphcast/2020/date_range_2019-11-16_2021-02-01_12_hours.zarr"
         ),
+    },
+    Product.AIFS: {
+        "dynamical_id": "ecmwf-aifs-single-forecast",
+    },
+    Product.DYNAMICAL_IMERG: {
+        "dynamical_id": "nasa-imerg-analysis-early",
     },
 }
 
