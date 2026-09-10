@@ -400,8 +400,12 @@ class MaskedCMALLoss(BaseLoss):
         ground_truth: dict[str, torch.Tensor],
         **kwargs,
     ):
-        mask = ~torch.isnan(ground_truth['y']).any(1).any(1)
-        y = ground_truth['y'][mask]
+        y = ground_truth['y'].squeeze(-1)
+        mask = ~torch.isnan(y)
+        if not torch.any(mask):
+            return prediction['mu'].sum() * 0.0
+
+        y = y[mask].unsqueeze(-1)
         m = prediction['mu'][mask]
         b = prediction['b'][mask]
         t = prediction['tau'][mask]
@@ -416,9 +420,8 @@ class MaskedCMALLoss(BaseLoss):
         )
         log_weights = torch.log(p + self.eps)
 
-        result = torch.logsumexp(log_weights + log_like, dim=2)
-        result = -torch.mean(torch.sum(result, dim=1))
-        return result
+        result = torch.logsumexp(log_weights + log_like, dim=-1)
+        return -torch.mean(result)
 
 
 def _get_predict_last_n(cfg: Config) -> dict:
