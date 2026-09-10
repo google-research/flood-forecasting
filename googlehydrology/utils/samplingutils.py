@@ -62,7 +62,9 @@ def sample_pointpredictions(
     if model.cfg.head.lower() == 'cmal':
         samples = sample_cmal(model, data, n_samples, scaler, outputs=outputs)
     elif model.cfg.head.lower() == 'cmal_deterministic':
-        samples = sample_cmal_deterministic(model, data, outputs=outputs)
+        samples = sample_cmal_deterministic(
+            model, data, scaler, outputs=outputs
+        )
     elif model.cfg.head.lower() == 'regression':  # regression head assumes mcd
         assert not outputs, 'regression self creates outputs'
         samples = sample_mcd(model, data, n_samples, scaler)
@@ -330,6 +332,7 @@ def sample_mcd(
 def sample_cmal_deterministic(
     model: 'BaseModel',
     data: dict[str, torch.Tensor],
+    scaler: Scaler,
     *,
     outputs: dict[str, torch.Tensor] | None = None,
 ) -> dict[str, torch.Tensor]:
@@ -344,6 +347,8 @@ def sample_cmal_deterministic(
         A model with a CMAL head.
     data : dict[str, torch.Tensor]
         Dictionary, containing input features as key-value pairs.
+    scaler : Scaler
+        Scaler of the run.
     outputs, optional
         Model forward result
 
@@ -364,6 +369,15 @@ def sample_cmal_deterministic(
     # not point predictions.
     pred = outputs or model(data)
 
+    normalized_zeros = None
+    if (setup.cfg.negative_sample_handling or '').lower() == 'clip':
+        normalized_zeros = _calc_normalized_zero_thresholds(
+            scaler=scaler,
+            targets=setup.cfg.target_variables,
+            device=next(model.parameters()).device,
+            dtype=next(model.parameters()).dtype,
+        )
+
     # Map output frequencies to final sample tensors:
     samples = {}
 
@@ -374,10 +388,15 @@ def sample_cmal_deterministic(
         tau = pred[f'tau{freq_suffix}']  # asymmetries
         pi = pred[f'pi{freq_suffix}']  # weights
 
-        sample_points = [
-            cmal_deterministic.generate_predictions(mu, b, tau, pi)
-        ]
-        samples[f'y_hat{freq_suffix}'] = torch.stack(sample_points, 2)
+        values = cmal_deterministic.generate_predictions(mu, b, tau, pi)
+        if normalized_zeros is not None:
+            values = _handle_negative_values(
+                setup.cfg,
+                values,
+                sample_values=lambda ids: values[ids],
+                normalized_zero=normalized_zeros[0],
+            )
+        samples[f'y_hat{freq_suffix}'] = torch.stack([values], 2)
 
     return samples
 
@@ -569,4 +588,3 @@ def sample_cmal(
         samples[f'y_hat{freq_suffix}'] = torch.stack(sample_points, dim=2)
 
     return samples
-
