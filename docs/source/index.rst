@@ -22,6 +22,7 @@ You might also be interested in our `team's webpage <https://sites.research.goog
 
    usage/quickstart
    usage/models
+   usage/multimet_extractor
    tutorial/tutorial
    usage/config
    api/modules

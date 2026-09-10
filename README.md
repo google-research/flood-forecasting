@@ -88,9 +88,40 @@ A small sample is provided in tutorial/data/Caravan-nc. For full runs:
    tar -xvzf Caravan-nc.tar.gz -C ~/data/
    ```
 
-### **2\. MultiMet Data**
+### **2\. MultiMet Data & Extractor**
 
-The MultiMet forcing data extension is accessed directly from **Google Cloud Storage**. Ensure your configuration points to: gs://caravan-multimet/v1.1
+OpenHydroNet supports the Caravan MultiMet forcing dataset, which enriches hydrological modeling with diverse meteorological nowcasts and weather forecasts.
+
+* **Reference Paper:** Kratzert, Frederik, Martin Gauch, Grey Nearing, et al. *"Caravan MultiMet: Extending Caravan with Multiple Weather Nowcasts and Forecasts."* [arXiv:2411.09459](https://arxiv.org/abs/2411.09459) (2024).
+* **Pre-extracted Benchmark Data:** Pre-computed forcing time series for standard Caravan basins are hosted on Google Cloud Storage (`gs://caravan-multimet/v1.1`) and Zenodo ([Part 1](https://zenodo.org/records/14161235), [Part 2](https://zenodo.org/records/14161281)).
+
+#### **New: MultiMet Forcing Extractor (`googlehydrology.multimet`)**
+
+This repository now includes the open-source **MultiMet Extractor**, allowing researchers to extract and harmonize meteorological forcings directly from raw gridded weather products into Caravan-compliant Zarr stores.
+
+**Supported Products (Local Serial Run):**
+1. **ERA5-Land** (0.1° hourly reanalysis, 15 variables including FAO-56 Penman-Monteith PET)
+2. **NOAA CPC Global Precipitation** (0.5° daily gauge-based analysis)
+3. **NASA GPM IMERG Early V07** (0.1° satellite precipitation nowcast)
+4. **ECMWF IFS HRES** (0.25° 10-day numerical weather prediction forecasts with daily increments)
+5. **DeepMind GraphCast** (0.25° 10-day AI weather forecast accumulations)
+
+**Key Differences from the arXiv Paper:**
+* **Active Extractor Engine vs. Static Benchmark:** The arXiv paper published a static dataset covering fixed Caravan watersheds through 2023. This new extractor is the **underlying reproducible extraction pipeline**, enabling researchers to extract MultiMet-standard forcings for **any custom basin geometries** and **any time interval**.
+* **Zero Proprietary Infrastructure:** The extractor operates entirely on public open-access endpoints (WeatherBench 2 on public GCS, NOAA PSL HTTP, NASA GES DISC, ECMWF Open Data) and standard scientific Python packages (`xarray`, `zarr`, `geopandas`, `scipy`), eliminating reliance on Google-internal compute infrastructure.
+* **Vectorized Sparse BLAS Reduction:** Employs exact fractional polygon intersection matrices (`ZonalWeightMatrix`) with compressed `.npz` caching, reducing spatial averaging for thousands of catchments to millisecond matrix operations.
+* **Seamless Model Ingestion:** Outputs Zarr v2 stores directly compatible with `googlehydrology.datasetzoo.multimet.Multimet` for training and inference with `MeanEmbeddingForecastLSTM` and `HandoffForecastLSTM`.
+
+**Quickstart:**
+```bash
+extract-multimet \
+  --basins_path test/test_data/shapefiles/us/us_basin_shapes.geojson \
+  --output_dir /tmp/multimet_extracted \
+  --products CPC,ERA5_LAND,IMERG,HRES,GRAPHCAST \
+  --start_date 2020-01-01 \
+  --end_date 2020-01-02
+```
+For in-depth documentation, see the [MultiMet Subdirectory README](googlehydrology/multimet/README.md) and [Sphinx Documentation](docs/source/usage/multimet_extractor.rst).
 
 ## **Usage**
 
