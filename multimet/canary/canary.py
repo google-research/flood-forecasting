@@ -44,23 +44,6 @@ for _root in _CANDIDATE_ROOTS:
 import pandas as pd
 import xarray as xr
 
-try:
-  import gcsfs
-
-  def _safe_close_session(loop, session, asynchronous=False):
-    try:
-      if not session.closed:
-        connector = getattr(session, "_connector", None)
-        if connector is not None:
-          connector._close()
-        session._connector = None
-    except Exception:
-      pass
-
-  gcsfs.GCSFileSystem.close_session = staticmethod(_safe_close_session)
-except ImportError:
-  pass
-
 from multimet.config import Product
 from multimet.cpc import CPCExtractor
 from multimet.era5_land import ERA5LandExtractor
@@ -71,21 +54,10 @@ from multimet.imerg import IMERGExtractor
 from multimet.zarr_writer import MultiMetZarrWriter
 from multimet.zonal import ZonalWeightMatrix
 
-# Optional imports for upcoming PRs
-try:
-  from multimet.chirps import CHIRPSExtractor
-except ImportError:
-  CHIRPSExtractor = None
-
-try:
-  from multimet.chirps_gefs import CHIRPSGEFSExtractor
-except ImportError:
-  CHIRPSGEFSExtractor = None
-
-try:
-  from multimet.parallel import extract_in_parallel
-except ImportError:
-  extract_in_parallel = None
+# Placeholders for upcoming modules
+CHIRPSExtractor = None
+CHIRPSGEFSExtractor = None
+extract_in_parallel = None
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _CANDIDATE_BASIN_PATHS = [
@@ -291,140 +263,127 @@ def run_canary(args: argparse.Namespace) -> None:
     print(f"\n▶ Running extraction for: {prod_name}...")
     t_start = time.time()
 
-    try:
-      if prod_name == "CPC":
-        src = "psl" if args.source in ("public", "auto") else ("binary" if args.source == "local" else args.source)
-        extractor_kwargs = {"source": src}
-      elif prod_name == "IMERG":
-        src = "gesdisc" if args.source in ("public", "auto") else ("h5" if args.source == "local" else args.source)
-        extractor_kwargs = {
-            "source": src,
-            "username": args.earthdata_username,
-            "password": args.earthdata_password,
-            "token": args.earthdata_token,
-            "netrc_path": args.netrc_path,
-        }
-      elif prod_name in ("GRAPHCAST", "HRES", "ERA5_LAND"):
-        src = "wb2" if args.source in ("public", "auto") else ("local" if args.source == "local" else args.source)
-        extractor_kwargs = {"source": src}
+    if prod_name == "CPC":
+      src = "psl" if args.source in ("public", "auto") else ("binary" if args.source == "local" else args.source)
+      extractor_kwargs = {"source": src}
+    elif prod_name == "IMERG":
+      src = "gesdisc" if args.source in ("public", "auto") else ("h5" if args.source == "local" else args.source)
+      extractor_kwargs = {
+          "source": src,
+          "username": args.earthdata_username,
+          "password": args.earthdata_password,
+          "token": args.earthdata_token,
+          "netrc_path": args.netrc_path,
+      }
+    elif prod_name in ("GRAPHCAST", "HRES", "ERA5_LAND"):
+      src = "wb2" if args.source in ("public", "auto") else ("local" if args.source == "local" else args.source)
+      extractor_kwargs = {"source": src}
+    else:
+      extractor_kwargs = {}
+
+    weights_path = None
+    if args.weights_cache:
+      if os.path.isdir(args.weights_cache):
+        weights_path = os.path.join(
+            args.weights_cache, f"weights_{prod_name.lower()}.npz"
+        )
+      elif len(raw_prods) > 1:
+        root, ext = os.path.splitext(args.weights_cache)
+        weights_path = f"{root}_{prod_name.lower()}{ext or '.npz'}"
       else:
-        extractor_kwargs = {}
+        weights_path = args.weights_cache
 
-      weights_path = None
-      if args.weights_cache:
-        if os.path.isdir(args.weights_cache):
-          weights_path = os.path.join(
-              args.weights_cache, f"weights_{prod_name.lower()}.npz"
-          )
-        elif len(raw_prods) > 1:
-          root, ext = os.path.splitext(args.weights_cache)
-          weights_path = f"{root}_{prod_name.lower()}{ext or '.npz'}"
-        else:
-          weights_path = args.weights_cache
-
-      if args.num_workers > 1:
-        if extract_in_parallel is None:
-          raise NotImplementedError(
-              "Parallel extraction is not yet installed in this branch. Run with"
-              " --num_workers=1."
-          )
-        print(
-            f"  Spawning {args.num_workers} parallel workers (chunk_freq="
-            f"{args.chunk_freq or 'auto'})..."
+    if args.num_workers > 1:
+      if extract_in_parallel is None:
+        raise NotImplementedError(
+            "Parallel extraction is not yet installed in this branch. Run with"
+            " --num_workers=1."
         )
-        ds = extract_in_parallel(
-            extractor_cls,
-            gdf,
-            start_date=args.start_date,
-            end_date=args.end_date,
-            num_workers=args.num_workers,
-            chunk_freq=args.chunk_freq,
-            weights_cache=weights_path,
-            output_dir=args.output_dir,
-            product=prod_enum,
-            overwrite=args.overwrite,
-            **extractor_kwargs,
-        )
-        store_path = writer.get_store_path(prod_enum)
-      else:
-        extractor = extractor_cls(**extractor_kwargs)
-        weights = None
-        if weights_path:
-          if os.path.exists(weights_path):
-            print(f"  Loaded precomputed weights from: {weights_path}")
-            weights = ZonalWeightMatrix.load(weights_path)
-          else:
-            print(f"  Precomputing weights matrix -> {weights_path}...")
-            weights = ZonalWeightMatrix.from_geodataframe(
-                gdf, extractor.lats, extractor.lons, num_workers=4
-            )
-            weights.save(weights_path)
-            print(f"  Saved weights matrix: {weights_path}")
-
-        ds = extractor.extract_for_basins(
-            gdf,
-            start_date=args.start_date,
-            end_date=args.end_date,
-            weights_matrix=weights,
-        )
-        # Save to Zarr
-        store_path = writer.write_or_append(
-            ds, prod_enum, overwrite_existing_basins=args.overwrite
-        )
-
-      elapsed = time.time() - t_start
-      start_dt = pd.to_datetime(args.start_date)
-      end_dt = pd.to_datetime(args.end_date)
-      total_days = max(1, (end_dt - start_dt).days + 1)
-      total_basin_days = len(basin_ids) * total_days
-      throughput = total_basin_days / elapsed if elapsed > 0 else 0.0
       print(
-          f"  Extraction finished in {elapsed:.2f}s ({throughput:.1f} basin-days/s)."
+          f"  Spawning {args.num_workers} parallel workers (chunk_freq="
+          f"{args.chunk_freq or 'auto'})..."
       )
-      print(f"  Saved Zarr store: {store_path}")
-
-      # Verify and inspect extracted dataset
-      ds_verify = xr.open_zarr(store_path)
-      vars_list = list(ds_verify.data_vars.keys())
-
-      print("\n  🔍 Extracted Data Preview:")
-      for var in vars_list:
-        val_arr = ds_verify[var].values
-        finite_count = int((~pd.isna(val_arr)).sum())
-        total_count = int(val_arr.size)
-        series = pd.Series(val_arr.flatten()).dropna()
-        if len(series) > 0:
-          min_val = f"{series.min():.4f}"
-          max_val = f"{series.max():.4f}"
-          mean_val = f"{series.mean():.4f}"
+      ds = extract_in_parallel(
+          extractor_cls,
+          gdf,
+          start_date=args.start_date,
+          end_date=args.end_date,
+          num_workers=args.num_workers,
+          chunk_freq=args.chunk_freq,
+          weights_cache=weights_path,
+          output_dir=args.output_dir,
+          product=prod_enum,
+          overwrite=args.overwrite,
+          **extractor_kwargs,
+      )
+      store_path = writer.get_store_path(prod_enum)
+    else:
+      extractor = extractor_cls(**extractor_kwargs)
+      weights = None
+      if weights_path:
+        if os.path.exists(weights_path):
+          print(f"  Loaded precomputed weights from: {weights_path}")
+          weights = ZonalWeightMatrix.load(weights_path)
         else:
-          min_val = max_val = mean_val = "nan"
-        print(f"    - Variable: {var}")
-        print(f"      Dimensions : {dict(ds_verify[var].sizes)}")
-        print(f"      Valid data : {finite_count}/{total_count} points")
-        print(f"      Range      : min={min_val}, max={max_val}, mean={mean_val}")
+          print(f"  Precomputing weights matrix -> {weights_path}...")
+          weights = ZonalWeightMatrix.from_geodataframe(
+              gdf, extractor.lats, extractor.lons, num_workers=4
+          )
+          weights.save(weights_path)
+          print(f"  Saved weights matrix: {weights_path}")
 
-      results_summary.append({
-          "product": prod_name,
-          "status": "SUCCESS",
-          "elapsed_s": round(elapsed, 2),
-          "basin_days": total_basin_days,
-          "throughput_b_days_per_s": round(throughput, 1),
-          "variables": ", ".join(vars_list),
-          "zarr_store": store_path,
-      })
+      ds = extractor.extract_for_basins(
+          gdf,
+          start_date=args.start_date,
+          end_date=args.end_date,
+          weights_matrix=weights,
+      )
+      # Save to Zarr
+      store_path = writer.write_or_append(
+          ds, prod_enum, overwrite_existing_basins=args.overwrite
+      )
 
-    except Exception as e:
-      print(f"❌ Failed to extract {prod_name}: {e}")
-      results_summary.append({
-          "product": prod_name,
-          "status": f"FAILED: {e}",
-          "elapsed_s": round(time.time() - t_start, 2),
-          "basin_days": 0,
-          "throughput_b_days_per_s": 0.0,
-          "variables": "N/A",
-          "zarr_store": "N/A",
-      })
+    elapsed = time.time() - t_start
+    start_dt = pd.to_datetime(args.start_date)
+    end_dt = pd.to_datetime(args.end_date)
+    total_days = max(1, (end_dt - start_dt).days + 1)
+    total_basin_days = len(basin_ids) * total_days
+    throughput = total_basin_days / elapsed if elapsed > 0 else 0.0
+    print(
+        f"  Extraction finished in {elapsed:.2f}s ({throughput:.1f} basin-days/s)."
+    )
+    print(f"  Saved Zarr store: {store_path}")
+
+    # Verify and inspect extracted dataset
+    ds_verify = xr.open_zarr(store_path)
+    vars_list = list(ds_verify.data_vars.keys())
+
+    print("\n  🔍 Extracted Data Preview:")
+    for var in vars_list:
+      val_arr = ds_verify[var].values
+      finite_count = int((~pd.isna(val_arr)).sum())
+      total_count = int(val_arr.size)
+      series = pd.Series(val_arr.flatten()).dropna()
+      if len(series) > 0:
+        min_val = f"{series.min():.4f}"
+        max_val = f"{series.max():.4f}"
+        mean_val = f"{series.mean():.4f}"
+      else:
+        min_val = max_val = mean_val = "nan"
+      print(f"    - Variable: {var}")
+      print(f"      Dimensions : {dict(ds_verify[var].sizes)}")
+      print(f"      Valid data : {finite_count}/{total_count} points")
+      print(f"      Range      : min={min_val}, max={max_val}, mean={mean_val}")
+
+    results_summary.append({
+        "product": prod_name,
+        "status": "SUCCESS",
+        "elapsed_s": round(elapsed, 2),
+        "basin_days": total_basin_days,
+        "throughput_b_days_per_s": round(throughput, 1),
+        "variables": ", ".join(vars_list),
+        "zarr_store": store_path,
+    })
 
   # Summary Table
   print("\n" + "=" * 70)
