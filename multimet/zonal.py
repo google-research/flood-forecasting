@@ -24,6 +24,9 @@ import scipy.sparse as sp
 import shapely.geometry
 import xarray as xr
 
+from multimet.spatial import BoundingBox
+from multimet.spatial import slice_coordinates_by_bounds
+
 
 class ZonalWeightCalculator:
   """Computes and caches intersection weights between basin polygons and regular lat/lon grids."""
@@ -185,6 +188,9 @@ class ZonalWeightMatrix:
     self.basin_id_to_row: Dict[str, int] = {
         b_id: i for i, b_id in enumerate(self.basin_ids)
     }
+    self.has_weights: np.ndarray = (
+        np.asarray(self.matrix.sum(axis=1)).ravel() > 0.0
+    )
 
   @property
   def num_basins(self) -> int:
@@ -203,8 +209,14 @@ class ZonalWeightMatrix:
       cell_res_lat: Optional[float] = None,
       cell_res_lon: Optional[float] = None,
       num_workers: int = 1,
+      bounds: Optional[Union[BoundingBox, Sequence[float]]] = None,
+      buffer_degrees: float = 0.0,
   ) -> ZonalWeightMatrix:
     """Builds a ZonalWeightMatrix from a basin GeoDataFrame and coordinate arrays."""
+    if bounds is not None:
+      lats, lons, _, _ = slice_coordinates_by_bounds(
+          lats, lons, bounds, buffer_degrees=buffer_degrees
+      )
     basin_ids = list(basins_gdf.index)
     calc = ZonalWeightCalculator(
         lats, lons, cell_res_lat=cell_res_lat, cell_res_lon=cell_res_lon
@@ -279,7 +291,9 @@ class ZonalWeightMatrix:
       )
     flat = grid_2d.reshape(-1)
     if not np.isnan(flat).any():
-      return self.matrix.dot(flat).astype(np.float32)
+      res = self.matrix.dot(flat).astype(np.float32)
+      res[~self.has_weights] = np.nan
+      return res
 
     valid = ~np.isnan(flat)
     val_0 = np.nan_to_num(flat, nan=0.0)
@@ -306,7 +320,9 @@ class ZonalWeightMatrix:
     X = grid_3d.reshape(T, -1)
     if not np.isnan(X).any():
       # (N, C) @ (C, T) -> (N, T)
-      return self.matrix.dot(X.T).astype(np.float32)
+      res = self.matrix.dot(X.T).astype(np.float32)
+      res[~self.has_weights, :] = np.nan
+      return res
 
     valid = ~np.isnan(X)
     X0 = np.nan_to_num(X, nan=0.0)
@@ -342,6 +358,91 @@ class ZonalWeightMatrix:
         raise KeyError(f"Basin '{b_id}' not found in weight matrix.")
     sub_matrix = self.matrix[row_indices]
     return ZonalWeightMatrix(valid_ids, self.lats, self.lons, sub_matrix)
+
+  def crop_to_coords(
+      self,
+      sub_lats: np.ndarray,
+      sub_lons: np.ndarray,
+      atol: float = 1e-4,
+  ) -> ZonalWeightMatrix:
+    """Crops the weight matrix to a subgrid defined by (sub_lats, sub_lons).
+
+    Re-maps column indices from the full grid (H_full, W_full) to the
+    subgrid (H_sub, W_sub) in O(nnz) time.
+
+    Args:
+      sub_lats: 1D array of subgrid latitude coordinates.
+      sub_lons: 1D array of subgrid longitude coordinates.
+      atol: Absolute tolerance for coordinate matching.
+
+    Returns:
+      A new ZonalWeightMatrix instance defined on (sub_lats, sub_lons).
+    """
+    sub_lats = np.asarray(sub_lats, dtype=np.float64)
+    sub_lons = np.asarray(sub_lons, dtype=np.float64)
+
+    # Find row (lat) indices in self.lats for each sub_lat
+    lat_indices = []
+    for val in sub_lats:
+      matches = np.where(np.isclose(self.lats, val, atol=atol))[0]
+      if len(matches) == 0:
+        raise ValueError(
+            f"Subgrid latitude {val} not found in weight matrix grid "
+            f"(range [{self.lats.min()}, {self.lats.max()}])."
+        )
+      lat_indices.append(matches[0])
+    lat_indices = np.array(lat_indices, dtype=np.int32)
+
+    # Find col (lon) indices in self.lons for each sub_lon
+    lon_indices = []
+    for val in sub_lons:
+      matches = np.where(np.isclose(self.lons, val, atol=atol))[0]
+      if len(matches) == 0:
+        # Check if coordinates have 0..360 vs -180..180 offset
+        val_wrapped = (val + 360.0) if val < 0 else (val - 360.0)
+        matches = np.where(np.isclose(self.lons, val_wrapped, atol=atol))[0]
+        if len(matches) == 0:
+          raise ValueError(
+              f"Subgrid longitude {val} not found in weight matrix grid "
+              f"(range [{self.lons.min()}, {self.lons.max()}])."
+          )
+      lon_indices.append(matches[0])
+    lon_indices = np.array(lon_indices, dtype=np.int32)
+
+    H_full = len(self.lats)
+    W_full = len(self.lons)
+    H_sub = len(sub_lats)
+    W_sub = len(sub_lons)
+
+    full_to_sub = np.full(H_full * W_full, -1, dtype=np.int32)
+    sub_cols = (
+        np.arange(H_sub, dtype=np.int32)[:, None] * W_sub
+        + np.arange(W_sub, dtype=np.int32)[None, :]
+    )
+    full_cols = lat_indices[:, None] * W_full + lon_indices[None, :]
+    full_to_sub[full_cols] = sub_cols
+
+    coo = self.matrix.tocoo()
+    new_cols = full_to_sub[coo.col]
+    valid = new_cols >= 0
+
+    cropped_csr = sp.csr_matrix(
+        (coo.data[valid], (coo.row[valid], new_cols[valid])),
+        shape=(self.num_basins, H_sub * W_sub),
+        dtype=np.float32,
+    )
+    return ZonalWeightMatrix(self.basin_ids, sub_lats, sub_lons, cropped_csr)
+
+  def crop_to_bounds(
+      self,
+      bounds: Union[BoundingBox, Sequence[float], gpd.GeoDataFrame],
+      buffer_degrees: float = 0.0,
+  ) -> ZonalWeightMatrix:
+    """Crops the weight matrix to grid cells intersecting the given bounding box."""
+    sub_lats, sub_lons, _, _ = slice_coordinates_by_bounds(
+        self.lats, self.lons, bounds, buffer_degrees=buffer_degrees
+    )
+    return self.crop_to_coords(sub_lats, sub_lons)
 
   def save(self, path: Union[str, os.PathLike]) -> str:
     """Serializes the weight matrix to a compressed .npz file."""

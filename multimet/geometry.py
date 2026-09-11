@@ -22,6 +22,8 @@ import geopandas as gpd
 import pandas as pd
 import shapely.validation
 
+from multimet.spatial import BoundingBox
+
 
 
 def load_basin_geometries(
@@ -110,10 +112,6 @@ def get_bounding_box(
     buffer_degrees: float = 0.1,
 ) -> Tuple[float, float, float, float]:
   """Returns total bounding box (min_lon, min_lat, max_lon, max_lat)."""
-  minx, miny, maxx, maxy = gdf.total_bounds
-  return (
-      max(-180.0, minx - buffer_degrees),
-      max(-90.0, miny - buffer_degrees),
-      min(180.0, maxx + buffer_degrees),
-      min(90.0, maxy + buffer_degrees),
-  )
+  return BoundingBox.from_geodataframe(
+      gdf, buffer_degrees=buffer_degrees
+  ).to_tuple()

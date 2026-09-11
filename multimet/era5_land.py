@@ -34,6 +34,7 @@ from multimet.config import DEFAULT_STORAGE_PATHS
 from multimet.config import Product
 from multimet.config import PRODUCT_BANDS
 from multimet.pet import calculate_fao56_penman_monteith_pet
+from multimet.spatial import BoundingBox, slice_dataset_by_bounds
 from multimet.zonal import ZonalWeightCalculator, ZonalWeightMatrix
 
 import gcsfs
@@ -453,51 +454,30 @@ class ERA5LandExtractor(BaseExtractor):
         for band in expected_bands
     }
 
-    bounds = basins_gdf.total_bounds
-    minx, miny, maxx, maxy = bounds
-    lat_slice = slice(min(90.0, maxy + 0.5), max(-90.0, miny - 0.5))
-
-    if minx < 0 and maxx < 0:
-      min_lon_wb2 = minx % 360
-      max_lon_wb2 = maxx % 360
-      lon_slice = slice(min_lon_wb2 - 0.5, max_lon_wb2 + 0.5)
-      is_split = False
-    elif minx >= 0 and maxx >= 0:
-      lon_slice = slice(max(0.0, minx - 0.5), min(360.0, maxx + 0.5))
-      is_split = False
-    else:
-      is_split = True
-
     ds_raw = open_wb2_era5_dataset(self.data_dir)
-
     time_slice = slice(start_dt.strftime("%Y-%m-%d"), end_dt.strftime("%Y-%m-%d"))
+    time_sub = ds_raw.sel(time=time_slice)
 
-    if not is_split:
-      sub = ds_raw.sel(latitude=lat_slice, longitude=lon_slice, time=time_slice)
-    else:
-      sub1 = ds_raw.sel(
-          latitude=lat_slice,
-          longitude=slice((minx % 360) - 0.5, 360.0),
-          time=time_slice,
-      )
-      sub2 = ds_raw.sel(
-          latitude=lat_slice,
-          longitude=slice(0.0, maxx + 0.5),
-          time=time_slice,
-      )
-      sub = xr.concat([sub1, sub2], dim="longitude")
+    # Spatially slice dataset to basin bounding box with 0.5 deg buffer
+    sub = slice_dataset_by_bounds(
+        time_sub,
+        bounds=basins_gdf,
+        buffer_degrees=0.5,
+        lat_dim="latitude",
+        lon_dim="longitude",
+    )
 
-    sub_lons = sub.longitude.values
-    converted_lons = np.where(sub_lons > 180.0, sub_lons - 360.0, sub_lons)
-    sub = sub.assign_coords(longitude=converted_lons).sortby("longitude")
-    sub = sub.sortby("latitude", ascending=False)
-
-    if weights_matrix is not None and (
-        weights_matrix.grid_shape == (len(sub.latitude), len(sub.longitude))
-        and np.allclose(weights_matrix.lats, sub.latitude.values)
-        and np.allclose(weights_matrix.lons, sub.longitude.values)
-    ):
-      matrix = weights_matrix
+    if weights_matrix is not None:
+      if (
+          weights_matrix.grid_shape == (len(sub.latitude), len(sub.longitude))
+          and np.allclose(weights_matrix.lats, sub.latitude.values)
+          and np.allclose(weights_matrix.lons, sub.longitude.values)
+      ):
+        matrix = weights_matrix
+      else:
+        matrix = weights_matrix.crop_to_coords(
+            sub.latitude.values, sub.longitude.values
+        )
     else:
       matrix = ZonalWeightMatrix.from_geodataframe(
           basins_gdf,

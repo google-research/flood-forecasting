@@ -43,6 +43,10 @@ _LAZY_MODULE_MAPPING = {
     "DynamicalIMERGExtractor": f"{_PKG}.dynamical",
     "AIFSExtractor": f"{_PKG}.dynamical",
     "load_dynamical": f"{_PKG}.dynamical",
+    "BoundingBox": f"{_PKG}.spatial",
+    "find_lat_lon_dims": f"{_PKG}.spatial",
+    "slice_coordinates_by_bounds": f"{_PKG}.spatial",
+    "slice_dataset_by_bounds": f"{_PKG}.spatial",
 }
 
 __all__ = [
@@ -66,6 +70,10 @@ __all__ = [
     "DynamicalIMERGExtractor",
     "AIFSExtractor",
     "load_dynamical",
+    "BoundingBox",
+    "find_lat_lon_dims",
+    "slice_coordinates_by_bounds",
+    "slice_dataset_by_bounds",
 ]
 
 
