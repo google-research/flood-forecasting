@@ -14,12 +14,13 @@
 
 from __future__ import annotations
 
+import inspect
+import logging
 import os
 import shutil
 import tarfile
 from typing import Dict, List, Mapping, Optional, Sequence, Union
 
-import logging
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -35,6 +36,23 @@ from multimet.config import (
     Product,
     ProductType,
 )
+
+
+def _safe_to_zarr(
+    ds: xr.Dataset, store_path: Union[str, os.PathLike], **kwargs
+) -> None:
+  """Writes dataset to Zarr, targeting Zarr format 2 for broad compatibility.
+
+  Zarr V3 introduces an unstable data type warning for fixed-length Unicode
+  strings (<U22) and currently does not standardize consolidated metadata
+  (.zmetadata). Targeting zarr_format=2 ensures seamless interoperability with
+  Google/CNS Caravan datasets, NetCDF, and existing readers across Zarr 2.x and
+  3.x.
+  """
+  sig = inspect.signature(xr.Dataset.to_zarr)
+  if "zarr_format" in sig.parameters:
+    kwargs.setdefault("zarr_format", 2)
+  ds.to_zarr(store_path, **kwargs)
 
 
 class MultiMetZarrWriter:
@@ -157,7 +175,7 @@ class MultiMetZarrWriter:
       coords["lead_time"] = xr.DataArray(
           np.arange(1, lead_steps + 1, dtype=np.int64),
           dims=["lead_time"],
-          attrs={"units": "days"},
+          attrs={"units": "days", "dtype": "timedelta64[ns]"},
       )
       dims.append("lead_time")
       shape = (len(basin_ids), len(dates), lead_steps)
@@ -183,7 +201,7 @@ class MultiMetZarrWriter:
     ds = xr.Dataset(data_vars=data_vars, coords=coords, attrs=global_attrs)
     ds = ds.chunk(chunk_spec)
 
-    ds.to_zarr(store_path, mode="w", consolidated=True)
+    _safe_to_zarr(ds, store_path, mode="w", consolidated=True)
     return store_path
 
   def consolidate_metadata(self, product: Product) -> str:
@@ -383,7 +401,7 @@ class MultiMetZarrWriter:
         shutil.rmtree(local_target, ignore_errors=True)
       os.makedirs(os.path.dirname(local_target), exist_ok=True)
       ds_chunked = ds_to_write.chunk(chunk_spec)
-      ds_chunked.to_zarr(local_target, mode="w", consolidated=True)
+      _safe_to_zarr(ds_chunked, local_target, mode="w", consolidated=True)
     else:
       # Append along basin dimension
       existing_ds = xr.open_zarr(local_target)
@@ -392,7 +410,7 @@ class MultiMetZarrWriter:
       if not existing_basins:
         shutil.rmtree(local_target, ignore_errors=True)
         ds_chunked = ds_to_write.chunk(chunk_spec)
-        ds_chunked.to_zarr(local_target, mode="w", consolidated=True)
+        _safe_to_zarr(ds_chunked, local_target, mode="w", consolidated=True)
       else:
         incoming_basins = list(ds_to_write["basin"].values)
         incoming_basins_set = set(incoming_basins)
@@ -416,7 +434,9 @@ class MultiMetZarrWriter:
               basin=existing_basins_list, date=new_dates_dt64
           )
           new_slice = new_slice.chunk(chunk_spec)
-          new_slice.to_zarr(local_target, append_dim="date", consolidated=True)
+          _safe_to_zarr(
+              new_slice, local_target, append_dim="date", consolidated=True
+          )
         elif overwrite_existing_basins:
           keep_basins = [
               b for b in existing_basins_list if b not in incoming_basins_set
@@ -427,7 +447,7 @@ class MultiMetZarrWriter:
           else:
             combined = ds_to_write
           combined = combined.chunk(chunk_spec)
-          combined.to_zarr(local_target, mode="w", consolidated=True)
+          _safe_to_zarr(combined, local_target, mode="w", consolidated=True)
         else:
           # Case 2: Append new basins along basin dimension
           new_basins = [
@@ -437,7 +457,9 @@ class MultiMetZarrWriter:
             return store_path
           new_slice = ds_to_write.sel(basin=new_basins)
           new_slice = new_slice.chunk(chunk_spec)
-          new_slice.to_zarr(local_target, append_dim="basin", consolidated=True)
+          _safe_to_zarr(
+              new_slice, local_target, append_dim="basin", consolidated=True
+          )
 
 
 
