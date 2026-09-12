@@ -240,6 +240,95 @@ class MultiMetZarrWriter:
 
     return store_path
 
+  def write_direct_chunk_range(
+      self,
+      product: Product,
+      var_name: str,
+      start_idx: int,
+      end_idx: int,
+      values: np.ndarray,
+      root_group: Optional[zarr.hierarchy.Group] = None,
+  ) -> str:
+    """Writes a contiguous date range directly to the Zarr store using Zarr array indexing.
+
+    Args:
+      product: MultiMet Product enum.
+      var_name: Variable band name.
+      start_idx: Integer start index along the date dimension (inclusive).
+      end_idx: Integer end index along the date dimension (exclusive).
+      values: 2D or 3D numpy array of float32 values for this date range across
+        all basins. Shape is (num_basins, num_days) for nowcast or
+        (num_basins, num_days, lead_steps) for forecast.
+      root_group: Optional pre-opened zarr Group handle to avoid repeated I/O.
+
+    Returns:
+      Store path.
+    """
+    store_path = self.get_store_path(product)
+    prod_type = PRODUCT_TYPES[product]
+    is_forecast = prod_type == ProductType.FORECAST
+
+    if root_group is not None:
+      z_root = root_group
+    elif product in self._open_groups:
+      z_root = self._open_groups[product]
+    else:
+      z_root = zarr.open_group(store_path, mode="r+")
+      self._open_groups[product] = z_root
+
+    if var_name not in z_root:
+      raise KeyError(f"Variable {var_name} not found in store {store_path}")
+
+    if is_forecast:
+      z_root[var_name][:, start_idx:end_idx, :] = values.astype(np.float32)
+    else:
+      z_root[var_name][:, start_idx:end_idx] = values.astype(np.float32)
+
+    return store_path
+
+  def is_date_chunk_written(
+      self,
+      product: Product,
+      day_idx: int,
+      var_name: Optional[str] = None,
+      root_group: Optional[zarr.hierarchy.Group] = None,
+  ) -> bool:
+    """Checks whether a given day index has already been populated with non-NaN data.
+
+    Args:
+      product: MultiMet Product enum.
+      day_idx: Integer index along the date dimension.
+      var_name: Optional variable name to check. If None, uses the first band of
+        the product.
+      root_group: Optional pre-opened zarr Group handle.
+
+    Returns:
+      True if the chunk exists and contains at least one non-NaN value.
+    """
+    store_path = self.get_store_path(product)
+    if root_group is not None:
+      z_root = root_group
+    elif product in self._open_groups:
+      z_root = self._open_groups[product]
+    else:
+      try:
+        z_root = zarr.open_group(store_path, mode="r")
+      except Exception:
+        return False
+
+    target_var = var_name or PRODUCT_BANDS[product][0]
+    if target_var not in z_root:
+      return False
+
+    arr = z_root[target_var]
+    prod_type = PRODUCT_TYPES[product]
+    if prod_type == ProductType.FORECAST:
+      slice_data = arr[:, day_idx, :]
+    else:
+      slice_data = arr[:, day_idx]
+
+    return bool(np.any(~np.isnan(slice_data)))
+
   def write_or_append(
       self,
       ds: xr.Dataset,

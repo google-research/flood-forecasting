@@ -54,11 +54,11 @@ from multimet.imerg import IMERGExtractor
 from multimet.dynamical import AIFSExtractor, DynamicalIMERGExtractor
 from multimet.zarr_writer import MultiMetZarrWriter
 from multimet.zonal import ZonalWeightMatrix
+from multimet.dask_runner import extract_product_dask
 
 # Placeholders for upcoming modules
 CHIRPSExtractor = None
 CHIRPSGEFSExtractor = None
-extract_in_parallel = None
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _CANDIDATE_BASIN_PATHS = [
@@ -336,29 +336,21 @@ def run_canary(args: argparse.Namespace) -> None:
         weights_path = args.weights_cache
 
     if args.num_workers > 1:
-      if extract_in_parallel is None:
-        raise NotImplementedError(
-            "Parallel extraction is not yet installed in this branch. Run with"
-            " --num_workers=1."
-        )
       print(
-          f"  Spawning {args.num_workers} parallel workers (chunk_freq="
-          f"{args.chunk_freq or 'auto'})..."
+          f"  Spawning {args.num_workers} parallel workers via Dask..."
       )
-      ds = extract_in_parallel(
-          extractor_cls,
-          gdf,
+      store_path = extract_product_dask(
+          product=prod_enum,
+          basins=gdf,
+          output_dir=args.output_dir,
           start_date=prod_start,
           end_date=prod_end,
           num_workers=args.num_workers,
-          chunk_freq=args.chunk_freq,
           weights_cache=weights_path,
-          output_dir=args.output_dir,
-          product=prod_enum,
           overwrite=args.overwrite,
+          use_bounding_box=args.use_bounding_box,
           **extractor_kwargs,
       )
-      store_path = writer.get_store_path(prod_enum)
     else:
       extractor = extractor_cls(**extractor_kwargs)
       weights = None
