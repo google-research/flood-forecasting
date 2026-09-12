@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import random
 import shutil
 import sys
 import time
@@ -162,22 +163,49 @@ def _extract_and_write_chunk_task(
   )
 
   num_days = end_idx - start_idx
-  z_root = zarr.open_group(store_path, mode="r+")
+  max_write_retries = 5
+  for attempt in range(max_write_retries):
+    try:
+      z_root = zarr.open_group(store_path, mode="r+")
 
-  for band in ds.data_vars:
-    if band not in z_root:
-      continue
-    vals = ds[band].values.astype(np.float32)
-    if num_days == 1:
-      if vals.ndim == 2:
-        z_root[band][:, start_idx] = vals[:, 0]
-      elif vals.ndim == 3:
-        z_root[band][:, start_idx, :] = vals[:, 0, :]
-    else:
-      if vals.ndim == 2:
-        z_root[band][:, start_idx:end_idx] = vals
-      elif vals.ndim == 3:
-        z_root[band][:, start_idx:end_idx, :] = vals
+      for band in ds.data_vars:
+        if band not in z_root:
+          continue
+        vals = ds[band].values.astype(np.float32)
+        if num_days == 1:
+          if vals.ndim == 2:
+            z_root[band][:, start_idx] = vals[:, 0]
+          elif vals.ndim == 3:
+            z_root[band][:, start_idx, :] = vals[:, 0, :]
+        else:
+          if vals.ndim == 2:
+            z_root[band][:, start_idx:end_idx] = vals
+          elif vals.ndim == 3:
+            z_root[band][:, start_idx:end_idx, :] = vals
+      break
+    except Exception as e:
+      if attempt == max_write_retries - 1:
+        logger.error(
+            "Failed to write chunk [%d:%d] to %s after %d attempts: %s",
+            start_idx,
+            end_idx,
+            store_path,
+            max_write_retries,
+            e,
+        )
+        raise
+      backoff = (2 ** attempt) + random.uniform(0.5, 2.0)
+      logger.warning(
+          "Transient error writing chunk [%d:%d] to %s (attempt %d/%d): %s. Retrying in %.2fs...",
+          start_idx,
+          end_idx,
+          store_path,
+          attempt + 1,
+          max_write_retries,
+          e,
+          backoff,
+      )
+      time.sleep(backoff)
 
   return {
       "status": "ok",
