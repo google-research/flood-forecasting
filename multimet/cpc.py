@@ -36,7 +36,11 @@ from multimet.zonal import ZonalWeightCalculator, ZonalWeightMatrix
 
 import netCDF4
 
+import logging
+import time
 import urllib.request
+
+logger = logging.getLogger(__name__)
 
 
 def ensure_psl_cpc_netcdf(year: int, cache_dir: str = "/tmp/cpc_cache") -> str:
@@ -47,12 +51,21 @@ def ensure_psl_cpc_netcdf(year: int, cache_dir: str = "/tmp/cpc_cache") -> str:
     return local_path
 
   url = f"https://downloads.psl.noaa.gov/Datasets/cpc_global_precip/precip.{year}.nc"
-  temp_path = f"{local_path}.tmp"
-  print(f"Downloading NOAA PSL CPC NetCDF for {year} from {url}...")
-  with urllib.request.urlopen(url, timeout=120) as response, open(temp_path, "wb") as out_f:
-    shutil.copyfileobj(response, out_f)
-  os.replace(temp_path, local_path)
-  print(f"✓ Cached {local_path} ({os.path.getsize(local_path) / 1e6:.1f} MB)")
+  temp_path = f"{local_path}.tmp.{os.getpid()}.{time.time_ns()}"
+  try:
+    if not (os.path.exists(local_path) and os.path.getsize(local_path) > 1024 * 1024):
+      logger.info("Downloading NOAA PSL CPC NetCDF for %d from %s...", year, url)
+      with urllib.request.urlopen(url, timeout=120) as response, open(temp_path, "wb") as out_f:
+        shutil.copyfileobj(response, out_f)
+      if not (os.path.exists(local_path) and os.path.getsize(local_path) > 1024 * 1024):
+        os.replace(temp_path, local_path)
+        logger.info("Cached %s (%.1f MB)", local_path, os.path.getsize(local_path) / 1e6)
+  finally:
+    if os.path.exists(temp_path):
+      try:
+        os.remove(temp_path)
+      except OSError:
+        pass
   return local_path
 
 

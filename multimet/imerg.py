@@ -16,10 +16,13 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 import datetime
+import http.client
 import io
 import logging
 import os
+import random
 import re
+import time
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
 import urllib.parse
 
@@ -113,29 +116,67 @@ def download_daily_imerg(
     url: str,
     dest_path: str,
     session: Optional[requests.Session] = None,
+    max_retries: int = 5,
 ) -> str:
-  """Downloads a daily IMERG NetCDF4 file from NASA GES DISC with auth handling."""
+  """Downloads a daily IMERG NetCDF4 file from NASA GES DISC with auth handling and retries."""
+  if os.path.exists(dest_path) and os.path.getsize(dest_path) > 1024:
+    return dest_path
+
   if session is None:
     session = EarthdataSession()
 
   os.makedirs(os.path.dirname(os.path.abspath(dest_path)), exist_ok=True)
-  with session.get(url, stream=True, timeout=120) as resp:
-    if resp.status_code in (401, 403):
-      raise PermissionError(
-          f"NASA GES DISC returned HTTP {resp.status_code} Unauthorized for URL:\n  {url}\n\n"
-          "Access to NASA IMERG data requires NASA Earthdata Login authentication.\n"
-          "To resolve this, do one of the following:\n"
-          "1. Add your Earthdata credentials to ~/.netrc:\n"
-          "   machine urs.earthdata.nasa.gov login <username> password <password>\n"
-          "   chmod 600 ~/.netrc\n"
-          "2. Set the EARTHDATA_TOKEN (or EARTHDATA_USERNAME and EARTHDATA_PASSWORD) environment variable.\n"
-          "3. Or pre-download the daily NetCDF4 (.nc4) files to a local directory and pass --data_dir=<path>."
-      )
-    resp.raise_for_status()
-    with open(dest_path, "wb") as f:
-      for chunk in resp.iter_content(chunk_size=1024 * 1024):
-        if chunk:
-          f.write(chunk)
+  temp_path = f"{dest_path}.tmp.{os.getpid()}.{time.time_ns()}"
+
+  last_err = None
+  for attempt in range(max_retries):
+    try:
+      # Add small initial jitter to desynchronize concurrent Dask worker bursts
+      if attempt == 0:
+        time.sleep(random.uniform(0.1, 1.5))
+      else:
+        sleep_sec = (2 ** attempt) + random.uniform(1.0, 3.0)
+        logger.warning(
+            "Retrying NASA GES DISC download (%d/%d) in %.1fs for: %s",
+            attempt + 1, max_retries, sleep_sec, url
+        )
+        time.sleep(sleep_sec)
+
+      with session.get(url, stream=True, timeout=120) as resp:
+        if resp.status_code in (401, 403):
+          raise PermissionError(
+              f"NASA GES DISC returned HTTP {resp.status_code} Unauthorized for URL:\n  {url}\n\n"
+              "Access to NASA IMERG data requires NASA Earthdata Login authentication.\n"
+              "Please check your NASA Earthdata credentials."
+          )
+        if resp.status_code in (429, 500, 502, 503, 504):
+          last_err = requests.HTTPError(
+              f"{resp.status_code} Server Error: {resp.reason} for url: {url}",
+              response=resp,
+          )
+          continue
+
+        resp.raise_for_status()
+        with open(temp_path, "wb") as f:
+          for chunk in resp.iter_content(chunk_size=1024 * 1024):
+            if chunk:
+              f.write(chunk)
+
+        if not (os.path.exists(dest_path) and os.path.getsize(dest_path) > 1024):
+          os.replace(temp_path, dest_path)
+        return dest_path
+    except (requests.RequestException, http.client.RemoteDisconnected, TimeoutError) as e:
+      last_err = e
+      continue
+    finally:
+      if os.path.exists(temp_path):
+        try:
+          os.remove(temp_path)
+        except OSError:
+          pass
+
+  if last_err is not None:
+    raise last_err
   return dest_path
 
 
