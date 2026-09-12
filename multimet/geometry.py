@@ -19,8 +19,10 @@ import io
 import logging
 import os
 from pathlib import Path
+import tempfile
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
+import fsspec
 import geopandas as gpd
 import pandas as pd
 import shapely.validation
@@ -62,18 +64,72 @@ def _resolve_geometry_sources(
     deduped = []
     for item in resolved:
       if isinstance(item, (str, os.PathLike)):
-        norm = os.path.abspath(str(item))
+        item_str = str(item)
+        proto, _ = fsspec.core.split_protocol(item_str)
+        norm = item_str if proto else os.path.abspath(item_str)
         if norm not in seen:
           seen.add(norm)
-          deduped.append(str(item))
+          deduped.append(item_str)
       else:
         deduped.append(item)
     return deduped
 
   if isinstance(source, (str, os.PathLike)):
-    s = os.path.expanduser(os.path.expandvars(str(source).strip()))
-    if not s:
+    raw_s = str(source).strip()
+    if not raw_s:
       return []
+
+    protocol, path_in_fs = fsspec.core.split_protocol(raw_s)
+    if protocol in ("gs", "gcs", "s3"):
+      fs, path = fsspec.core.url_to_fs(raw_s)
+      # Check if remote glob pattern
+      if any(char in path for char in ("*", "?", "[")):
+        matches = sorted(fs.glob(path))
+        if not matches:
+          raise FileNotFoundError(f"No files matched remote glob pattern: {raw_s}")
+        resolved = []
+        for m in matches:
+          if fs.isdir(m):
+            sub_files = fs.find(m)
+            for sf in sub_files:
+              sf_l = sf.lower()
+              if sf_l.endswith(SUPPORTED_GEOMETRY_EXTENSIONS) and not sf_l.endswith(
+                  ("_gauges.shp", "_gauges.geojson", "_gauges.gpkg", "_gauge.shp")
+              ):
+                resolved.append(f"{protocol}://{sf}")
+          elif fs.isfile(m):
+            m_l = m.lower()
+            if m_l.endswith(SUPPORTED_GEOMETRY_EXTENSIONS) and not m_l.endswith(
+                ("_gauges.shp", "_gauges.geojson", "_gauges.gpkg", "_gauge.shp")
+            ):
+              resolved.append(f"{protocol}://{m}")
+        if not resolved:
+          raise FileNotFoundError(f"No supported geometry files found for: {raw_s}")
+        return resolved
+
+      # Check if remote directory
+      if fs.isdir(path):
+        all_remote = sorted(fs.find(path))
+        resolved = []
+        for f in all_remote:
+          f_l = f.lower()
+          if f_l.endswith(SUPPORTED_GEOMETRY_EXTENSIONS) and not f_l.endswith(
+              ("_gauges.shp", "_gauges.geojson", "_gauges.gpkg", "_gauge.shp")
+          ):
+            resolved.append(f"{protocol}://{f}")
+        if not resolved:
+          raise FileNotFoundError(
+              f"No supported geometry files ({', '.join(SUPPORTED_GEOMETRY_EXTENSIONS)}) found in remote directory: {raw_s}"
+          )
+        return resolved
+
+      # Single remote file
+      if fs.isfile(path):
+        return [raw_s]
+
+      raise FileNotFoundError(f"Remote geometry path does not exist: {raw_s}")
+
+    s = os.path.expanduser(os.path.expandvars(raw_s))
 
     # If it's an existing directory, search recursively
     if os.path.isdir(s):
@@ -130,7 +186,31 @@ def _load_single_basin_geometry(
     gdf = source.copy()
   elif isinstance(source, (str, os.PathLike)):
     source_str = str(source)
-    gdf = gpd.read_file(source_str)
+    proto, path_in_fs = fsspec.core.split_protocol(source_str)
+    if proto in ("gs", "gcs", "s3"):
+      fs, path = fsspec.core.url_to_fs(source_str)
+      ext = os.path.splitext(path)[1].lower()
+      if ext in (".geojson", ".json"):
+        with fsspec.open(source_str, "r") as f:
+          gdf = gpd.read_file(f)
+      else:
+        # For multi-file formats (.shp, .gpkg), cache locally to tempdir
+        cache_dir = os.path.join(
+            tempfile.gettempdir(),
+            "multimet_geometries",
+            os.path.dirname(path).strip("/").replace("/", "_"),
+        )
+        os.makedirs(cache_dir, exist_ok=True)
+        local_target = os.path.join(cache_dir, os.path.basename(path))
+        if not os.path.exists(local_target):
+          parent_dir = os.path.dirname(path)
+          stem = os.path.splitext(os.path.basename(path))[0]
+          companion_files = fs.glob(f"{parent_dir}/{stem}.*")
+          logger.info("Caching remote geometry bundle from %s to %s", source_str, local_target)
+          fs.get(companion_files, cache_dir)
+        gdf = gpd.read_file(local_target)
+    else:
+      gdf = gpd.read_file(source_str)
   elif isinstance(source, dict):
     gdf = gpd.GeoDataFrame.from_features(source)
   else:

@@ -169,3 +169,27 @@ def test_load_nonexistent_source_raises_error(tmp_path: Path):
   with pytest.raises(FileNotFoundError, match="No supported geometry files"):
     load_basin_geometries(empty_dir)
 
+
+def test_remote_geometry_resolution_and_caching(geojson_path: Path, monkeypatch, tmp_path: Path):
+  import fsspec
+  from unittest.mock import MagicMock
+  from multimet.geometry import _resolve_geometry_sources
+
+  mock_fs = MagicMock()
+  mock_fs.isdir.return_value = True
+  mock_fs.find.return_value = [
+      "my-bucket/shapes/camels/camels_basin_shapes.shp",
+      "my-bucket/shapes/camels/camels_gauges.shp",
+      "my-bucket/shapes/hysets/hysets_basin_shapes.shp",
+  ]
+
+  monkeypatch.setattr(fsspec.core, "url_to_fs", lambda url: (mock_fs, "my-bucket/shapes/"))
+
+  resolved = _resolve_geometry_sources("gs://my-bucket/shapes/")
+  assert len(resolved) == 2
+  assert "gs://my-bucket/shapes/camels/camels_basin_shapes.shp" in resolved
+  assert "gs://my-bucket/shapes/hysets/hysets_basin_shapes.shp" in resolved
+  # Verify gauges.shp point file was properly filtered out
+  assert "gs://my-bucket/shapes/camels/camels_gauges.shp" not in resolved
+
+
