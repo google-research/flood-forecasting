@@ -236,3 +236,29 @@ def test_dask_multi_file_basins(dask_client, tmp_path):
   assert ds["cpc_precipitation"].shape == (5, 1)
   assert np.all(~np.isnan(ds["cpc_precipitation"].values))
 
+
+def test_dask_store_exists_and_overwrite_fsspec(tmp_path):
+  """Verifies that fsspec store detection and removal works for both local and cloud URIs."""
+  import fsspec
+
+  # 1. Local filesystem
+  local_store = str(tmp_path / "local_test.zarr")
+  fs_local, local_path = fsspec.core.url_to_fs(local_store)
+  assert not fs_local.exists(local_path)
+  fs_local.makedirs(local_path, exist_ok=True)
+  fs_local.touch(f"{local_path}/zarr.json")
+  assert fs_local.exists(f"{local_path}/zarr.json")
+  fs_local.rm(local_path, recursive=True)
+  assert not fs_local.exists(local_path)
+
+  # 2. Remote / memory filesystem URI (representing gs://, s3://)
+  remote_store = "memory://test_bucket/remote_test.zarr"
+  fs_remote, remote_path = fsspec.core.url_to_fs(remote_store)
+  assert not fs_remote.exists(remote_path)
+  fs_remote.makedirs(remote_path, exist_ok=True)
+  fs_remote.touch(f"{remote_path}/zarr.json")
+  assert fs_remote.exists(f"{remote_path}/zarr.json")
+  fs_remote.rm(remote_path, recursive=True)
+  assert not fs_remote.exists(remote_path)
+
+

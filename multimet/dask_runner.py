@@ -33,6 +33,7 @@ import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import distributed
+import fsspec
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -287,20 +288,35 @@ def extract_product_dask(
 
   # Handle store initialization & overwrite
   def _store_exists(p: str) -> bool:
-    return (
-        os.path.exists(os.path.join(p, "zarr.json"))
-        or os.path.exists(os.path.join(p, ".zgroup"))
-        or os.path.exists(os.path.join(p, ".zmetadata"))
-    )
+    try:
+      fs, fs_path = fsspec.core.url_to_fs(p)
+      return (
+          fs.exists(f"{fs_path}/zarr.json")
+          or fs.exists(f"{fs_path}/.zgroup")
+          or fs.exists(f"{fs_path}/.zmetadata")
+          or (fs.exists(fs_path) and fs.isdir(fs_path))
+      )
+    except Exception as e:
+      logger.debug("Error checking store existence for %s: %s", p, e)
+      return False
+
+  def _remove_store(p: str) -> None:
+    try:
+      fs, fs_path = fsspec.core.url_to_fs(p)
+      if fs.exists(fs_path):
+        fs.rm(fs_path, recursive=True)
+    except Exception as e:
+      logger.warning("Error removing store %s with fsspec: %s", p, e)
+      if os.path.isdir(p):
+        shutil.rmtree(p, ignore_errors=True)
+      elif os.path.exists(p):
+        os.remove(p)
 
   store_already_exists = _store_exists(store_path)
 
   if overwrite and store_already_exists:
     logger.info("Overwrite requested: removing existing store %s", store_path)
-    if os.path.isdir(store_path):
-      shutil.rmtree(store_path, ignore_errors=True)
-    elif os.path.exists(store_path):
-      os.remove(store_path)
+    _remove_store(store_path)
     store_already_exists = False
 
   if not store_already_exists:
@@ -317,6 +333,7 @@ def extract_product_dask(
 
     if existing_dates is not None and not all_dates.equals(existing_dates) and not resume:
       logger.info("Dates mismatch: reinitializing store %s for requested date range...", store_path)
+      _remove_store(store_path)
       writer.initialize_zarr_store(prod_enum, basin_ids, all_dates)
       existing_z = zarr.open_group(store_path, mode="r")
       missing_indices = list(range(total_days))
