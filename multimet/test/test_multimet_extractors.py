@@ -257,3 +257,39 @@ def test_serial_runner_end_to_end(tmp_path, basins_gdf):
     assert len(ds_read["date"]) == 2
     assert len(ds_read["basin"]) == len(basin_ids)
     assert np.allclose(ds_read["cpc_precipitation"].values, 7.0)
+
+
+def test_imerg_download_retry_logging(tmp_path, monkeypatch):
+  """Verifies that download_daily_imerg retries on transient 503 errors and logs warnings."""
+  import os
+  from multimet.imerg import download_daily_imerg
+
+  dest_file = str(tmp_path / "test_imerg.nc4")
+  call_count = 0
+
+  class MockResponse:
+    def __init__(self, status_code):
+      self.status_code = status_code
+      self.reason = "Service Unavailable"
+    def __enter__(self):
+      return self
+    def __exit__(self, exc_type, exc_val, exc_tb):
+      pass
+    def raise_for_status(self):
+      pass
+    def iter_content(self, chunk_size=8192):
+      yield b"dummy netcdf content" * 100
+
+  class MockSession:
+    def get(self, url, **kwargs):
+      nonlocal call_count
+      call_count += 1
+      if call_count == 1:
+        return MockResponse(503)
+      return MockResponse(200)
+
+  monkeypatch.setattr("time.sleep", lambda s: None)
+  download_daily_imerg("https://fake.url/test.nc4", dest_file, session=MockSession())
+  assert call_count == 2
+  assert os.path.exists(dest_file)
+

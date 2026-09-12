@@ -38,6 +38,8 @@ from multimet.base import BaseExtractor
 from multimet.config import DEFAULT_STORAGE_PATHS, Product
 from multimet.zonal import ZonalWeightCalculator, ZonalWeightMatrix
 
+logger = logging.getLogger(__name__)
+
 
 def get_earthdata_credentials_from_netrc(
     netrc_path: Optional[str] = None,
