@@ -14,9 +14,12 @@
 
 from __future__ import annotations
 
+import glob
 import io
+import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple, Union
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import geopandas as gpd
 import pandas as pd
@@ -24,27 +27,105 @@ import shapely.validation
 
 from multimet.spatial import BoundingBox
 
+logger = logging.getLogger(__name__)
+
+SUPPORTED_GEOMETRY_EXTENSIONS = (".shp", ".geojson", ".gpkg")
 
 
-def load_basin_geometries(
+def _discover_geometry_files(directory: Union[str, os.PathLike]) -> List[str]:
+  """Recursively discovers all shapefiles, geojsons, and geopackages in a directory."""
+  found = []
+  for root, _, files in os.walk(directory):
+    for f in files:
+      f_lower = f.lower()
+      ext = os.path.splitext(f_lower)[1]
+      if ext in SUPPORTED_GEOMETRY_EXTENSIONS:
+        # Avoid point gauge files when scanning directories of watershed boundaries
+        if f_lower.endswith(("_gauges.shp", "_gauges.geojson", "_gauges.gpkg", "_gauge.shp")):
+          continue
+        found.append(os.path.join(root, f))
+  return sorted(found)
+
+
+def _resolve_geometry_sources(
+    source: Any,
+) -> List[Union[str, gpd.GeoDataFrame, Dict[str, Any]]]:
+  """Resolves single paths, comma-separated paths, lists, globs, or directories into discrete sources."""
+  if isinstance(source, (gpd.GeoDataFrame, dict)):
+    return [source]
+
+  if isinstance(source, (list, tuple, set)):
+    resolved = []
+    for item in source:
+      resolved.extend(_resolve_geometry_sources(item))
+    seen = set()
+    deduped = []
+    for item in resolved:
+      if isinstance(item, (str, os.PathLike)):
+        norm = os.path.abspath(str(item))
+        if norm not in seen:
+          seen.add(norm)
+          deduped.append(str(item))
+      else:
+        deduped.append(item)
+    return deduped
+
+  if isinstance(source, (str, os.PathLike)):
+    s = os.path.expanduser(os.path.expandvars(str(source).strip()))
+    if not s:
+      return []
+
+    # If it's an existing directory, search recursively
+    if os.path.isdir(s):
+      files = _discover_geometry_files(s)
+      if not files:
+        raise FileNotFoundError(
+            f"No supported geometry files ({', '.join(SUPPORTED_GEOMETRY_EXTENSIONS)}) found in directory: {s}"
+        )
+      return files
+
+    # If it's an existing file, return directly
+    if os.path.isfile(s):
+      return [s]
+
+    # If it contains commas, split and resolve each component
+    if "," in s:
+      parts = [p.strip() for p in s.split(",") if p.strip()]
+      resolved = []
+      for p in parts:
+        resolved.extend(_resolve_geometry_sources(p))
+      return resolved
+
+    # Check if it's a glob pattern
+    if any(char in s for char in ("*", "?", "[")):
+      matches = sorted(glob.glob(s, recursive=True))
+      if not matches:
+        raise FileNotFoundError(f"No files matched glob pattern: {s}")
+      resolved = []
+      for m in matches:
+        if os.path.isdir(m):
+          resolved.extend(_discover_geometry_files(m))
+        elif os.path.isfile(m):
+          ext = os.path.splitext(m)[1].lower()
+          if ext in SUPPORTED_GEOMETRY_EXTENSIONS:
+            resolved.append(m)
+      if not resolved:
+        raise FileNotFoundError(
+            f"No supported geometry files matched glob pattern: {s}"
+        )
+      return resolved
+
+    raise FileNotFoundError(f"Geometry source path does not exist: {s}")
+
+  raise TypeError(f"Unsupported geometry source type: {type(source)}")
+
+
+def _load_single_basin_geometry(
     source: Union[str, os.PathLike, gpd.GeoDataFrame, Dict[str, Any]],
     id_column: Optional[str] = None,
     target_crs: str = "EPSG:4326",
 ) -> gpd.GeoDataFrame:
-  """Loads and standardizes basin geometries into a WGS84 GeoDataFrame.
-
-  Args:
-    source: Path to geometry file (Shapefile, GeoJSON, etc.), an existing
-      GeoDataFrame, or GeoJSON dict.
-    id_column: Optional column name containing the basin/gauge identifier. If
-      None, will search for common candidate names ('basin_id', 'gauge_id',
-      'id', 'HYBAS_ID', etc.) or default to the DataFrame index.
-    target_crs: Coordinate reference system to reproject to (default
-      'EPSG:4326').
-
-  Returns:
-    gpd.GeoDataFrame indexed by string basin IDs with geometry in EPSG:4326.
-  """
+  """Loads and standardizes a single geometry source."""
   if isinstance(source, gpd.GeoDataFrame):
     gdf = source.copy()
   elif isinstance(source, (str, os.PathLike)):
@@ -56,20 +137,19 @@ def load_basin_geometries(
     raise TypeError(f"Unsupported geometry source type: {type(source)}")
 
   if gdf.empty:
-    raise ValueError("Input geometry dataset is empty.")
+    return gpd.GeoDataFrame(columns=["geometry"], crs=target_crs)
 
   # Reproject if CRS is set and differs from target_crs.
   if gdf.crs is not None:
     if gdf.crs.to_string() != target_crs:
       gdf = gdf.to_crs(target_crs)
   else:
-    # Assume target_crs if not specified.
     gdf = gdf.set_crs(target_crs)
 
   # Identify ID column.
   if id_column is not None:
     if id_column not in gdf.columns:
-      raise KeyError(f"Specified id_column '{id_column}' not found in dataset.")
+      raise KeyError(f"Specified id_column '{id_column}' not found in dataset: {source}")
     basin_ids = gdf[id_column].astype(str)
   else:
     candidates = [
@@ -77,9 +157,13 @@ def load_basin_geometries(
         "basin",
         "gauge_id",
         "gauge",
+        "station_id",
         "HYBAS_ID",
         "hybas_id",
-        "station_id",
+        "Official_ID",
+        "official_id",
+        "watershed_id",
+        "provider_id",
         "ID",
         "id",
         "name",
@@ -91,20 +175,103 @@ def load_basin_geometries(
         break
     if found is not None:
       basin_ids = gdf[found].astype(str)
+    elif gdf.index.name in candidates or (not gdf.index.empty and not isinstance(gdf.index, pd.RangeIndex)):
+      basin_ids = gdf.index.astype(str)
     else:
-      basin_ids = pd.Series([f"basin_{i}" for i in range(len(gdf))])
+      stem = ""
+      if isinstance(source, (str, os.PathLike)):
+        stem = f"{Path(source).stem}_"
+      basin_ids = pd.Series([f"{stem}basin_{i}" for i in range(len(gdf))])
 
   gdf["basin_id"] = basin_ids.values
   gdf = gdf.set_index("basin_id")
 
   # Ensure valid polygon / multipolygon geometries.
   def _ensure_valid(geom):
+    if geom is None or geom.is_empty:
+      return geom
     if geom.is_valid:
       return geom
     return shapely.validation.make_valid(geom)
 
   gdf["geometry"] = gdf["geometry"].apply(_ensure_valid)
+  gdf = gdf[gdf["geometry"].notna() & (~gdf["geometry"].is_empty)]
   return gdf
+
+
+def load_basin_geometries(
+    source: Union[
+        str,
+        os.PathLike,
+        gpd.GeoDataFrame,
+        Dict[str, Any],
+        Sequence[Union[str, os.PathLike, gpd.GeoDataFrame, Dict[str, Any]]],
+    ],
+    id_column: Optional[str] = None,
+    target_crs: str = "EPSG:4326",
+    drop_duplicates: bool = True,
+) -> gpd.GeoDataFrame:
+  """Loads and standardizes basin geometries into a WGS84 GeoDataFrame.
+
+  Supports single files, comma-separated files, lists of files/globs/dirs,
+  directory paths containing shapefiles or geojsons, and glob expressions.
+  Standardizes CRS to EPSG:4326, identifies basin IDs, makes geometries valid,
+  and combines all inputs into a single GeoDataFrame indexed by basin_id.
+
+  Args:
+    source: Path to geometry file (Shapefile, GeoJSON, etc.), directory of
+      geometry files, glob pattern, sequence of paths, an existing
+      GeoDataFrame, or GeoJSON dict.
+    id_column: Optional column name containing the basin/gauge identifier. If
+      None, will search for common candidate names ('basin_id', 'gauge_id',
+      'id', 'HYBAS_ID', etc.) or default to the DataFrame index.
+    target_crs: Coordinate reference system to reproject to (default
+      'EPSG:4326').
+    drop_duplicates: Whether to drop duplicate basin IDs across combined files
+      (retaining first occurrence). If False and duplicates exist, raises ValueError.
+
+  Returns:
+    gpd.GeoDataFrame indexed by string basin IDs with geometry in EPSG:4326.
+  """
+  discrete_sources = _resolve_geometry_sources(source)
+  if not discrete_sources:
+    raise ValueError(f"No geometry sources found for: {source}")
+
+  gdfs = []
+  for src in discrete_sources:
+    single_gdf = _load_single_basin_geometry(
+        src, id_column=id_column, target_crs=target_crs
+    )
+    if not single_gdf.empty:
+      gdfs.append(single_gdf)
+
+  if not gdfs:
+    raise ValueError("Input geometry dataset is empty or contains no valid geometries.")
+
+  if len(gdfs) == 1:
+    combined = gdfs[0]
+  else:
+    combined = gpd.GeoDataFrame(
+        pd.concat(gdfs, axis=0),
+        crs=target_crs,
+        geometry="geometry",
+    )
+
+  if combined.index.duplicated().any():
+    num_dups = int(combined.index.duplicated().sum())
+    if drop_duplicates:
+      logger.warning(
+          "Dropping %d duplicate basin IDs from combined geometries.",
+          num_dups,
+      )
+      combined = combined[~combined.index.duplicated(keep="first")]
+    else:
+      dups = list(combined.index[combined.index.duplicated()].unique())
+      raise ValueError(
+          f"Found {num_dups} duplicate basin IDs across sources (samples: {dups[:5]})."
+      )
+
+  return combined
 
 
 def get_bounding_box(

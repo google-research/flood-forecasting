@@ -19,6 +19,7 @@ import pathlib
 import shutil
 import tempfile
 import distributed
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pytest
@@ -202,3 +203,36 @@ def test_dask_resumption_skips_completed_chunks(dask_client):
     ds2 = xr.open_zarr(store_path)
     val2 = ds2["cpc_precipitation"].values
     np.testing.assert_array_equal(val1, val2)
+
+
+def test_dask_multi_file_basins(dask_client, tmp_path):
+  """Verifies that Dask pipeline runs smoothly with multiple basin geometry files."""
+  if not _TEST_BASINS_PATH.exists():
+    pytest.skip(f"Test basins GeoJSON not found at {_TEST_BASINS_PATH}")
+
+  full_gdf = gpd.read_file(str(_TEST_BASINS_PATH))
+  p1 = tmp_path / "part1.geojson"
+  p2 = tmp_path / "part2.geojson"
+  full_gdf.iloc[:2].to_file(str(p1), driver="GeoJSON")
+  full_gdf.iloc[2:].to_file(str(p2), driver="GeoJSON")
+
+  out_dir = tmp_path / "zarr_out"
+  out_dir.mkdir()
+
+  store_path = extract_product_dask(
+      product="CPC",
+      basins=[str(p1), str(p2)],
+      output_dir=str(out_dir),
+      start_date="2020-01-01",
+      end_date="2020-01-01",
+      client=dask_client,
+      source="public",
+      use_bounding_box=True,
+      overwrite=True,
+  )
+
+  ds = xr.open_zarr(store_path)
+  assert len(ds["basin"]) == 5
+  assert ds["cpc_precipitation"].shape == (5, 1)
+  assert np.all(~np.isnan(ds["cpc_precipitation"].values))
+

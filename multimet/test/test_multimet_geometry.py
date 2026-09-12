@@ -81,3 +81,91 @@ def test_load_basin_geometries_from_dict():
   gdf = load_basin_geometries(features_dict)
   assert len(gdf) == 1
   assert "test_basin_1" in gdf.index
+
+
+def test_load_multiple_files_as_list(geojson_path: Path, tmp_path: Path):
+  full_gdf = gpd.read_file(str(geojson_path))
+  assert len(full_gdf) == 5
+
+  # Split into two separate GeoJSON files
+  p1 = tmp_path / "part1.geojson"
+  p2 = tmp_path / "part2.geojson"
+  full_gdf.iloc[:2].to_file(str(p1), driver="GeoJSON")
+  full_gdf.iloc[2:].to_file(str(p2), driver="GeoJSON")
+
+  combined_gdf = load_basin_geometries([str(p1), str(p2)])
+  assert len(combined_gdf) == 5
+  for b_id in _EXPECTED_BASINS:
+    assert b_id in combined_gdf.index
+
+
+def test_load_multiple_files_as_comma_separated_string(geojson_path: Path, tmp_path: Path):
+  full_gdf = gpd.read_file(str(geojson_path))
+  p1 = tmp_path / "part1.geojson"
+  p2 = tmp_path / "part2.geojson"
+  full_gdf.iloc[:2].to_file(str(p1), driver="GeoJSON")
+  full_gdf.iloc[2:].to_file(str(p2), driver="GeoJSON")
+
+  combined_gdf = load_basin_geometries(f"{p1},{p2}")
+  assert len(combined_gdf) == 5
+  for b_id in _EXPECTED_BASINS:
+    assert b_id in combined_gdf.index
+
+
+def test_load_from_directory(geojson_path: Path, tmp_path: Path):
+  full_gdf = gpd.read_file(str(geojson_path))
+  sub_dir = tmp_path / "basins_dir"
+  sub_dir.mkdir()
+  p1 = sub_dir / "part1.geojson"
+  p2 = sub_dir / "part2.geojson"
+  full_gdf.iloc[:3].to_file(str(p1), driver="GeoJSON")
+  full_gdf.iloc[3:].to_file(str(p2), driver="GeoJSON")
+
+  combined_gdf = load_basin_geometries(sub_dir)
+  assert len(combined_gdf) == 5
+  for b_id in _EXPECTED_BASINS:
+    assert b_id in combined_gdf.index
+
+
+def test_load_from_glob_pattern(geojson_path: Path, tmp_path: Path):
+  full_gdf = gpd.read_file(str(geojson_path))
+  sub_dir = tmp_path / "nested" / "shapes"
+  sub_dir.mkdir(parents=True)
+  p1 = sub_dir / "chunk1.geojson"
+  p2 = sub_dir / "chunk2.geojson"
+  full_gdf.iloc[:2].to_file(str(p1), driver="GeoJSON")
+  full_gdf.iloc[2:].to_file(str(p2), driver="GeoJSON")
+
+  combined_gdf = load_basin_geometries(str(tmp_path / "**/*.geojson"))
+  assert len(combined_gdf) == 5
+  for b_id in _EXPECTED_BASINS:
+    assert b_id in combined_gdf.index
+
+
+def test_load_basin_geometries_deduplication(geojson_path: Path, tmp_path: Path):
+  full_gdf = gpd.read_file(str(geojson_path))
+  p1 = tmp_path / "part1.geojson"
+  p2 = tmp_path / "part2.geojson"
+  # Both files include the basin at index 1
+  full_gdf.iloc[:2].to_file(str(p1), driver="GeoJSON")
+  full_gdf.iloc[1:3].to_file(str(p2), driver="GeoJSON")
+
+  # Passing distinct files with overlapping basin IDs:
+  # With drop_duplicates=True (default), duplicates are pruned
+  gdf_dedup = load_basin_geometries([str(p1), str(p2)], drop_duplicates=True)
+  assert len(gdf_dedup) == 3
+
+  # With drop_duplicates=False, raises ValueError
+  with pytest.raises(ValueError, match="duplicate basin IDs"):
+    load_basin_geometries([str(p1), str(p2)], drop_duplicates=False)
+
+
+def test_load_nonexistent_source_raises_error(tmp_path: Path):
+  with pytest.raises(FileNotFoundError):
+    load_basin_geometries(tmp_path / "nonexistent_file.geojson")
+
+  empty_dir = tmp_path / "empty_dir"
+  empty_dir.mkdir()
+  with pytest.raises(FileNotFoundError, match="No supported geometry files"):
+    load_basin_geometries(empty_dir)
+

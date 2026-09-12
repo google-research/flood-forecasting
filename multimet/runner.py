@@ -55,7 +55,7 @@ PRODUCT_MAP: Dict[str, tuple[Product, type[BaseExtractor]]] = {
 
 
 def extract_multimet_serial(
-    basins: Union[str, os.PathLike, gpd.GeoDataFrame, Dict[str, Any]],
+    basins: Union[str, os.PathLike, gpd.GeoDataFrame, Dict[str, Any], Sequence[Any]],
     output_dir: Union[str, os.PathLike],
     products: Optional[Sequence[Union[str, Product]]] = None,
     start_date: Optional[Union[str, pd.Timestamp]] = "2020-01-01",
@@ -177,9 +177,12 @@ def _build_parser() -> argparse.ArgumentParser:
   )
   parser.add_argument(
       "--basins_path",
-      type=str,
+      nargs="+",
       required=True,
-      help="Path to GeoJSON or Shapefile catchment boundaries.",
+      help=(
+          "Path(s) to GeoJSON or Shapefile catchment boundaries. "
+          "Accepts one or more files, glob patterns, directories, or comma-separated strings."
+      ),
   )
   parser.add_argument(
       "--output_dir",

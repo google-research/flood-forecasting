@@ -191,7 +191,7 @@ def _extract_and_write_chunk_task(
 
 def extract_product_dask(
     product: Union[str, Product],
-    basins: Union[str, os.PathLike, gpd.GeoDataFrame],
+    basins: Union[str, os.PathLike, gpd.GeoDataFrame, Dict[str, Any], Sequence[Any]],
     output_dir: Union[str, os.PathLike],
     start_date: Union[str, pd.Timestamp] = "2020-01-01",
     end_date: Union[str, pd.Timestamp] = "2020-01-02",
@@ -456,7 +456,7 @@ def extract_product_dask(
 
 
 def extract_multimet_dask(
-    basins: Union[str, os.PathLike, gpd.GeoDataFrame],
+    basins: Union[str, os.PathLike, gpd.GeoDataFrame, Dict[str, Any], Sequence[Any]],
     output_dir: Union[str, os.PathLike],
     products: Optional[Sequence[Union[str, Product]]] = None,
     start_date: Union[str, pd.Timestamp] = "2020-01-01",
@@ -548,9 +548,12 @@ def _build_parser() -> argparse.ArgumentParser:
   )
   parser.add_argument(
       "--basins_path",
-      type=str,
+      nargs="+",
       required=True,
-      help="Path to GeoJSON or Shapefile catchment boundaries.",
+      help=(
+          "Path(s) to GeoJSON or Shapefile catchment boundaries. "
+          "Accepts one or more files, glob patterns, directories, or comma-separated strings."
+      ),
   )
   parser.add_argument(
       "--output_dir",
