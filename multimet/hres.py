@@ -300,6 +300,8 @@ class HRESExtractor(BaseExtractor):
       start_date: Optional[Union[str, pd.Timestamp]] = None,
       end_date: Optional[Union[str, pd.Timestamp]] = None,
       weights_matrix: Optional[ZonalWeightMatrix] = None,
+      use_bounding_box: bool = True,
+      **kwargs,
   ) -> xr.Dataset:
     """Extracts HRES forecast dataset for given basin geometries."""
     if self.source == "wb2":
@@ -308,6 +310,7 @@ class HRESExtractor(BaseExtractor):
           start_date=start_date,
           end_date=end_date,
           weights_matrix=weights_matrix,
+          use_bounding_box=use_bounding_box,
       )
     return self.extract_for_basins_zarr(
         basins_gdf, start_date=start_date, end_date=end_date
@@ -462,6 +465,7 @@ class HRESExtractor(BaseExtractor):
       start_date: Optional[Union[str, pd.Timestamp]] = None,
       end_date: Optional[Union[str, pd.Timestamp]] = None,
       weights_matrix: Optional[ZonalWeightMatrix] = None,
+      use_bounding_box: bool = True,
   ) -> xr.Dataset:
     """Extracts 10-day HRES forecasts from WeatherBench 2 on GCS."""
     basin_ids = list(basins_gdf.index)
@@ -487,36 +491,41 @@ class HRESExtractor(BaseExtractor):
         for band in expected_bands
     }
 
-    bounds = basins_gdf.total_bounds  # (minx, miny, maxx, maxy)
-    minx, miny, maxx, maxy = bounds
-    lat_slice = slice(max(-90.0, miny - 0.5), min(90.0, maxy + 0.5))
-
-    # Spatial slicing in WB2 [0, 360) longitude convention
-    if minx < 0 and maxx < 0:
-      min_lon_wb2 = minx % 360
-      max_lon_wb2 = maxx % 360
-      lon_slice = slice(min_lon_wb2 - 0.5, max_lon_wb2 + 0.5)
-      is_split = False
-    elif minx >= 0 and maxx >= 0:
-      lon_slice = slice(max(0.0, minx - 0.5), min(360.0, maxx + 0.5))
-      is_split = False
-    else:
-      is_split = True
-
     ds_raw = open_wb2_hres_dataset(self.data_dir)
 
-    if not is_split:
-      sub = ds_raw.sel(latitude=lat_slice, longitude=lon_slice)
-    else:
-      sub1 = ds_raw.sel(
-          latitude=lat_slice, longitude=slice((minx % 360) - 0.5, 360.0)
-      )
-      sub2 = ds_raw.sel(latitude=lat_slice, longitude=slice(0.0, maxx + 0.5))
-      sub = xr.concat([sub1, sub2], dim="longitude")
+    if use_bounding_box:
+      bounds = basins_gdf.total_bounds  # (minx, miny, maxx, maxy)
+      minx, miny, maxx, maxy = bounds
+      lat_slice = slice(max(-90.0, miny - 0.5), min(90.0, maxy + 0.5))
 
-    sub_lons = sub.longitude.values
-    converted_lons = np.where(sub_lons > 180.0, sub_lons - 360.0, sub_lons)
-    sub = sub.assign_coords(longitude=converted_lons).sortby("longitude")
+      # Spatial slicing in WB2 [0, 360) longitude convention
+      if minx < 0 and maxx < 0:
+        min_lon_wb2 = minx % 360
+        max_lon_wb2 = maxx % 360
+        lon_slice = slice(min_lon_wb2 - 0.5, max_lon_wb2 + 0.5)
+        is_split = False
+      elif minx >= 0 and maxx >= 0:
+        lon_slice = slice(max(0.0, minx - 0.5), min(360.0, maxx + 0.5))
+        is_split = False
+      else:
+        is_split = True
+
+      if not is_split:
+        sub = ds_raw.sel(latitude=lat_slice, longitude=lon_slice)
+      else:
+        sub1 = ds_raw.sel(
+            latitude=lat_slice, longitude=slice((minx % 360) - 0.5, 360.0)
+        )
+        sub2 = ds_raw.sel(latitude=lat_slice, longitude=slice(0.0, maxx + 0.5))
+        sub = xr.concat([sub1, sub2], dim="longitude")
+
+      sub_lons = sub.longitude.values
+      converted_lons = np.where(sub_lons > 180.0, sub_lons - 360.0, sub_lons)
+      sub = sub.assign_coords(longitude=converted_lons).sortby("longitude")
+    else:
+      sub_lons = ds_raw.longitude.values
+      converted_lons = np.where(sub_lons > 180.0, sub_lons - 360.0, sub_lons)
+      sub = ds_raw.assign_coords(longitude=converted_lons).sortby("longitude")
 
     if weights_matrix is not None and (
         weights_matrix.grid_shape == (len(sub.latitude), len(sub.longitude))

@@ -377,6 +377,7 @@ class DynamicalDataLoader:
       ensemble_members: Optional[Union[int, Sequence[int]]] = None,
       buffer: Optional[float] = None,
       compute: bool = False,
+      use_bounding_box: bool = True,
   ) -> xr.Dataset:
     """Loads a geographically bounded data cube from the Icechunk store.
 
@@ -391,6 +392,7 @@ class DynamicalDataLoader:
       buffer: Spatial buffer in degrees (geographic) or meters (projected).
       compute: If True, executes  eagerly and loads into memory.
         If False, returns lazy xarray Dataset backed by Icechunk/Dask.
+      use_bounding_box: If True, restricts spatial domain to watershed bounds.
 
     Returns:
       xr.Dataset spatially clipped to the watershed bounds.
@@ -412,7 +414,10 @@ class DynamicalDataLoader:
       subset = ds
 
     # 2. Compute spatial bounding slices for Icechunk
-    spatial_slices = self.compute_spatial_slices(watersheds, buffer=buffer)
+    if use_bounding_box:
+      spatial_slices = self.compute_spatial_slices(watersheds, buffer=buffer)
+    else:
+      spatial_slices = {}
 
     # 3. Build temporal selection kwargs
     time_kwargs: Dict[str, Any] = {}
@@ -477,6 +482,7 @@ class DynamicalDataLoader:
       ensemble_members: Optional[Union[int, Sequence[int]]] = None,
       buffer: Optional[float] = None,
       weights_matrix: Optional[ZonalWeightMatrix] = None,
+      use_bounding_box: bool = True,
   ) -> xr.Dataset:
     """Extracts catchment-averaged forcing timeseries for basins using exact zonal weighting.
 
@@ -489,6 +495,7 @@ class DynamicalDataLoader:
       ensemble_members: Optional ensemble member filter.
       buffer: Spatial buffer for bounding box query.
       weights_matrix: Optional pre-calculated ZonalWeightMatrix.
+      use_bounding_box: If True, restricts spatial domain to watershed bounds.
 
     Returns:
       xr.Dataset indexed by (basin, date) or (basin, date, lead_time) containing
@@ -511,6 +518,7 @@ class DynamicalDataLoader:
         ensemble_members=ensemble_members,
         buffer=buffer,
         compute=True,
+        use_bounding_box=use_bounding_box,
     )
 
     data_vars_to_process = list(sub_ds.data_vars.keys())
@@ -654,6 +662,8 @@ class DynamicalExtractor(BaseExtractor):
       basins_gdf: gpd.GeoDataFrame,
       start_date: Optional[Union[str, pd.Timestamp]] = None,
       end_date: Optional[Union[str, pd.Timestamp]] = None,
+      use_bounding_box: bool = True,
+      **kwargs,
   ) -> xr.Dataset:
     """Extracts basin forcing time series from dynamical.org via Icechunk.
 
@@ -671,6 +681,7 @@ class DynamicalExtractor(BaseExtractor):
         variables=selected_vars,
         start_date=start_date,
         end_date=end_date,
+        use_bounding_box=use_bounding_box,
     )
 
     if self.variable_map:
@@ -724,6 +735,8 @@ class DynamicalIMERGExtractor(BaseExtractor):
       start_date: Optional[Union[str, pd.Timestamp]] = None,
       end_date: Optional[Union[str, pd.Timestamp]] = None,
       weights_matrix: Optional[ZonalWeightMatrix] = None,
+      use_bounding_box: bool = True,
+      **kwargs,
   ) -> xr.Dataset:
     """Extracts daily accumulated IMERG precipitation for given basins."""
     basin_ids = list(basins_gdf.index)
@@ -853,6 +866,8 @@ class AIFSExtractor(BaseExtractor):
       start_date: Optional[Union[str, pd.Timestamp]] = None,
       end_date: Optional[Union[str, pd.Timestamp]] = None,
       weights_matrix: Optional[ZonalWeightMatrix] = None,
+      use_bounding_box: bool = True,
+      **kwargs,
   ) -> xr.Dataset:
     """Extracts 10-day daily AIFS forecasts for given basins."""
     basin_ids = list(basins_gdf.index)
@@ -892,6 +907,7 @@ class AIFSExtractor(BaseExtractor):
         lead_time_slice=slice(0, 41),
         buffer=0.1,
         compute=True,
+        use_bounding_box=use_bounding_box,
     )
 
     if "init_time" in sub_ds.dims and len(sub_ds.init_time) > 0:

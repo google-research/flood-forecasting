@@ -381,6 +381,8 @@ class ERA5LandExtractor(BaseExtractor):
       start_date: Optional[Union[str, pd.Timestamp]] = None,
       end_date: Optional[Union[str, pd.Timestamp]] = None,
       weights_matrix: Optional[ZonalWeightMatrix] = None,
+      use_bounding_box: bool = True,
+      **kwargs,
   ) -> xr.Dataset:
     """Extracts ERA5-Land 15 daily variables for given basin geometries."""
     if self.source == "wb2":
@@ -389,6 +391,7 @@ class ERA5LandExtractor(BaseExtractor):
           start_date=start_date,
           end_date=end_date,
           weights_matrix=weights_matrix,
+          use_bounding_box=use_bounding_box,
       )
     return self.extract_for_basins_grib(
         basins_gdf, start_date=start_date, end_date=end_date
@@ -432,6 +435,7 @@ class ERA5LandExtractor(BaseExtractor):
       start_date: Optional[Union[str, pd.Timestamp]] = None,
       end_date: Optional[Union[str, pd.Timestamp]] = None,
       weights_matrix: Optional[ZonalWeightMatrix] = None,
+      use_bounding_box: bool = True,
   ) -> xr.Dataset:
     """Extracts ERA5 daily reanalysis for 15 Caravan variables from WeatherBench 2."""
     basin_ids = list(basins_gdf.index)
@@ -458,14 +462,22 @@ class ERA5LandExtractor(BaseExtractor):
     time_slice = slice(start_dt.strftime("%Y-%m-%d"), end_dt.strftime("%Y-%m-%d"))
     time_sub = ds_raw.sel(time=time_slice)
 
-    # Spatially slice dataset to basin bounding box with 0.5 deg buffer
-    sub = slice_dataset_by_bounds(
-        time_sub,
-        bounds=basins_gdf,
-        buffer_degrees=0.5,
-        lat_dim="latitude",
-        lon_dim="longitude",
-    )
+    if use_bounding_box:
+      # Spatially slice dataset to basin bounding box with 0.5 deg buffer
+      sub = slice_dataset_by_bounds(
+          time_sub,
+          bounds=basins_gdf,
+          buffer_degrees=0.5,
+          lat_dim="latitude",
+          lon_dim="longitude",
+      )
+    else:
+      converted_lons = np.where(
+          time_sub.longitude.values > 180.0,
+          time_sub.longitude.values - 360.0,
+          time_sub.longitude.values,
+      )
+      sub = time_sub.assign_coords(longitude=converted_lons).sortby("longitude")
 
     if weights_matrix is not None:
       if (

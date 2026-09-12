@@ -31,6 +31,7 @@ import xarray as xr
 
 from multimet.base import BaseExtractor
 from multimet.config import DEFAULT_STORAGE_PATHS, Product
+from multimet.spatial import slice_coordinates_by_bounds
 from multimet.zonal import ZonalWeightCalculator, ZonalWeightMatrix
 
 import netCDF4
@@ -183,21 +184,42 @@ class CPCExtractor(BaseExtractor):
       start_dt: pd.Timestamp,
       end_dt: pd.Timestamp,
       weights_matrix: Optional[ZonalWeightMatrix] = None,
+      use_bounding_box: bool = True,
   ) -> xr.Dataset:
     """Extracts CPC daily precipitation using public NOAA PSL yearly NetCDF files."""
     basin_ids = list(basins_gdf.index)
     date_idx = pd.date_range(start_dt, end_dt, freq="D")
 
-    if weights_matrix is not None and (
-        weights_matrix.grid_shape == (len(self.lats), len(self.lons))
-        and np.allclose(weights_matrix.lats, self.lats)
-        and np.allclose(weights_matrix.lons, self.lons)
-    ):
-      matrix = weights_matrix
-    else:
-      matrix = ZonalWeightMatrix.from_geodataframe(
-          basins_gdf, self.lats, self.lons, cell_res_lat=0.5, cell_res_lon=0.5
+    lat_idx = None
+    lon_idx = None
+    if use_bounding_box:
+      sub_lats, sub_lons, lat_idx, lon_idx = slice_coordinates_by_bounds(
+          self.lats, self.lons, bounds=basins_gdf, buffer_degrees=0.5
       )
+      if weights_matrix is not None:
+        if (
+            weights_matrix.grid_shape == (len(sub_lats), len(sub_lons))
+            and np.allclose(weights_matrix.lats, sub_lats)
+            and np.allclose(weights_matrix.lons, sub_lons)
+        ):
+          matrix = weights_matrix
+        else:
+          matrix = weights_matrix.crop_to_coords(sub_lats, sub_lons)
+      else:
+        matrix = ZonalWeightMatrix.from_geodataframe(
+            basins_gdf, sub_lats, sub_lons, cell_res_lat=0.5, cell_res_lon=0.5
+        )
+    else:
+      if weights_matrix is not None and (
+          weights_matrix.grid_shape == (len(self.lats), len(self.lons))
+          and np.allclose(weights_matrix.lats, self.lats)
+          and np.allclose(weights_matrix.lons, self.lons)
+      ):
+        matrix = weights_matrix
+      else:
+        matrix = ZonalWeightMatrix.from_geodataframe(
+            basins_gdf, self.lats, self.lons, cell_res_lat=0.5, cell_res_lon=0.5
+        )
 
     precip_matrix = np.full(
         (len(basin_ids), len(date_idx)), np.nan, dtype=np.float32
@@ -232,6 +254,8 @@ class CPCExtractor(BaseExtractor):
                 [day_lat_inv[:, 360:], day_lat_inv[:, :360]], axis=1
             )
             day_shifted = np.where(day_shifted < 0, np.nan, day_shifted)
+            if use_bounding_box and lat_idx is not None and lon_idx is not None:
+              day_shifted = day_shifted[lat_idx, :][:, lon_idx]
 
             precip_matrix[:, d_idx] = matrix.reduce_2d(day_shifted)
       else:
@@ -257,6 +281,8 @@ class CPCExtractor(BaseExtractor):
                 [day_lat_inv[:, 360:], day_lat_inv[:, :360]], axis=1
             )
             day_shifted = np.where(day_shifted < 0, np.nan, day_shifted)
+            if use_bounding_box and lat_idx is not None and lon_idx is not None:
+              day_shifted = day_shifted[lat_idx, :][:, lon_idx]
 
             precip_matrix[:, d_idx] = matrix.reduce_2d(day_shifted)
 
@@ -351,6 +377,8 @@ class CPCExtractor(BaseExtractor):
       start_date: Optional[Union[str, pd.Timestamp]] = None,
       end_date: Optional[Union[str, pd.Timestamp]] = None,
       weights_matrix: Optional[ZonalWeightMatrix] = None,
+      use_bounding_box: bool = True,
+      **kwargs,
   ) -> xr.Dataset:
     """Extracts CPC daily precipitation for given basin geometries."""
     basin_ids = list(basins_gdf.index)
@@ -367,7 +395,11 @@ class CPCExtractor(BaseExtractor):
 
     if self.source == "psl":
       return self.extract_for_basins_psl(
-          basins_gdf, start_dt, end_dt, weights_matrix=weights_matrix
+          basins_gdf,
+          start_dt,
+          end_dt,
+          weights_matrix=weights_matrix,
+          use_bounding_box=use_bounding_box,
       )
 
     date_idx = pd.date_range(start_dt, end_dt, freq="D")

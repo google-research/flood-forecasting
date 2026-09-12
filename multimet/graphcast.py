@@ -254,6 +254,8 @@ class GraphCastExtractor(BaseExtractor):
       start_date: Optional[Union[str, pd.Timestamp]] = None,
       end_date: Optional[Union[str, pd.Timestamp]] = None,
       weights_matrix: Optional[ZonalWeightMatrix] = None,
+      use_bounding_box: bool = True,
+      **kwargs,
   ) -> xr.Dataset:
     """Extracts 10-day GraphCast forecasts for given basin geometries."""
     if self.source == "wb2":
@@ -262,6 +264,7 @@ class GraphCastExtractor(BaseExtractor):
           start_date=start_date,
           end_date=end_date,
           weights_matrix=weights_matrix,
+          use_bounding_box=use_bounding_box,
       )
     return self.extract_for_basins_zarr(
         basins_gdf, start_date=start_date, end_date=end_date
@@ -275,6 +278,7 @@ class GraphCastExtractor(BaseExtractor):
           Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]
       ] = None,
       weights_matrix: Optional[ZonalWeightMatrix] = None,
+      use_bounding_box: bool = True,
   ) -> Dict[str, np.ndarray]:
     """Extracts 1 forecast initialization date across 10 lead days for GraphCast."""
     dt = pd.to_datetime(dt)
@@ -293,37 +297,43 @@ class GraphCastExtractor(BaseExtractor):
           and "weatherbench2" not in self.data_dir
           else get_wb2_graphcast_url(dt)
       )
+      cache_key = (store_url, use_bounding_box)
 
-      if store_url not in self._opened_subsets:
+      if cache_key not in self._opened_subsets:
         if store_url not in self._opened_stores:
           self._opened_stores[store_url] = open_wb2_dataset(store_url)
         ds_raw = self._opened_stores[store_url]
 
-        bounds = basins_gdf.total_bounds
-        minx, miny, maxx, maxy = bounds
-        lat_slice = slice(max(-90.0, miny - 0.5), min(90.0, maxy + 0.5))
+        if use_bounding_box:
+          bounds = basins_gdf.total_bounds
+          minx, miny, maxx, maxy = bounds
+          lat_slice = slice(max(-90.0, miny - 0.5), min(90.0, maxy + 0.5))
 
-        if minx < 0 and maxx < 0:
-          min_lon_wb2 = minx % 360
-          max_lon_wb2 = maxx % 360
-          lon_slice = slice(min_lon_wb2 - 0.5, max_lon_wb2 + 0.5)
-          is_split = False
-        elif minx >= 0 and maxx >= 0:
-          lon_slice = slice(max(0.0, minx - 0.5), min(360.0, maxx + 0.5))
-          is_split = False
+          if minx < 0 and maxx < 0:
+            min_lon_wb2 = minx % 360
+            max_lon_wb2 = maxx % 360
+            lon_slice = slice(min_lon_wb2 - 0.5, max_lon_wb2 + 0.5)
+            is_split = False
+          elif minx >= 0 and maxx >= 0:
+            lon_slice = slice(max(0.0, minx - 0.5), min(360.0, maxx + 0.5))
+            is_split = False
+          else:
+            is_split = True
+
+          if not is_split:
+            sub = ds_raw.sel(lat=lat_slice, lon=lon_slice)
+          else:
+            sub1 = ds_raw.sel(lat=lat_slice, lon=slice((minx % 360) - 0.5, 360.0))
+            sub2 = ds_raw.sel(lat=lat_slice, lon=slice(0.0, maxx + 0.5))
+            sub = xr.concat([sub1, sub2], dim="lon")
+
+          sub_lons = sub.lon.values
+          converted_lons = np.where(sub_lons > 180.0, sub_lons - 360.0, sub_lons)
+          sub = sub.assign_coords(lon=converted_lons).sortby("lon")
         else:
-          is_split = True
-
-        if not is_split:
-          sub = ds_raw.sel(lat=lat_slice, lon=lon_slice)
-        else:
-          sub1 = ds_raw.sel(lat=lat_slice, lon=slice((minx % 360) - 0.5, 360.0))
-          sub2 = ds_raw.sel(lat=lat_slice, lon=slice(0.0, maxx + 0.5))
-          sub = xr.concat([sub1, sub2], dim="lon")
-
-        sub_lons = sub.lon.values
-        converted_lons = np.where(sub_lons > 180.0, sub_lons - 360.0, sub_lons)
-        sub = sub.assign_coords(lon=converted_lons).sortby("lon")
+          sub_lons = ds_raw.lon.values
+          converted_lons = np.where(sub_lons > 180.0, sub_lons - 360.0, sub_lons)
+          sub = ds_raw.assign_coords(lon=converted_lons).sortby("lon")
 
         if weights_matrix is not None and (
             weights_matrix.grid_shape == (len(sub.lat), len(sub.lon))
@@ -339,9 +349,9 @@ class GraphCastExtractor(BaseExtractor):
               cell_res_lat=0.25,
               cell_res_lon=0.25,
           )
-        self._opened_subsets[store_url] = (sub, matrix)
+        self._opened_subsets[cache_key] = (sub, matrix)
 
-      sub, matrix = self._opened_subsets[store_url]
+      sub, matrix = self._opened_subsets[cache_key]
       time_target = pd.Timestamp(f"{dt.strftime('%Y-%m-%d')}T00:00:00")
 
       if time_target not in pd.to_datetime(sub.time.values):
@@ -408,6 +418,7 @@ class GraphCastExtractor(BaseExtractor):
       start_date: Optional[Union[str, pd.Timestamp]] = None,
       end_date: Optional[Union[str, pd.Timestamp]] = None,
       weights_matrix: Optional[ZonalWeightMatrix] = None,
+      use_bounding_box: bool = True,
   ) -> xr.Dataset:
     """Extracts 10-day GraphCast forecasts from WeatherBench 2 on GCS."""
     basin_ids = list(basins_gdf.index)
@@ -445,7 +456,10 @@ class GraphCastExtractor(BaseExtractor):
         )
     ):
       day_res = self.extract_day(
-          dt, basins_gdf, weights_matrix=weights_matrix
+          dt,
+          basins_gdf,
+          weights_matrix=weights_matrix,
+          use_bounding_box=use_bounding_box,
       )
       for band in expected_bands:
         data_dict[band][:, d_pos, :] = day_res[band]

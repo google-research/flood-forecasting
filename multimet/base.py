@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import abc
 import os
-from typing import Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import geopandas as gpd
 import pandas as pd
@@ -45,6 +45,9 @@ class BaseExtractor(abc.ABC):
       basins_gdf: gpd.GeoDataFrame,
       start_date: Optional[str | pd.Timestamp] = None,
       end_date: Optional[str | pd.Timestamp] = None,
+      weights_matrix: Optional[Any] = None,
+      use_bounding_box: bool = True,
+      **kwargs,
   ) -> xr.Dataset:
     """Extracts forcing data for all basins in the GeoDataFrame.
 
@@ -52,6 +55,9 @@ class BaseExtractor(abc.ABC):
       basins_gdf: GeoDataFrame indexed by basin_id with geometry in EPSG:4326.
       start_date: Optional start date filter.
       end_date: Optional end date filter.
+      weights_matrix: Optional precomputed ZonalWeightMatrix.
+      use_bounding_box: Whether to geographically slice raster grids to basin bounds.
+      **kwargs: Additional extractor-specific keyword arguments.
 
     Returns:
       xr.Dataset matching the exact MultiMet schema for this product.

@@ -260,6 +260,7 @@ class IMERGExtractor(BaseExtractor):
       nc_path: str,
       basins_gdf: gpd.GeoDataFrame,
       weights_matrix: Optional[ZonalWeightMatrix] = None,
+      use_bounding_box: bool = True,
   ) -> Dict[str, np.ndarray]:
     """Extracts 1 day of IMERG precipitation from a daily NetCDF4 file."""
     with xr.open_dataset(nc_path) as ds:
@@ -280,22 +281,25 @@ class IMERGExtractor(BaseExtractor):
       if da.dims == ("lon", "lat"):
         da = da.transpose("lat", "lon")
 
-      min_lon, min_lat, max_lon, max_lat = basins_gdf.total_bounds
-      pad = 0.2
-      lat_vals = da.lat.values
-      lon_vals = da.lon.values
+      if use_bounding_box:
+        min_lon, min_lat, max_lon, max_lat = basins_gdf.total_bounds
+        pad = 0.2
+        lat_vals = da.lat.values
+        lon_vals = da.lon.values
 
-      if lat_vals[0] > lat_vals[-1]:
-        lat_slice = slice(float(max_lat + pad), float(min_lat - pad))
+        if lat_vals[0] > lat_vals[-1]:
+          lat_slice = slice(float(max_lat + pad), float(min_lat - pad))
+        else:
+          lat_slice = slice(float(min_lat - pad), float(max_lat + pad))
+
+        if lon_vals[0] > lon_vals[-1]:
+          lon_slice = slice(float(max_lon + pad), float(min_lon - pad))
+        else:
+          lon_slice = slice(float(min_lon - pad), float(max_lon + pad))
+
+        sub_da = da.sel(lat=lat_slice, lon=lon_slice).load()
       else:
-        lat_slice = slice(float(min_lat - pad), float(max_lat + pad))
-
-      if lon_vals[0] > lon_vals[-1]:
-        lon_slice = slice(float(max_lon + pad), float(min_lon - pad))
-      else:
-        lon_slice = slice(float(min_lon - pad), float(max_lon + pad))
-
-      sub_da = da.sel(lat=lat_slice, lon=lon_slice).load()
+        sub_da = da.load()
       sub_lats = sub_da.lat.values
       sub_lons = sub_da.lon.values
 
@@ -382,6 +386,7 @@ class IMERGExtractor(BaseExtractor):
       start_dt: pd.Timestamp,
       end_dt: pd.Timestamp,
       weights_matrix: Optional[ZonalWeightMatrix] = None,
+      use_bounding_box: bool = True,
   ) -> xr.Dataset:
     """Extracts IMERG precipitation using dynamical.org cloud-optimized Zarr on S3."""
     import dynamical_catalog
@@ -399,11 +404,16 @@ class IMERGExtractor(BaseExtractor):
         f"{end_dt.strftime('%Y-%m-%d')}T23:30:00",
     )
 
-    sub_da = ds["precipitation_surface"].sel(
-        time=time_slice,
-        latitude=lat_slice,
-        longitude=lon_slice,
-    ).load()
+    if use_bounding_box:
+      sub_da = ds["precipitation_surface"].sel(
+          time=time_slice,
+          latitude=lat_slice,
+          longitude=lon_slice,
+      ).load()
+    else:
+      sub_da = ds["precipitation_surface"].sel(
+          time=time_slice,
+      ).load()
 
     sub_lats = sub_da.latitude.values
     sub_lons = sub_da.longitude.values
@@ -452,17 +462,25 @@ class IMERGExtractor(BaseExtractor):
       weights_dict: Optional[
           Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]
       ] = None,
+      use_bounding_box: bool = True,
   ) -> Dict[str, np.ndarray]:
     """Extracts 1 day of IMERG precipitation across basins."""
     dt = pd.to_datetime(dt)
     if self.source in ("gesdisc", "auto", "default", "public", "nasa"):
       nc_path = self.get_daily_file(dt)
       return self.extract_day_from_nc4(
-          nc_path, basins_gdf, weights_matrix=matrix
+          nc_path,
+          basins_gdf,
+          weights_matrix=matrix,
+          use_bounding_box=use_bounding_box,
       )
     elif self.source in ("dynamical", "cloud"):
       ds = self.extract_for_basins_dynamical(
-          basins_gdf, start_dt=dt, end_dt=dt, weights_matrix=matrix
+          basins_gdf,
+          start_dt=dt,
+          end_dt=dt,
+          weights_matrix=matrix,
+          use_bounding_box=use_bounding_box,
       )
       return {
           "imerg_precipitation": ds["imerg_precipitation"].values[:, 0].astype(
@@ -489,6 +507,8 @@ class IMERGExtractor(BaseExtractor):
       start_date: Optional[Union[str, pd.Timestamp]] = None,
       end_date: Optional[Union[str, pd.Timestamp]] = None,
       weights_matrix: Optional[ZonalWeightMatrix] = None,
+      use_bounding_box: bool = True,
+      **kwargs,
   ) -> xr.Dataset:
     """Extracts daily accumulated IMERG precipitation for given basins."""
     basin_ids = list(basins_gdf.index)
@@ -505,7 +525,11 @@ class IMERGExtractor(BaseExtractor):
 
     if self.source == "dynamical":
       return self.extract_for_basins_dynamical(
-          basins_gdf, start_dt, end_dt, weights_matrix=weights_matrix
+          basins_gdf,
+          start_dt,
+          end_dt,
+          weights_matrix=weights_matrix,
+          use_bounding_box=use_bounding_box,
       )
 
     date_idx = pd.date_range(start_dt, end_dt, freq="D")
@@ -525,7 +549,12 @@ class IMERGExtractor(BaseExtractor):
               leave=True,
           )
       ):
-        day_res = self.extract_day(dt, basins_gdf, matrix=weights_matrix)
+        day_res = self.extract_day(
+            dt,
+            basins_gdf,
+            matrix=weights_matrix,
+            use_bounding_box=use_bounding_box,
+        )
         precip_matrix[:, d_idx] = day_res["imerg_precipitation"]
     else:
       weights_dict = {}

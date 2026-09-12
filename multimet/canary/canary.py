@@ -208,6 +208,24 @@ def parse_canary_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespac
       default=None,
       help="Optional custom path to .netrc file.",
   )
+  parser.add_argument(
+      "--use_bounding_box",
+      nargs="?",
+      const=True,
+      default=True,
+      type=_str2bool,
+      help=(
+          "Whether to use spatial bounding box slicing to reduce"
+          " memory/compute (default: True)."
+      ),
+  )
+  parser.add_argument(
+      "--no-bounding-box",
+      "--no_bounding_box",
+      dest="use_bounding_box",
+      action="store_false",
+      help="Disable spatial bounding box slicing and process full global grid.",
+  )
   return parser.parse_args(argv)
 
 
@@ -221,6 +239,7 @@ def run_canary(args: argparse.Namespace) -> None:
   print(f"  • Source Mode       : {args.source}")
   print(f"  • Date Range        : {args.start_date} to {args.end_date}")
   print(f"  • Overwrite Mode    : {args.overwrite}")
+  print(f"  • Bounding Box      : {args.use_bounding_box}")
   print("=" * 70)
 
   # 1. Load Geometries
@@ -360,6 +379,7 @@ def run_canary(args: argparse.Namespace) -> None:
           start_date=prod_start,
           end_date=prod_end,
           weights_matrix=weights,
+          use_bounding_box=args.use_bounding_box,
       )
       # Save to Zarr
       store_path = writer.write_or_append(
