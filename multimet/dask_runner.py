@@ -309,21 +309,33 @@ def extract_product_dask(
     missing_indices = list(range(total_days))
   else:
     # Store exists: check date coordinates
-    existing_z = zarr.open_group(store_path, mode="r")
-    if resume:
-      missing_indices = [
-          i
-          for i in range(total_days)
-          if not writer.is_date_chunk_written(prod_enum, i, root_group=existing_z)
-      ]
-      logger.info(
-          "Resume mode: %d of %d days already written in %s",
-          total_days - len(missing_indices),
-          total_days,
-          prod_name,
-      )
-    else:
+    try:
+      with xr.open_zarr(store_path) as existing_ds:
+        existing_dates = pd.to_datetime(existing_ds["date"].values)
+    except Exception:
+      existing_dates = None
+
+    if existing_dates is not None and not all_dates.equals(existing_dates) and not resume:
+      logger.info("Dates mismatch: reinitializing store %s for requested date range...", store_path)
+      writer.initialize_zarr_store(prod_enum, basin_ids, all_dates)
+      existing_z = zarr.open_group(store_path, mode="r")
       missing_indices = list(range(total_days))
+    else:
+      existing_z = zarr.open_group(store_path, mode="r")
+      if resume:
+        missing_indices = [
+            i
+            for i in range(total_days)
+            if not writer.is_date_chunk_written(prod_enum, i, root_group=existing_z)
+        ]
+        logger.info(
+            "Resume mode: %d of %d days already written in %s",
+            total_days - len(missing_indices),
+            total_days,
+            prod_name,
+        )
+      else:
+        missing_indices = list(range(total_days))
 
   if not missing_indices:
     logger.info("Product %s is already 100%% complete. Consolidating metadata...", prod_name)

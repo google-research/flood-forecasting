@@ -321,6 +321,9 @@ class MultiMetZarrWriter:
       return False
 
     arr = z_root[target_var]
+    if day_idx < 0 or day_idx >= arr.shape[1]:
+      return False
+
     prod_type = PRODUCT_TYPES[product]
     if prod_type == ProductType.FORECAST:
       slice_data = arr[:, day_idx, :]
