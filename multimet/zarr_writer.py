@@ -42,6 +42,9 @@ class MultiMetZarrWriter:
 
   def __init__(self, output_dir: Union[str, os.PathLike]):
     self.output_dir = str(output_dir)
+    if self.output_dir.startswith(("gs://", "gcs://")):
+      from multimet.gcp import configure_gcp_project
+      configure_gcp_project()
     self._open_groups: Dict[Product, zarr.hierarchy.Group] = {}
 
   def get_store_path(self, product: Product) -> str:

@@ -58,6 +58,7 @@ from multimet.graphcast import GraphCastExtractor
 from multimet.hres import HRESExtractor
 from multimet.imerg import IMERGExtractor
 from multimet.spatial import slice_coordinates_by_bounds
+from multimet.gcp import configure_gcp_project
 from multimet.zarr_writer import MultiMetZarrWriter
 from multimet.zonal import ZonalWeightMatrix
 
@@ -132,6 +133,7 @@ def _extract_and_write_chunk_task(
     start_idx: int,
     end_idx: int,
     use_bounding_box: bool = True,
+    gcp_project: Optional[str] = None,
 ) -> Dict[str, Any]:
   """Worker task: extracts data for a date batch and writes directly to Zarr.
 
@@ -147,10 +149,14 @@ def _extract_and_write_chunk_task(
     start_idx: Start integer index along the date dimension (inclusive).
     end_idx: End integer index along the date dimension (exclusive).
     use_bounding_box: Whether to spatially slice gridded inputs to bounds.
+    gcp_project: Optional Google Cloud project ID for GCS quota/billing.
 
   Returns:
     Status dictionary summarizing extracted chunk metadata.
   """
+  if gcp_project or store_path.startswith(("gs://", "gcs://")):
+    configure_gcp_project(gcp_project)
+
   prod_enum = Product[product_name]
   extractor = extractor_cls(**extractor_kwargs)
 
@@ -238,6 +244,7 @@ def extract_product_dask(
     earthdata_password: Optional[str] = None,
     earthdata_token: Optional[str] = None,
     netrc_path: Optional[str] = None,
+    gcp_project: Optional[str] = None,
     show_progress: bool = True,
     **extractor_extra_kwargs: Any,
 ) -> str:
@@ -263,6 +270,7 @@ def extract_product_dask(
     earthdata_password: Optional NASA Earthdata password.
     earthdata_token: Optional NASA Earthdata Bearer token.
     netrc_path: Optional custom .netrc path.
+    gcp_project: Optional Google Cloud project ID for GCS quota/billing.
     show_progress: Whether to display a tqdm progress bar.
     **extractor_extra_kwargs: Additional arguments passed to extractor constructor.
 
@@ -289,6 +297,9 @@ def extract_product_dask(
 
   writer = MultiMetZarrWriter(output_dir)
   store_path = writer.get_store_path(prod_enum)
+
+  if gcp_project or store_path.startswith(("gs://", "gcs://")):
+    gcp_project = configure_gcp_project(gcp_project)
 
   # Configure extractor kwargs
   extractor_kwargs = dict(extractor_extra_kwargs)
@@ -339,6 +350,11 @@ def extract_product_dask(
         shutil.rmtree(p, ignore_errors=True)
       elif os.path.exists(p):
         os.remove(p)
+    if _store_exists(p):
+      raise RuntimeError(
+          f"Failed to overwrite/remove existing store at {p}. "
+          "Please verify storage permissions and quota project."
+      )
 
   store_already_exists = _store_exists(store_path)
 
@@ -463,6 +479,7 @@ def extract_product_dask(
         start_idx=b_start,
         end_idx=b_end,
         use_bounding_box=use_bounding_box,
+        gcp_project=gcp_project,
         retries=3,
     )
     task_futures.append(future)
@@ -519,6 +536,7 @@ def extract_multimet_dask(
     earthdata_password: Optional[str] = None,
     earthdata_token: Optional[str] = None,
     netrc_path: Optional[str] = None,
+    gcp_project: Optional[str] = None,
 ) -> Dict[str, str]:
   """Runs massively parallel Dask extraction across requested products.
 
@@ -541,10 +559,24 @@ def extract_multimet_dask(
     earthdata_password: Optional NASA Earthdata password.
     earthdata_token: Optional NASA Earthdata Bearer token.
     netrc_path: Optional path to custom .netrc file.
+    gcp_project: Optional Google Cloud project ID for GCS quota/billing.
 
   Returns:
     Dictionary mapping product name to output Zarr store path.
   """
+  all_paths = [str(output_dir)]
+  if isinstance(basins, (str, os.PathLike)):
+    all_paths.append(str(basins))
+  elif isinstance(basins, (list, tuple, set)):
+    all_paths.extend(str(x) for x in basins)
+  if weights_cache:
+    all_paths.append(str(weights_cache))
+
+  if any(p.startswith(("gs://", "gcs://")) for p in all_paths) or gcp_project:
+    gcp_project = configure_gcp_project(gcp_project)
+    if gcp_project:
+      logger.info("Configured Google Cloud project for GCS operations: %s", gcp_project)
+
   client = init_dask_client(
       scheduler_address=dask_scheduler,
       num_workers=num_workers,
@@ -580,6 +612,7 @@ def extract_multimet_dask(
         earthdata_password=earthdata_password,
         earthdata_token=earthdata_token,
         netrc_path=netrc_path,
+        gcp_project=gcp_project,
     )
     output_stores[prod_name] = store_path
 
@@ -703,6 +736,12 @@ def _build_parser() -> argparse.ArgumentParser:
       default=None,
       help="Custom path to .netrc file for Earthdata credentials.",
   )
+  parser.add_argument(
+      "--gcp_project",
+      type=str,
+      default=None,
+      help="Optional Google Cloud project ID for GCS quota/billing. Auto-detected if omitted.",
+  )
   return parser
 
 
@@ -736,6 +775,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
       earthdata_password=args.earthdata_password,
       earthdata_token=args.earthdata_token,
       netrc_path=args.netrc_path,
+      gcp_project=args.gcp_project,
   )
   print(f"\n✓ Completed extraction of {len(stores)} products in {time.time() - t0:.2f}s:")
   for prod, store_path in stores.items():

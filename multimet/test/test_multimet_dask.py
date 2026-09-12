@@ -262,3 +262,28 @@ def test_dask_store_exists_and_overwrite_fsspec(tmp_path):
   assert not fs_remote.exists(remote_path)
 
 
+def test_gcp_project_autodetection_and_configuration(monkeypatch):
+  """Tests GCP project autodetection precedence and fsspec/env configuration."""
+  from multimet.gcp import auto_detect_gcp_project, configure_gcp_project
+  import fsspec.config
+
+  # 1. Explicit project takes precedence
+  assert auto_detect_gcp_project("explicit-proj-123") == "explicit-proj-123"
+
+  # 2. Environment variable fallback
+  for k in ("GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_QUOTA_PROJECT", "CLOUDSDK_CORE_PROJECT", "GCP_PROJECT", "GCLOUD_PROJECT"):
+    monkeypatch.delenv(k, raising=False)
+
+  monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "env-proj-456")
+  assert auto_detect_gcp_project() == "env-proj-456"
+
+  # 3. Test configure_gcp_project updates environment and fsspec config
+  proj = configure_gcp_project("configured-proj-789")
+  assert proj == "configured-proj-789"
+  assert os.environ.get("GOOGLE_CLOUD_PROJECT") == "configured-proj-789"
+  assert os.environ.get("GOOGLE_CLOUD_QUOTA_PROJECT") == "configured-proj-789"
+  assert fsspec.config.conf.get("gs", {}).get("project") == "configured-proj-789"
+  assert fsspec.config.conf.get("gcs", {}).get("project") == "configured-proj-789"
+
+
+

@@ -81,6 +81,9 @@ def _resolve_geometry_sources(
 
     protocol, path_in_fs = fsspec.core.split_protocol(raw_s)
     if protocol in ("gs", "gcs", "s3"):
+      if protocol in ("gs", "gcs"):
+        from multimet.gcp import configure_gcp_project
+        configure_gcp_project()
       fs, path = fsspec.core.url_to_fs(raw_s)
       # Check if remote glob pattern
       if any(char in path for char in ("*", "?", "[")):
@@ -188,6 +191,9 @@ def _load_single_basin_geometry(
     source_str = str(source)
     proto, path_in_fs = fsspec.core.split_protocol(source_str)
     if proto in ("gs", "gcs", "s3"):
+      if proto in ("gs", "gcs"):
+        from multimet.gcp import configure_gcp_project
+        configure_gcp_project()
       fs, path = fsspec.core.url_to_fs(source_str)
       ext = os.path.splitext(path)[1].lower()
       if ext in (".geojson", ".json"):

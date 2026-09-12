@@ -37,6 +37,7 @@ from multimet.config import Product
 from multimet.cpc import CPCExtractor
 from multimet.era5_land import ERA5LandExtractor
 from multimet.geometry import load_basin_geometries
+from multimet.gcp import configure_gcp_project
 from multimet.graphcast import GraphCastExtractor
 from multimet.hres import HRESExtractor
 from multimet.imerg import IMERGExtractor
@@ -68,6 +69,7 @@ def extract_multimet_serial(
     earthdata_password: Optional[str] = None,
     earthdata_token: Optional[str] = None,
     netrc_path: Optional[str] = None,
+    gcp_project: Optional[str] = None,
 ) -> Dict[str, str]:
   """Runs local serial extraction for requested meteorological forcing products.
 
@@ -87,11 +89,26 @@ def extract_multimet_serial(
     earthdata_password: Optional NASA Earthdata Login password.
     earthdata_token: Optional NASA Earthdata Bearer token.
     netrc_path: Optional path to custom .netrc file.
+    gcp_project: Optional Google Cloud project ID for GCS quota/billing.
 
   Returns:
     Dictionary mapping product name to the output Zarr store path.
   """
-  os.makedirs(output_dir, exist_ok=True)
+  all_paths = [str(output_dir)]
+  if isinstance(basins, (str, os.PathLike)):
+    all_paths.append(str(basins))
+  elif isinstance(basins, (list, tuple, set)):
+    all_paths.extend(str(x) for x in basins)
+  if weights_cache:
+    all_paths.append(str(weights_cache))
+
+  if any(p.startswith(("gs://", "gcs://")) for p in all_paths) or gcp_project:
+    gcp_project = configure_gcp_project(gcp_project)
+    if gcp_project:
+      logger.info("Configured Google Cloud project for GCS operations: %s", gcp_project)
+
+  if not str(output_dir).startswith(("gs://", "gcs://")):
+    os.makedirs(output_dir, exist_ok=True)
   basins_gdf = load_basin_geometries(basins, id_column=id_column)
   basin_ids = list(basins_gdf.index)
 
@@ -255,6 +272,12 @@ def _build_parser() -> argparse.ArgumentParser:
       default=None,
       help="Custom path to .netrc file for Earthdata credentials.",
   )
+  parser.add_argument(
+      "--gcp_project",
+      type=str,
+      default=None,
+      help="Optional Google Cloud project ID for GCS quota/billing. Auto-detected if omitted.",
+  )
   return parser
 
 
@@ -283,6 +306,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
       earthdata_password=args.earthdata_password,
       earthdata_token=args.earthdata_token,
       netrc_path=args.netrc_path,
+      gcp_project=args.gcp_project,
   )
   print(f"\n✓ Completed extraction of {len(stores)} products in {time.time() - t0:.2f}s:")
   for prod, store_path in stores.items():
