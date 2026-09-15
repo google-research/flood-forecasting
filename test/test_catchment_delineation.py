@@ -133,12 +133,11 @@ def test_is_gcs_path():
   assert not is_gcs_path("data/dem")
 
 
-def test_auto_download_tile_mocked(tmp_path, monkeypatch):
-  from unittest.mock import MagicMock
+def test_default_gcs_download_mocked(tmp_path, monkeypatch):
+  """Verifies that with no tiles_dir supplied, DemDelineator automatically retrieves tiles from GCS into cache."""
   import catchment_delineation.gcs
 
   def mock_download(lat_top, lon_left, target_dir=None, source_uri=None):
-    # Create synthetic tile on demand
     target = Path(target_dir) if target_dir else tmp_path
     arr = np.zeros((6000, 6000), dtype=np.uint8)
     tile_file = target / tile_key_to_filename(lat_top, lon_left)
@@ -147,10 +146,42 @@ def test_auto_download_tile_mocked(tmp_path, monkeypatch):
 
   monkeypatch.setattr(catchment_delineation.gcs, "download_tile_from_gcs", mock_download)
 
-  # Tile is not present initially
-  delineator = DemDelineator(tiles_dir=tmp_path, auto_download=True)
+  # Default: tiles_dir is None, cache_dir is tmp_path
+  delineator = DemDelineator(cache_dir=tmp_path)
   tile = delineator.get_tile(40, -90)
   assert tile is not None
   assert tile.shape == (6000, 6000)
   assert (tmp_path / "n40w090.npy").exists()
+
+
+def test_user_supplied_tiles_dir_no_searching(tmp_path, monkeypatch):
+  """Verifies that when tiles_dir is user-supplied, it ONLY checks that path with no searching or downloading."""
+  import catchment_delineation.gcs
+
+  download_called = False
+
+  def mock_download(*args, **kwargs):
+    nonlocal download_called
+    download_called = True
+    raise RuntimeError("Should not be called when custom tiles_dir is supplied")
+
+  monkeypatch.setattr(catchment_delineation.gcs, "download_tile_from_gcs", mock_download)
+
+  # Empty custom directory
+  custom_dir = tmp_path / "custom_tiles"
+  custom_dir.mkdir()
+
+  delineator = DemDelineator(tiles_dir=custom_dir)
+  tile = delineator.get_tile(40, -90)
+  assert tile is None
+  assert not download_called
+
+  # Now put tile in custom_dir, verify it loads
+  arr = np.zeros((6000, 6000), dtype=np.uint8)
+  np.save(custom_dir / "n40w090.npy", arr)
+  delineator_new = DemDelineator(tiles_dir=custom_dir)
+  tile = delineator_new.get_tile(40, -90)
+  assert tile is not None
+  assert tile.shape == (6000, 6000)
+
 

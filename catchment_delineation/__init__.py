@@ -6,6 +6,7 @@ cross-tile boundary routing.
 """
 
 from catchment_delineation.config import (
+    DEFAULT_CACHE_DIR,
     GCS_DEM_BUCKET_URI,
     GCS_ELEVATION_TILES_URI,
     GCS_TILES_URI,
@@ -13,6 +14,7 @@ from catchment_delineation.config import (
     RES_DEG,
     TILE_CELLS,
     TILE_DEG,
+    get_default_cache_dir,
     get_default_tiles_dir,
 )
 from catchment_delineation.delineator import (
@@ -39,6 +41,8 @@ __all__ = [
     "delineate_catchment",
     "delineate_coordinates",
     "get_default_tiles_dir",
+    "get_default_cache_dir",
+    "DEFAULT_CACHE_DIR",
     "latlon_to_tile_key",
     "tile_key_to_filename",
     "is_tile_available",

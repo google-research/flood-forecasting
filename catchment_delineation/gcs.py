@@ -24,7 +24,7 @@ from typing import List, Optional, Set, Tuple, Union
 
 from catchment_delineation.config import (
     GCS_TILES_URI,
-    get_default_tiles_dir,
+    get_default_cache_dir,
 )
 from catchment_delineation.tiles import (
     get_required_tiles_for_bbox,

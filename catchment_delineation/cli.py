@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from catchment_delineation.config import get_default_tiles_dir
+from catchment_delineation.config import GCS_TILES_URI, get_default_cache_dir
 from catchment_delineation.delineator import DemDelineator
 from catchment_delineation.tiles import list_available_tiles
 
@@ -126,8 +126,9 @@ def main(argv: Optional[List[str]] = None) -> int:
       type=str,
       default=None,
       help=(
-          "Directory containing 5x5 degree DEM flow-direction .npy tiles. "
-          f"Default: {get_default_tiles_dir()}"
+          "Optional custom directory containing 5x5 degree DEM flow-direction .npy tiles. "
+          "If omitted, tiles are automatically retrieved from the gs bucket "
+          f"({GCS_TILES_URI})."
       ),
   )
   config_group.add_argument(
@@ -141,14 +142,6 @@ def main(argv: Optional[List[str]] = None) -> int:
       type=int,
       default=5000000,
       help="Maximum upstream cells safety limit (default: 5,000,000).",
-  )
-  config_group.add_argument(
-      "--auto-download",
-      action="store_true",
-      help=(
-          "Automatically download missing 5x5 degree DEM tiles from Google Cloud "
-          "Storage (gs://open-multimet/data/DEMs/tiles_5deg)."
-      ),
   )
 
   output_group = parser.add_argument_group("Output Options")
@@ -172,11 +165,12 @@ def main(argv: Optional[List[str]] = None) -> int:
 
   args = parser.parse_args(argv)
 
-  tiles_dir = Path(args.tiles_dir) if args.tiles_dir else get_default_tiles_dir()
+  tiles_dir = Path(args.tiles_dir) if args.tiles_dir else None
 
   if args.list_tiles:
     tiles = list_available_tiles(tiles_dir)
-    print(f"DEM Tiles Directory: {tiles_dir} (Total: {len(tiles)} tiles)")
+    target_dir = tiles_dir if tiles_dir else get_default_cache_dir()
+    print(f"DEM Tiles Directory: {target_dir} (Total: {len(tiles)} tiles)")
     for t in tiles:
       print(f"  {t}")
     return 0
@@ -206,9 +200,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     return 1
 
-  delineator = DemDelineator(
-      tiles_dir=tiles_dir, auto_download=args.auto_download
-  )
+  delineator = DemDelineator(tiles_dir=tiles_dir)
 
   # Run delineation
   if len(coords_to_process) == 1 and not args.coords and not args.csv:

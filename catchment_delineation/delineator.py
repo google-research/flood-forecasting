@@ -16,12 +16,14 @@ from shapely.geometry import MultiPolygon, Polygon, mapping
 from shapely.ops import unary_union
 
 from catchment_delineation.config import (
+    GCS_TILES_URI,
     INFLOW_MAP,
     RES_DEG,
     TILE_CELLS,
     TILE_DEG,
-    get_default_tiles_dir,
+    get_default_cache_dir,
 )
+from catchment_delineation.tiles import tile_key_to_filename
 
 
 class DemDelineator:
@@ -31,24 +33,29 @@ class DemDelineator:
       self,
       tiles_dir: Optional[Union[str, Path]] = None,
       cache_tiles: bool = True,
-      auto_download: bool = False,
+      gcs_uri: str = GCS_TILES_URI,
+      cache_dir: Optional[Union[str, Path]] = None,
   ):
     """Initializes the DEM delineator.
 
     Args:
-        tiles_dir: Directory containing pre-sliced 5x5 degree DEM flow direction
-          .npy tiles (e.g., n40w090.npy). Defaults to DEM_TILES_DIR or cached
-          tiles.
+        tiles_dir: Optional user-supplied directory containing DEM .npy tiles.
+          If provided, tiles are loaded exclusively from this path (no searching).
+          If None, tiles are loaded exclusively from the gs bucket (GCS_TILES_URI).
         cache_tiles: If True, caches memory-mapped tile references in memory.
-        auto_download: If True, automatically downloads missing tiles from GCS.
+        gcs_uri: GCS bucket URI for DEM tiles (default: gs://open-multimet/data/DEMs/tiles_5deg).
+        cache_dir: Local cache directory for tiles retrieved from GCS.
     """
     if tiles_dir is not None:
-      self.tiles_dir = Path(tiles_dir)
+      self.tiles_dir = Path(tiles_dir).expanduser().resolve()
     else:
-      self.tiles_dir = get_default_tiles_dir()
+      self.tiles_dir = None
 
+    self.gcs_uri = gcs_uri
+    self.cache_dir = (
+        Path(cache_dir).expanduser() if cache_dir else get_default_cache_dir()
+    )
     self.cache_tiles = cache_tiles
-    self.auto_download = auto_download
     self._tile_cache: Dict[Tuple[int, int], Optional[np.ndarray]] = {}
 
   def get_tile(self, lat_top: float, lon_left: float) -> Optional[np.ndarray]:
@@ -65,23 +72,30 @@ class DemDelineator:
     if self.cache_tiles and key in self._tile_cache:
       return self._tile_cache[key]
 
-    lat_str = f"n{key[0]:02d}" if key[0] >= 0 else f"s{abs(key[0]):02d}"
-    lon_str = f"w{abs(key[1]):03d}" if key[1] < 0 else f"e{key[1]:03d}"
-    tile_name = f"{lat_str}{lon_str}.npy"
-    tile_path = self.tiles_dir / tile_name
+    tile_name = tile_key_to_filename(key[0], key[1])
 
-    if not tile_path.exists():
-      if self.auto_download:
-        try:
-          from catchment_delineation.gcs import download_tile_from_gcs
-
-          download_tile_from_gcs(key[0], key[1], target_dir=self.tiles_dir)
-        except Exception as e:
-          print(f"Auto-download of tile {tile_name} failed: {e}")
+    if self.tiles_dir is not None:
+      # User supplied their own path: ONLY load from this path, no searching or falling back
+      tile_path = self.tiles_dir / tile_name
       if not tile_path.exists():
         if self.cache_tiles:
           self._tile_cache[key] = None
         return None
+    else:
+      # Default: ONLY load from the gs bucket (cached locally)
+      tile_path = self.cache_dir / tile_name
+      if not tile_path.exists():
+        try:
+          from catchment_delineation.gcs import download_tile_from_gcs
+
+          tile_path = download_tile_from_gcs(
+              key[0], key[1], target_dir=self.cache_dir, source_uri=self.gcs_uri
+          )
+        except Exception as e:
+          print(f"Error downloading DEM tile {tile_name} from {self.gcs_uri}: {e}")
+          if self.cache_tiles:
+            self._tile_cache[key] = None
+          return None
 
     try:
       arr = np.load(tile_path, mmap_mode="r")
@@ -93,6 +107,7 @@ class DemDelineator:
       if self.cache_tiles:
         self._tile_cache[key] = None
       return None
+
 
   def snap_outlet(
       self,
@@ -445,10 +460,9 @@ def delineate_dem(
     snap_window_cells: int = 4,
     max_cells: int = 5000000,
     catchment_id: Optional[str] = None,
-    auto_download: bool = False,
 ) -> Dict[str, Any]:
   """Convenience function to delineate a catchment from (lat, lon) coordinates using DEM flow direction."""
-  delineator = DemDelineator(tiles_dir=tiles_dir, auto_download=auto_download)
+  delineator = DemDelineator(tiles_dir=tiles_dir)
   return delineator.delineate(
       lat=lat,
       lon=lon,
@@ -468,14 +482,14 @@ def delineate_coordinates(
     ids: Optional[Iterable[str]] = None,
     snap_window_cells: int = 4,
     max_cells: int = 5000000,
-    auto_download: bool = False,
 ) -> Dict[str, Any]:
   """Convenience function to delineate multiple catchments from coordinate tuples."""
-  delineator = DemDelineator(tiles_dir=tiles_dir, auto_download=auto_download)
+  delineator = DemDelineator(tiles_dir=tiles_dir)
   return delineator.delineate_batch(
       coords=coords,
       ids=ids,
       snap_window_cells=snap_window_cells,
       max_cells=max_cells,
   )
+
 

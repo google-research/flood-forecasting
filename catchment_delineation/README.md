@@ -32,31 +32,21 @@ pip install -e .
 
 ## Data Setup (DEM Tiles)
 
-The delineator expects 5x5 degree flow direction tiles stored as numpy `.npy` files named with the convention `n{lat}w{lon}.npy` (e.g., `n40w090.npy` for the tile covering latitude 35°N–40°N, longitude 90°W–85°W).
-
-Tiles are searched automatically in the following locations:
-1. Directory passed via `--tiles-dir` or `tiles_dir=...`
-2. Directory specified by the `DEM_TILES_DIR` environment variable
-3. `~/data/DEMs/tiles_5deg` (or `~/data/DEMs/hydrosheds/tiles_5deg`)
-4. `~/.cache/googlehydrology/hydrosheds_dem/tiles_5deg`
-5. `~/.cache/earthkit_hydro/data/hydrosheds_dem/tiles_5deg`
-6. `data/dem/tiles_5deg` relative to repository root
-
-### Cloud Storage (GCS) Hosting & On-Demand Download
-All DEM flow direction and elevation tiles are hosted on Google Cloud Storage:
+In this open source repository, DEM data comes exclusively from the Google Cloud Storage bucket:
 ```bash
-gs://open-multimet/data/DEMs/tiles_5deg/           # 119 D8 flow direction tiles (.npy, ~4.0 GB)
-gs://open-multimet/data/DEMs/elevation_tiles_5deg/ # 119 conditioned elevation tiles (.npy, ~8.0 GB)
-gs://open-multimet/data/DEMs/na_dir_3s.tif         # Raw HydroSHEDS flow direction GeoTIFF (875 MB)
-gs://open-multimet/data/DEMs/na_con_3s.tif         # Raw HydroSHEDS conditioned elevation GeoTIFF (2.6 GB)
+gs://open-multimet/data/DEMs/tiles_5deg/
 ```
 
-Missing tiles can be downloaded automatically on the fly by passing `--auto-download` to the CLI or `auto_download=True` to `DemDelineator`:
-```bash
-delineate-catchment --lat 39.6828 --lon -88.7729 --auto-download -o basin.geojson
-```
+Required 5x5 degree tiles (`.npy`) are automatically retrieved from the gs bucket and cached locally in `~/.cache/googlehydrology/dem/`.
 
-To check available tiles on your system:
+### Custom User Paths
+Users can supply their own local tile directory if desired using the `--tiles-dir` command line flag or `tiles_dir` parameter in Python:
+- **CLI**: `delineate-catchment --lat 39.6828 --lon -88.7729 --tiles-dir /path/to/custom/tiles`
+- **Python**: `DemDelineator(tiles_dir="/path/to/custom/tiles")`
+
+When a custom path is supplied, tiles are loaded strictly from that path. There is no other candidate path searching.
+
+To check available cached tiles on your system:
 
 ```bash
 python -m catchment_delineation --list-tiles

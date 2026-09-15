@@ -4,7 +4,7 @@ import math
 from pathlib import Path
 from typing import List, Optional, Set, Tuple, Union
 
-from catchment_delineation.config import TILE_DEG, get_default_tiles_dir
+from catchment_delineation.config import TILE_DEG, get_default_cache_dir
 
 
 def latlon_to_tile_key(lat: float, lon: float) -> Tuple[int, int]:
@@ -39,8 +39,8 @@ def get_required_tiles_for_bbox(
 def is_tile_available(
     lat_top: int, lon_left: int, tiles_dir: Optional[Union[str, Path]] = None
 ) -> bool:
-  """Checks if the required tile file exists on disk."""
-  directory = Path(tiles_dir) if tiles_dir else get_default_tiles_dir()
+  """Checks if the required tile file exists locally."""
+  directory = Path(tiles_dir).expanduser() if tiles_dir else get_default_cache_dir()
   tile_path = directory / tile_key_to_filename(lat_top, lon_left)
   return tile_path.exists()
 
@@ -48,8 +48,9 @@ def is_tile_available(
 def list_available_tiles(
     tiles_dir: Optional[Union[str, Path]] = None,
 ) -> List[str]:
-  """Lists all available .npy tiles in the specified or default tiles directory."""
-  directory = Path(tiles_dir) if tiles_dir else get_default_tiles_dir()
+  """Lists all available .npy tiles in the specified or local cache directory."""
+  directory = Path(tiles_dir).expanduser() if tiles_dir else get_default_cache_dir()
   if not directory.exists():
     return []
   return sorted([f.name for f in directory.glob("*.npy")])
+

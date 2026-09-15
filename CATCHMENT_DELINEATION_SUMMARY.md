@@ -52,20 +52,12 @@ The delineator uses the official **HydroSHEDS v1.4 3 arc-second (~90m)** conditi
 * **Resolution**: 3 arc-seconds ($\approx 90\text{ meters}$ at the equator, or exactly $\frac{1}{1200}^\circ$ per cell).
 * **Flow Direction Format**: Standard ESRI D8 flow routing matrix where cell values encode downstream flow direction (`1`=E, `2`=SE, `4`=S, `8`=SW, `16`=W, `32`=NW, `64`=N, `128`=NE).
 * **Tile Layout**: 5°×5° tiles stored as memory-mapped `.npy` files (`uint8`, shape `(6000, 6000)`, ~36 MB each), named following the convention `n{lat}w{lon}.npy` (e.g. `n40w090.npy`).
-* **Tile Storage Location**:
-  * Cloud storage (GCS): `gs://open-multimet/data/DEMs/tiles_5deg/` (119 tiles, 4.0 GB), `elevation_tiles_5deg/` (119 tiles, 8.0 GB), and raw GeoTIFFs (`na_dir_3s.tif`, `na_con_3s.tif`).
-  * Primary local directory: `~/data/DEMs/tiles_5deg/` (or `~/data/DEMs/hydrosheds/tiles_5deg/`).
-  * Active cache: `/usr/local/google/home/gsnearing/.cache/earthkit_hydro/data/hydrosheds_dem/tiles_5deg/` (119 pre-sliced tiles covering continental North America).
-  * Raw full GeoTIFF: `/usr/local/google/home/gsnearing/.cache/earthkit_hydro/data/hydrosheds_dem/na_dir_3s.tif` (917 MB, 8.64B pixels).
-  * Raw elevation GeoTIFF: `/usr/local/google/home/gsnearing/.cache/earthkit_hydro/data/hydrosheds_dem/na_con_3s.tif` (2.70 GB).
-* **Automatic Discovery & GCS On-Demand Download**: In `catchment_delineation/config.py`, tiles are auto-resolved via:
-  1. Explicit `--tiles-dir` argument or `DemDelineator(tiles_dir=...)`
-  2. `DEM_TILES_DIR` environment variable
-  3. `~/data/DEMs/tiles_5deg` (or `~/data/DEMs/hydrosheds/tiles_5deg`)
-  4. `~/.cache/googlehydrology/hydrosheds_dem/tiles_5deg`
-  5. `~/.cache/earthkit_hydro/data/hydrosheds_dem/tiles_5deg`
-  6. `data/dem/tiles_5deg` relative to the repository root
-  7. On-demand cloud download from `gs://open-multimet/data/DEMs/tiles_5deg/` when `--auto-download` or `auto_download=True` is enabled.
+* **Tile Source & Storage**:
+  * **Primary Cloud Storage (GCS)**: `gs://open-multimet/data/DEMs/tiles_5deg/` (119 D8 flow-direction tiles, 4.0 GB). Required tiles are automatically downloaded and cached in `~/.cache/googlehydrology/dem/`.
+  * **Optional User-Supplied Path**: The user can provide their own local tiles directory via `--tiles-dir` CLI flag or `DemDelineator(tiles_dir=...)` in Python.
+  * **No Path Searching**: In this repository, there is no other candidate path searching or fallback scanning. Tiles come strictly from the gs bucket unless the user explicitly specifies their own custom directory.
+  * **Full GCS DEM Directory**: Also contains `elevation_tiles_5deg/` (119 tiles, 8.0 GB), master flow direction GeoTIFF `na_dir_3s.tif`, conditioned elevation GeoTIFF `na_con_3s.tif`, and `HydroSHEDS_TechDoc_v1_4.pdf`.
+
 
 
 ---
@@ -104,10 +96,16 @@ The delineator uses the official **HydroSHEDS v1.4 3 arc-second (~90m)** conditi
    delineate-catchment --lat 39.6828 --lon -88.7729 --pretty
    ```
 
-5. **List Available Tiles**:
+5. **Supply Custom Tiles Directory**:
+   ```bash
+   delineate-catchment --lat 39.6828 --lon -88.7729 --tiles-dir /path/to/my/tiles -o catchment.geojson
+   ```
+
+6. **List Available Tiles**:
    ```bash
    delineate-catchment --list-tiles
    ```
+
 
 ### B. Python API
 

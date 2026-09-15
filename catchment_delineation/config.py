@@ -1,7 +1,6 @@
 """Configuration and constants for DEM catchment delineation."""
 
 from pathlib import Path
-import os
 from typing import List, Tuple
 
 # ESRI D8 Flow Direction reverse inflow mapping:
@@ -23,32 +22,21 @@ TILE_DEG: float = 5.0          # 5x5 degrees per tile
 TILE_CELLS: int = 6000         # 5 deg * 1200 cells/deg = 6000 cells
 
 
-# Cloud Storage Default URIs
+# Cloud Storage Source URIs
 GCS_DEM_BUCKET_URI: str = "gs://open-multimet/data/DEMs"
 GCS_TILES_URI: str = f"{GCS_DEM_BUCKET_URI}/tiles_5deg"
 GCS_ELEVATION_TILES_URI: str = f"{GCS_DEM_BUCKET_URI}/elevation_tiles_5deg"
 
+# Default local cache directory for DEM tiles downloaded from the gs bucket
+DEFAULT_CACHE_DIR: Path = Path.home() / ".cache" / "googlehydrology" / "dem"
 
-def get_default_tiles_dir() -> Path:
-  """Resolves the default directory containing 5x5 degree DEM flow-direction tiles (.npy)."""
-  env_dir = os.environ.get("DEM_TILES_DIR")
-  if env_dir:
-    p = Path(env_dir)
-    if p.exists():
-      return p
 
-  candidate_paths = [
-      Path.home() / "data" / "DEMs" / "tiles_5deg",
-      Path.home() / "data" / "DEMs" / "hydrosheds" / "tiles_5deg",
-      Path.home() / ".cache" / "googlehydrology" / "hydrosheds_dem" / "tiles_5deg",
-      Path.home() / ".cache" / "earthkit_hydro" / "data" / "hydrosheds_dem" / "tiles_5deg",
-      Path(__file__).resolve().parent.parent / "data" / "dem" / "tiles_5deg",
-  ]
+def get_default_cache_dir() -> Path:
+  """Returns the local cache directory for DEM tiles downloaded from the gs bucket."""
+  return DEFAULT_CACHE_DIR
 
-  for p in candidate_paths:
-    if p.exists():
-      return p
 
-  # Default fallback
-  return candidate_paths[0]
+# Backwards compatibility alias
+get_default_tiles_dir = get_default_cache_dir
+
 
