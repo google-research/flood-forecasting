@@ -7,6 +7,7 @@ Submodules
 .. toctree::
    :maxdepth: 4
 
+   catchment_delineation.benchmark
    catchment_delineation.cli
    catchment_delineation.config
    catchment_delineation.delineator

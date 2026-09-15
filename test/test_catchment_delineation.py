@@ -185,3 +185,14 @@ def test_user_supplied_tiles_dir_no_searching(tmp_path, monkeypatch):
   assert tile.shape == (6000, 6000)
 
 
+def test_benchmark_execution(tmp_path):
+  from catchment_delineation.benchmark import run_benchmark
+  out_csv = tmp_path / "bench_test.csv"
+  df = run_benchmark(samples=2, workers=1, output_path=str(out_csv))
+  assert len(df) == 2
+  assert out_csv.exists()
+  assert "iou" in df.columns
+  assert "dice" in df.columns
+
+
+

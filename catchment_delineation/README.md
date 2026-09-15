@@ -27,8 +27,9 @@ gs://open-multimet/data/DEMs/tiles_5deg/
 
 | Resource | Path / URI | Description |
 | :--- | :--- | :--- |
-| **GCS Bucket (Remote)** | `gs://open-multimet/data/DEMs/tiles_5deg/` | Hosted 119 pre-sliced 5°×5° D8 flow-direction tiles (`uint8`, shape `(6000, 6000)`, ~34 MB each, `n{lat}w{lon}.npy`) |
-| **GCS Master DEM** | `gs://open-multimet/data/DEMs/na_dir_3s.tif` | Raw HydroSHEDS North America flow direction master GeoTIFF (875 MB) |
+| **GCS Bucket (Remote)** | `gs://open-multimet/data/DEMs/tiles_5deg/` | Hosted **763** pre-sliced 5°×5° D8 flow-direction tiles (`uint8`, shape `(6000, 6000)`, ~34 MB each) covering all habitable continents |
+| **GCS Master DEMs** | `gs://open-multimet/data/DEMs/{na,sa,eu,af,as,au}_dir_3s.tif` | Full continental HydroSHEDS 3-arc-second master flow direction GeoTIFFs |
+| **GCS Benchmark Catalog**| `gs://open-multimet/data/DEMs/benchmark_basins_1000.parquet` | Stratified global evaluation catalog of 1,200 validated reference catchments |
 | **GCS Elevation** | `gs://open-multimet/data/DEMs/elevation_tiles_5deg/` | Conditioned elevation tiles (`int16`, 119 files, 8.0 GB) |
 | **Local Cache** | `~/.cache/googlehydrology/dem/` | Default local directory where required tiles are cached automatically on first use |
 | **Custom Path** | `--tiles-dir <path>` or `tiles_dir="<path>"` | Optional user-supplied directory containing local `.npy` tiles |
@@ -193,9 +194,43 @@ delineate-catchment --list-tiles
 
 ---
 
-## 7. Testing
+## 7. Global Benchmarking Suite
 
-Run the automated test suite with pytest:
+The package includes a comprehensive global benchmarking runner (`benchmark-catchment`) to evaluate delineation accuracy against official reference catchment polygons:
+
+- **1,200 Balanced Global Basins**: Bundled dataset stratified equally across all 6 continents (200 each in Africa, Asia, Europe, North America, South America, Oceania), all 4 hemisphere quadrants (NW, NE, SW, SE), and 5 size tiers (micro to macro).
+- **Core Spatial Metrics**: Computes Intersection-over-Union (IoU / Jaccard Index), Dice similarity coefficient, relative area bias ($\Delta \text{Area} \%$), and stream snapping distances.
+- **Hermetic Cloud Execution**: Automatically pulls required 5°×5° tiles on demand from `gs://open-multimet/data/DEMs/tiles_5deg/`.
+
+### Running the Global Benchmark
+
+```bash
+# Run full benchmark across 1,000 global basins using 16 workers
+benchmark-catchment --samples 1000 --workers 16 -o benchmark_results.csv
+
+# Run specific continents (e.g. Europe and Africa)
+benchmark-catchment --continents Europe Africa --workers 8
+
+# Filter by basin size tiers
+benchmark-catchment --size-tiers 1_micro 2_small 3_medium 4_large 5_macro
+```
+
+### Benchmark CLI Options
+
+| Argument | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--samples` | int | `1000` | Number of basins to evaluate (max 1200) |
+| `--continents` | strings | None | Subset continents (`Africa`, `Asia`, `Europe`, `North America`, `South America`, `Oceania`) |
+| `--size-tiers` | strings | None | Subset size tiers (`1_micro`, `2_small`, `3_medium`, `4_large`, `5_macro`) |
+| `--workers` | int | `8` | Number of parallel worker processes |
+| `--tiles-dir` | path | `None` | Optional local DEM tile folder (defaults to GCS auto-download) |
+| `-o`, `--output` | path | `benchmark_results.csv` | Output file path (.csv or .parquet) for detailed per-basin metrics |
+
+---
+
+## 8. Testing
+
+Run the automated unit test suite with pytest:
 
 ```bash
 pytest test/test_catchment_delineation.py -v
