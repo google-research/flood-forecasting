@@ -142,6 +142,14 @@ def main(argv: Optional[List[str]] = None) -> int:
       default=5000000,
       help="Maximum upstream cells safety limit (default: 5,000,000).",
   )
+  config_group.add_argument(
+      "--auto-download",
+      action="store_true",
+      help=(
+          "Automatically download missing 5x5 degree DEM tiles from Google Cloud "
+          "Storage (gs://open-multimet/data/DEMs/tiles_5deg)."
+      ),
+  )
 
   output_group = parser.add_argument_group("Output Options")
   output_group.add_argument(
@@ -198,7 +206,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     return 1
 
-  delineator = DemDelineator(tiles_dir=tiles_dir)
+  delineator = DemDelineator(
+      tiles_dir=tiles_dir, auto_download=args.auto_download
+  )
 
   # Run delineation
   if len(coords_to_process) == 1 and not args.coords and not args.csv:

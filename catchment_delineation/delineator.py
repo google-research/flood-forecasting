@@ -31,6 +31,7 @@ class DemDelineator:
       self,
       tiles_dir: Optional[Union[str, Path]] = None,
       cache_tiles: bool = True,
+      auto_download: bool = False,
   ):
     """Initializes the DEM delineator.
 
@@ -39,6 +40,7 @@ class DemDelineator:
           .npy tiles (e.g., n40w090.npy). Defaults to DEM_TILES_DIR or cached
           tiles.
         cache_tiles: If True, caches memory-mapped tile references in memory.
+        auto_download: If True, automatically downloads missing tiles from GCS.
     """
     if tiles_dir is not None:
       self.tiles_dir = Path(tiles_dir)
@@ -46,6 +48,7 @@ class DemDelineator:
       self.tiles_dir = get_default_tiles_dir()
 
     self.cache_tiles = cache_tiles
+    self.auto_download = auto_download
     self._tile_cache: Dict[Tuple[int, int], Optional[np.ndarray]] = {}
 
   def get_tile(self, lat_top: float, lon_left: float) -> Optional[np.ndarray]:
@@ -68,9 +71,17 @@ class DemDelineator:
     tile_path = self.tiles_dir / tile_name
 
     if not tile_path.exists():
-      if self.cache_tiles:
-        self._tile_cache[key] = None
-      return None
+      if self.auto_download:
+        try:
+          from catchment_delineation.gcs import download_tile_from_gcs
+
+          download_tile_from_gcs(key[0], key[1], target_dir=self.tiles_dir)
+        except Exception as e:
+          print(f"Auto-download of tile {tile_name} failed: {e}")
+      if not tile_path.exists():
+        if self.cache_tiles:
+          self._tile_cache[key] = None
+        return None
 
     try:
       arr = np.load(tile_path, mmap_mode="r")
@@ -434,9 +445,10 @@ def delineate_dem(
     snap_window_cells: int = 4,
     max_cells: int = 5000000,
     catchment_id: Optional[str] = None,
+    auto_download: bool = False,
 ) -> Dict[str, Any]:
   """Convenience function to delineate a catchment from (lat, lon) coordinates using DEM flow direction."""
-  delineator = DemDelineator(tiles_dir=tiles_dir)
+  delineator = DemDelineator(tiles_dir=tiles_dir, auto_download=auto_download)
   return delineator.delineate(
       lat=lat,
       lon=lon,
@@ -456,12 +468,14 @@ def delineate_coordinates(
     ids: Optional[Iterable[str]] = None,
     snap_window_cells: int = 4,
     max_cells: int = 5000000,
+    auto_download: bool = False,
 ) -> Dict[str, Any]:
   """Convenience function to delineate multiple catchments from coordinate tuples."""
-  delineator = DemDelineator(tiles_dir=tiles_dir)
+  delineator = DemDelineator(tiles_dir=tiles_dir, auto_download=auto_download)
   return delineator.delineate_batch(
       coords=coords,
       ids=ids,
       snap_window_cells=snap_window_cells,
       max_cells=max_cells,
   )
+

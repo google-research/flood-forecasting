@@ -23,6 +23,12 @@ TILE_DEG: float = 5.0          # 5x5 degrees per tile
 TILE_CELLS: int = 6000         # 5 deg * 1200 cells/deg = 6000 cells
 
 
+# Cloud Storage Default URIs
+GCS_DEM_BUCKET_URI: str = "gs://open-multimet/data/DEMs"
+GCS_TILES_URI: str = f"{GCS_DEM_BUCKET_URI}/tiles_5deg"
+GCS_ELEVATION_TILES_URI: str = f"{GCS_DEM_BUCKET_URI}/elevation_tiles_5deg"
+
+
 def get_default_tiles_dir() -> Path:
   """Resolves the default directory containing 5x5 degree DEM flow-direction tiles (.npy)."""
   env_dir = os.environ.get("DEM_TILES_DIR")
@@ -32,6 +38,8 @@ def get_default_tiles_dir() -> Path:
       return p
 
   candidate_paths = [
+      Path.home() / "data" / "DEMs" / "tiles_5deg",
+      Path.home() / "data" / "DEMs" / "hydrosheds" / "tiles_5deg",
       Path.home() / ".cache" / "googlehydrology" / "hydrosheds_dem" / "tiles_5deg",
       Path.home() / ".cache" / "earthkit_hydro" / "data" / "hydrosheds_dem" / "tiles_5deg",
       Path(__file__).resolve().parent.parent / "data" / "dem" / "tiles_5deg",
@@ -43,3 +51,4 @@ def get_default_tiles_dir() -> Path:
 
   # Default fallback
   return candidate_paths[0]
+

@@ -122,3 +122,35 @@ def test_cli_execution(tmp_path):
   assert data["type"] == "FeatureCollection"
   assert len(data["features"]) == 1
   assert data["features"][0]["properties"]["area_km2"] > 10.0
+
+
+def test_is_gcs_path():
+  from catchment_delineation.gcs import is_gcs_path
+
+  assert is_gcs_path("gs://open-multimet/data/DEMs")
+  assert is_gcs_path("gcs://open-multimet/data/DEMs")
+  assert not is_gcs_path("/usr/local/data/DEMs")
+  assert not is_gcs_path("data/dem")
+
+
+def test_auto_download_tile_mocked(tmp_path, monkeypatch):
+  from unittest.mock import MagicMock
+  import catchment_delineation.gcs
+
+  def mock_download(lat_top, lon_left, target_dir=None, source_uri=None):
+    # Create synthetic tile on demand
+    target = Path(target_dir) if target_dir else tmp_path
+    arr = np.zeros((6000, 6000), dtype=np.uint8)
+    tile_file = target / tile_key_to_filename(lat_top, lon_left)
+    np.save(tile_file, arr)
+    return tile_file
+
+  monkeypatch.setattr(catchment_delineation.gcs, "download_tile_from_gcs", mock_download)
+
+  # Tile is not present initially
+  delineator = DemDelineator(tiles_dir=tmp_path, auto_download=True)
+  tile = delineator.get_tile(40, -90)
+  assert tile is not None
+  assert tile.shape == (6000, 6000)
+  assert (tmp_path / "n40w090.npy").exists()
+

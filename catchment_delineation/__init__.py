@@ -6,6 +6,9 @@ cross-tile boundary routing.
 """
 
 from catchment_delineation.config import (
+    GCS_DEM_BUCKET_URI,
+    GCS_ELEVATION_TILES_URI,
+    GCS_TILES_URI,
     INFLOW_MAP,
     RES_DEG,
     TILE_CELLS,
@@ -17,6 +20,11 @@ from catchment_delineation.delineator import (
     delineate_catchment,
     delineate_coordinates,
     delineate_dem,
+)
+from catchment_delineation.gcs import (
+    download_tile_from_gcs,
+    download_tiles_for_bbox,
+    is_gcs_path,
 )
 from catchment_delineation.tiles import (
     is_tile_available,
@@ -35,8 +43,15 @@ __all__ = [
     "tile_key_to_filename",
     "is_tile_available",
     "list_available_tiles",
+    "download_tile_from_gcs",
+    "download_tiles_for_bbox",
+    "is_gcs_path",
+    "GCS_DEM_BUCKET_URI",
+    "GCS_TILES_URI",
+    "GCS_ELEVATION_TILES_URI",
     "INFLOW_MAP",
     "RES_DEG",
     "TILE_DEG",
     "TILE_CELLS",
 ]
+

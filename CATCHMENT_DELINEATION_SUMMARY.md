@@ -53,15 +53,20 @@ The delineator uses the official **HydroSHEDS v1.4 3 arc-second (~90m)** conditi
 * **Flow Direction Format**: Standard ESRI D8 flow routing matrix where cell values encode downstream flow direction (`1`=E, `2`=SE, `4`=S, `8`=SW, `16`=W, `32`=NW, `64`=N, `128`=NE).
 * **Tile Layout**: 5°×5° tiles stored as memory-mapped `.npy` files (`uint8`, shape `(6000, 6000)`, ~36 MB each), named following the convention `n{lat}w{lon}.npy` (e.g. `n40w090.npy`).
 * **Tile Storage Location**:
+  * Cloud storage (GCS): `gs://open-multimet/data/DEMs/tiles_5deg/` (119 tiles, 4.0 GB), `elevation_tiles_5deg/` (119 tiles, 8.0 GB), and raw GeoTIFFs (`na_dir_3s.tif`, `na_con_3s.tif`).
+  * Primary local directory: `~/data/DEMs/tiles_5deg/` (or `~/data/DEMs/hydrosheds/tiles_5deg/`).
   * Active cache: `/usr/local/google/home/gsnearing/.cache/earthkit_hydro/data/hydrosheds_dem/tiles_5deg/` (119 pre-sliced tiles covering continental North America).
   * Raw full GeoTIFF: `/usr/local/google/home/gsnearing/.cache/earthkit_hydro/data/hydrosheds_dem/na_dir_3s.tif` (917 MB, 8.64B pixels).
   * Raw elevation GeoTIFF: `/usr/local/google/home/gsnearing/.cache/earthkit_hydro/data/hydrosheds_dem/na_con_3s.tif` (2.70 GB).
-* **Automatic Discovery**: In `catchment_delineation/config.py`, tiles are auto-resolved via:
+* **Automatic Discovery & GCS On-Demand Download**: In `catchment_delineation/config.py`, tiles are auto-resolved via:
   1. Explicit `--tiles-dir` argument or `DemDelineator(tiles_dir=...)`
   2. `DEM_TILES_DIR` environment variable
-  3. `~/.cache/googlehydrology/hydrosheds_dem/tiles_5deg`
-  4. `~/.cache/earthkit_hydro/data/hydrosheds_dem/tiles_5deg`
-  5. `data/dem/tiles_5deg` relative to the repository root
+  3. `~/data/DEMs/tiles_5deg` (or `~/data/DEMs/hydrosheds/tiles_5deg`)
+  4. `~/.cache/googlehydrology/hydrosheds_dem/tiles_5deg`
+  5. `~/.cache/earthkit_hydro/data/hydrosheds_dem/tiles_5deg`
+  6. `data/dem/tiles_5deg` relative to the repository root
+  7. On-demand cloud download from `gs://open-multimet/data/DEMs/tiles_5deg/` when `--auto-download` or `auto_download=True` is enabled.
+
 
 ---
 

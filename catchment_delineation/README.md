@@ -37,9 +37,24 @@ The delineator expects 5x5 degree flow direction tiles stored as numpy `.npy` fi
 Tiles are searched automatically in the following locations:
 1. Directory passed via `--tiles-dir` or `tiles_dir=...`
 2. Directory specified by the `DEM_TILES_DIR` environment variable
-3. `~/.cache/googlehydrology/hydrosheds_dem/tiles_5deg`
-4. `~/.cache/earthkit_hydro/data/hydrosheds_dem/tiles_5deg`
-5. `data/dem/tiles_5deg` relative to repository root
+3. `~/data/DEMs/tiles_5deg` (or `~/data/DEMs/hydrosheds/tiles_5deg`)
+4. `~/.cache/googlehydrology/hydrosheds_dem/tiles_5deg`
+5. `~/.cache/earthkit_hydro/data/hydrosheds_dem/tiles_5deg`
+6. `data/dem/tiles_5deg` relative to repository root
+
+### Cloud Storage (GCS) Hosting & On-Demand Download
+All DEM flow direction and elevation tiles are hosted on Google Cloud Storage:
+```bash
+gs://open-multimet/data/DEMs/tiles_5deg/           # 119 D8 flow direction tiles (.npy, ~4.0 GB)
+gs://open-multimet/data/DEMs/elevation_tiles_5deg/ # 119 conditioned elevation tiles (.npy, ~8.0 GB)
+gs://open-multimet/data/DEMs/na_dir_3s.tif         # Raw HydroSHEDS flow direction GeoTIFF (875 MB)
+gs://open-multimet/data/DEMs/na_con_3s.tif         # Raw HydroSHEDS conditioned elevation GeoTIFF (2.6 GB)
+```
+
+Missing tiles can be downloaded automatically on the fly by passing `--auto-download` to the CLI or `auto_download=True` to `DemDelineator`:
+```bash
+delineate-catchment --lat 39.6828 --lon -88.7729 --auto-download -o basin.geojson
+```
 
 To check available tiles on your system:
 
