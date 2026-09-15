@@ -1,28 +1,55 @@
 # Catchment Delineation from DEM Flow Direction
 
-High-performance, pure DEM flow-direction watershed delineation module. Performs authentic reverse-flow BFS graph traversal on high-resolution (90m / 3 arc-second) D8 flow-direction matrices (HydroSHEDS / MERIT Hydro) with seamless cross-tile boundary routing.
-
-## Features
-
-- **Pure DEM D8 Flow Routing**: Authentic reverse-flow traversal on 3 arc-second (~90m) D8 matrices.
-- **Cross-Tile Routing**: Seamlessly handles river basins crossing arbitrary 5x5 degree tile boundaries without boundary artifacts.
-- **Channel Snapping**: Automatically snaps clicked outlet coordinates to the nearest stream channel using bounded BFS upstream connectivity scoring.
-- **Memory-Mapped I/O**: Direct `np.load(..., mmap_mode="r")` streaming from disk for instant retrieval and minimal memory footprint.
-- **Vectorization**: Uses run-length row fusion and Shapely unary union to produce clean, simplified GeoJSON polygons.
-- **Batch Processing**: Supports single coordinates, coordinate lists, or batch CSV files.
-- **CLI & Python API**: Zero complex server dependencies; run as a CLI or import directly.
+High-performance, pure DEM flow-direction watershed delineation module for `googlehydrology` and OpenHydroNet. Performs authentic reverse-flow BFS graph traversal on high-resolution (90m / 3 arc-second) D8 flow-direction matrices with seamless cross-tile boundary routing.
 
 ---
 
-## Installation & Requirements
+## 1. What This Module Does
 
-Ensure `numpy` and `shapely` are installed in your environment:
+- **Pure DEM D8 Flow Routing**: Performs exact reverse-flow breadth-first search (BFS) graph traversal on 3 arc-second (~90m at equator, 1/1200° cell size) D8 flow direction matrices (HydroSHEDS v1.4 / MERIT Hydro).
+- **Seamless Multi-Tile Traversal**: Dynamically traverses across 5°×5° tile boundaries without edge truncation or boundary artifacts, reconstructing the true natural watershed basin geometry regardless of river size.
+- **Channel Snapping**: Automatically snaps clicked or gauge coordinates to the nearest stream channel outlet cell using a bounded local BFS connectivity scoring algorithm.
+- **Accurate Geodesic Area**: Sums raster cell ground footprints with exact latitude scaling (`lat_scale * lon_scale`) to compute geodesic drainage area in $\text{km}^2$.
+- **Fast Run-Length Vectorization**: Combines row run-length raster interval fusion with Shapely `unary_union` and adaptive boundary simplification to produce clean, valid GeoJSON Polygon / MultiPolygon geometries.
+- **Zero Heavy Dependencies**: Requires only `numpy` and `shapely` (no GDAL, GIS servers, or heavy C-extensions).
+
+---
+
+## 2. Data Sources & Storage Paths
+
+In this open-source repository, DEM data comes exclusively from the official Google Cloud Storage bucket:
+
+```text
+gs://open-multimet/data/DEMs/tiles_5deg/
+```
+
+### Where the Paths Are
+
+| Resource | Path / URI | Description |
+| :--- | :--- | :--- |
+| **GCS Bucket (Remote)** | `gs://open-multimet/data/DEMs/tiles_5deg/` | Hosted 119 pre-sliced 5°×5° D8 flow-direction tiles (`uint8`, shape `(6000, 6000)`, ~34 MB each, `n{lat}w{lon}.npy`) |
+| **GCS Master DEM** | `gs://open-multimet/data/DEMs/na_dir_3s.tif` | Raw HydroSHEDS North America flow direction master GeoTIFF (875 MB) |
+| **GCS Elevation** | `gs://open-multimet/data/DEMs/elevation_tiles_5deg/` | Conditioned elevation tiles (`int16`, 119 files, 8.0 GB) |
+| **Local Cache** | `~/.cache/googlehydrology/dem/` | Default local directory where required tiles are cached automatically on first use |
+| **Custom Path** | `--tiles-dir <path>` or `tiles_dir="<path>"` | Optional user-supplied directory containing local `.npy` tiles |
+
+### Automatic Retrieval & Strict Path Handling
+
+- **Default Behavior**: When no custom path is provided, `DemDelineator` checks the local cache (`~/.cache/googlehydrology/dem/`). If a required tile is not present locally, it is downloaded on demand directly from `gs://open-multimet/data/DEMs/tiles_5deg/`.
+- **Custom User Directory**: Users can specify `--tiles-dir /path/to/my/tiles` on the command line or pass `tiles_dir="/path/to/my/tiles"` to `DemDelineator`. When specified, tiles are loaded strictly from that path.
+- **No Path Searching**: There is no candidate path scanning or fallback searching. Tiles are sourced strictly from the GCS bucket or from the user's explicit path.
+
+---
+
+## 3. Installation
+
+Ensure dependencies are installed in your Python environment:
 
 ```bash
 pip install numpy shapely
 ```
 
-To install as an editable package within `googlehydrology`:
+Install the package in editable mode from the repository root:
 
 ```bash
 pip install -e .
@@ -30,114 +57,146 @@ pip install -e .
 
 ---
 
-## Data Setup (DEM Tiles)
+## 4. How to Use: Python API
 
-In this open source repository, DEM data comes exclusively from the Google Cloud Storage bucket:
-```bash
-gs://open-multimet/data/DEMs/tiles_5deg/
-```
-
-Required 5x5 degree tiles (`.npy`) are automatically retrieved from the gs bucket and cached locally in `~/.cache/googlehydrology/dem/`.
-
-### Custom User Paths
-Users can supply their own local tile directory if desired using the `--tiles-dir` command line flag or `tiles_dir` parameter in Python:
-- **CLI**: `delineate-catchment --lat 39.6828 --lon -88.7729 --tiles-dir /path/to/custom/tiles`
-- **Python**: `DemDelineator(tiles_dir="/path/to/custom/tiles")`
-
-When a custom path is supplied, tiles are loaded strictly from that path. There is no other candidate path searching.
-
-To check available cached tiles on your system:
-
-```bash
-python -m catchment_delineation --list-tiles
-```
-
----
-
-## Python API Usage
-
-### 1. Delineating a Single Catchment
+### A. Direct Access via `googlehydrology`
 
 ```python
-from catchment_delineation import DemDelineator, delineate_dem
+import googlehydrology
 
-# Using the DemDelineator class
-delineator = DemDelineator()
-watershed = delineator.delineate(lat=39.6828, lon=-88.7729)
+# Delineate a single catchment (e.g., Dalton City, IL)
+basin = googlehydrology.delineate_dem(lat=39.6828, lon=-88.7729)
 
-print("Catchment ID:", watershed["properties"]["catchment_id"])
-print("Area (km²):", watershed["properties"]["area_km2"])
-print("Upstream Cells:", watershed["properties"]["upstream_cells_count"])
-print("Geometry type:", watershed["geometry"]["type"])
-
-# Or using the convenience function
-watershed = delineate_dem(lat=39.6828, lon=-88.7729)
+print("Catchment ID:", basin["properties"]["catchment_id"])
+print("Area (km²):", basin["properties"]["area_km2"])
+print("Upstream Cells:", basin["properties"]["upstream_cells_count"])
+print("Geometry Type:", basin["geometry"]["type"])
 ```
 
-### 2. Delineating Multiple Catchments
+### B. Using `DemDelineator` Class
+
+```python
+from catchment_delineation import DemDelineator
+
+# Uses official GCS bucket with local cache (~/.cache/googlehydrology/dem/)
+delineator = DemDelineator()
+
+# Delineate a single point
+feature = delineator.delineate(
+    lat=39.6828,
+    lon=-88.7729,
+    snap_window_cells=4,  # Half-width of snap search window (~360m)
+    catchment_id="USGS_05592500",
+)
+
+# Output is a standard GeoJSON Feature dict
+print(feature["properties"])
+```
+
+### C. Batch Processing Multiple Coordinates
 
 ```python
 from catchment_delineation import DemDelineator
 
 delineator = DemDelineator()
+
 coords = [(39.6828, -88.7729), (40.4172, -86.8858)]
-feature_collection = delineator.delineate_batch(coords)
+ids = ["DALTON_CITY", "LAFAYETTE"]
+
+feature_collection = delineator.delineate_batch(coords, ids=ids)
 
 for feat in feature_collection["features"]:
-    props = feat["properties"]
-    print(f"{props['catchment_id']}: {props['area_km2']} km²")
+  props = feat["properties"]
+  print(f"{props['catchment_id']}: {props['area_km2']:.1f} km²")
+```
+
+### D. Using a Custom Local Tiles Directory
+
+```python
+from catchment_delineation import DemDelineator
+
+# Strict local loading (no GCS download or fallback searching)
+delineator = DemDelineator(tiles_dir="/path/to/custom/tiles")
+feature = delineator.delineate(lat=39.6828, lon=-88.7729)
 ```
 
 ---
 
-## CLI Usage
+## 5. How to Use: Command-Line Interface (CLI)
 
-You can run the delineation tool directly via `python -m catchment_delineation` or via the installed console script `delineate-catchment`.
+The package installs the `delineate-catchment` console script (or use `python -m catchment_delineation`).
 
-### Single Coordinate Point
+### Single Coordinate
 
 ```bash
-# Output GeoJSON to stdout
-python -m catchment_delineation --lat 39.6828 --lon -88.7729 --pretty
+# Output GeoJSON directly to stdout
+delineate-catchment --lat 39.6828 --lon -88.7729 --pretty
 
 # Save GeoJSON to file
-python -m catchment_delineation --lat 39.6828 --lon -88.7729 -o dalton_city_basin.geojson
+delineate-catchment --lat 39.6828 --lon -88.7729 -o dalton_city.geojson
 ```
 
-### Multiple Coordinate Pairs
+### Multiple Coordinates
 
 ```bash
-python -m catchment_delineation \
+delineate-catchment \
   --coords "39.6828,-88.7729" "40.4172,-86.8858" \
-  -o multi_basins.geojson
+  --pretty -o multi_basins.geojson
 ```
 
-### Batch Processing from CSV
+### Batch Coordinates from CSV
 
-Given a CSV file `gauges.csv`:
+Given `gauges.csv`:
 ```csv
 id,latitude,longitude
-USGS_1,39.6828,-88.7729
-USGS_2,40.4172,-86.8858
+USGS_05592500,39.6828,-88.7729
+USGS_03335500,40.4172,-86.8858
 ```
 
 Run:
 ```bash
-python -m catchment_delineation --csv gauges.csv -o delineated_basins.geojson
+delineate-catchment --csv gauges.csv -o delineated_basins.geojson
 ```
 
-### Options Reference
+### Using a Custom Local Tiles Directory
 
-| Argument | Description | Default |
-| :--- | :--- | :--- |
-| `--lat` | Latitude of outlet point | None |
-| `--lon` | Longitude of outlet point | None |
-| `--coords` | One or more `lat,lon` pairs | None |
-| `--csv` | Path to CSV with coordinate columns | None |
-| `-o`, `--output` | Output GeoJSON filepath | stdout |
-| `--tiles-dir` | Path to directory containing `.npy` tiles | Auto-detected |
-| `--snap-window` | Channel snap search half-window in cells | `4` (~360m) |
-| `--max-cells` | Safety limit for BFS traversal cells | `5000000` |
-| `--id` | Custom catchment ID | Auto-generated |
-| `--pretty` | Pretty-print output JSON | False |
-| `--list-tiles` | List available tiles in directory | False |
+```bash
+delineate-catchment \
+  --lat 39.6828 --lon -88.7729 \
+  --tiles-dir /path/to/my/tiles \
+  -o custom_basin.geojson
+```
+
+### List Available Cached Tiles
+
+```bash
+delineate-catchment --list-tiles
+```
+
+---
+
+## 6. CLI Options Reference
+
+| Argument | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--lat` | float | None | Latitude of pour point outlet |
+| `--lon` | float | None | Longitude of pour point outlet |
+| `--coords` | string(s) | None | One or more space-separated `"lat,lon"` pairs |
+| `--csv` | path | None | CSV file with latitude, longitude, and optional ID columns |
+| `--id` | string | None | Custom catchment ID for single-coordinate runs |
+| `--tiles-dir` | path | `None` | Custom tile directory. If omitted, tiles are downloaded from `gs://open-multimet/data/DEMs/tiles_5deg/` |
+| `--snap-window` | int | `4` | Search window half-width in cells (~360m at 90m resolution) |
+| `--max-cells` | int | `5000000` | Traversal safety limit for maximum upstream raster cells |
+| `-o`, `--output` | path | stdout | Output GeoJSON file path |
+| `--pretty` | flag | False | Pretty-print output JSON with 2-space indentation |
+| `--list-tiles` | flag | False | Print available `.npy` tile files and exit |
+
+---
+
+## 7. Testing
+
+Run the automated test suite with pytest:
+
+```bash
+pytest test/test_catchment_delineation.py -v
+```

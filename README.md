@@ -91,6 +91,18 @@ run convert-caravan --caravan-dir ~/data/Caravan-nc --output-dir ~/data/Caravan-
 
 The MultiMet meteorological forcing data extension is accessed directly from **Google Cloud Storage** or local disk. Point your configuration to: `gs://caravan-multimet/v1.1` (or your local dynamics directory).
 
+## **Catchment Delineation (DEM Watershed Extractor)**
+
+This repository includes a standalone DEM flow-direction catchment delineation module (`catchment_delineation`), enabling automated extraction of upstream drainage basin polygons from arbitrary latitude and longitude coordinates.
+
+- **D8 Flow Traversal:** Pure DEM reverse-flow BFS graph traversal on 3 arc-second (~90m) D8 flow direction grids.
+- **Seamless Cross-Tile Routing:** Dynamically routes across 5°×5° tile boundaries without edge truncation or boundary artifacts.
+- **Cloud Storage Data Source:** DEM tiles are retrieved on demand exclusively from Google Cloud Storage (`gs://open-multimet/data/DEMs/tiles_5deg/`) and cached in `~/.cache/googlehydrology/dem/`.
+- **Custom Local Paths:** Users can supply their own local tile directory via `--tiles-dir` or `tiles_dir=...` (strictly uses that path, no candidate path searching).
+- **CLI & Python API:** Run as a CLI (`delineate-catchment`) or import directly via `googlehydrology.delineate_dem` or `from catchment_delineation import DemDelineator`.
+
+👉 **See the [Catchment Delineation Subproject README](catchment_delineation/README.md) for full documentation, API reference, and CLI examples.**
+
 ## **Usage**
 
 The package installs the run command as the primary entry point.
