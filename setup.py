@@ -36,6 +36,7 @@ setup(
         'googlehydrology.modelzoo',
         'googlehydrology.training',
         'googlehydrology.evaluation',
+        'catchment_delineation',
     ],
     url='https://googlehydrology.readthedocs.io',
     project_urls={
@@ -52,6 +53,7 @@ setup(
         'console_scripts': [
             'schedule-runs=googlehydrology.run_scheduler:_main',
             'run=googlehydrology.run:_main',
+            'delineate-catchment=catchment_delineation.cli:main',
         ]
     },
     python_requires='>=3.12',
