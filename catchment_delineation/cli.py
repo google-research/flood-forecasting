@@ -26,6 +26,33 @@ from catchment_delineation.tiles import (
 
 logger = logging.getLogger("catchment_delineation.cli")
 
+CARAVAN_SUBDIR_MAPPING: Dict[str, Tuple[str, str]] = {
+    # caravan/
+    "CAMELS": ("caravan", "camels"),
+    "CAMELSAUS": ("caravan", "camelsaus"),
+    "CAMELSBR": ("caravan", "camelsbr"),
+    "CAMELSCL": ("caravan", "camelscl"),
+    "CAMELSGB": ("caravan", "camelsgb"),
+    "HYSETS": ("caravan", "hysets"),
+    "LAMAH": ("caravan", "lamah"),
+    # caravan_extensions/
+    "CAMELSCH": ("caravan_extensions", "camelsch"),
+    "CAMELSCZ": ("caravan_extensions", "camelscz"),
+    "CAMELSDE": ("caravan_extensions", "camelsde"),
+    "CAMELSDK": ("caravan_extensions", "camelsdk"),
+    "CAMELSES": ("caravan_extensions", "camelses"),
+    "GRDC": ("caravan_extensions", "grdc"),
+    "IL": ("caravan_extensions", "il"),
+    "LAMAHICE": ("caravan_extensions", "lamahice"),
+    # caravan_google_internal_extensions/
+    "CAMELSCOL": ("caravan_google_internal_extensions", "camelscol"),
+    "CAMELSFR": ("caravan_google_internal_extensions", "camelsfr"),
+    "CAMELSIND": ("caravan_google_internal_extensions", "camelsind"),
+    "CAMELSLUX": ("caravan_google_internal_extensions", "camelslux"),
+    "CAMELSNZ": ("caravan_google_internal_extensions", "camelsnz"),
+    "CAMELSPE": ("caravan_google_internal_extensions", "camelspe"),
+}
+
 
 def _delineate_worker(
     task: Tuple[float, float, Optional[str], Optional[str], str, Optional[str], int, int],
@@ -245,6 +272,23 @@ def main(argv: Optional[List[str]] = None) -> int:
       help="Output path for GeoJSON (.geojson, .json) or GeoParquet (.geoparquet, .parquet) file. If omitted, prints GeoJSON to stdout.",
   )
   output_group.add_argument(
+      "--output-dir",
+      type=str,
+      default=None,
+      help="Directory to save partitioned catchment polygon files.",
+  )
+  output_group.add_argument(
+      "--preserve-caravan-dirs",
+      action="store_true",
+      help="Partition catchments by Caravan dataset and save into the 3 canonical parent directories (caravan/<ds>/, caravan_extensions/<ds>/, caravan_google_internal_extensions/<ds>/).",
+  )
+  output_group.add_argument(
+      "--format",
+      choices=["geoparquet", "parquet", "geojson", "shp"],
+      default="geoparquet",
+      help="File format for partitioned output in --output-dir (default: geoparquet).",
+  )
+  output_group.add_argument(
       "--clean-cache",
       action="store_true",
       help="Automatically clean up downloaded local DEM tiles from cache after delineation completes.",
@@ -405,7 +449,40 @@ def main(argv: Optional[List[str]] = None) -> int:
         import shutil
         shutil.rmtree(cache_p, ignore_errors=True)
 
-  if args.output and args.output != "-":
+  if args.preserve_caravan_dirs or args.output_dir:
+    base_out = Path(args.output_dir if args.output_dir else args.output)
+    feats = result["features"] if result.get("type") == "FeatureCollection" else [result]
+
+    # Group features by dataset
+    grouped: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    for feat in feats:
+      cid = feat.get("properties", {}).get("catchment_id") or ""
+      parts = cid.split("_")
+      prefix = parts[1].upper() if len(parts) > 1 else ""
+      if prefix in CARAVAN_SUBDIR_MAPPING:
+        parent_dir, ds_dir = CARAVAN_SUBDIR_MAPPING[prefix]
+      else:
+        parent_dir, ds_dir = "other", (prefix.lower() if prefix else "unknown")
+      grouped.setdefault((parent_dir, ds_dir), []).append(feat)
+
+    import geopandas as gpd
+    for (p_dir, d_dir), group_feats in sorted(grouped.items()):
+      target_folder = base_out / p_dir / d_dir
+      target_folder.mkdir(parents=True, exist_ok=True)
+      if args.format in ("geoparquet", "parquet"):
+        target_file = target_folder / f"{d_dir}_delineated_catchments.geoparquet"
+        gdf = gpd.GeoDataFrame.from_features(group_feats, crs="EPSG:4326")
+        gdf.to_parquet(target_file)
+      elif args.format == "shp":
+        target_file = target_folder / f"{d_dir}_delineated_catchments.shp"
+        gdf = gpd.GeoDataFrame.from_features(group_feats, crs="EPSG:4326")
+        gdf.to_file(target_file)
+      else:
+        target_file = target_folder / f"{d_dir}_delineated_catchments.geojson"
+        fc = {"type": "FeatureCollection", "features": group_feats}
+        target_file.write_text(json.dumps(fc))
+      print(f"Saved {len(group_feats)} catchments to {target_file}", file=sys.stderr)
+  elif args.output and args.output != "-":
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if out_path.suffix.lower() in (".parquet", ".geoparquet"):

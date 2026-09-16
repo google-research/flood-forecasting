@@ -317,6 +317,39 @@ def test_cli_parallel_workers_and_geoparquet(tmp_path):
   assert "geometry" in gdf.columns
 
 
+def test_cli_preserve_caravan_dirs(tmp_path):
+  """Verifies that --preserve-caravan-dirs partitions output into caravan/<ds>/ hierarchy."""
+  from catchment_delineation.cli import main
+  import geopandas as gpd
+  import pandas as pd
+
+  csv_file = tmp_path / "caravan_multi_ds.csv"
+  df = pd.DataFrame({
+      "gauge_id": ["CARAVAN_CAMELS_01013500", "CARAVAN_CAMELSAUS_102101A", "CARAVAN_GRDC_1234567"],
+      "CARAVAN:gauge_lat": [39.6828, 39.6828, 39.6828],
+      "CARAVAN:gauge_lon": [-88.7729, -88.7729, -88.7729],
+  })
+  df.to_csv(csv_file, index=False)
+
+  out_dir = tmp_path / "partitioned_out"
+  exit_code = main([
+      "--csv", str(csv_file),
+      "--output-dir", str(out_dir),
+      "--preserve-caravan-dirs",
+      "--format", "geoparquet",
+      "--workers", "1",
+  ])
+  assert exit_code == 0
+  assert (out_dir / "caravan" / "camels" / "camels_delineated_catchments.geoparquet").exists()
+  assert (out_dir / "caravan" / "camelsaus" / "camelsaus_delineated_catchments.geoparquet").exists()
+  assert (out_dir / "caravan_extensions" / "grdc" / "grdc_delineated_catchments.geoparquet").exists()
+
+  gdf_camels = gpd.read_parquet(out_dir / "caravan" / "camels" / "camels_delineated_catchments.geoparquet")
+  assert len(gdf_camels) == 1
+  assert gdf_camels["catchment_id"].iloc[0] == "CARAVAN_CAMELS_01013500"
+
+
+
 
 
 
