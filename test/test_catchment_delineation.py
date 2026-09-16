@@ -349,6 +349,87 @@ def test_cli_preserve_caravan_dirs(tmp_path):
   assert gdf_camels["catchment_id"].iloc[0] == "CARAVAN_CAMELS_01013500"
 
 
+def test_gcs_helpers():
+  """Tests GCS path detection and helpers."""
+  from catchment_delineation.gcs import is_gcs_path
+
+  assert is_gcs_path("gs://open-multimet/data/caravan/coordinates.csv")
+  assert is_gcs_path("gcs://bucket/path/file.parquet")
+  assert not is_gcs_path("/local/path/file.csv")
+  assert not is_gcs_path("relative/file.csv")
+
+
+def test_load_coords_gcs(monkeypatch):
+  """Tests loading coordinates from GCS URI and shorthand."""
+  from catchment_delineation.cli import load_coords_from_file
+  import pandas as pd
+
+  orig_read_csv = pd.read_csv
+
+  def mock_read_csv(filepath_or_buffer, *args, **kwargs):
+    if str(filepath_or_buffer).startswith("gs://"):
+      return pd.DataFrame({
+          "gauge_id": ["GCS_TEST_1", "GCS_TEST_2"],
+          "CARAVAN:gauge_lat": [39.5, 40.0],
+          "CARAVAN:gauge_lon": [-88.5, -86.5],
+      })
+    return orig_read_csv(filepath_or_buffer, *args, **kwargs)
+
+  monkeypatch.setattr(pd, "read_csv", mock_read_csv)
+
+  # Direct GCS URI
+  coords, ids = load_coords_from_file("gs://test-bucket/coords.csv")
+  assert len(coords) == 2
+  assert ids == ["GCS_TEST_1", "GCS_TEST_2"]
+
+  # Shorthand 'caravan'
+  coords2, ids2 = load_coords_from_file("caravan")
+  assert len(coords2) == 2
+  assert ids2 == ["GCS_TEST_1", "GCS_TEST_2"]
+
+
+def test_cli_gcs_direct_output(monkeypatch, tmp_path):
+  """Tests CLI saving output directly to GCS path."""
+  from catchment_delineation.cli import main
+  import pandas as pd
+  import geopandas as gpd
+
+  csv_file = tmp_path / "test_coords.csv"
+  df = pd.DataFrame({
+      "gauge_id": ["CARAVAN_CAMELS_01013500"],
+      "CARAVAN:gauge_lat": [39.6828],
+      "CARAVAN:gauge_lon": [-88.7729],
+  })
+  df.to_csv(csv_file, index=False)
+
+  saved_targets = []
+
+  def mock_to_parquet(self, path, *args, **kwargs):
+    saved_targets.append(str(path))
+
+  monkeypatch.setattr(gpd.GeoDataFrame, "to_parquet", mock_to_parquet)
+
+  # Test partitioned GCS output-dir
+  exit_code = main([
+      "--csv", str(csv_file),
+      "--output-dir", "gs://open-multimet/data/catchment_polygons/caravan",
+      "--preserve-caravan-dirs",
+      "--format", "geoparquet",
+      "--workers", "1",
+  ])
+  assert exit_code == 0
+  assert any("gs://open-multimet/data/catchment_polygons/caravan/caravan/camels/camels_delineated_catchments.geoparquet" in t for t in saved_targets)
+
+  # Test single file GCS output
+  exit_code2 = main([
+      "--csv", str(csv_file),
+      "-o", "gs://open-multimet/data/catchment_polygons/single.geoparquet",
+      "--workers", "1",
+  ])
+  assert exit_code2 == 0
+  assert "gs://open-multimet/data/catchment_polygons/single.geoparquet" in saved_targets
+
+
 
 
 

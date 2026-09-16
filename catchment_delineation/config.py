@@ -30,6 +30,9 @@ DEM_MAX_LAT: float = 60.0
 GCS_DEM_BUCKET_URI: str = "gs://open-multimet/data/DEMs"
 GCS_TILES_URI: str = f"{GCS_DEM_BUCKET_URI}/tiles_5deg"
 GCS_ELEVATION_TILES_URI: str = f"{GCS_DEM_BUCKET_URI}/elevation_tiles_5deg"
+GCS_DATA_URI: str = "gs://open-multimet/data"
+GCS_CARAVAN_COORDINATES_URI: str = f"{GCS_DATA_URI}/caravan/coordinates.csv"
+GCS_CATCHMENT_POLYGONS_URI: str = f"{GCS_DATA_URI}/catchment_polygons"
 
 # Default local cache directory for DEM tiles downloaded from the gs bucket
 DEFAULT_CACHE_DIR: Path = Path.home() / ".cache" / "googlehydrology" / "dem"

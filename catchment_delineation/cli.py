@@ -11,11 +11,19 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-from catchment_delineation.config import GCS_TILES_URI, get_default_cache_dir
+from catchment_delineation.config import (
+    GCS_CARAVAN_COORDINATES_URI,
+    GCS_TILES_URI,
+    get_default_cache_dir,
+)
 from catchment_delineation.delineator import CatchmentCoverageError, DemDelineator
-from catchment_delineation.gcs import download_tile_from_gcs
+from catchment_delineation.gcs import (
+    download_tile_from_gcs,
+    is_gcs_path,
+    upload_file_to_gcs,
+)
 from catchment_delineation.tiles import (
     is_coord_in_coverage,
     is_tile_in_coverage,
@@ -93,73 +101,65 @@ def parse_coord_str(coord_str: str) -> Tuple[float, float]:
 
 
 def load_coords_from_file(
-    file_path: Path,
+    file_path: Union[str, Path],
     lat_col_arg: Optional[str] = None,
     lon_col_arg: Optional[str] = None,
     id_col_arg: Optional[str] = None,
 ) -> Tuple[List[Tuple[float, float]], List[Optional[str]]]:
-  """Parses lat/lon coordinates and optional IDs from CSV or Parquet file."""
-  if str(file_path).endswith((".parquet", ".geoparquet")):
-    import pandas as pd
-    df = pd.read_parquet(file_path)
-    fieldnames = list(df.columns)
+  """Parses lat/lon coordinates and optional IDs from CSV or Parquet file.
 
-    lat_col = lat_col_arg or next(
-        (c for c in fieldnames if any(k in c.lower() for k in ("lat", "latitude", "y"))),
-        None,
+  Supports local filesystem paths, Path objects, and GCS URIs (gs://...).
+  If file_path is 'caravan', 'caravan_coordinates', or 'caravan_coordinates.csv' and does not
+  exist locally, it automatically resolves to the canonical GCS Caravan coordinates URI.
+  """
+  path_str = str(file_path).strip()
+  if (
+      path_str.lower()
+      in ("caravan", "caravan_coordinates", "caravan_coordinates.csv", "coordinates.csv")
+      and not Path(path_str).exists()
+  ):
+    path_str = GCS_CARAVAN_COORDINATES_URI
+
+  import pandas as pd
+
+  try:
+    if path_str.endswith((".parquet", ".geoparquet")):
+      df = pd.read_parquet(path_str)
+    else:
+      df = pd.read_csv(path_str)
+  except pd.errors.EmptyDataError:
+    raise ValueError(f"CSV file '{file_path}' is empty or has no header.")
+
+  if df.empty and len(df.columns) == 0:
+    raise ValueError(f"Coordinate file '{file_path}' is empty or has no header.")
+
+  fieldnames = list(df.columns)
+
+  lat_col = lat_col_arg or next(
+      (c for c in fieldnames if any(k in c.lower() for k in ("lat", "latitude", "y"))),
+      None,
+  )
+  lon_col = lon_col_arg or next(
+      (c for c in fieldnames if any(k in c.lower() for k in ("lon", "longitude", "long", "lng", "x"))),
+      None,
+  )
+  id_col = id_col_arg or next(
+      (c for c in fieldnames if any(k in c.lower() for k in ("id", "gauge_id", "station_id", "catchment_id", "hybas_id", "name"))),
+      None,
+  )
+  if not id_col and fieldnames and (fieldnames[0] == "" or "unnamed" in fieldnames[0].lower()):
+    id_col = fieldnames[0]
+
+  if not lat_col or not lon_col:
+    raise ValueError(
+        f"Coordinate file must have latitude and longitude columns. Found: {fieldnames}"
     )
-    lon_col = lon_col_arg or next(
-        (c for c in fieldnames if any(k in c.lower() for k in ("lon", "longitude", "long", "lng", "x"))),
-        None,
-    )
-    id_col = id_col_arg or next(
-        (c for c in fieldnames if any(k in c.lower() for k in ("id", "gauge_id", "station_id", "catchment_id", "hybas_id", "name"))),
-        None,
-    )
-    if not id_col and fieldnames and (fieldnames[0] == "" or "unnamed" in fieldnames[0].lower()):
-      id_col = fieldnames[0]
 
-    if not lat_col or not lon_col:
-      raise ValueError(f"Parquet file must have latitude and longitude columns. Found: {fieldnames}")
-
-    coords = [(float(r[lat_col]), float(r[lon_col])) for _, r in df.iterrows()]
-    ids = [str(r[id_col]) if id_col and pd.notna(r[id_col]) else None for _, r in df.iterrows()]
-    return coords, ids
-
-  coords = []
-  ids = []
-  with open(file_path, "r", newline="", encoding="utf-8") as f:
-    reader = csv.DictReader(f)
-    if reader.fieldnames is None:
-      raise ValueError(f"CSV file '{file_path}' is empty or has no header.")
-
-    fieldnames = list(reader.fieldnames)
-    lat_col = lat_col_arg or next(
-        (c for c in fieldnames if any(k in c.lower() for k in ("lat", "latitude", "y"))),
-        None,
-    )
-    lon_col = lon_col_arg or next(
-        (c for c in fieldnames if any(k in c.lower() for k in ("lon", "longitude", "long", "lng", "x"))),
-        None,
-    )
-    id_col = id_col_arg or next(
-        (c for c in fieldnames if any(k in c.lower() for k in ("id", "gauge_id", "station_id", "catchment_id", "hybas_id", "name"))),
-        None,
-    )
-    if not id_col and fieldnames and (fieldnames[0] == "" or "unnamed" in fieldnames[0].lower()):
-      id_col = fieldnames[0]
-
-    if not lat_col or not lon_col:
-      raise ValueError(
-          f"CSV file must have latitude and longitude columns. Found: {fieldnames}"
-      )
-
-    for row in reader:
-      lat_val = float(row[lat_col].strip())
-      lon_val = float(row[lon_col].strip())
-      id_val = row[id_col].strip() if id_col and row.get(id_col) else None
-      coords.append((lat_val, lon_val))
-      ids.append(id_val)
+  coords = list(zip(df[lat_col].astype(float), df[lon_col].astype(float)))
+  if id_col and id_col in df.columns:
+    ids = [str(v).strip() if pd.notna(v) and str(v).strip() != "" else None for v in df[id_col]]
+  else:
+    ids = [None] * len(coords)
 
   return coords, ids
 
@@ -205,7 +205,12 @@ def main(argv: Optional[List[str]] = None) -> int:
   coord_group.add_argument(
       "--csv",
       type=str,
-      help="Path to CSV or Parquet file with latitude and longitude columns.",
+      help=(
+          "Path to CSV or Parquet file with latitude and longitude columns. "
+          "Supports local filesystem paths and GCS bucket URIs (gs://...). "
+          "If 'caravan' or 'coordinates.csv' is specified and not present locally, "
+          "automatically loads canonical Caravan coordinates from GCS."
+      ),
   )
   coord_group.add_argument(
       "--id",
@@ -269,13 +274,20 @@ def main(argv: Optional[List[str]] = None) -> int:
       "--output",
       type=str,
       default=None,
-      help="Output path for GeoJSON (.geojson, .json) or GeoParquet (.geoparquet, .parquet) file. If omitted, prints GeoJSON to stdout.",
+      help=(
+          "Output path for GeoJSON (.geojson, .json), GeoParquet (.geoparquet, .parquet), "
+          "or Shapefile (.shp). Supports local files or direct GCS URIs (gs://...). "
+          "If omitted, prints GeoJSON to stdout."
+      ),
   )
   output_group.add_argument(
       "--output-dir",
       type=str,
       default=None,
-      help="Directory to save partitioned catchment polygon files.",
+      help=(
+          "Directory to save partitioned catchment polygon files. "
+          "Supports local directories or direct GCS bucket prefixes (gs://...)."
+      ),
   )
   output_group.add_argument(
       "--preserve-caravan-dirs",
@@ -450,7 +462,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         shutil.rmtree(cache_p, ignore_errors=True)
 
   if args.preserve_caravan_dirs or args.output_dir:
-    base_out = Path(args.output_dir if args.output_dir else args.output)
+    base_out = str(args.output_dir if args.output_dir else args.output).rstrip("/")
     feats = result["features"] if result.get("type") == "FeatureCollection" else [result]
 
     # Group features by dataset
@@ -466,38 +478,89 @@ def main(argv: Optional[List[str]] = None) -> int:
       grouped.setdefault((parent_dir, ds_dir), []).append(feat)
 
     import geopandas as gpd
+    import tempfile
     for (p_dir, d_dir), group_feats in sorted(grouped.items()):
-      target_folder = base_out / p_dir / d_dir
-      target_folder.mkdir(parents=True, exist_ok=True)
-      if args.format in ("geoparquet", "parquet"):
-        target_file = target_folder / f"{d_dir}_delineated_catchments.geoparquet"
-        gdf = gpd.GeoDataFrame.from_features(group_feats, crs="EPSG:4326")
-        gdf.to_parquet(target_file)
-      elif args.format == "shp":
-        target_file = target_folder / f"{d_dir}_delineated_catchments.shp"
-        gdf = gpd.GeoDataFrame.from_features(group_feats, crs="EPSG:4326")
-        gdf.to_file(target_file)
+      if is_gcs_path(base_out):
+        target_folder = f"{base_out}/{p_dir}/{d_dir}"
+        if args.format in ("geoparquet", "parquet"):
+          target_file = f"{target_folder}/{d_dir}_delineated_catchments.geoparquet"
+          gdf = gpd.GeoDataFrame.from_features(group_feats, crs="EPSG:4326")
+          gdf.to_parquet(target_file)
+        elif args.format == "shp":
+          with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_shp = Path(tmpdir) / f"{d_dir}_delineated_catchments.shp"
+            gdf = gpd.GeoDataFrame.from_features(group_feats, crs="EPSG:4326")
+            gdf.to_file(tmp_shp)
+            for shp_part in Path(tmpdir).iterdir():
+              upload_file_to_gcs(shp_part, f"{target_folder}/{shp_part.name}")
+          target_file = f"{target_folder}/{d_dir}_delineated_catchments.shp"
+        else:
+          target_file = f"{target_folder}/{d_dir}_delineated_catchments.geojson"
+          fc = {"type": "FeatureCollection", "features": group_feats}
+          import fsspec
+          with fsspec.open(target_file, "w", encoding="utf-8") as f:
+            json.dump(fc, f)
       else:
-        target_file = target_folder / f"{d_dir}_delineated_catchments.geojson"
-        fc = {"type": "FeatureCollection", "features": group_feats}
-        target_file.write_text(json.dumps(fc))
+        target_folder = Path(base_out) / p_dir / d_dir
+        target_folder.mkdir(parents=True, exist_ok=True)
+        if args.format in ("geoparquet", "parquet"):
+          target_file = str(target_folder / f"{d_dir}_delineated_catchments.geoparquet")
+          gdf = gpd.GeoDataFrame.from_features(group_feats, crs="EPSG:4326")
+          gdf.to_parquet(target_file)
+        elif args.format == "shp":
+          target_file = str(target_folder / f"{d_dir}_delineated_catchments.shp")
+          gdf = gpd.GeoDataFrame.from_features(group_feats, crs="EPSG:4326")
+          gdf.to_file(target_file)
+        else:
+          target_file = str(target_folder / f"{d_dir}_delineated_catchments.geojson")
+          fc = {"type": "FeatureCollection", "features": group_feats}
+          Path(target_file).write_text(json.dumps(fc), encoding="utf-8")
       print(f"Saved {len(group_feats)} catchments to {target_file}", file=sys.stderr)
   elif args.output and args.output != "-":
-    out_path = Path(args.output)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    if out_path.suffix.lower() in (".parquet", ".geoparquet"):
-      import geopandas as gpd
-      feats = result["features"] if result.get("type") == "FeatureCollection" else [result]
-      gdf = gpd.GeoDataFrame.from_features(feats, crs="EPSG:4326")
-      gdf.to_parquet(out_path)
+    out_str = str(args.output)
+    feats = result["features"] if result.get("type") == "FeatureCollection" else [result]
+    if is_gcs_path(out_str):
+      if out_str.endswith((".parquet", ".geoparquet")):
+        import geopandas as gpd
+        gdf = gpd.GeoDataFrame.from_features(feats, crs="EPSG:4326")
+        gdf.to_parquet(out_str)
+      elif out_str.endswith(".shp"):
+        import geopandas as gpd
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+          shp_name = Path(out_str).name
+          tmp_shp = Path(tmpdir) / shp_name
+          gdf = gpd.GeoDataFrame.from_features(feats, crs="EPSG:4326")
+          gdf.to_file(tmp_shp)
+          gcs_parent = out_str.rsplit("/", 1)[0]
+          for shp_part in Path(tmpdir).iterdir():
+            upload_file_to_gcs(shp_part, f"{gcs_parent}/{shp_part.name}")
+      else:
+        import fsspec
+        indent = 2 if args.pretty else None
+        json_output = json.dumps(result, indent=indent)
+        with fsspec.open(out_str, "w", encoding="utf-8") as f:
+          f.write(json_output)
+          f.write("\n")
     else:
-      indent = 2 if args.pretty else None
-      json_output = json.dumps(result, indent=indent)
-      with open(out_path, "w", encoding="utf-8") as f:
-        f.write(json_output)
-        f.write("\n")
+      out_path = Path(out_str)
+      out_path.parent.mkdir(parents=True, exist_ok=True)
+      if out_path.suffix.lower() in (".parquet", ".geoparquet"):
+        import geopandas as gpd
+        gdf = gpd.GeoDataFrame.from_features(feats, crs="EPSG:4326")
+        gdf.to_parquet(out_path)
+      elif out_path.suffix.lower() == ".shp":
+        import geopandas as gpd
+        gdf = gpd.GeoDataFrame.from_features(feats, crs="EPSG:4326")
+        gdf.to_file(out_path)
+      else:
+        indent = 2 if args.pretty else None
+        json_output = json.dumps(result, indent=indent)
+        with open(out_path, "w", encoding="utf-8") as f:
+          f.write(json_output)
+          f.write("\n")
     print(
-        f"Successfully delineated {len(coords_to_process)} catchment(s) to {out_path}",
+        f"Successfully delineated {len(coords_to_process)} catchment(s) to {out_str}",
         file=sys.stderr,
     )
   else:

@@ -42,6 +42,51 @@ def is_gcs_path(path: Union[str, Path]) -> bool:
   return str(path).startswith(("gs://", "gcs://"))
 
 
+def upload_file_to_gcs(local_path: Union[str, Path], gcs_uri: str) -> None:
+  """Uploads a local file to a Google Cloud Storage URI.
+
+  Args:
+      local_path: Local file path.
+      gcs_uri: Target GCS URI (gs://bucket/path/to/file).
+  """
+  local_p = Path(local_path)
+  if not local_p.exists():
+    raise FileNotFoundError(f"Local file {local_p} not found for GCS upload.")
+
+  # 1. Try fsspec stream copy
+  try:
+    import fsspec
+
+    with open(local_p, "rb") as src, fsspec.open(gcs_uri, "wb") as dst:
+      dst.write(src.read())
+    return
+  except Exception as e:
+    logger.debug("fsspec GCS upload failed: %s, trying google.cloud.storage", e)
+
+  # 2. Try google.cloud.storage client
+  try:
+    from google.cloud import storage
+
+    clean_uri = str(gcs_uri).replace("gs://", "").replace("gcs://", "")
+    bucket_name, blob_name = clean_uri.split("/", 1)
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(blob_name)
+    blob.upload_from_filename(str(local_p))
+    return
+  except Exception as e:
+    logger.debug("google.cloud.storage upload failed: %s", e)
+
+  # 3. Try gcloud storage CLI
+  if shutil.which("gcloud"):
+    cmd = ["gcloud", "storage", "cp", str(local_p), str(gcs_uri)]
+    res = subprocess.run(cmd, capture_output=True, timeout=120)
+    if res.returncode == 0:
+      return
+
+  raise RuntimeError(f"Failed to upload {local_p} to {gcs_uri}.")
+
+
 def download_tile_from_gcs(
     lat_top: int,
     lon_left: int,
