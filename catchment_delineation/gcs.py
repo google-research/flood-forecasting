@@ -28,6 +28,7 @@ from catchment_delineation.config import (
 )
 from catchment_delineation.tiles import (
     get_required_tiles_for_bbox,
+    is_tile_in_coverage,
     tile_key_to_filename,
 )
 
@@ -56,10 +57,15 @@ def download_tile_from_gcs(
   Returns:
       Path to the local downloaded .npy file.
   """
+  filename = tile_key_to_filename(lat_top, lon_left)
+  if not is_tile_in_coverage(lat_top, lon_left):
+    raise ValueError(
+        f"Tile {filename} is outside the global DEM coverage domain (-56° to 60° latitude)."
+    )
+
   directory = Path(target_dir) if target_dir else get_default_tiles_dir()
   directory.mkdir(parents=True, exist_ok=True)
 
-  filename = tile_key_to_filename(lat_top, lon_left)
   dest_file = directory / filename
 
   if dest_file.exists() and dest_file.stat().st_size > 0:

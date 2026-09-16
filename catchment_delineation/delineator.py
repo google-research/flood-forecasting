@@ -7,6 +7,7 @@ across arbitrary 5x5 degree tile boundaries without edge artifacts.
 """
 
 from collections import deque
+import logging
 import math
 import os
 from pathlib import Path
@@ -16,6 +17,8 @@ from shapely.geometry import MultiPolygon, Polygon, mapping
 from shapely.ops import unary_union
 
 from catchment_delineation.config import (
+    DEM_MAX_LAT,
+    DEM_MIN_LAT,
     GCS_TILES_URI,
     INFLOW_MAP,
     RES_DEG,
@@ -23,7 +26,19 @@ from catchment_delineation.config import (
     TILE_DEG,
     get_default_cache_dir,
 )
-from catchment_delineation.tiles import tile_key_to_filename
+from catchment_delineation.tiles import (
+    is_coord_in_coverage,
+    is_tile_in_coverage,
+    tile_key_to_filename,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class CatchmentCoverageError(ValueError):
+  """Raised when a requested catchment pour point or its upstream watershed
+  extends into an uncovered geographic region beyond DEM grid boundaries."""
+  pass
 
 
 class DemDelineator:
@@ -72,6 +87,11 @@ class DemDelineator:
     if self.cache_tiles and key in self._tile_cache:
       return self._tile_cache[key]
 
+    if not is_tile_in_coverage(key[0], key[1]):
+      if self.cache_tiles:
+        self._tile_cache[key] = None
+      return None
+
     tile_name = tile_key_to_filename(key[0], key[1])
 
     if self.tiles_dir is not None:
@@ -92,7 +112,7 @@ class DemDelineator:
               key[0], key[1], target_dir=self.cache_dir, source_uri=self.gcs_uri
           )
         except Exception as e:
-          print(f"Error downloading DEM tile {tile_name} from {self.gcs_uri}: {e}")
+          logger.debug("Tile %s download skipped or failed: %s", tile_name, e)
           if self.cache_tiles:
             self._tile_cache[key] = None
           return None
@@ -103,11 +123,10 @@ class DemDelineator:
         self._tile_cache[key] = arr
       return arr
     except Exception as e:
-      print(f"Error loading DEM tile {tile_path}: {e}")
+      logger.debug("Error loading DEM tile %s: %s", tile_path, e)
       if self.cache_tiles:
         self._tile_cache[key] = None
       return None
-
 
   def snap_outlet(
       self,
@@ -125,6 +144,13 @@ class DemDelineator:
     Returns:
         Tuple of (snapped_lat, snapped_lon, best_r, best_c, start_key, snap_distance_m).
     """
+    if not is_coord_in_coverage(lat, lon):
+      raise CatchmentCoverageError(
+          f"Pour point coordinates ({lat:.4f}, {lon:.4f}) are outside the global DEM "
+          f"coverage domain ({DEM_MIN_LAT}° to {DEM_MAX_LAT}° latitude). "
+          "Catchment cannot be delineated."
+      )
+
     lat_top = float(math.ceil(lat / TILE_DEG) * TILE_DEG)
     lon_left = float(math.floor(lon / TILE_DEG) * TILE_DEG)
 
@@ -138,8 +164,9 @@ class DemDelineator:
     start_grid = self.get_tile(*start_key)
 
     if start_grid is None:
-      raise FileNotFoundError(
-          f"DEM tile not found for coordinates ({lat}, {lon}) in {self.tiles_dir}."
+      raise CatchmentCoverageError(
+          f"DEM tile {tile_key_to_filename(*start_key)} not found for coordinates "
+          f"({lat:.4f}, {lon:.4f}). Catchment cannot be delineated."
       )
 
     best_r, best_c = r0, c0
@@ -244,10 +271,32 @@ class DemDelineator:
           nc -= TILE_CELLS
           nt_lon += int(TILE_DEG)
 
+        # Boundary checks: detect if watershed extends into uncovered regions
+        if not is_tile_in_coverage(nt_lat, nt_lon):
+          if nt_lat > int(DEM_MAX_LAT):
+            raise CatchmentCoverageError(
+                f"Watershed extends north past the DEM coverage boundary ({DEM_MAX_LAT}°N) "
+                f"at longitude {t_lon + cc * RES_DEG:.4f}°. "
+                "Delineation stopped to prevent returning a partial or misleading catchment."
+            )
+          if nt_lat < -55:
+            raise CatchmentCoverageError(
+                f"Watershed extends south past the DEM coverage boundary ({DEM_MIN_LAT}°S) "
+                f"at longitude {t_lon + cc * RES_DEG:.4f}°. "
+                "Delineation stopped to prevent returning a partial or misleading catchment."
+            )
+          continue
+
         nkey = (nt_lat, nt_lon)
         if nkey not in visited_tiles:
           ngrid = self.get_tile(*nkey)
           if ngrid is None:
+            if self.tiles_dir is not None:
+              raise CatchmentCoverageError(
+                  f"Watershed extends into missing tile {tile_key_to_filename(*nkey)} not "
+                  f"found in user-provided tiles directory ({self.tiles_dir}). "
+                  "Delineation stopped to prevent returning a partial or misleading catchment."
+              )
             continue
           visited_tiles[nkey] = np.zeros((TILE_CELLS, TILE_CELLS), dtype=bool)
         else:
@@ -384,15 +433,24 @@ class DemDelineator:
     features = []
 
     for (lat, lon), cid in zip(coords_list, ids_list):
-      feat = self.delineate(
-          lat=lat,
-          lon=lon,
-          snap_window_cells=snap_window_cells,
-          max_cells=max_cells,
-          simplify_tolerance=simplify_tolerance,
-          catchment_id=cid,
-      )
-      features.append(feat)
+      try:
+        feat = self.delineate(
+            lat=lat,
+            lon=lon,
+            snap_window_cells=snap_window_cells,
+            max_cells=max_cells,
+            simplify_tolerance=simplify_tolerance,
+            catchment_id=cid,
+        )
+        features.append(feat)
+      except CatchmentCoverageError as e:
+        logger.warning(
+            "Catchment %s at (%s, %s) could not be delineated: %s",
+            cid or f"{lat},{lon}",
+            lat,
+            lon,
+            e,
+        )
 
     return {
         "type": "FeatureCollection",

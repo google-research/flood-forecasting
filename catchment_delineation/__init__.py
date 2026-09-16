@@ -18,6 +18,7 @@ from catchment_delineation.config import (
     get_default_tiles_dir,
 )
 from catchment_delineation.delineator import (
+    CatchmentCoverageError,
     DemDelineator,
     delineate_catchment,
     delineate_coordinates,
@@ -37,6 +38,7 @@ from catchment_delineation.tiles import (
 
 __all__ = [
     "DemDelineator",
+    "CatchmentCoverageError",
     "delineate_dem",
     "delineate_catchment",
     "delineate_coordinates",

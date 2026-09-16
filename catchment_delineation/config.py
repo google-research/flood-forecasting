@@ -21,6 +21,10 @@ RES_DEG: float = 1.0 / 1200.0  # 3 arc-seconds (~90 meters at equator)
 TILE_DEG: float = 5.0          # 5x5 degrees per tile
 TILE_CELLS: int = 6000         # 5 deg * 1200 cells/deg = 6000 cells
 
+# Geographic DEM Coverage Bounds (HydroSHEDS 3 arc-second SRTM global domain)
+DEM_MIN_LAT: float = -56.0
+DEM_MAX_LAT: float = 60.0
+
 
 # Cloud Storage Source URIs
 GCS_DEM_BUCKET_URI: str = "gs://open-multimet/data/DEMs"

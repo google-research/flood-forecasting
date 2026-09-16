@@ -32,7 +32,7 @@ from shapely.geometry import shape
 import shapely.wkt
 
 from catchment_delineation.config import GCS_TILES_URI, get_default_cache_dir
-from catchment_delineation.delineator import DemDelineator
+from catchment_delineation.delineator import CatchmentCoverageError, DemDelineator
 
 logger = logging.getLogger("catchment_delineation.benchmark")
 
@@ -138,6 +138,26 @@ def _evaluate_single_basin(
         "tiles_spanned": tiles_spanned,
         "elapsed_sec": round(elapsed, 3),
         "status": "SUCCESS",
+    }
+  except CatchmentCoverageError as e:
+    elapsed = time.time() - t0
+    return {
+        "gauge_id": gauge_id,
+        "continent": continent,
+        "hemisphere": hemisphere,
+        "size_tier": size_tier,
+        "latitude": lat,
+        "longitude": lon,
+        "ref_area_km2": ref_area_km2,
+        "del_area_km2": 0.0,
+        "iou": 0.0,
+        "dice": 0.0,
+        "area_bias_pct": -100.0,
+        "abs_area_err_pct": 100.0,
+        "snap_dist_m": 0.0,
+        "tiles_spanned": 0,
+        "elapsed_sec": round(elapsed, 3),
+        "status": f"OUT_OF_COVERAGE: {e}",
     }
   except Exception as e:
     elapsed = time.time() - t0
@@ -264,13 +284,21 @@ def run_benchmark(
   total_time = time.time() - t_start
   res_df = pd.DataFrame(results)
 
+  successful = int((res_df['status'] == 'SUCCESS').sum())
+  out_of_coverage = int((res_df['status'].str.startswith('OUT_OF_COVERAGE')).sum())
+  unexpected_errors = len(res_df) - successful - out_of_coverage
+
   # Overall Report
   print("\n" + "=" * 80)
   print("GLOBAL CATCHMENT DELINEATION BENCHMARK RESULTS")
   print("=" * 80)
   print(f"Total Basins Evaluated : {len(res_df)}")
   print(f"Total Wall-Clock Time   : {total_time:.1f}s ({total_time / max(1, len(res_df)):.3f}s / basin)")
-  print(f"Successful Delineations : {(res_df['status'] == 'SUCCESS').sum()} / {len(res_df)}")
+  print(f"Successful Delineations : {successful} / {len(res_df)}")
+  if out_of_coverage > 0:
+    print(f"Out-of-Coverage Basins  : {out_of_coverage} / {len(res_df)} (detected & aborted cleanly)")
+  if unexpected_errors > 0:
+    print(f"Unexpected Errors       : {unexpected_errors} / {len(res_df)}")
   print(f"Overall Median IoU      : {res_df['iou'].median():.3f}")
   print(f"Overall Median Dice     : {res_df['dice'].median():.3f}")
   print(f"Basins with IoU >= 0.80 : {(res_df['iou'] >= 0.80).mean() * 100:.1f}%")

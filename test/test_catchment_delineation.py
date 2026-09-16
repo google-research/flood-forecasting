@@ -195,4 +195,71 @@ def test_benchmark_execution(tmp_path):
   assert "dice" in df.columns
 
 
+def test_out_of_coverage_pour_point_raises_error():
+  """Verifies that requesting coordinates outside coverage raises CatchmentCoverageError."""
+  from catchment_delineation import CatchmentCoverageError, DemDelineator
+
+  delineator = DemDelineator()
+  # Alaska (64.9N) is beyond HydroSHEDS 60N boundary
+  with pytest.raises(CatchmentCoverageError) as excinfo:
+    delineator.delineate(64.9024, -146.3594)
+  assert "outside the global DEM coverage domain" in str(excinfo.value)
+
+  # Antarctica (-70S) is beyond HydroSHEDS 56S boundary
+  with pytest.raises(CatchmentCoverageError) as excinfo2:
+    delineator.delineate(-70.0, 0.0)
+  assert "outside the global DEM coverage domain" in str(excinfo2.value)
+
+
+def test_watershed_extending_past_boundary_aborts(tmp_path):
+  """Verifies that if a watershed extends past the 60N boundary during traversal,
+  it raises CatchmentCoverageError and aborts without returning a partial polygon."""
+  from catchment_delineation import CatchmentCoverageError, DemDelineator
+
+  # Create a custom tile at northern boundary (lat_top = 60, lon_left = 10)
+  custom_dir = tmp_path / "boundary_tiles"
+  custom_dir.mkdir()
+
+  tile = np.zeros((6000, 6000), dtype=np.uint8)
+  # Stream flows South (4) from row 0 -> row 1 -> row 2 -> row 3
+  tile[0, 100] = 4
+  tile[1, 100] = 4
+  tile[2, 100] = 4
+  tile[3, 100] = 4
+
+  np.save(custom_dir / "n60e010.npy", tile)
+
+  delineator = DemDelineator(tiles_dir=custom_dir)
+  # Pour point at row 3 (lat = 60 - 3 * (1/1200) = 59.9975, lon = 10 + 100 * (1/1200) = 10.0833)
+  lat = 60.0 - 3.0 / 1200.0
+  lon = 10.0 + 100.0 / 1200.0
+
+  with pytest.raises(CatchmentCoverageError) as excinfo:
+    delineator.delineate(lat, lon, snap_window_cells=1)
+
+  assert "Watershed extends north past the DEM coverage boundary" in str(excinfo.value)
+
+
+def test_cli_out_of_coverage_aborts(tmp_path, capsys):
+  """Verifies that CLI halts with exit code 1 when given coordinates outside coverage."""
+  out_json = tmp_path / "out_ooc.geojson"
+  exit_code = main(["--lat", "65.0", "--lon", "-150.0", "-o", str(out_json)])
+  assert exit_code == 1
+  assert not out_json.exists()
+
+
+def test_delineate_batch_omits_out_of_coverage(tmp_path):
+  """Verifies that batch delineation omits out-of-coverage basins rather than outputting partial polygons."""
+  from catchment_delineation import DemDelineator
+
+  delineator = DemDelineator()
+  coords = [(39.6828, -88.7729), (65.0, -150.0)]
+  fc = delineator.delineate_batch(coords=coords)
+
+  # Only the valid coordinate in Illinois (39.68N) should be in the FeatureCollection
+  assert len(fc["features"]) == 1
+  assert fc["features"][0]["properties"]["outlet"]["input_latitude"] == 39.6828
+
+
+
 

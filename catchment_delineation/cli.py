@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from catchment_delineation.config import GCS_TILES_URI, get_default_cache_dir
-from catchment_delineation.delineator import DemDelineator
+from catchment_delineation.delineator import CatchmentCoverageError, DemDelineator
 from catchment_delineation.tiles import list_available_tiles
 
 
@@ -203,25 +203,29 @@ def main(argv: Optional[List[str]] = None) -> int:
   delineator = DemDelineator(tiles_dir=tiles_dir)
 
   # Run delineation
-  if len(coords_to_process) == 1 and not args.coords and not args.csv:
-    # Single feature output
-    lat, lon = coords_to_process[0]
-    cid = ids_to_process[0]
-    result = delineator.delineate(
-        lat=lat,
-        lon=lon,
-        snap_window_cells=args.snap_window,
-        max_cells=args.max_cells,
-        catchment_id=cid,
-    )
-  else:
-    # Multiple features -> FeatureCollection
-    result = delineator.delineate_batch(
-        coords=coords_to_process,
-        ids=ids_to_process,
-        snap_window_cells=args.snap_window,
-        max_cells=args.max_cells,
-    )
+  try:
+    if len(coords_to_process) == 1 and not args.coords and not args.csv:
+      # Single feature output
+      lat, lon = coords_to_process[0]
+      cid = ids_to_process[0]
+      result = delineator.delineate(
+          lat=lat,
+          lon=lon,
+          snap_window_cells=args.snap_window,
+          max_cells=args.max_cells,
+          catchment_id=cid,
+      )
+    else:
+      # Multiple features -> FeatureCollection
+      result = delineator.delineate_batch(
+          coords=coords_to_process,
+          ids=ids_to_process,
+          snap_window_cells=args.snap_window,
+          max_cells=args.max_cells,
+      )
+  except CatchmentCoverageError as e:
+    sys.stderr.write(f"\nCatchment Delineation Aborted: {e}\n")
+    return 1
 
   indent = 2 if args.pretty else None
   json_output = json.dumps(result, indent=indent)

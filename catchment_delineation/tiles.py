@@ -4,7 +4,27 @@ import math
 from pathlib import Path
 from typing import List, Optional, Set, Tuple, Union
 
-from catchment_delineation.config import TILE_DEG, get_default_cache_dir
+from catchment_delineation.config import (
+    DEM_MAX_LAT,
+    DEM_MIN_LAT,
+    TILE_DEG,
+    get_default_cache_dir,
+)
+
+
+def is_coord_in_coverage(lat: float, lon: float) -> bool:
+  """Checks whether given coordinates fall within the global DEM coverage domain (-56° to 60° latitude)."""
+  return DEM_MIN_LAT <= lat <= DEM_MAX_LAT
+
+
+def is_tile_in_coverage(lat_top: int, lon_left: int) -> bool:
+  """Checks whether a 5x5 degree tile falls within the global DEM coverage domain.
+
+  HydroSHEDS tiles span latitudes from 56°S (-56) to 60°N (60).
+  A tile with lat_top covers [lat_top - 5, lat_top], so valid lat_top values
+  range from -50 (covers -55 to -50) down to -55 (covers -60 to -55) and up to 60 (covers 55 to 60).
+  """
+  return -55 <= lat_top <= int(DEM_MAX_LAT)
 
 
 def latlon_to_tile_key(lat: float, lon: float) -> Tuple[int, int]:
