@@ -5,15 +5,52 @@ supplying a single coordinate pair, a list of coordinates, or a CSV file.
 """
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import csv
 import json
+import logging
 import sys
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from catchment_delineation.config import GCS_TILES_URI, get_default_cache_dir
 from catchment_delineation.delineator import CatchmentCoverageError, DemDelineator
-from catchment_delineation.tiles import list_available_tiles
+from catchment_delineation.gcs import download_tile_from_gcs
+from catchment_delineation.tiles import (
+    is_coord_in_coverage,
+    is_tile_in_coverage,
+    latlon_to_tile_key,
+    list_available_tiles,
+    tile_key_to_filename,
+)
+
+logger = logging.getLogger("catchment_delineation.cli")
+
+
+def _delineate_worker(
+    task: Tuple[float, float, Optional[str], Optional[str], str, Optional[str], int, int],
+) -> Optional[Dict[str, Any]]:
+  lat, lon, cid, tiles_dir, gcs_uri, cache_dir, snap_window, max_cells = task
+  try:
+    delineator = DemDelineator(
+        tiles_dir=Path(tiles_dir) if tiles_dir else None,
+        gcs_uri=gcs_uri,
+        cache_dir=cache_dir,
+        cache_tiles=True,
+    )
+    return delineator.delineate(
+        lat=lat,
+        lon=lon,
+        catchment_id=cid,
+        snap_window_cells=snap_window,
+        max_cells=max_cells,
+    )
+  except CatchmentCoverageError as e:
+    logger.warning("Catchment coverage abort for %s (%.4f, %.4f): %s", cid, lat, lon, e)
+    return None
+  except Exception as e:
+    logger.error("Error delineating %s (%.4f, %.4f): %s", cid, lat, lon, e)
+    return None
 
 
 def parse_coord_str(coord_str: str) -> Tuple[float, float]:
@@ -28,45 +65,66 @@ def parse_coord_str(coord_str: str) -> Tuple[float, float]:
   return float(parts[0]), float(parts[1])
 
 
-def load_coords_from_csv(
-    csv_path: Path,
+def load_coords_from_file(
+    file_path: Path,
+    lat_col_arg: Optional[str] = None,
+    lon_col_arg: Optional[str] = None,
+    id_col_arg: Optional[str] = None,
 ) -> Tuple[List[Tuple[float, float]], List[Optional[str]]]:
-  """Parses lat/lon coordinates and optional IDs from a CSV file."""
+  """Parses lat/lon coordinates and optional IDs from CSV or Parquet file."""
+  if str(file_path).endswith((".parquet", ".geoparquet")):
+    import pandas as pd
+    df = pd.read_parquet(file_path)
+    fieldnames = list(df.columns)
+
+    lat_col = lat_col_arg or next(
+        (c for c in fieldnames if any(k in c.lower() for k in ("lat", "latitude", "y"))),
+        None,
+    )
+    lon_col = lon_col_arg or next(
+        (c for c in fieldnames if any(k in c.lower() for k in ("lon", "longitude", "long", "lng", "x"))),
+        None,
+    )
+    id_col = id_col_arg or next(
+        (c for c in fieldnames if any(k in c.lower() for k in ("id", "gauge_id", "station_id", "catchment_id", "hybas_id", "name"))),
+        None,
+    )
+    if not id_col and fieldnames and (fieldnames[0] == "" or "unnamed" in fieldnames[0].lower()):
+      id_col = fieldnames[0]
+
+    if not lat_col or not lon_col:
+      raise ValueError(f"Parquet file must have latitude and longitude columns. Found: {fieldnames}")
+
+    coords = [(float(r[lat_col]), float(r[lon_col])) for _, r in df.iterrows()]
+    ids = [str(r[id_col]) if id_col and pd.notna(r[id_col]) else None for _, r in df.iterrows()]
+    return coords, ids
+
   coords = []
   ids = []
-  with open(csv_path, "r", newline="", encoding="utf-8") as f:
+  with open(file_path, "r", newline="", encoding="utf-8") as f:
     reader = csv.DictReader(f)
     if reader.fieldnames is None:
-      raise ValueError(f"CSV file '{csv_path}' is empty or has no header.")
+      raise ValueError(f"CSV file '{file_path}' is empty or has no header.")
 
-    # Find latitude column
-    lat_col = next(
-        (c for c in reader.fieldnames if c.lower() in ("lat", "latitude", "y")),
+    fieldnames = list(reader.fieldnames)
+    lat_col = lat_col_arg or next(
+        (c for c in fieldnames if any(k in c.lower() for k in ("lat", "latitude", "y"))),
         None,
     )
-    # Find longitude column
-    lon_col = next(
-        (
-            c
-            for c in reader.fieldnames
-            if c.lower() in ("lon", "longitude", "long", "x")
-        ),
+    lon_col = lon_col_arg or next(
+        (c for c in fieldnames if any(k in c.lower() for k in ("lon", "longitude", "long", "lng", "x"))),
         None,
     )
-    # Optional ID column
-    id_col = next(
-        (
-            c
-            for c in reader.fieldnames
-            if c.lower()
-            in ("id", "gauge_id", "station_id", "catchment_id", "name")
-        ),
+    id_col = id_col_arg or next(
+        (c for c in fieldnames if any(k in c.lower() for k in ("id", "gauge_id", "station_id", "catchment_id", "hybas_id", "name"))),
         None,
     )
+    if not id_col and fieldnames and (fieldnames[0] == "" or "unnamed" in fieldnames[0].lower()):
+      id_col = fieldnames[0]
 
     if not lat_col or not lon_col:
       raise ValueError(
-          f"CSV file must have latitude and longitude columns. Found: {reader.fieldnames}"
+          f"CSV file must have latitude and longitude columns. Found: {fieldnames}"
       )
 
     for row in reader:
@@ -77,6 +135,15 @@ def load_coords_from_csv(
       ids.append(id_val)
 
   return coords, ids
+
+
+def load_coords_from_csv(
+    csv_path: Path,
+    lat_col_arg: Optional[str] = None,
+    lon_col_arg: Optional[str] = None,
+    id_col_arg: Optional[str] = None,
+) -> Tuple[List[Tuple[float, float]], List[Optional[str]]]:
+  return load_coords_from_file(csv_path, lat_col_arg, lon_col_arg, id_col_arg)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -111,13 +178,38 @@ def main(argv: Optional[List[str]] = None) -> int:
   coord_group.add_argument(
       "--csv",
       type=str,
-      help="Path to CSV file with latitude and longitude columns.",
+      help="Path to CSV or Parquet file with latitude and longitude columns.",
   )
   coord_group.add_argument(
       "--id",
       type=str,
       default=None,
       help="Custom catchment ID (for single coordinate delineation).",
+  )
+  coord_group.add_argument(
+      "--workers",
+      "-w",
+      type=int,
+      default=1,
+      help="Number of parallel worker processes to use for batch delineation.",
+  )
+  coord_group.add_argument(
+      "--lat-col",
+      type=str,
+      default=None,
+      help="Name of latitude column in CSV/Parquet file.",
+  )
+  coord_group.add_argument(
+      "--lon-col",
+      type=str,
+      default=None,
+      help="Name of longitude column in CSV/Parquet file.",
+  )
+  coord_group.add_argument(
+      "--id-col",
+      type=str,
+      default=None,
+      help="Name of catchment/gauge ID column in CSV/Parquet file.",
   )
 
   config_group = parser.add_argument_group("Algorithm & Tile Settings")
@@ -150,7 +242,7 @@ def main(argv: Optional[List[str]] = None) -> int:
       "--output",
       type=str,
       default=None,
-      help="Output path for GeoJSON file. If omitted, prints GeoJSON to stdout.",
+      help="Output path for GeoJSON (.geojson, .json) or GeoParquet (.geoparquet, .parquet) file. If omitted, prints GeoJSON to stdout.",
   )
   output_group.add_argument(
       "--clean-cache",
@@ -194,7 +286,12 @@ def main(argv: Optional[List[str]] = None) -> int:
       ids_to_process.append(None)
 
   if args.csv:
-    csv_coords, csv_ids = load_coords_from_csv(Path(args.csv))
+    csv_coords, csv_ids = load_coords_from_file(
+        Path(args.csv),
+        lat_col_arg=args.lat_col,
+        lon_col_arg=args.lon_col,
+        id_col_arg=args.id_col,
+    )
     coords_to_process.extend(csv_coords)
     ids_to_process.extend(csv_ids)
 
@@ -220,6 +317,76 @@ def main(argv: Optional[List[str]] = None) -> int:
           max_cells=args.max_cells,
           catchment_id=cid,
       )
+    elif args.workers > 1 and len(coords_to_process) > 1:
+      # Parallel multi-worker delineation
+      if not tiles_dir:
+        cache_path = get_default_cache_dir()
+        cache_path.mkdir(parents=True, exist_ok=True)
+        needed_tile_keys = set()
+        for lat, lon in coords_to_process:
+          if is_coord_in_coverage(lat, lon):
+            tk = latlon_to_tile_key(lat, lon)
+            if is_tile_in_coverage(tk[0], tk[1]):
+              needed_tile_keys.add(tk)
+        missing_tiles = [
+            tk
+            for tk in sorted(needed_tile_keys)
+            if not (cache_path / tile_key_to_filename(tk[0], tk[1])).exists()
+        ]
+        if missing_tiles:
+          print(
+              f"Pre-caching {len(missing_tiles)} required DEM tiles in main process before spawning {args.workers} workers...",
+              file=sys.stderr,
+          )
+          def _dl(tk: Tuple[int, int]):
+            try:
+              download_tile_from_gcs(
+                  lat_top=tk[0],
+                  lon_left=tk[1],
+                  target_dir=cache_path,
+                  source_uri=GCS_TILES_URI,
+              )
+            except Exception as e:
+              logger.warning("Could not pre-cache tile %s: %s", tile_key_to_filename(tk[0], tk[1]), e)
+          with ThreadPoolExecutor(max_workers=min(32, len(missing_tiles))) as pool:
+            list(pool.map(_dl, missing_tiles))
+
+      tasks = [
+          (
+              lat,
+              lon,
+              cid,
+              str(tiles_dir) if tiles_dir else None,
+              GCS_TILES_URI,
+              None,
+              args.snap_window,
+              args.max_cells,
+          )
+          for (lat, lon), cid in zip(coords_to_process, ids_to_process)
+      ]
+      features = []
+      total = len(tasks)
+      print(
+          f"Delineating {total} catchments in parallel using {args.workers} workers...",
+          file=sys.stderr,
+      )
+      import multiprocessing
+      mp_ctx = multiprocessing.get_context("spawn")
+      with ProcessPoolExecutor(max_workers=args.workers, mp_context=mp_ctx) as pool:
+        futures = {pool.submit(_delineate_worker, t): i for i, t in enumerate(tasks)}
+        completed = 0
+        for fut in as_completed(futures):
+          completed += 1
+          if completed % max(1, total // 20) == 0 or completed == total:
+            pct = (completed / total) * 100.0
+            print(
+                f"Progress: [{completed}/{total}] catchments evaluated ({pct:.1f}%)",
+                file=sys.stderr,
+            )
+          res_feat = fut.result()
+          if res_feat is not None:
+            features.append(res_feat)
+      result = {"type": "FeatureCollection", "features": features}
     else:
       # Multiple features -> FeatureCollection
       result = delineator.delineate_batch(
@@ -238,21 +405,27 @@ def main(argv: Optional[List[str]] = None) -> int:
         import shutil
         shutil.rmtree(cache_p, ignore_errors=True)
 
-  indent = 2 if args.pretty else None
-  json_output = json.dumps(result, indent=indent)
-
   if args.output and args.output != "-":
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w", encoding="utf-8") as f:
-      f.write(json_output)
-      f.write("\n")
+    if out_path.suffix.lower() in (".parquet", ".geoparquet"):
+      import geopandas as gpd
+      feats = result["features"] if result.get("type") == "FeatureCollection" else [result]
+      gdf = gpd.GeoDataFrame.from_features(feats, crs="EPSG:4326")
+      gdf.to_parquet(out_path)
+    else:
+      indent = 2 if args.pretty else None
+      json_output = json.dumps(result, indent=indent)
+      with open(out_path, "w", encoding="utf-8") as f:
+        f.write(json_output)
+        f.write("\n")
     print(
         f"Successfully delineated {len(coords_to_process)} catchment(s) to {out_path}",
         file=sys.stderr,
     )
   else:
-    print(json_output)
+    indent = 2 if args.pretty else None
+    print(json.dumps(result, indent=indent))
 
   return 0
 

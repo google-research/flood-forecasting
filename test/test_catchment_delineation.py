@@ -282,6 +282,42 @@ def test_clean_cache_flag(tmp_path):
   assert not cache_dir.exists()
 
 
+def test_cli_parallel_workers_and_geoparquet(tmp_path):
+  """Tests CLI batch delineation using multiple workers, custom column names, and parquet output."""
+  from catchment_delineation.cli import main, load_coords_from_file
+  import geopandas as gpd
+  import pandas as pd
+
+  # Create a CSV with Caravan-style column names
+  csv_file = tmp_path / "caravan_test.csv"
+  df = pd.DataFrame({
+      "gauge_id": ["C1", "C2"],
+      "CARAVAN:gauge_lat": [39.6828, 40.4172],
+      "CARAVAN:gauge_lon": [-88.7729, -86.8858],
+  })
+  df.to_csv(csv_file, index=False)
+
+  # Verify load_coords_from_file parses automatically
+  coords, ids = load_coords_from_file(csv_file)
+  assert len(coords) == 2
+  assert ids == ["C1", "C2"]
+
+  # Run CLI with --workers 2 and GeoParquet output
+  out_parquet = tmp_path / "delineated.geoparquet"
+  exit_code = main([
+      "--csv", str(csv_file),
+      "--workers", "2",
+      "-o", str(out_parquet),
+  ])
+  assert exit_code == 0
+  assert out_parquet.exists()
+  gdf = gpd.read_parquet(out_parquet)
+  assert len(gdf) == 2
+  assert "catchment_id" in gdf.columns
+  assert "geometry" in gdf.columns
+
+
+
 
 
 
