@@ -318,16 +318,16 @@ def test_cli_parallel_workers_and_geoparquet(tmp_path):
 
 
 def test_cli_preserve_caravan_dirs(tmp_path):
-  """Verifies that --preserve-caravan-dirs partitions output into caravan/<ds>/ hierarchy."""
+  """Verifies that --preserve-caravan-dirs partitions output per the contract into <collection>/shapefiles-rederived/<subdataset>/."""
   from catchment_delineation.cli import main
   import geopandas as gpd
   import pandas as pd
 
   csv_file = tmp_path / "caravan_multi_ds.csv"
   df = pd.DataFrame({
-      "gauge_id": ["CARAVAN_CAMELS_01013500", "CARAVAN_CAMELSAUS_102101A", "CARAVAN_GRDC_1234567"],
-      "CARAVAN:gauge_lat": [39.6828, 39.6828, 39.6828],
-      "CARAVAN:gauge_lon": [-88.7729, -88.7729, -88.7729],
+      "gauge_id": ["camels_01013500", "camelsaus_102101A", "grdc_1234567"],
+      "gauge_lat": [39.6828, 39.6828, 39.6828],
+      "gauge_lon": [-88.7729, -88.7729, -88.7729],
   })
   df.to_csv(csv_file, index=False)
 
@@ -336,27 +336,41 @@ def test_cli_preserve_caravan_dirs(tmp_path):
       "--csv", str(csv_file),
       "--output-dir", str(out_dir),
       "--preserve-caravan-dirs",
-      "--format", "geoparquet",
+      "--format", "all",
       "--workers", "1",
   ])
   assert exit_code == 0
-  assert (out_dir / "caravan" / "camels" / "camels_delineated_catchments.geoparquet").exists()
-  assert (out_dir / "caravan" / "camelsaus" / "camelsaus_delineated_catchments.geoparquet").exists()
-  assert (out_dir / "caravan_extensions" / "grdc" / "grdc_delineated_catchments.geoparquet").exists()
+  camels_dir = out_dir / "caravan-original" / "shapefiles-rederived" / "camels"
+  camelsaus_dir = out_dir / "caravan-original" / "shapefiles-rederived" / "camelsaus"
+  grdc_dir = out_dir / "caravan-extensions" / "shapefiles-rederived" / "grdc"
 
-  gdf_camels = gpd.read_parquet(out_dir / "caravan" / "camels" / "camels_delineated_catchments.geoparquet")
+  assert (camels_dir / "camels_basin_shapes.geoparquet").exists()
+  assert (camels_dir / "camels_basin_shapes.geojson").exists()
+  assert (camels_dir / "camels_basin_shapes.shp").exists()
+  assert (camels_dir / "camels_basin_shapes.prj").exists()
+  assert (camels_dir / "camels_basin_shapes.cpg").exists()
+
+  assert (camelsaus_dir / "camelsaus_basin_shapes.geoparquet").exists()
+  assert (grdc_dir / "grdc_basin_shapes.geoparquet").exists()
+
+  gdf_camels = gpd.read_parquet(camels_dir / "camels_basin_shapes.geoparquet")
   assert len(gdf_camels) == 1
-  assert gdf_camels["catchment_id"].iloc[0] == "CARAVAN_CAMELS_01013500"
+  assert gdf_camels["gauge_id"].iloc[0] == "camels_01013500"
+  assert "area" in gdf_camels.columns
+  assert "gauge_lat" in gdf_camels.columns
+  assert "gauge_lon" in gdf_camels.columns
 
 
 def test_gcs_helpers():
   """Tests GCS path detection and helpers."""
-  from catchment_delineation.gcs import is_gcs_path
+  from catchment_delineation.gcs import is_gcs_path, normalize_gcs_path
 
-  assert is_gcs_path("gs://open-multimet/data/caravan/coordinates.csv")
+  assert is_gcs_path("gs://open-multimet/caravan-new/coordinates.csv")
   assert is_gcs_path("gcs://bucket/path/file.parquet")
+  assert is_gcs_path("gs:/bucket/path")
   assert not is_gcs_path("/local/path/file.csv")
   assert not is_gcs_path("relative/file.csv")
+  assert normalize_gcs_path("gs:/bucket/path") == "gs://bucket/path"
 
 
 def test_load_coords_gcs(monkeypatch):
@@ -370,8 +384,8 @@ def test_load_coords_gcs(monkeypatch):
     if str(filepath_or_buffer).startswith("gs://"):
       return pd.DataFrame({
           "gauge_id": ["GCS_TEST_1", "GCS_TEST_2"],
-          "CARAVAN:gauge_lat": [39.5, 40.0],
-          "CARAVAN:gauge_lon": [-88.5, -86.5],
+          "gauge_lat": [39.5, 40.0],
+          "gauge_lon": [-88.5, -86.5],
       })
     return orig_read_csv(filepath_or_buffer, *args, **kwargs)
 
@@ -396,9 +410,9 @@ def test_cli_gcs_direct_output(monkeypatch, tmp_path):
 
   csv_file = tmp_path / "test_coords.csv"
   df = pd.DataFrame({
-      "gauge_id": ["CARAVAN_CAMELS_01013500"],
-      "CARAVAN:gauge_lat": [39.6828],
-      "CARAVAN:gauge_lon": [-88.7729],
+      "gauge_id": ["camels_01013500"],
+      "gauge_lat": [39.6828],
+      "gauge_lon": [-88.7729],
   })
   df.to_csv(csv_file, index=False)
 
@@ -412,22 +426,22 @@ def test_cli_gcs_direct_output(monkeypatch, tmp_path):
   # Test partitioned GCS output-dir
   exit_code = main([
       "--csv", str(csv_file),
-      "--output-dir", "gs://open-multimet/data/catchment_polygons/caravan",
+      "--output-dir", "gs://open-multimet/caravan-new",
       "--preserve-caravan-dirs",
       "--format", "geoparquet",
       "--workers", "1",
   ])
   assert exit_code == 0
-  assert any("gs://open-multimet/data/catchment_polygons/caravan/caravan/camels/camels_delineated_catchments.geoparquet" in t for t in saved_targets)
+  assert any("gs://open-multimet/caravan-new/caravan-original/shapefiles-rederived/camels/camels_basin_shapes.geoparquet" in t for t in saved_targets)
 
   # Test single file GCS output
   exit_code2 = main([
       "--csv", str(csv_file),
-      "-o", "gs://open-multimet/data/catchment_polygons/single.geoparquet",
+      "-o", "gs://open-multimet/caravan-new/single.geoparquet",
       "--workers", "1",
   ])
   assert exit_code2 == 0
-  assert "gs://open-multimet/data/catchment_polygons/single.geoparquet" in saved_targets
+  assert "gs://open-multimet/caravan-new/single.geoparquet" in saved_targets
 
 
 

@@ -36,30 +36,30 @@ from catchment_delineation.tiles import (
 logger = logging.getLogger("catchment_delineation.cli")
 
 CARAVAN_SUBDIR_MAPPING: Dict[str, Tuple[str, str]] = {
-    # caravan/
-    "CAMELS": ("caravan", "camels"),
-    "CAMELSAUS": ("caravan", "camelsaus"),
-    "CAMELSBR": ("caravan", "camelsbr"),
-    "CAMELSCL": ("caravan", "camelscl"),
-    "CAMELSGB": ("caravan", "camelsgb"),
-    "HYSETS": ("caravan", "hysets"),
-    "LAMAH": ("caravan", "lamah"),
-    # caravan_extensions/
-    "CAMELSCH": ("caravan_extensions", "camelsch"),
-    "CAMELSCZ": ("caravan_extensions", "camelscz"),
-    "CAMELSDE": ("caravan_extensions", "camelsde"),
-    "CAMELSDK": ("caravan_extensions", "camelsdk"),
-    "CAMELSES": ("caravan_extensions", "camelses"),
-    "GRDC": ("caravan_extensions", "grdc"),
-    "IL": ("caravan_extensions", "il"),
-    "LAMAHICE": ("caravan_extensions", "lamahice"),
-    # caravan_google_internal_extensions/
-    "CAMELSCOL": ("caravan_google_internal_extensions", "camelscol"),
-    "CAMELSFR": ("caravan_google_internal_extensions", "camelsfr"),
-    "CAMELSIND": ("caravan_google_internal_extensions", "camelsind"),
-    "CAMELSLUX": ("caravan_google_internal_extensions", "camelslux"),
-    "CAMELSNZ": ("caravan_google_internal_extensions", "camelsnz"),
-    "CAMELSPE": ("caravan_google_internal_extensions", "camelspe"),
+    # caravan-original/
+    "CAMELS": ("caravan-original", "camels"),
+    "CAMELSAUS": ("caravan-original", "camelsaus"),
+    "CAMELSBR": ("caravan-original", "camelsbr"),
+    "CAMELSCL": ("caravan-original", "camelscl"),
+    "CAMELSGB": ("caravan-original", "camelsgb"),
+    "HYSETS": ("caravan-original", "hysets"),
+    "LAMAH": ("caravan-original", "lamah"),
+    # caravan-extensions/
+    "CAMELSCH": ("caravan-extensions", "camelsch"),
+    "CAMELSCZ": ("caravan-extensions", "camelscz"),
+    "CAMELSDE": ("caravan-extensions", "camelsde"),
+    "CAMELSDK": ("caravan-extensions", "camelsdk"),
+    "CAMELSES": ("caravan-extensions", "camelses"),
+    "GRDC": ("caravan-extensions", "grdc"),
+    "IL": ("caravan-extensions", "il"),
+    "LAMAHICE": ("caravan-extensions", "lamahice"),
+    # google-internal/
+    "CAMELSCOL": ("google-internal", "camelscol"),
+    "CAMELSFR": ("google-internal", "camelsfr"),
+    "CAMELSIND": ("google-internal", "camelsind"),
+    "CAMELSLUX": ("google-internal", "camelslux"),
+    "CAMELSNZ": ("google-internal", "camelsnz"),
+    "CAMELSPE": ("google-internal", "camelspe"),
 }
 
 
@@ -293,13 +293,19 @@ def main(argv: Optional[List[str]] = None) -> int:
   output_group.add_argument(
       "--preserve-caravan-dirs",
       action="store_true",
-      help="Partition catchments by Caravan dataset and save into the 3 canonical parent directories (caravan/<ds>/, caravan_extensions/<ds>/, caravan_google_internal_extensions/<ds>/).",
+      help=(
+          "Partition catchments by Caravan collection and subdataset into "
+          "<collection>/shapefiles-rederived/<subdataset>/ per the canonical storage contract."
+      ),
   )
   output_group.add_argument(
       "--format",
-      choices=["geoparquet", "parquet", "geojson", "shp"],
-      default="geoparquet",
-      help="File format for partitioned output in --output-dir (default: geoparquet).",
+      choices=["all", "geoparquet", "parquet", "geojson", "shp"],
+      default="all",
+      help=(
+          "File format(s) for partitioned output in --output-dir "
+          "(default: all - writes geoparquet, geojson, and complete shapefile suite)."
+      ),
   )
   output_group.add_argument(
       "--clean-cache",
@@ -469,9 +475,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     # Group features by dataset
     grouped: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
     for feat in feats:
-      cid = feat.get("properties", {}).get("catchment_id") or ""
+      cid = feat.get("properties", {}).get("catchment_id") or feat.get("properties", {}).get("gauge_id") or ""
       parts = cid.split("_")
-      prefix = parts[1].upper() if len(parts) > 1 else ""
+      if parts and parts[0].upper() == "CARAVAN" and len(parts) > 1:
+        prefix = parts[1].upper()
+      elif parts:
+        prefix = parts[0].upper()
+      else:
+        prefix = ""
       if prefix in CARAVAN_SUBDIR_MAPPING:
         parent_dir, ds_dir = CARAVAN_SUBDIR_MAPPING[prefix]
       else:
@@ -479,86 +490,171 @@ def main(argv: Optional[List[str]] = None) -> int:
       grouped.setdefault((parent_dir, ds_dir), []).append(feat)
 
     import geopandas as gpd
+    import shutil
     import tempfile
+
     for (p_dir, d_dir), group_feats in sorted(grouped.items()):
-      if is_gcs_path(base_out):
-        target_folder = f"{base_out}/{p_dir}/{d_dir}"
-        if args.format in ("geoparquet", "parquet"):
-          target_file = f"{target_folder}/{d_dir}_delineated_catchments.geoparquet"
-          gdf = gpd.GeoDataFrame.from_features(group_feats, crs="EPSG:4326")
-          gdf.to_parquet(target_file)
-        elif args.format == "shp":
-          with tempfile.TemporaryDirectory() as tmpdir:
-            tmp_shp = Path(tmpdir) / f"{d_dir}_delineated_catchments.shp"
-            gdf = gpd.GeoDataFrame.from_features(group_feats, crs="EPSG:4326")
-            gdf.to_file(tmp_shp)
-            for shp_part in Path(tmpdir).iterdir():
-              upload_file_to_gcs(shp_part, f"{target_folder}/{shp_part.name}")
-          target_file = f"{target_folder}/{d_dir}_delineated_catchments.shp"
-        else:
-          target_file = f"{target_folder}/{d_dir}_delineated_catchments.geojson"
-          fc = {"type": "FeatureCollection", "features": group_feats}
-          import fsspec
-          with fsspec.open(target_file, "w", encoding="utf-8") as f:
-            json.dump(fc, f)
+      # Build destination directory path conforming to the contract:
+      # gs://open-multimet/caravan-new/<collection>/shapefiles-rederived/<subdataset>/
+      if "shapefiles-rederived" in base_out:
+        target_folder = f"{base_out}/{p_dir}/{d_dir}" if is_gcs_path(base_out) else str(Path(base_out) / p_dir / d_dir)
       else:
-        target_folder = Path(base_out) / p_dir / d_dir
-        target_folder.mkdir(parents=True, exist_ok=True)
-        if args.format in ("geoparquet", "parquet"):
-          target_file = str(target_folder / f"{d_dir}_delineated_catchments.geoparquet")
-          gdf = gpd.GeoDataFrame.from_features(group_feats, crs="EPSG:4326")
-          gdf.to_parquet(target_file)
-        elif args.format == "shp":
-          target_file = str(target_folder / f"{d_dir}_delineated_catchments.shp")
-          gdf = gpd.GeoDataFrame.from_features(group_feats, crs="EPSG:4326")
-          gdf.to_file(target_file)
+        target_folder = f"{base_out}/{p_dir}/shapefiles-rederived/{d_dir}" if is_gcs_path(base_out) else str(Path(base_out) / p_dir / "shapefiles-rederived" / d_dir)
+
+      if not is_gcs_path(target_folder):
+        Path(target_folder).mkdir(parents=True, exist_ok=True)
+
+      # Standardize feature properties to strictly satisfy the schema contract:
+      # gauge_id: string, primary key (matches coordinates.csv)
+      # area: float, computed watershed area in km2
+      # gauge_lat: float, pour point snapped latitude
+      # gauge_lon: float, pour point snapped longitude
+      sanitized_features = []
+      for feat in group_feats:
+        props = dict(feat.get("properties", {}))
+        gid = str(props.get("gauge_id") or props.get("catchment_id") or "")
+        area_val = float(props.get("area") or props.get("area_km2") or 0.0)
+        outlet_val = props.get("outlet", {})
+        if isinstance(outlet_val, dict):
+          snapped_lat = float(outlet_val.get("latitude", 0.0))
+          snapped_lon = float(outlet_val.get("longitude", 0.0))
         else:
-          target_file = str(target_folder / f"{d_dir}_delineated_catchments.geojson")
-          fc = {"type": "FeatureCollection", "features": group_feats}
-          Path(target_file).write_text(json.dumps(fc), encoding="utf-8")
-      print(f"Saved {len(group_feats)} catchments to {target_file}", file=sys.stderr)
+          snapped_lat = float(props.get("gauge_lat", 0.0))
+          snapped_lon = float(props.get("gauge_lon", 0.0))
+
+        clean_props = {
+            "gauge_id": gid,
+            "area": round(area_val, 4),
+            "gauge_lat": round(snapped_lat, 6),
+            "gauge_lon": round(snapped_lon, 6),
+            "catchment_id": gid,
+            "area_km2": round(area_val, 4),
+        }
+        sanitized_features.append({
+            "type": "Feature",
+            "properties": clean_props,
+            "geometry": feat.get("geometry"),
+        })
+
+      formats = ["geoparquet", "geojson", "shp"] if args.format == "all" else [args.format]
+      gdf = gpd.GeoDataFrame.from_features(sanitized_features, crs="EPSG:4326")
+      contract_cols = [c for c in ["gauge_id", "area", "gauge_lat", "gauge_lon", "geometry"] if c in gdf.columns]
+      other_cols = [c for c in gdf.columns if c not in contract_cols]
+      gdf = gdf[contract_cols + other_cols]
+
+      # 1. GeoParquet
+      if "geoparquet" in formats or "parquet" in formats:
+        out_gpq = f"{target_folder}/{d_dir}_basin_shapes.geoparquet"
+        gdf.to_parquet(out_gpq)
+        print(f"Saved {len(sanitized_features)} catchments to {out_gpq}", file=sys.stderr)
+
+      # 2. GeoJSON
+      if "geojson" in formats:
+        out_geojson = f"{target_folder}/{d_dir}_basin_shapes.geojson"
+        fc = {"type": "FeatureCollection", "features": sanitized_features}
+        if is_gcs_path(out_geojson):
+          import fsspec
+          with fsspec.open(out_geojson, "w", encoding="utf-8") as f:
+            json.dump(fc, f)
+        else:
+          Path(out_geojson).write_text(json.dumps(fc), encoding="utf-8")
+        print(f"Saved {len(sanitized_features)} catchments to {out_geojson}", file=sys.stderr)
+
+      # 3. Shapefile Suite
+      if "shp" in formats:
+        shp_cols = ["gauge_id", "area", "gauge_lat", "gauge_lon", "geometry"]
+        shp_gdf = gdf[shp_cols]
+        with tempfile.TemporaryDirectory() as tmpdir:
+          tmp_shp = Path(tmpdir) / f"{d_dir}_basin_shapes.shp"
+          shp_gdf.to_file(tmp_shp, encoding="utf-8")
+          tmp_cpg = Path(tmpdir) / f"{d_dir}_basin_shapes.cpg"
+          if not tmp_cpg.exists():
+            tmp_cpg.write_text("UTF-8\n", encoding="utf-8")
+
+          if is_gcs_path(target_folder):
+            for part in Path(tmpdir).iterdir():
+              upload_file_to_gcs(part, f"{target_folder}/{part.name}")
+          else:
+            for part in Path(tmpdir).iterdir():
+              shutil.copy(part, Path(target_folder) / part.name)
+        print(
+            f"Saved {len(sanitized_features)} catchments to {target_folder}/{d_dir}_basin_shapes.shp (+ shx, dbf, prj, cpg)",
+            file=sys.stderr,
+        )
   elif args.output and args.output != "-":
     out_str = normalize_gcs_path(args.output)
     feats = result["features"] if result.get("type") == "FeatureCollection" else [result]
+
+    sanitized_features = []
+    for feat in feats:
+      props = dict(feat.get("properties", {}))
+      gid = str(props.get("gauge_id") or props.get("catchment_id") or "")
+      area_val = float(props.get("area") or props.get("area_km2") or 0.0)
+      outlet_val = props.get("outlet", {})
+      if isinstance(outlet_val, dict):
+        snapped_lat = float(outlet_val.get("latitude", 0.0))
+        snapped_lon = float(outlet_val.get("longitude", 0.0))
+      else:
+        snapped_lat = float(props.get("gauge_lat", 0.0))
+        snapped_lon = float(props.get("gauge_lon", 0.0))
+      clean_props = {
+          "gauge_id": gid,
+          "area": round(area_val, 4),
+          "gauge_lat": round(snapped_lat, 6),
+          "gauge_lon": round(snapped_lon, 6),
+          "catchment_id": gid,
+          "area_km2": round(area_val, 4),
+      }
+      sanitized_features.append({
+          "type": "Feature",
+          "properties": clean_props,
+          "geometry": feat.get("geometry"),
+      })
+
+    import geopandas as gpd
+    gdf = gpd.GeoDataFrame.from_features(sanitized_features, crs="EPSG:4326")
+
     if is_gcs_path(out_str):
       if out_str.endswith((".parquet", ".geoparquet")):
-        import geopandas as gpd
-        gdf = gpd.GeoDataFrame.from_features(feats, crs="EPSG:4326")
         gdf.to_parquet(out_str)
       elif out_str.endswith(".shp"):
-        import geopandas as gpd
         import tempfile
+        shp_cols = ["gauge_id", "area", "gauge_lat", "gauge_lon", "geometry"]
+        shp_gdf = gdf[shp_cols]
         with tempfile.TemporaryDirectory() as tmpdir:
           shp_name = Path(out_str).name
           tmp_shp = Path(tmpdir) / shp_name
-          gdf = gpd.GeoDataFrame.from_features(feats, crs="EPSG:4326")
-          gdf.to_file(tmp_shp)
+          shp_gdf.to_file(tmp_shp, encoding="utf-8")
+          tmp_cpg = Path(tmpdir) / f"{Path(out_str).stem}.cpg"
+          if not tmp_cpg.exists():
+            tmp_cpg.write_text("UTF-8\n", encoding="utf-8")
           gcs_parent = out_str.rsplit("/", 1)[0]
           for shp_part in Path(tmpdir).iterdir():
             upload_file_to_gcs(shp_part, f"{gcs_parent}/{shp_part.name}")
       else:
         import fsspec
         indent = 2 if args.pretty else None
-        json_output = json.dumps(result, indent=indent)
+        fc = {"type": "FeatureCollection", "features": sanitized_features}
         with fsspec.open(out_str, "w", encoding="utf-8") as f:
-          f.write(json_output)
+          json.dump(fc, f, indent=indent)
           f.write("\n")
     else:
       out_path = Path(out_str)
       out_path.parent.mkdir(parents=True, exist_ok=True)
       if out_path.suffix.lower() in (".parquet", ".geoparquet"):
-        import geopandas as gpd
-        gdf = gpd.GeoDataFrame.from_features(feats, crs="EPSG:4326")
         gdf.to_parquet(out_path)
       elif out_path.suffix.lower() == ".shp":
-        import geopandas as gpd
-        gdf = gpd.GeoDataFrame.from_features(feats, crs="EPSG:4326")
-        gdf.to_file(out_path)
+        shp_cols = ["gauge_id", "area", "gauge_lat", "gauge_lon", "geometry"]
+        shp_gdf = gdf[shp_cols]
+        shp_gdf.to_file(out_path, encoding="utf-8")
+        cpg_path = out_path.with_suffix(".cpg")
+        if not cpg_path.exists():
+          cpg_path.write_text("UTF-8\n", encoding="utf-8")
       else:
         indent = 2 if args.pretty else None
-        json_output = json.dumps(result, indent=indent)
+        fc = {"type": "FeatureCollection", "features": sanitized_features}
         with open(out_path, "w", encoding="utf-8") as f:
-          f.write(json_output)
+          json.dump(fc, f, indent=indent)
           f.write("\n")
     print(
         f"Successfully delineated {len(coords_to_process)} catchment(s) to {out_str}",

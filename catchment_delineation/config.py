@@ -26,13 +26,23 @@ DEM_MIN_LAT: float = -56.0
 DEM_MAX_LAT: float = 60.0
 
 
-# Cloud Storage Source URIs
-GCS_DEM_BUCKET_URI: str = "gs://open-multimet/data/DEMs"
+# Cloud Storage Source URIs (Reorganized Canonical Bucket Layout)
+GCS_BUCKET_ROOT: str = "gs://open-multimet"
+
+# Ancillary Reference Layers
+GCS_ANCILLARY_URI: str = f"{GCS_BUCKET_ROOT}/ancillary-data"
+GCS_DEM_BUCKET_URI: str = f"{GCS_ANCILLARY_URI}/dems"
 GCS_TILES_URI: str = f"{GCS_DEM_BUCKET_URI}/tiles_5deg"
 GCS_ELEVATION_TILES_URI: str = f"{GCS_DEM_BUCKET_URI}/elevation_tiles_5deg"
-GCS_DATA_URI: str = "gs://open-multimet/data"
-GCS_CARAVAN_COORDINATES_URI: str = f"{GCS_DATA_URI}/caravan/coordinates.csv"
-GCS_CATCHMENT_POLYGONS_URI: str = f"{GCS_DATA_URI}/catchment_polygons"
+GCS_HYDROATLAS_LEV12_URI: str = f"{GCS_ANCILLARY_URI}/hydroatlas/hydro_atlas_lev12.parquet"
+
+# Caravan Datasets & Output Contract
+GCS_CARAVAN_NEW_URI: str = f"{GCS_BUCKET_ROOT}/caravan-new"
+GCS_CARAVAN_COORDINATES_URI: str = f"{GCS_CARAVAN_NEW_URI}/all_caravan_coordinates.csv"
+GCS_CATCHMENT_POLYGONS_URI: str = f"{GCS_CARAVAN_NEW_URI}"
+
+# Backward compatibility alias
+GCS_DATA_URI: str = f"{GCS_BUCKET_ROOT}/data"
 
 # Default local cache directory for DEM tiles downloaded from the gs bucket
 DEFAULT_CACHE_DIR: Path = Path.home() / ".cache" / "googlehydrology" / "dem"
