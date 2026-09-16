@@ -97,11 +97,14 @@ This repository includes a standalone DEM flow-direction catchment delineation m
 
 - **D8 Flow Traversal:** Pure DEM reverse-flow BFS graph traversal on 3 arc-second (~90m) D8 flow direction grids.
 - **Seamless Cross-Tile Routing:** Dynamically routes across 5°×5° tile boundaries without edge truncation or boundary artifacts.
-- **Cloud Storage Data Source:** DEM tiles are retrieved on demand exclusively from Google Cloud Storage (`gs://open-multimet/data/DEMs/tiles_5deg/`) and cached in `~/.cache/googlehydrology/dem/`.
+- **Canonical Cloud Storage:** DEM tiles are retrieved on demand exclusively from Google Cloud Storage (`gs://open-multimet/ancillary-data/dems/tiles_5deg/`) and cached in `~/.cache/googlehydrology/dem/`.
+- **Direct GCS Read & Write:** Reads pour-point coordinates directly from GCS (`gs://open-multimet/caravan-new/all_caravan_coordinates.csv`) and writes partitioned results directly back to GCS (`gs://open-multimet/caravan-new/`) with `--preserve-caravan-dirs`.
+- **Multi-Format & Parallel Processing:** Multi-worker batch processing (`--workers`) outputting GeoParquet, GeoJSON, and ESRI Shapefiles simultaneously (`--format all`).
+- **Global Benchmarking Suite:** Built-in `benchmark-catchment` CLI to evaluate accuracy against 1,200 globally distributed and stratified reference catchments (median IoU 0.940, Dice 0.969).
 - **Custom Local Paths:** Users can supply their own local tile directory via `--tiles-dir` or `tiles_dir=...` (strictly uses that path, no candidate path searching).
-- **CLI & Python API:** Run as a CLI (`delineate-catchment`) or import directly via `googlehydrology.delineate_dem` or `from catchment_delineation import DemDelineator`.
+- **CLI & Python API:** Run via console scripts (`delineate-catchment`, `benchmark-catchment`) or import directly via `googlehydrology.delineate_dem` or `from catchment_delineation import DemDelineator`.
 
-👉 **See the [Catchment Delineation Subproject README](catchment_delineation/README.md) for full documentation, API reference, and CLI examples.**
+👉 **See the [Catchment Delineation Subproject README](catchment_delineation/README.md) and [Sphinx Documentation](docs/source/usage/catchment_delineation.rst) for full documentation, API reference, and CLI examples.**
 
 ## **Usage**
 

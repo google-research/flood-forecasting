@@ -20,7 +20,7 @@ High-performance, pure DEM flow-direction watershed delineation module for `goog
 In this open-source repository, DEM data comes exclusively from the official Google Cloud Storage bucket:
 
 ```text
-gs://open-multimet/data/DEMs/tiles_5deg/
+gs://open-multimet/ancillary-data/dems/tiles_5deg/
 ```
 
 ### Where the Paths Are
@@ -31,6 +31,8 @@ gs://open-multimet/data/DEMs/tiles_5deg/
 | **GCS Master DEMs** | `gs://open-multimet/ancillary-data/dems/{na,sa,eu,af,as,au}_dir_3s.tif` | Full continental HydroSHEDS 3-arc-second master flow direction GeoTIFFs |
 | **GCS Benchmark Catalog**| `gs://open-multimet/ancillary-data/benchmarks/benchmark_basins_1000.parquet` | Stratified global evaluation catalog of 1,200 validated reference catchments |
 | **Local Benchmark Catalog**| `~/ancillary-data/benchmarks/benchmark_basins_1000.parquet` | Canonical local location for evaluation datasets |
+| **Caravan Master Coordinates**| `gs://open-multimet/caravan-new/all_caravan_coordinates.csv` | Master coordinates for 26,708 basins across all 21 Caravan subdatasets |
+| **Rederived Catchments**| `gs://open-multimet/caravan-new/<collection>/shapefiles-rederived/<subdataset>/` | Partitioned catchment polygons across the three Caravan collections |
 | **GCS Elevation** | `gs://open-multimet/ancillary-data/dems/elevation_tiles_5deg/` | Conditioned elevation tiles (`int16`, 119 files, 8.0 GB) |
 | **Local Cache** | `~/.cache/googlehydrology/dem/` | Default local directory where required tiles are cached automatically on first use |
 | **Custom Path** | `--tiles-dir <path>` or `tiles_dir="<path>"` | Optional user-supplied directory containing local `.npy` tiles |
@@ -134,8 +136,12 @@ The package installs the `delineate-catchment` console script (or use `python -m
 # Output GeoJSON directly to stdout
 delineate-catchment --lat 39.6828 --lon -88.7729 --pretty
 
-# Save GeoJSON to file
+# Save GeoJSON to local file
 delineate-catchment --lat 39.6828 --lon -88.7729 -o dalton_city.geojson
+
+# Save directly to Google Cloud Storage (GeoJSON, GeoParquet, or Shapefile)
+delineate-catchment --lat 39.6828 --lon -88.7729 -o gs://open-multimet/test/dalton_city.geojson
+delineate-catchment --lat 39.6828 --lon -88.7729 -o gs://open-multimet/test/dalton_city.parquet
 ```
 
 ### Multiple Coordinates
@@ -146,7 +152,7 @@ delineate-catchment \
   --pretty -o multi_basins.geojson
 ```
 
-### Batch Coordinates from CSV
+### Batch Coordinates from CSV or Parquet
 
 Given `gauges.csv`:
 ```csv
@@ -155,10 +161,31 @@ USGS_05592500,39.6828,-88.7729
 USGS_03335500,40.4172,-86.8858
 ```
 
-Run:
+Run locally:
 ```bash
 delineate-catchment --csv gauges.csv -o delineated_basins.geojson
 ```
+
+Or process in parallel using multiple workers:
+```bash
+delineate-catchment --csv gauges.csv --workers 8 -o delineated_basins.parquet
+```
+
+### Direct GCS Caravan Batch Extraction
+
+Run across all 26,708 Caravan basins directly from Google Cloud Storage, partitioning outputs into the canonical directory structure across all three collections (`caravan-original`, `caravan-extensions`, `google-internal`), outputting GeoParquet, GeoJSON, and ESRI Shapefiles simultaneously:
+
+```bash
+delineate-catchment \
+  --csv gs://open-multimet/caravan-new/all_caravan_coordinates.csv \
+  --output-dir gs://open-multimet/caravan-new \
+  --preserve-caravan-dirs \
+  --format all \
+  --workers 24 \
+  --clean-cache
+```
+
+*(Note: `--csv caravan` can also be used as a shorthand alias for `gs://open-multimet/caravan-new/all_caravan_coordinates.csv`)*
 
 ### Using a Custom Local Tiles Directory
 
@@ -184,12 +211,20 @@ delineate-catchment --list-tiles
 | `--lat` | float | None | Latitude of pour point outlet |
 | `--lon` | float | None | Longitude of pour point outlet |
 | `--coords` | string(s) | None | One or more space-separated `"lat,lon"` pairs |
-| `--csv` | path | None | CSV file with latitude, longitude, and optional ID columns |
+| `--csv` | path / URI | None | CSV/Parquet file path or `gs://` URI (alias `caravan` supported) |
 | `--id` | string | None | Custom catchment ID for single-coordinate runs |
-| `--tiles-dir` | path | `None` | Custom tile directory. If omitted, tiles are downloaded from `gs://open-multimet/data/DEMs/tiles_5deg/` |
-| `--snap-window` | int | `4` | Search window half-width in cells (~360m at 90m resolution) |
-| `--max-cells` | int | `5000000` | Traversal safety limit for maximum upstream raster cells |
-| `-o`, `--output` | path | stdout | Output GeoJSON file path |
+| `--lat-col` | string | auto | Column name for latitude in CSV/Parquet |
+| `--lon-col` | string | auto | Column name for longitude in CSV/Parquet |
+| `--id-col` | string | auto | Column name for gauge/catchment ID in CSV/Parquet |
+| `--workers`, `-w` | int | `1` | Number of parallel worker processes for batch processing |
+| `--tiles-dir` | path | `None` | Custom tile directory. If omitted, tiles are downloaded from `gs://open-multimet/ancillary-data/dems/tiles_5deg/` |
+| `--snap-window` | int | `12` | Search window half-width in cells (~1.1 km at 90m resolution) |
+| `--max-cells` | int | `50000000` | Traversal safety limit for maximum upstream raster cells |
+| `-o`, `--output` | path / URI | stdout | Output file path (`.geojson`, `.parquet`, `.shp`) or `gs://` URI |
+| `--output-dir` | path / URI | None | Directory or GCS bucket prefix for partitioned catchment outputs |
+| `--preserve-caravan-dirs` | flag | False | Partition catchments into `<collection>/shapefiles-rederived/<subdataset>/` |
+| `--format` | choice | `all` | Format(s) to write: `all`, `geoparquet`, `geojson`, `shp` |
+| `--clean-cache` | flag | False | Automatically purge local DEM tile cache after completion |
 | `--pretty` | flag | False | Pretty-print output JSON with 2-space indentation |
 | `--list-tiles` | flag | False | Print available `.npy` tile files and exit |
 
