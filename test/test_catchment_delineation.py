@@ -195,6 +195,20 @@ def test_benchmark_execution(tmp_path):
   assert "dice" in df.columns
 
 
+def test_benchmark_dataset_resolution():
+  from catchment_delineation.config import (
+      GCS_BENCHMARK_URI,
+      GCS_BENCHMARKS_DIR_URI,
+      LOCAL_BENCHMARK_FILE,
+      LOCAL_BENCHMARKS_DIR,
+  )
+  assert GCS_BENCHMARKS_DIR_URI == "gs://open-multimet/ancillary-data/benchmarks"
+  assert GCS_BENCHMARK_URI == "gs://open-multimet/ancillary-data/benchmarks/benchmark_basins_1000.parquet"
+  assert LOCAL_BENCHMARKS_DIR == Path.home() / "ancillary-data" / "benchmarks"
+  assert LOCAL_BENCHMARK_FILE == Path.home() / "ancillary-data" / "benchmarks" / "benchmark_basins_1000.parquet"
+  assert LOCAL_BENCHMARK_FILE.exists()
+
+
 def test_out_of_coverage_pour_point_raises_error():
   """Verifies that requesting coordinates outside coverage raises CatchmentCoverageError."""
   from catchment_delineation import CatchmentCoverageError, DemDelineator

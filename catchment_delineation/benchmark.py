@@ -40,7 +40,13 @@ import pandas as pd
 from shapely.geometry import shape
 import shapely.wkt
 
-from catchment_delineation.config import GCS_TILES_URI, get_default_cache_dir
+from catchment_delineation.config import (
+    GCS_BENCHMARK_URI,
+    GCS_TILES_URI,
+    LOCAL_BENCHMARK_FILE,
+    LOCAL_BENCHMARKS_DIR,
+    get_default_cache_dir,
+)
 from catchment_delineation.delineator import CatchmentCoverageError, DemDelineator
 from catchment_delineation.gcs import download_tile_from_gcs
 from catchment_delineation.tiles import (
@@ -52,9 +58,10 @@ from catchment_delineation.tiles import (
 
 logger = logging.getLogger("catchment_delineation.benchmark")
 
-DEFAULT_BENCHMARK_PATH = (
+DEFAULT_PACKAGE_BENCHMARK_PATH = (
     Path(__file__).parent / "data" / "benchmark_basins_1000.parquet"
 )
+DEFAULT_BENCHMARK_PATH = LOCAL_BENCHMARK_FILE
 
 
 def compute_iou_and_metrics(
@@ -235,17 +242,41 @@ def run_benchmark(
     clean_cache: bool = False,
 ) -> pd.DataFrame:
   """Executes the global catchment delineation benchmark across test basins."""
-  ds_path = (
-      Path(dataset_path) if dataset_path else DEFAULT_BENCHMARK_PATH
-  ).resolve()
+  if dataset_path:
+    # Support direct gs:// URIs (e.g. gs://open-multimet/ancillary-data/benchmarks/benchmark_basins_1000.parquet)
+    if str(dataset_path).startswith("gs://"):
+      gcs_src = str(dataset_path)
+      filename = gcs_src.split("/")[-1]
+      ds_path = LOCAL_BENCHMARKS_DIR / filename
+      if not ds_path.exists():
+        print(f"Downloading benchmark dataset from {gcs_src} to {ds_path}...")
+        ds_path.parent.mkdir(parents=True, exist_ok=True)
+        import shutil
+        import subprocess
+        if shutil.which("gcloud"):
+          subprocess.run(["gcloud", "storage", "cp", gcs_src, str(ds_path)], check=True)
+        else:
+          raise FileNotFoundError(f"Cannot download {gcs_src}: gcloud CLI not found.")
+    else:
+      ds_path = Path(dataset_path).expanduser().resolve()
+  else:
+    # Preferred resolution order:
+    # 1. Local canonical directory: ~/ancillary-data/benchmarks/benchmark_basins_1000.parquet
+    # 2. Bundled package fallback: catchment_delineation/data/benchmark_basins_1000.parquet
+    if LOCAL_BENCHMARK_FILE.exists():
+      ds_path = LOCAL_BENCHMARK_FILE
+    elif DEFAULT_PACKAGE_BENCHMARK_PATH.exists():
+      ds_path = DEFAULT_PACKAGE_BENCHMARK_PATH.resolve()
+    else:
+      ds_path = LOCAL_BENCHMARK_FILE
 
   if not ds_path.exists():
-    # Attempt to download from GCS if dataset file not found locally
-    print(f"Benchmark dataset not found locally at {ds_path}. Downloading from GCS...")
+    # Attempt to download from GCS canonical URI if dataset file not found locally
+    print(f"Benchmark dataset not found locally at {ds_path}. Downloading from GCS ({GCS_BENCHMARK_URI})...")
     import subprocess
     import shutil
     ds_path.parent.mkdir(parents=True, exist_ok=True)
-    gcs_src = f"{GCS_TILES_URI.replace('/tiles_5deg', '')}/benchmark_basins_1000.parquet"
+    gcs_src = GCS_BENCHMARK_URI
     if shutil.which("gcloud"):
       subprocess.run(["gcloud", "storage", "cp", gcs_src, str(ds_path)], check=True)
     else:
@@ -427,7 +458,7 @@ def main():
       "--dataset",
       type=str,
       default=None,
-      help="Path to custom benchmark dataset (.parquet). Defaults to bundled 1,200 basin dataset.",
+      help="Path to custom benchmark dataset (.parquet or gs:// URI). Defaults to ~/ancillary-data/benchmarks/benchmark_basins_1000.parquet.",
   )
   parser.add_argument(
       "-o",

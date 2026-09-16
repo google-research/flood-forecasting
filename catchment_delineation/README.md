@@ -27,16 +27,17 @@ gs://open-multimet/data/DEMs/tiles_5deg/
 
 | Resource | Path / URI | Description |
 | :--- | :--- | :--- |
-| **GCS Bucket (Remote)** | `gs://open-multimet/data/DEMs/tiles_5deg/` | Hosted **763** pre-sliced 5°×5° D8 flow-direction tiles (`uint8`, shape `(6000, 6000)`, ~34 MB each) covering all habitable continents |
-| **GCS Master DEMs** | `gs://open-multimet/data/DEMs/{na,sa,eu,af,as,au}_dir_3s.tif` | Full continental HydroSHEDS 3-arc-second master flow direction GeoTIFFs |
-| **GCS Benchmark Catalog**| `gs://open-multimet/data/DEMs/benchmark_basins_1000.parquet` | Stratified global evaluation catalog of 1,200 validated reference catchments |
-| **GCS Elevation** | `gs://open-multimet/data/DEMs/elevation_tiles_5deg/` | Conditioned elevation tiles (`int16`, 119 files, 8.0 GB) |
+| **GCS Bucket (Remote)** | `gs://open-multimet/ancillary-data/dems/tiles_5deg/` | Hosted **763** pre-sliced 5°×5° D8 flow-direction tiles (`uint8`, shape `(6000, 6000)`, ~34 MB each) covering all habitable continents |
+| **GCS Master DEMs** | `gs://open-multimet/ancillary-data/dems/{na,sa,eu,af,as,au}_dir_3s.tif` | Full continental HydroSHEDS 3-arc-second master flow direction GeoTIFFs |
+| **GCS Benchmark Catalog**| `gs://open-multimet/ancillary-data/benchmarks/benchmark_basins_1000.parquet` | Stratified global evaluation catalog of 1,200 validated reference catchments |
+| **Local Benchmark Catalog**| `~/ancillary-data/benchmarks/benchmark_basins_1000.parquet` | Canonical local location for evaluation datasets |
+| **GCS Elevation** | `gs://open-multimet/ancillary-data/dems/elevation_tiles_5deg/` | Conditioned elevation tiles (`int16`, 119 files, 8.0 GB) |
 | **Local Cache** | `~/.cache/googlehydrology/dem/` | Default local directory where required tiles are cached automatically on first use |
 | **Custom Path** | `--tiles-dir <path>` or `tiles_dir="<path>"` | Optional user-supplied directory containing local `.npy` tiles |
 
 ### Automatic Retrieval & Strict Path Handling
 
-- **Default Behavior**: When no custom path is provided, `DemDelineator` checks the local cache (`~/.cache/googlehydrology/dem/`). If a required tile is not present locally, it is downloaded on demand directly from `gs://open-multimet/data/DEMs/tiles_5deg/`.
+- **Default Behavior**: When no custom path is provided, `DemDelineator` checks the local cache (`~/.cache/googlehydrology/dem/`). If a required tile is not present locally, it is downloaded on demand directly from `gs://open-multimet/ancillary-data/dems/tiles_5deg/`.
 - **Custom User Directory**: Users can specify `--tiles-dir /path/to/my/tiles` on the command line or pass `tiles_dir="/path/to/my/tiles"` to `DemDelineator`. When specified, tiles are loaded strictly from that path.
 - **No Path Searching**: There is no candidate path scanning or fallback searching. Tiles are sourced strictly from the GCS bucket or from the user's explicit path.
 
@@ -200,7 +201,7 @@ The package includes a comprehensive global benchmarking runner (`benchmark-catc
 
 - **1,200 Balanced Global Basins**: Bundled dataset stratified equally across all 6 continents (200 each in Africa, Asia, Europe, North America, South America, Oceania), all 4 hemisphere quadrants (NW, NE, SW, SE), and 5 size tiers (micro to macro).
 - **Core Spatial Metrics**: Computes Intersection-over-Union (IoU / Jaccard Index), Dice similarity coefficient, relative area bias ($\Delta \text{Area} \%$), and stream snapping distances.
-- **Hermetic Cloud Execution**: Automatically pulls required 5°×5° tiles on demand from `gs://open-multimet/data/DEMs/tiles_5deg/`.
+- **Hermetic Cloud Execution**: Automatically pulls required 5°×5° tiles on demand from `gs://open-multimet/ancillary-data/dems/tiles_5deg/` and benchmark datasets from `gs://open-multimet/ancillary-data/benchmarks/benchmark_basins_1000.parquet` (cached locally in `~/ancillary-data/benchmarks/`).
 
 ### Running the Global Benchmark
 
@@ -213,6 +214,9 @@ benchmark-catchment --continents Europe Africa --workers 8
 
 # Filter by basin size tiers
 benchmark-catchment --size-tiers 1_micro 2_small 3_medium 4_large 5_macro
+
+# Automatically clean local DEM cache after benchmark completes
+benchmark-catchment --samples 200 --workers 16 --clean-cache -o benchmark_200.csv
 ```
 
 ### Benchmark CLI Options
@@ -223,7 +227,10 @@ benchmark-catchment --size-tiers 1_micro 2_small 3_medium 4_large 5_macro
 | `--continents` | strings | None | Subset continents (`Africa`, `Asia`, `Europe`, `North America`, `South America`, `Oceania`) |
 | `--size-tiers` | strings | None | Subset size tiers (`1_micro`, `2_small`, `3_medium`, `4_large`, `5_macro`) |
 | `--workers` | int | `8` | Number of parallel worker processes |
+| `--dataset` | path / URI | `~/ancillary-data/benchmarks/benchmark_basins_1000.parquet` | Custom benchmark dataset file path or `gs://` URI |
 | `--tiles-dir` | path | `None` | Optional local DEM tile folder (defaults to GCS auto-download) |
+| `--snap-window` | int | `12` | Outlet snap window half-width in cells (~1.1 km) |
+| `--clean-cache` | flag | `False` | Automatically purge local DEM tile cache after benchmark completes |
 | `-o`, `--output` | path | `benchmark_results.csv` | Output file path (.csv or .parquet) for detailed per-basin metrics |
 
 ---

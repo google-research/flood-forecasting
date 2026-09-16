@@ -35,6 +35,8 @@ GCS_DEM_BUCKET_URI: str = f"{GCS_ANCILLARY_URI}/dems"
 GCS_TILES_URI: str = f"{GCS_DEM_BUCKET_URI}/tiles_5deg"
 GCS_ELEVATION_TILES_URI: str = f"{GCS_DEM_BUCKET_URI}/elevation_tiles_5deg"
 GCS_HYDROATLAS_LEV12_URI: str = f"{GCS_ANCILLARY_URI}/hydroatlas/hydro_atlas_lev12.parquet"
+GCS_BENCHMARKS_DIR_URI: str = f"{GCS_ANCILLARY_URI}/benchmarks"
+GCS_BENCHMARK_URI: str = f"{GCS_BENCHMARKS_DIR_URI}/benchmark_basins_1000.parquet"
 
 # Caravan Datasets & Output Contract
 GCS_CARAVAN_NEW_URI: str = f"{GCS_BUCKET_ROOT}/caravan-new"
@@ -43,6 +45,11 @@ GCS_CATCHMENT_POLYGONS_URI: str = f"{GCS_CARAVAN_NEW_URI}"
 
 # Backward compatibility alias
 GCS_DATA_URI: str = f"{GCS_BUCKET_ROOT}/data"
+
+# Local Canonical Ancillary Paths
+LOCAL_ANCILLARY_DIR: Path = Path.home() / "ancillary-data"
+LOCAL_BENCHMARKS_DIR: Path = LOCAL_ANCILLARY_DIR / "benchmarks"
+LOCAL_BENCHMARK_FILE: Path = LOCAL_BENCHMARKS_DIR / "benchmark_basins_1000.parquet"
 
 # Default local cache directory for DEM tiles downloaded from the gs bucket
 DEFAULT_CACHE_DIR: Path = Path.home() / ".cache" / "googlehydrology" / "dem"
