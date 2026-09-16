@@ -180,10 +180,10 @@ class DemDelineator:
           sq = deque([(tr, tc, 0)])
           svis = {(tr, tc)}
           cnt = 0
-          while sq and cnt < 300:
+          while sq and cnt < 5000:
             cr, cc, depth = sq.popleft()
             cnt += 1
-            if depth >= 25:
+            if depth >= 100:
               continue
             for d_r, d_c, req in INFLOW_MAP:
               nr, nc = cr + d_r, cc + d_c
@@ -191,7 +191,7 @@ class DemDelineator:
                 if (nr, nc) not in svis and start_grid[nr, nc] == req:
                   svis.add((nr, nc))
                   sq.append((nr, nc, depth + 1))
-          dist_penalty = int((dr * dr + dc * dc) * 0.2)
+          dist_penalty = float(math.hypot(dr, dc)) * 2.0
           score = cnt - dist_penalty
           if score > best_cnt:
             best_cnt = score
@@ -212,8 +212,8 @@ class DemDelineator:
       self,
       lat: float,
       lon: float,
-      snap_window_cells: int = 4,
-      max_cells: int = 5000000,
+      snap_window_cells: int = 12,
+      max_cells: int = 50000000,
       simplify_tolerance: Optional[float] = None,
       catchment_id: Optional[str] = None,
   ) -> Dict[str, Any]:

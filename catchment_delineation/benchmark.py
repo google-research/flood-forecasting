@@ -98,6 +98,7 @@ def _evaluate_single_basin(
     tiles_dir: Optional[str] = None,
     gcs_uri: str = GCS_TILES_URI,
     cache_dir: Optional[str] = None,
+    snap_window_cells: int = 12,
 ) -> Dict[str, Any]:
   """Worker function to evaluate a single basin."""
   gauge_id = row_dict["gauge_id"]
@@ -121,7 +122,7 @@ def _evaluate_single_basin(
         lat=lat,
         lon=lon,
         catchment_id=gauge_id,
-        snap_window_cells=4,
+        snap_window_cells=snap_window_cells,
     )
     elapsed = time.time() - t0
 
@@ -230,6 +231,8 @@ def run_benchmark(
     gcs_uri: str = GCS_TILES_URI,
     cache_dir: Optional[str] = None,
     output_path: Optional[str] = None,
+    snap_window_cells: int = 12,
+    clean_cache: bool = False,
 ) -> pd.DataFrame:
   """Executes the global catchment delineation benchmark across test basins."""
   ds_path = (
@@ -314,68 +317,76 @@ def run_benchmark(
   results = []
   t_start = time.time()
 
-  with ProcessPoolExecutor(max_workers=workers) as executor:
-    futures = {
-        executor.submit(
-            _evaluate_single_basin,
-            row,
-            tiles_dir=tiles_dir,
-            gcs_uri=gcs_uri,
-            cache_dir=cache_dir,
-        ): row["gauge_id"]
-        for row in rows
-    }
+  try:
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+      futures = {
+          executor.submit(
+              _evaluate_single_basin,
+              row,
+              tiles_dir=tiles_dir,
+              gcs_uri=gcs_uri,
+              cache_dir=cache_dir,
+              snap_window_cells=snap_window_cells,
+          ): row["gauge_id"]
+          for row in rows
+      }
 
-    done_count = 0
-    total = len(futures)
-    for fut in as_completed(futures):
-      res = fut.result()
-      results.append(res)
-      done_count += 1
-      if done_count % 50 == 0 or done_count == total:
-        print(f"Progress: [{done_count}/{total}] basins evaluated ({(done_count/total)*100:.1f}%)")
+      done_count = 0
+      total = len(futures)
+      for fut in as_completed(futures):
+        res = fut.result()
+        results.append(res)
+        done_count += 1
+        if done_count % 50 == 0 or done_count == total:
+          print(f"Progress: [{done_count}/{total}] basins evaluated ({(done_count/total)*100:.1f}%)")
 
-  total_time = time.time() - t_start
-  res_df = pd.DataFrame(results)
+    total_time = time.time() - t_start
+    res_df = pd.DataFrame(results)
 
-  successful = int((res_df['status'] == 'SUCCESS').sum())
-  out_of_coverage = int((res_df['status'].str.startswith('OUT_OF_COVERAGE')).sum())
-  unexpected_errors = len(res_df) - successful - out_of_coverage
+    successful = int((res_df['status'] == 'SUCCESS').sum())
+    out_of_coverage = int((res_df['status'].str.startswith('OUT_OF_COVERAGE')).sum())
+    unexpected_errors = len(res_df) - successful - out_of_coverage
 
-  # Overall Report
-  print("\n" + "=" * 80)
-  print("GLOBAL CATCHMENT DELINEATION BENCHMARK RESULTS")
-  print("=" * 80)
-  print(f"Total Basins Evaluated : {len(res_df)}")
-  print(f"Total Wall-Clock Time   : {total_time:.1f}s ({total_time / max(1, len(res_df)):.3f}s / basin)")
-  print(f"Successful Delineations : {successful} / {len(res_df)}")
-  if out_of_coverage > 0:
-    print(f"Out-of-Coverage Basins  : {out_of_coverage} / {len(res_df)} (detected & aborted cleanly)")
-  if unexpected_errors > 0:
-    print(f"Unexpected Errors       : {unexpected_errors} / {len(res_df)}")
-  print(f"Overall Median IoU      : {res_df['iou'].median():.3f}")
-  print(f"Overall Median Dice     : {res_df['dice'].median():.3f}")
-  print(f"Basins with IoU >= 0.80 : {(res_df['iou'] >= 0.80).mean() * 100:.1f}%")
-  print(f"Basins with IoU >= 0.90 : {(res_df['iou'] >= 0.90).mean() * 100:.1f}%")
-  print(f"Median Absolute Area Err: {res_df['abs_area_err_pct'].median():.1f}%")
-  print(f"Median Outlet Snap Dist : {res_df['snap_dist_m'].median():.1f} meters")
+    # Overall Report
+    print("\n" + "=" * 80)
+    print("GLOBAL CATCHMENT DELINEATION BENCHMARK RESULTS")
+    print("=" * 80)
+    print(f"Total Basins Evaluated : {len(res_df)}")
+    print(f"Total Wall-Clock Time   : {total_time:.1f}s ({total_time / max(1, len(res_df)):.3f}s / basin)")
+    print(f"Successful Delineations : {successful} / {len(res_df)}")
+    if out_of_coverage > 0:
+      print(f"Out-of-Coverage Basins  : {out_of_coverage} / {len(res_df)} (detected & aborted cleanly)")
+    if unexpected_errors > 0:
+      print(f"Unexpected Errors       : {unexpected_errors} / {len(res_df)}")
+    print(f"Overall Median IoU      : {res_df['iou'].median():.3f}")
+    print(f"Overall Median Dice     : {res_df['dice'].median():.3f}")
+    print(f"Basins with IoU >= 0.80 : {(res_df['iou'] >= 0.80).mean() * 100:.1f}%")
+    print(f"Basins with IoU >= 0.90 : {(res_df['iou'] >= 0.90).mean() * 100:.1f}%")
+    print(f"Median Absolute Area Err: {res_df['abs_area_err_pct'].median():.1f}%")
+    print(f"Median Outlet Snap Dist : {res_df['snap_dist_m'].median():.1f} meters")
 
-  # Breakdown Tables
-  print_summary_table(res_df, "PERFORMANCE BY CONTINENT", "continent")
-  print_summary_table(res_df, "PERFORMANCE BY HEMISPHERE QUADRANT", "hemisphere")
-  print_summary_table(res_df, "PERFORMANCE BY BASIN SIZE TIER", "size_tier")
-  print("=" * 80)
+    # Breakdown Tables
+    print_summary_table(res_df, "PERFORMANCE BY CONTINENT", "continent")
+    print_summary_table(res_df, "PERFORMANCE BY HEMISPHERE QUADRANT", "hemisphere")
+    print_summary_table(res_df, "PERFORMANCE BY BASIN SIZE TIER", "size_tier")
+    print("=" * 80)
 
-  if output_path:
-    out_p = Path(output_path).expanduser().resolve()
-    out_p.parent.mkdir(parents=True, exist_ok=True)
-    if str(out_p).endswith(".parquet"):
-      res_df.to_parquet(out_p, index=False)
-    else:
-      res_df.to_csv(out_p, index=False)
-    print(f"Detailed per-basin metrics saved to: {out_p}")
+    if output_path:
+      out_p = Path(output_path).expanduser().resolve()
+      out_p.parent.mkdir(parents=True, exist_ok=True)
+      if str(out_p).endswith(".parquet"):
+        res_df.to_parquet(out_p, index=False)
+      else:
+        res_df.to_csv(out_p, index=False)
+      print(f"Detailed per-basin metrics saved to: {out_p}")
 
-  return res_df
+    return res_df
+  finally:
+    if clean_cache and cache_path.exists():
+      import shutil
+      print(f"Cleaning up local DEM cache at {cache_path}...")
+      shutil.rmtree(cache_path, ignore_errors=True)
+      print("Local DEM cache cleaned.")
 
 
 def main():
@@ -425,6 +436,17 @@ def main():
       default="benchmark_results.csv",
       help="Path to save detailed per-basin results (.csv or .parquet)",
   )
+  parser.add_argument(
+      "--snap-window",
+      type=int,
+      default=12,
+      help="Outlet snap search window half-width in cells (default: 12 cells ~1.1 km)",
+  )
+  parser.add_argument(
+      "--clean-cache",
+      action="store_true",
+      help="Automatically clean up downloaded local DEM tiles from cache after benchmark completes.",
+  )
 
   args = parser.parse_args()
 
@@ -436,6 +458,8 @@ def main():
       workers=args.workers,
       tiles_dir=args.tiles_dir,
       output_path=args.output,
+      snap_window_cells=args.snap_window,
+      clean_cache=args.clean_cache,
   )
 
 

@@ -134,14 +134,14 @@ def main(argv: Optional[List[str]] = None) -> int:
   config_group.add_argument(
       "--snap-window",
       type=int,
-      default=4,
-      help="Snap search window half-width in cells (default: 4 cells ~360m).",
+      default=12,
+      help="Snap search window half-width in cells (default: 12 cells ~1.1 km).",
   )
   config_group.add_argument(
       "--max-cells",
       type=int,
-      default=5000000,
-      help="Maximum upstream cells safety limit (default: 5,000,000).",
+      default=50000000,
+      help="Maximum upstream cells safety limit (default: 50,000,000).",
   )
 
   output_group = parser.add_argument_group("Output Options")
@@ -151,6 +151,11 @@ def main(argv: Optional[List[str]] = None) -> int:
       type=str,
       default=None,
       help="Output path for GeoJSON file. If omitted, prints GeoJSON to stdout.",
+  )
+  output_group.add_argument(
+      "--clean-cache",
+      action="store_true",
+      help="Automatically clean up downloaded local DEM tiles from cache after delineation completes.",
   )
   output_group.add_argument(
       "--pretty",
@@ -226,6 +231,12 @@ def main(argv: Optional[List[str]] = None) -> int:
   except CatchmentCoverageError as e:
     sys.stderr.write(f"\nCatchment Delineation Aborted: {e}\n")
     return 1
+  finally:
+    if args.clean_cache:
+      cache_p = tiles_dir if tiles_dir else get_default_cache_dir()
+      if cache_p.exists():
+        import shutil
+        shutil.rmtree(cache_p, ignore_errors=True)
 
   indent = 2 if args.pretty else None
   json_output = json.dumps(result, indent=indent)

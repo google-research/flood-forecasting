@@ -261,5 +261,27 @@ def test_delineate_batch_omits_out_of_coverage(tmp_path):
   assert fc["features"][0]["properties"]["outlet"]["input_latitude"] == 39.6828
 
 
+def test_clean_cache_flag(tmp_path):
+  """Verifies that --clean-cache cleans up the cache directory after run."""
+  from catchment_delineation.cli import main
+  cache_dir = tmp_path / "test_cache"
+  cache_dir.mkdir()
+  tile = np.zeros((6000, 6000), dtype=np.uint8)
+  tile[380, 1472] = 4
+  np.save(cache_dir / "n40w090.npy", tile)
+
+  out_json = tmp_path / "test_out.geojson"
+  exit_code = main([
+      "--lat", "39.6828",
+      "--lon", "-88.7729",
+      "--tiles-dir", str(cache_dir),
+      "--clean-cache",
+      "-o", str(out_json),
+  ])
+  assert exit_code == 0
+  assert not cache_dir.exists()
+
+
+
 
 
