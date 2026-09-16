@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -25,6 +26,7 @@ from typing import List, Optional, Set, Tuple, Union
 from catchment_delineation.config import (
     GCS_TILES_URI,
     get_default_cache_dir,
+    get_default_tiles_dir,
 )
 from catchment_delineation.tiles import (
     get_required_tiles_for_bbox,
@@ -76,29 +78,41 @@ def download_tile_from_gcs(
 
   logger.info("Downloading DEM tile from %s to %s...", tile_gcs_uri, dest_file)
 
-  # 1. Try gcloud storage CLI
-  if shutil.which("gcloud"):
-    try:
-      cmd = ["gcloud", "storage", "cp", tile_gcs_uri, str(dest_file)]
-      res = subprocess.run(cmd, capture_output=True, timeout=120)
-      if res.returncode == 0 and dest_file.exists():
-        logger.info("Successfully downloaded tile %s via gcloud storage.", filename)
-        return dest_file
-    except Exception as e:
-      logger.warning("gcloud storage tile download failed: %s", e)
-
-  # 2. Try gcsfs
+  # Download to a process-unique temporary file first, then atomically rename
+  tmp_file = directory / f".tmp_{os.getpid()}_{filename}"
   try:
-    import gcsfs
+    # 1. Try gcloud storage CLI
+    if shutil.which("gcloud"):
+      try:
+        cmd = ["gcloud", "storage", "cp", tile_gcs_uri, str(tmp_file)]
+        res = subprocess.run(cmd, capture_output=True, timeout=120)
+        if res.returncode == 0 and tmp_file.exists() and tmp_file.stat().st_size > 0:
+          tmp_file.replace(dest_file)
+          logger.info("Successfully downloaded tile %s via gcloud storage.", filename)
+          return dest_file
+      except Exception as e:
+        logger.warning("gcloud storage tile download failed: %s", e)
 
-    fs = gcsfs.GCSFileSystem()
-    clean_src = tile_gcs_uri.replace("gs://", "")
-    if fs.exists(clean_src):
-      fs.get(clean_src, str(dest_file))
-      logger.info("Successfully downloaded tile %s via gcsfs.", filename)
-      return dest_file
-  except Exception as e:
-    logger.warning("gcsfs tile download failed: %s", e)
+    # 2. Try gcsfs
+    try:
+      import gcsfs
+
+      fs = gcsfs.GCSFileSystem()
+      clean_src = tile_gcs_uri.replace("gs://", "")
+      if fs.exists(clean_src):
+        fs.get(clean_src, str(tmp_file))
+        if tmp_file.exists() and tmp_file.stat().st_size > 0:
+          tmp_file.replace(dest_file)
+          logger.info("Successfully downloaded tile %s via gcsfs.", filename)
+          return dest_file
+    except Exception as e:
+      logger.warning("gcsfs tile download failed: %s", e)
+  finally:
+    if tmp_file.exists():
+      try:
+        tmp_file.unlink()
+      except OSError:
+        pass
 
   raise RuntimeError(
       f"Failed to download DEM tile {filename} from {tile_gcs_uri} to {dest_file}. "

@@ -16,11 +16,20 @@
 
 from __future__ import annotations
 
+import os
+
+# Configure environment before NumPy / C-extensions initialize to ensure fork and thread safety
+os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import argparse
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import logging
 import math
-import os
 from pathlib import Path
 import sys
 import time
@@ -33,6 +42,13 @@ import shapely.wkt
 
 from catchment_delineation.config import GCS_TILES_URI, get_default_cache_dir
 from catchment_delineation.delineator import CatchmentCoverageError, DemDelineator
+from catchment_delineation.gcs import download_tile_from_gcs
+from catchment_delineation.tiles import (
+    is_coord_in_coverage,
+    is_tile_in_coverage,
+    latlon_to_tile_key,
+    tile_key_to_filename,
+)
 
 logger = logging.getLogger("catchment_delineation.benchmark")
 
@@ -253,8 +269,46 @@ def run_benchmark(
   print(f"Benchmarking {len(df)} basins across {df['continent'].nunique()} continents using {workers} workers...")
   if tiles_dir:
     print(f"Using local tile directory: {tiles_dir}")
-  else:
-    print(f"Using GCS tile bucket: {gcs_uri} (cached in {cache_dir or get_default_cache_dir()})")
+  cache_path = Path(cache_dir).expanduser() if cache_dir else get_default_cache_dir()
+  if not tiles_dir:
+    print(f"Using GCS tile bucket: {gcs_uri} (cached in {cache_path})")
+    cache_path.mkdir(parents=True, exist_ok=True)
+    needed_tile_keys = set()
+    for row in df.itertuples():
+      lat = float(row.latitude)
+      lon = float(row.longitude)
+      if is_coord_in_coverage(lat, lon):
+        tk = latlon_to_tile_key(lat, lon)
+        if is_tile_in_coverage(tk[0], tk[1]):
+          needed_tile_keys.add(tk)
+
+    missing_tiles = [
+        tk
+        for tk in sorted(needed_tile_keys)
+        if not (cache_path / tile_key_to_filename(tk[0], tk[1])).exists()
+    ]
+    if missing_tiles:
+      print(
+          f"Pre-caching {len(missing_tiles)} required DEM tiles in main process before spawning workers..."
+      )
+      def _download_one(tk: Tuple[int, int]):
+        try:
+          download_tile_from_gcs(
+              lat_top=tk[0],
+              lon_left=tk[1],
+              target_dir=cache_path,
+              source_uri=gcs_uri,
+          )
+        except Exception as e:
+          logger.warning(
+              "Could not pre-cache tile %s: %s",
+              tile_key_to_filename(tk[0], tk[1]),
+              e,
+          )
+
+      with ThreadPoolExecutor(max_workers=min(16, len(missing_tiles))) as pool:
+        list(pool.map(_download_one, missing_tiles))
+      print(f"Pre-cached {len(missing_tiles)} DEM tiles successfully.")
 
   rows = df.to_dict(orient="records")
   results = []

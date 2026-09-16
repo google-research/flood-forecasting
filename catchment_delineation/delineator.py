@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 import numpy as np
-from shapely.geometry import MultiPolygon, Polygon, mapping
+from shapely.geometry import MultiPolygon, Polygon, mapping, shape
 from shapely.ops import unary_union
 
 from catchment_delineation.config import (
@@ -473,6 +473,28 @@ class DemDelineator:
 
     sub_lat_top = lat_top - min_r * RES_DEG
     sub_lon_left = lon_left + min_c * RES_DEG
+
+    try:
+      import rasterio.features
+      from rasterio.transform import from_origin
+
+      transform = from_origin(sub_lon_left, sub_lat_top, RES_DEG, RES_DEG)
+      shapes = rasterio.features.shapes(
+          sub_mask.astype(np.uint8), mask=sub_mask, transform=transform
+      )
+      polys = [shape(geom) for geom, val in shapes if val == 1]
+      if polys:
+        if len(polys) == 1:
+          poly = polys[0]
+        else:
+          poly = unary_union(polys)
+        if not poly.is_valid:
+          poly = poly.buffer(0)
+        if simplify_tolerance:
+          poly = poly.simplify(simplify_tolerance)
+        return poly
+    except Exception as e:
+      logger.debug("rasterio polygonize failed, using box fallback: %s", e)
 
     boxes = []
     for r in range(sub_mask.shape[0]):
