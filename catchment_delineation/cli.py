@@ -22,6 +22,7 @@ from catchment_delineation.delineator import CatchmentCoverageError, DemDelineat
 from catchment_delineation.gcs import (
     download_tile_from_gcs,
     is_gcs_path,
+    normalize_gcs_path,
     upload_file_to_gcs,
 )
 from catchment_delineation.tiles import (
@@ -112,7 +113,7 @@ def load_coords_from_file(
   If file_path is 'caravan', 'caravan_coordinates', or 'caravan_coordinates.csv' and does not
   exist locally, it automatically resolves to the canonical GCS Caravan coordinates URI.
   """
-  path_str = str(file_path).strip()
+  path_str = normalize_gcs_path(file_path)
   if (
       path_str.lower()
       in ("caravan", "caravan_coordinates", "caravan_coordinates.csv", "coordinates.csv")
@@ -343,7 +344,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
   if args.csv:
     csv_coords, csv_ids = load_coords_from_file(
-        Path(args.csv),
+        args.csv,
         lat_col_arg=args.lat_col,
         lon_col_arg=args.lon_col,
         id_col_arg=args.id_col,
@@ -462,7 +463,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         shutil.rmtree(cache_p, ignore_errors=True)
 
   if args.preserve_caravan_dirs or args.output_dir:
-    base_out = str(args.output_dir if args.output_dir else args.output).rstrip("/")
+    base_out = normalize_gcs_path(args.output_dir if args.output_dir else args.output).rstrip("/")
     feats = result["features"] if result.get("type") == "FeatureCollection" else [result]
 
     # Group features by dataset
@@ -517,7 +518,7 @@ def main(argv: Optional[List[str]] = None) -> int:
           Path(target_file).write_text(json.dumps(fc), encoding="utf-8")
       print(f"Saved {len(group_feats)} catchments to {target_file}", file=sys.stderr)
   elif args.output and args.output != "-":
-    out_str = str(args.output)
+    out_str = normalize_gcs_path(args.output)
     feats = result["features"] if result.get("type") == "FeatureCollection" else [result]
     if is_gcs_path(out_str):
       if out_str.endswith((".parquet", ".geoparquet")):

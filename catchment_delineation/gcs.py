@@ -39,7 +39,17 @@ logger = logging.getLogger(__name__)
 
 def is_gcs_path(path: Union[str, Path]) -> bool:
   """Checks if path is a Google Cloud Storage URI."""
-  return str(path).startswith(("gs://", "gcs://"))
+  return str(path).startswith(("gs://", "gcs://", "gs:/", "gcs:/"))
+
+
+def normalize_gcs_path(path: Union[str, Path]) -> str:
+  """Normalizes a GCS URI ensuring proper gs:// or gcs:// scheme even if Path() stripped a slash."""
+  s = str(path).strip()
+  if s.startswith("gs:/") and not s.startswith("gs://"):
+    return "gs://" + s[4:]
+  if s.startswith("gcs:/") and not s.startswith("gcs://"):
+    return "gcs://" + s[5:]
+  return s
 
 
 def upload_file_to_gcs(local_path: Union[str, Path], gcs_uri: str) -> None:
