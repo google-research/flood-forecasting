@@ -369,8 +369,13 @@ def sample_cmal_deterministic(
     # not point predictions.
     pred = outputs or model(data)
 
+    # This head returns summary statistics (the mixture mean plus nine
+    # quantiles), not random draws, so 'truncate' has nothing to resample and
+    # is a no-op here. Everything else is delegated to the shared negative
+    # value handler, so an unsupported value still raises.
+    negative_handling = (setup.cfg.negative_sample_handling or '').lower()
     normalized_zeros = None
-    if (setup.cfg.negative_sample_handling or '').lower() == 'clip':
+    if negative_handling not in ('', 'none', 'truncate'):
         normalized_zeros = _calc_normalized_zero_thresholds(
             scaler=scaler,
             targets=setup.cfg.target_variables,
@@ -389,11 +394,17 @@ def sample_cmal_deterministic(
         pi = pred[f'pi{freq_suffix}']  # weights
 
         values = cmal_deterministic.generate_predictions(mu, b, tau, pi)
+        # Element 0 is the mixture mean. Clipping it applies a physical floor
+        # to E[X]; it is not the distributional correction E[max(X, 0)].
         if normalized_zeros is not None:
             values = _handle_negative_values(
                 setup.cfg,
                 values,
-                sample_values=lambda ids: values[ids],
+                # Unused: 'clip' never resamples, and a summary statistic
+                # cannot be redrawn.
+                sample_values=lambda _: values,
+                # generate_predictions collapses every target into a single
+                # mixture, so values only ever holds target 0.
                 normalized_zero=normalized_zeros[0],
             )
         samples[f'y_hat{freq_suffix}'] = torch.stack([values], 2)

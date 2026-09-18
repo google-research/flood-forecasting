@@ -21,8 +21,7 @@ import xarray as xr
 from googlehydrology.utils import samplingutils
 
 
-@pytest.mark.unit
-def test_deterministic_cmal_clips_at_normalized_zero(monkeypatch):
+def _model_with_handling(handling):
     model = MagicMock()
     model.parameters.side_effect = lambda: iter([torch.zeros(1)])
     model.cfg.head = 'cmal_deterministic'
@@ -30,7 +29,17 @@ def test_deterministic_cmal_clips_at_normalized_zero(monkeypatch):
     model.cfg.target_variables = ['streamflow']
     model.cfg.use_frequencies = ['1D']
     model.cfg.predict_last_n = {'1D': 2}
-    model.cfg.negative_sample_handling = 'clip'
+    model.cfg.negative_sample_handling = handling
+    return model
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'handling, expected_min',
+    [('clip', -2.5), ('none', -4.0), (None, -4.0), ('truncate', -4.0)],
+)
+def test_deterministic_cmal_negative_handling(monkeypatch, handling, expected_min):
+    model = _model_with_handling(handling)
 
     scaler = MagicMock()
     scaler.scaler = {
@@ -66,5 +75,40 @@ def test_deterministic_cmal_clips_at_normalized_zero(monkeypatch):
     )
 
     assert samples['y_hat'].shape == (1, 2, 1, 10)
-    assert samples['y_hat'].min().item() == -2.5
-    assert samples['y_hat'][0, 0, 0, 1].item() == -2.0
+    assert samples['y_hat'].min().item() == expected_min
+    if handling == 'clip':
+        assert samples['y_hat'][0, 0, 0, 1].item() == -2.0
+
+
+@pytest.mark.unit
+def test_deterministic_cmal_rejects_unknown_negative_handling(monkeypatch):
+    model = _model_with_handling('bogus')
+    scaler = MagicMock()
+    scaler.scaler = {
+        'streamflow': xr.DataArray(
+            [5.0, 2.0],
+            coords={'parameter': ['center', 'scale']},
+            dims=['parameter'],
+        )
+    }
+    generated = torch.zeros(1, 2, 10)
+    monkeypatch.setattr(
+        samplingutils.cmal_deterministic,
+        'generate_predictions',
+        lambda *args: generated.clone(),
+    )
+    outputs = {
+        'mu': torch.zeros(1, 2, 3),
+        'b': torch.ones(1, 2, 3),
+        'tau': torch.full((1, 2, 3), 0.5),
+        'pi': torch.full((1, 2, 3), 1.0 / 3),
+    }
+
+    with pytest.raises(NotImplementedError, match='bogus'):
+        samplingutils.sample_pointpredictions(
+            model,
+            {'y': torch.zeros(1, 2, 1)},
+            n_samples=10,
+            scaler=scaler,
+            outputs=outputs,
+        )
