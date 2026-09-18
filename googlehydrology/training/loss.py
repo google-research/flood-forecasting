@@ -377,6 +377,9 @@ class MaskedNSELoss(BaseLoss):
 class MaskedCMALLoss(BaseLoss):
     """Average negative log-likelihood for a model that uses the CMAL head.
 
+    The loss is averaged over observed timesteps. If all target timesteps are
+    missing, it returns a differentiable zero.
+
     Parameters
     ----------
     cfg : Config

@@ -67,3 +67,20 @@ def test_cmal_loss_all_missing_is_differentiable_zero():
     assert torch.isfinite(total_loss)
     assert total_loss.item() == 0.0
     assert torch.equal(mu.grad, torch.zeros_like(mu))
+
+@pytest.mark.unit
+def test_cmal_loss_is_finite_when_every_sequence_has_a_gap():
+    loss_fn = MaskedCMALLoss(_config())
+
+    mu = torch.zeros(2, 2, 3)
+    b = torch.ones(2, 2, 3)
+    tau = torch.full((2, 2, 3), 0.5)
+    pi = torch.full((2, 2, 3), 1.0 / 3)
+    y = torch.tensor([[[0.0], [torch.nan]], [[torch.nan], [0.0]]])
+
+    total_loss, _ = loss_fn(
+        {'mu': mu, 'b': b, 'tau': tau, 'pi': pi}, {'y': y}
+    )
+
+    assert torch.isfinite(total_loss)
+    assert torch.allclose(total_loss, torch.log(torch.tensor(4.0)), atol=1e-6)
