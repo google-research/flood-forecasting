@@ -727,11 +727,23 @@ class Config(object):
         return self._get_value_verbose('statics_data_dir')
 
     @property
+    def statics_data_path(self) -> Path:
+        return self.statics_data_dir
+
+    @property
     def targets_data_dir(self) -> Path:
         for key in ['targets_data_path', 'targets_data_dir', 'data_dir']:
             if key in self._cfg and self._cfg[key]:
                 return self._cfg[key]
         return self._get_value_verbose('targets_data_dir')
+
+    @property
+    def targets_data_path(self) -> Path:
+        return self.targets_data_dir
+
+    @property
+    def dynamics_data_path(self) -> Path:
+        return self.dynamics_data_dir
 
     @seed.setter
     def seed(self, seed: int):

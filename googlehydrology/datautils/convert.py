@@ -71,20 +71,17 @@ def convert_caravan_attributes(
     # Process each CSV
     dfs = []
     for csv_file in csv_files:
-        try:
-            df = pd.read_csv(csv_file)
-            if 'gauge_id' in df.columns:
-                df = df.set_index('gauge_id')
-            elif df.index.name != 'gauge_id' and 'basin' in df.columns:
-                df = df.set_index('basin')
-            df.index.name = 'basin'
+        df = pd.read_csv(csv_file)
+        if 'gauge_id' in df.columns:
+            df = df.set_index('gauge_id')
+        elif df.index.name != 'gauge_id' and 'basin' in df.columns:
+            df = df.set_index('basin')
+        df.index.name = 'basin'
 
-            # Cast float columns to float32
-            num_cols = df.select_dtypes(include=[np.number]).columns
-            df[num_cols] = df[num_cols].astype(np.float32)
-            dfs.append(df)
-        except Exception as e:
-            LOGGER.warning('Error reading %s: %s', csv_file, e)
+        # Cast float columns to float32
+        num_cols = df.select_dtypes(include=[np.number]).columns
+        df[num_cols] = df[num_cols].astype(np.float32)
+        dfs.append(df)
 
     if not dfs:
         raise ValueError(
@@ -149,13 +146,23 @@ def convert_caravan_timeseries(
         if nc_files:
             ds = xr.open_dataset(file_path)
             if variables:
-                available_vars = [v for v in variables if v in ds.data_vars]
-                ds = ds[available_vars]
+                missing_vars = sorted(set(variables) - set(ds.data_vars))
+                if missing_vars:
+                    raise ValueError(
+                        f'Requested variables {missing_vars} not found in '
+                        f'{file_path}.'
+                    )
+                ds = ds[list(variables)]
         else:
             df = pd.read_csv(file_path, parse_dates=['date'], index_col='date')
             if variables:
-                available_vars = [v for v in variables if v in df.columns]
-                df = df[available_vars]
+                missing_vars = sorted(set(variables) - set(df.columns))
+                if missing_vars:
+                    raise ValueError(
+                        f'Requested variables {missing_vars} not found in '
+                        f'{file_path}.'
+                    )
+                df = df[list(variables)]
             df = df.astype(np.float32)
             ds = df.to_xarray()
 

@@ -709,16 +709,25 @@ class Multimet(Dataset):
         )
 
         # Check if single unified dynamics zarr store contains the features
-        single_store_path = _find_single_dynamics_zarr_path(self._dynamics_data_path)
+        single_store_path = _find_single_dynamics_zarr_path(
+            self._dynamics_data_path
+        )
         if single_store_path is not None:
             ds = _open_zarr(single_store_path)
-            available_features = [f for f in features if f in ds.data_vars]
-            if available_features:
+            if any(f in ds.data_vars for f in features):
+                missing = sorted(set(features) - set(ds.data_vars))
+                if missing:
+                    raise ValueError(
+                        f'Requested hindcast features {missing} not found in '
+                        f'{single_store_path}.'
+                    )
                 if 'lead_time' in ds:
-                    ds = ds.sel(basin=self._basins, lead_time=self._lead_time_slice())
+                    ds = ds.sel(
+                        basin=self._basins, lead_time=self._lead_time_slice()
+                    )
                 else:
                     ds = ds.sel(basin=self._basins)
-                return [ds[available_features]]
+                return [ds[features]]
 
         # Separate products and bands for each product from feature names.
         product_bands = _get_products_and_bands_from_feature_strings(
@@ -730,9 +739,11 @@ class Multimet(Dataset):
 
         # Load data for the selected products, bands, and basins.
         for product, bands in product_bands.items():
-            product_path = _find_product_zarr_path(self._dynamics_data_path, product)
+            product_path = _find_product_zarr_path(
+                self._dynamics_data_path, product
+            )
             product_ds = _open_zarr(product_path)
-            
+
             if 'lead_time' in product_ds:
                 # The same product may be used both for forecast and hindcast features. For hindcast, we load it with the
                 # full lead_time similar to forecast, and filter the minimal lead_time values during sampling.
@@ -767,17 +778,29 @@ class Multimet(Dataset):
             Dataset containing the loaded features with dimensions (date, lead_time, basin).
         """
         # Check if single unified dynamics zarr store contains the forecast features
-        single_store_path = _find_single_dynamics_zarr_path(self._dynamics_data_path)
+        single_store_path = _find_single_dynamics_zarr_path(
+            self._dynamics_data_path
+        )
         if single_store_path is not None:
             ds = _open_zarr(single_store_path)
-            available_features = [f for f in self._forecast_features if f in ds.data_vars]
-            if available_features:
+            if any(f in ds.data_vars for f in self._forecast_features):
+                missing = sorted(
+                    set(self._forecast_features) - set(ds.data_vars)
+                )
+                if missing:
+                    raise ValueError(
+                        f'Requested forecast features {missing} not found in '
+                        f'{single_store_path}.'
+                    )
                 if 'lead_time' not in ds:
                     raise ValueError(
-                        f'Lead times do not exist in forecast dataset at {single_store_path}.'
+                        f'Lead times do not exist in forecast dataset at '
+                        f'{single_store_path}.'
                     )
-                ds = ds.sel(basin=self._basins, lead_time=self._lead_time_slice())
-                return [ds[available_features]]
+                ds = ds.sel(
+                    basin=self._basins, lead_time=self._lead_time_slice()
+                )
+                return [ds[self._forecast_features]]
 
         # Separate products and bands for each product from feature names.
         product_bands = _get_products_and_bands_from_feature_strings(

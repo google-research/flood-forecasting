@@ -119,17 +119,11 @@ class Scaler:
     def load(self):
         scaler_zarr = self.scaler_dir / SCALER_FILE_NAME
         scaler_nc = self.scaler_dir / LEGACY_SCALER_FILE_NAME
-        if scaler_zarr.is_dir():
+        if scaler_zarr.exists():
             self.scaler = xr.open_zarr(scaler_zarr).load()
         elif scaler_nc.exists():
             with open(scaler_nc, 'rb') as f:
                 self.scaler = xr.load_dataset(f)
-        elif scaler_zarr.exists():
-            try:
-                self.scaler = xr.open_zarr(scaler_zarr).load()
-            except Exception:
-                with open(scaler_zarr, 'rb') as f:
-                    self.scaler = xr.load_dataset(f)
         else:
             raise ValueError(f'Scaler file not found in {self.scaler_dir}')
 

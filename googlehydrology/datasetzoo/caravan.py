@@ -31,19 +31,25 @@ from googlehydrology.utils.tqdm import AutoRefreshTqdm as tqdm
 LOGGER = logging.getLogger(__name__)
 
 
-def _find_zarr_store(path: Path | str, preferred_names: list[str]) -> Path | None:
+def _find_zarr_store(
+    path: Path | str, preferred_names: list[str]
+) -> Path | None:
     """Finds a Zarr store given a directory or file path."""
     path_str = str(path)
     if path_str.startswith('gs://') or path_str.startswith('gs:/'):
-        # For GCS paths, assume valid store if ends with zarr or subpath
         if path_str.endswith('.zarr'):
             return Path(path_str)
-        for name in preferred_names:
-            return Path(f"{path_str.rstrip('/')}/{name}")
+        if preferred_names:
+            return Path(f"{path_str.rstrip('/')}/{preferred_names[0]}")
         return Path(path_str)
 
     p = Path(path)
-    if p.suffix == '.zarr' or (p / '.zgroup').exists() or (p / 'zarr.json').exists() or (p / '.zmetadata').exists():
+    if (
+        p.suffix == '.zarr'
+        or (p / '.zgroup').exists()
+        or (p / 'zarr.json').exists()
+        or (p / '.zmetadata').exists()
+    ):
         return p
     for name in preferred_names:
         candidate = p / name
@@ -85,20 +91,30 @@ def load_caravan_attributes(
         A basin indexed Dataset with all attributes as coordinates.
     """
     LOGGER.debug('load caravan attributes')
-    zarr_store = _find_zarr_store(data_dir, ['attributes.zarr', 'attributes', 'statics.zarr', 'statics'])
+    zarr_store = _find_zarr_store(
+        data_dir, ['attributes.zarr', 'attributes', 'statics.zarr', 'statics']
+    )
     if zarr_store is not None:
-        LOGGER.debug(f'Loading attributes from Zarr store: {zarr_store}')
+        LOGGER.debug('Loading attributes from Zarr store: %s', zarr_store)
         store_path = zarr_store.as_posix().replace('gs:/', 'gs://')
         ds = xarray.open_zarr(store_path, chunks='auto')
         if features:
-            available_features = [f for f in features if f in ds.data_vars or f in ds.coords]
-            ds = ds[available_features]
+            missing_features = sorted(
+                set(features) - (set(ds.data_vars) | set(ds.coords))
+            )
+            if missing_features:
+                raise ValueError(
+                    f'Requested static attributes {missing_features} not found '
+                    f'in {zarr_store}.'
+                )
+            ds = ds[features]
         if basins:
             if 'basin' in ds.coords:
                 missing = set(basins).difference(ds.coords['basin'].data)
                 if missing:
                     raise ValueError(
-                        f'{len(missing)} basins are missing static attributes: {", ".join(missing)}'
+                        f'{len(missing)} basins are missing static attributes: '
+                        f'{", ".join(missing)}'
                     )
                 ds = ds.sel(basin=basins)
         return ds
@@ -186,15 +202,21 @@ def load_caravan_timeseries(
     """
     LOGGER.debug('load caravan timeseries')
     zarr_store = _find_zarr_store(
-        data_dir, ['streamflow.zarr', 'targets.zarr', 'timeseries.zarr', 'timeseries']
+        data_dir,
+        ['streamflow.zarr', 'targets.zarr', 'timeseries.zarr', 'timeseries'],
     )
     if zarr_store is not None:
-        LOGGER.debug(f'Loading timeseries from Zarr store: {zarr_store}')
+        LOGGER.debug('Loading timeseries from Zarr store: %s', zarr_store)
         store_path = zarr_store.as_posix().replace('gs:/', 'gs://')
         ds = xarray.open_zarr(store_path, chunks='auto')
         if target_features:
-            available = [f for f in target_features if f in ds.data_vars]
-            ds = ds[available]
+            missing_targets = sorted(set(target_features) - set(ds.data_vars))
+            if missing_targets:
+                raise ValueError(
+                    f'Requested target features {missing_targets} not found in '
+                    f'{zarr_store}.'
+                )
+            ds = ds[target_features]
         if basins:
             ds = ds.sel(basin=basins)
         return ds
