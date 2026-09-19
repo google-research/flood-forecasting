@@ -1,0 +1,52 @@
+[INFO] 14:35:36.411 (logging_utils.py:setup_logging) -- Logging to /usr/local/google/home/gsnearing/Projects/unify-input-file-formats/tutorial/model-runs/5-basin-example-zarr/output.log initialized.
+[WARNING] 14:35:36.412 (warnings.py:_showwarnmsg) -- /usr/local/google/home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/site-packages/dask/config.py:786: FutureWarning: Dask configuration key 'shuffle' has been deprecated; please use 'dataframe.shuffle.algorithm' instead
+  warnings.warn(
+
+[WARNING] 14:35:37.162 (warnings.py:_showwarnmsg) -- /usr/local/google/home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/site-packages/google/auth/_default.py:113: UserWarning: Your application has authenticated using end user credentials from Google Cloud SDK without a quota project. You might receive a "quota exceeded" or "API not enabled" error. See the following page for troubleshooting: https://cloud.google.com/docs/authentication/adc-troubleshooting/user-creds. 
+  warnings.warn(_CLOUD_SDK_CREDENTIALS_WARNING)
+
+[INFO] 14:35:48.425 (tester.py:_load_weights) -- Using the model weights from /usr/local/google/home/gsnearing/Projects/unify-input-file-formats/tutorial/model-runs/5-basin-example-zarr/model_epoch015.pt
+[INFO] 14:36:21.191 (tester.py:evaluate) -- 1D NSE median=0.558519
+[INFO] 14:36:21.191 (tester.py:evaluate) -- 1D MSE median=10.106960
+[INFO] 14:36:21.191 (tester.py:evaluate) -- 1D RMSE median=3.161736
+[INFO] 14:36:21.191 (tester.py:evaluate) -- 1D KGE median=0.586529
+[INFO] 14:36:21.192 (tester.py:evaluate) -- 1D Alpha-NSE median=0.938346
+[INFO] 14:36:21.192 (tester.py:evaluate) -- 1D Pearson-r median=0.749703
+[INFO] 14:36:21.192 (tester.py:evaluate) -- 1D Beta-KGE median=1.123439
+[INFO] 14:36:21.192 (tester.py:evaluate) -- 1D Beta-NSE median=0.092824
+[INFO] 14:36:21.192 (tester.py:evaluate) -- 1D FHV median=-15.631470
+[INFO] 14:36:21.192 (tester.py:evaluate) -- 1D FMS median=-21.298840
+[INFO] 14:36:21.192 (tester.py:evaluate) -- 1D FLV median=-155.066010
+[INFO] 14:36:21.192 (tester.py:evaluate) -- 1D Peak-Timing median=0.666667
+[INFO] 14:36:21.193 (tester.py:evaluate) -- 1D Missed-Peaks median=0.454545
+[INFO] 14:36:21.193 (tester.py:evaluate) -- 1D Peak-MAPE median=52.207344
+[INFO] 14:37:03.503 (logging_utils.py:setup_logging) -- Logging to /usr/local/google/home/gsnearing/Projects/unify-input-file-formats/tutorial/model-runs/5-basin-example-zarr/output.log initialized.
+[WARNING] 14:37:03.504 (warnings.py:_showwarnmsg) -- /usr/local/google/home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/site-packages/dask/config.py:786: FutureWarning: Dask configuration key 'shuffle' has been deprecated; please use 'dataframe.shuffle.algorithm' instead
+  warnings.warn(
+
+[WARNING] 14:37:04.241 (warnings.py:_showwarnmsg) -- /usr/local/google/home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/site-packages/google/auth/_default.py:113: UserWarning: Your application has authenticated using end user credentials from Google Cloud SDK without a quota project. You might receive a "quota exceeded" or "API not enabled" error. See the following page for troubleshooting: https://cloud.google.com/docs/authentication/adc-troubleshooting/user-creds. 
+  warnings.warn(_CLOUD_SDK_CREDENTIALS_WARNING)
+
+[INFO] 14:37:14.868 (tester.py:_load_weights) -- Using the model weights from /usr/local/google/home/gsnearing/Projects/unify-input-file-formats/tutorial/model-runs/5-basin-example-zarr/model_epoch015.pt
+[INFO] 15:04:33.266 (logging_utils.py:setup_logging) -- Logging to /usr/local/google/home/gsnearing/Projects/unify-input-file-formats/tutorial/model-runs/5-basin-example-zarr/output.log initialized.
+[WARNING] 15:04:33.267 (warnings.py:_showwarnmsg) -- /usr/local/google/home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/site-packages/dask/config.py:786: FutureWarning: Dask configuration key 'shuffle' has been deprecated; please use 'dataframe.shuffle.algorithm' instead
+  warnings.warn(
+
+[WARNING] 15:04:33.963 (warnings.py:_showwarnmsg) -- /usr/local/google/home/gsnearing/miniconda3/envs/googlehydrology/lib/python3.12/site-packages/google/auth/_default.py:113: UserWarning: Your application has authenticated using end user credentials from Google Cloud SDK without a quota project. You might receive a "quota exceeded" or "API not enabled" error. See the following page for troubleshooting: https://cloud.google.com/docs/authentication/adc-troubleshooting/user-creds. 
+  warnings.warn(_CLOUD_SDK_CREDENTIALS_WARNING)
+
+[INFO] 15:04:43.998 (tester.py:_load_weights) -- Using the model weights from /usr/local/google/home/gsnearing/Projects/unify-input-file-formats/tutorial/model-runs/5-basin-example-zarr/model_epoch015.pt
+[INFO] 15:04:58.782 (tester.py:evaluate) -- 1D NSE median=0.558519
+[INFO] 15:04:58.782 (tester.py:evaluate) -- 1D MSE median=10.106960
+[INFO] 15:04:58.783 (tester.py:evaluate) -- 1D RMSE median=3.161736
+[INFO] 15:04:58.783 (tester.py:evaluate) -- 1D KGE median=0.586529
+[INFO] 15:04:58.783 (tester.py:evaluate) -- 1D Alpha-NSE median=0.938346
+[INFO] 15:04:58.783 (tester.py:evaluate) -- 1D Pearson-r median=0.749703
+[INFO] 15:04:58.783 (tester.py:evaluate) -- 1D Beta-KGE median=1.123439
+[INFO] 15:04:58.783 (tester.py:evaluate) -- 1D Beta-NSE median=0.092824
+[INFO] 15:04:58.784 (tester.py:evaluate) -- 1D FHV median=-15.631470
+[INFO] 15:04:58.784 (tester.py:evaluate) -- 1D FMS median=-21.298840
+[INFO] 15:04:58.784 (tester.py:evaluate) -- 1D FLV median=-155.066010
+[INFO] 15:04:58.784 (tester.py:evaluate) -- 1D Peak-Timing median=0.666667
+[INFO] 15:04:58.784 (tester.py:evaluate) -- 1D Missed-Peaks median=0.454545
+[INFO] 15:04:58.784 (tester.py:evaluate) -- 1D Peak-MAPE median=52.207344
