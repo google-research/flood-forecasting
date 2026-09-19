@@ -92,6 +92,12 @@ A small sample is provided in tutorial/data/Caravan-nc. For full runs:
 
 The MultiMet forcing data extension is accessed directly from **Google Cloud Storage**. Ensure your configuration points to: gs://caravan-multimet/v1.1
 
+#### Building Your Own Gridded Weather Archives (Optional)
+
+Most users do not need to build weather archives—pointing `dynamics_data_dir` to `gs://caravan-multimet/v1.1` is all that is needed to train and evaluate models.
+
+If you want to download raw gridded weather data directly from NOAA (CPC), ECMWF (HRES), or NASA (IMERG) and build your own Zarr archives, use the command-line tools in the [`multimet`](multimet/README.md) package (`build-cpc-archive`, `build-hres-archive`, and `build-imerg-archive`). See [`multimet/README.md`](multimet/README.md) and the [Gridded Weather Archives documentation](docs/source/usage/gridded_archives.rst) for usage instructions and command-line arguments.
+
 ## **Usage**
 
 The package installs the run command as the primary entry point.
