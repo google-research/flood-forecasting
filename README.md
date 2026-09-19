@@ -148,46 +148,20 @@ The `~/flood-forecasting/example-configs` directory contains reference YAML file
   * **Dataset:** CAMELS-US (531 basins)  
   * **Description:** A benchmarking configuration for the State Handoff model tailored for the CAMELS-US dataset, used to compare the handoff approach against other architectures on US-based basin data.
 
-## **Caravan Static Attributes Extractor**
+## **Extracting Static Attributes for Your Own Watersheds**
 
-This repository includes a Caravan static attribute extraction engine (`static_extractor`), which computes Caravan physiographic, hydro-climatic, soil, land-cover and anthropogenic attributes for user-supplied watershed polygons (GeoJSON, Shapefile, GeoPackage), following the published Caravan methodology.
+To run OpenHydroNet models on a watershed, the model needs a table of static watershed characteristics (such as area, elevation, slope, soil type, land cover, and long-term average climate). For basins in the published [Caravan](https://www.nature.com/articles/s41597-023-01975-w) dataset, these tables are already included.
 
-👉 **Full Documentation, Methodology, and API Reference:** See the [Caravan Static Attributes Extractor Documentation](static_extractor/README.md).
+If you want to run models on **your own watersheds**, this repository includes a tool (`static_extractor`) that takes a map file of your watershed boundaries (`.geojson`, `.shp`, or `.gpkg`) and builds a Caravan-compatible CSV table of static attributes using the community [HydroATLAS](https://www.hydrosheds.org/hydroatlas) and [ERA5-Land](https://cds.climate.copernicus.eu/) datasets.
 
-### **Quick Highlights**
-- **Data Stores:** Hosted in Google Cloud Storage at [`gs://open-multimet/ancillary-data/hydroatlas/`](gs://open-multimet/ancillary-data/hydroatlas/) and [`gs://open-multimet/gridded-data-archives/ERA5_LAND/daily_surface.zarr`](gs://open-multimet/gridded-data-archives/ERA5_LAND/daily_surface.zarr). Automatically staged locally on demand.
-- **Strict Caravan Spatial Aggregation:** Area-weighted averaging for continuous attributes, area-weighted majority voting for discrete categorical classes, and downstream topological routing (`NEXT_DOWN`) for pour-point properties.
-- **Global 40-Year ERA5-Land Climate Metrics (1981–2020):** FAO-56 Penman-Monteith PET, aridity index, snow fraction, Knoben annual moisture and seasonality indices, and Addor extreme precipitation metrics.
-- **Dual Climate Calculation Modes:** Support for ultra-fast precalculated HydroSHEDS Level 12 sub-basin aggregation (`--era5-source hybas`, default, ~20 ms/basin) or recalculating directly on the fly from archived gridded ERA5 daily surface Zarr (`--era5-source gridded`).
-- **High Performance:** ~20–25 ms per basin (`hybas`); extracts 50,000 polygons in ~20 minutes sequentially or under 1 minute with multi-core parallelism.
-
-### **Quick Command-Line Usage**
 ```bash
-# Fast mode using precalculated HYBAS sub-basin climate statistics (default)
 extract-caravan-static \
     --input /path/to/watershed_polygons.geojson \
-    --output /path/to/extracted_caravan_attributes.csv
-
-# Multi-dataset batch runner across all collections into the caravan-new layout
-extract-caravan-static-batch \
-    --parent-dir gs://open-multimet/caravan-new/ \
-    --output-dir gs://open-multimet/caravan-new/ \
-    --preserve-caravan-dirs \
-    --workers 16
+    --output /path/to/extracted_caravan_attributes.csv \
+    --era5-source hybas
 ```
 
-### **Quick Python API**
-```python
-from static_extractor import StaticAttributesExtractor
-
-# Default precalculated HYBAS mode
-extractor = StaticAttributesExtractor(era5_source="hybas")
-df = extractor.extract_attributes_from_file("basins.geojson", "attributes.csv")
-
-# Direct gridded ERA5 recalculation mode
-extractor_gridded = StaticAttributesExtractor(era5_source="gridded")
-df_gridded = extractor_gridded.extract_attributes_from_file("basins.geojson", "attributes_gridded.csv")
-```
+👉 **Full Usage Guide & Command-Line Flags:** See [`static_extractor/README.md`](static_extractor/README.md).
 
 ## **Issue Reporting**
 

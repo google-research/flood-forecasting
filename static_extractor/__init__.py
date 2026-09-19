@@ -14,9 +14,8 @@
 
 """Caravan Static Attributes Extractor.
 
-Computes exact area-weighted physiographic, hydro-climatic, soil, land-cover,
-and anthropogenic static attributes for arbitrary watershed polygons following
-the Caravan and HydroATLAS Level 12 aggregation methodology.
+Computes Caravan-compatible static watershed attributes from HydroATLAS Level 12
+and ERA5-Land datasets for user-supplied watershed polygons.
 """
 
 from static_extractor.climate import (

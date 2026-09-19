@@ -792,14 +792,14 @@ def parse_args(args=None):
       "-o",
       required=True,
       type=str,
-      help="Directory to save extracted attributes. Can be a local filesystem path (e.g. /data/attributes/) or a GCS bucket URI (e.g. gs://open-multimet/caravan-new/caravan-original/attributes/).",
+      help="Directory to save extracted attributes. Can be a local filesystem path (e.g. /data/attributes/) or a GCS bucket URI (e.g. gs://my-bucket/attributes/).",
   )
   parser.add_argument(
       "--partition-outputs",
       "-P",
       action=argparse.BooleanOptionalAction,
       default=None,
-      help="Partition output attributes per subdataset directory into attributes_hydroatlas_<ds>.csv, attributes_caravan_<ds>.csv, and attributes_<ds>.parquet matching caravan-new schema.",
+      help="Partition output attributes per subdataset directory into attributes_hydroatlas_<ds>.csv, attributes_caravan_<ds>.csv, and attributes_<ds>.parquet.",
   )
   parser.add_argument(
       "--preserve-caravan-dirs",
