@@ -1,21 +1,33 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Catchment Delineation Package.
 
 Pure DEM flow-direction watershed delineation module supporting high-resolution
-multi-tile D8 flow direction rasters (HydroSHEDS 90m / MERIT) with seamless
+multi-tile D8 flow-direction rasters (HydroSHEDS 90m / MERIT) with seamless
 cross-tile boundary routing.
 """
 
 from catchment_delineation.config import (
-    DEFAULT_CACHE_DIR,
-    GCS_DEM_BUCKET_URI,
-    GCS_ELEVATION_TILES_URI,
-    GCS_TILES_URI,
+    DEM_MAX_LAT,
+    DEM_MAX_LON,
+    DEM_MIN_LAT,
+    DEM_MIN_LON,
     INFLOW_MAP,
     RES_DEG,
     TILE_CELLS,
     TILE_DEG,
-    get_default_cache_dir,
-    get_default_tiles_dir,
 )
 from catchment_delineation.delineator import (
     CatchmentCoverageError,
@@ -37,27 +49,24 @@ from catchment_delineation.tiles import (
 )
 
 __all__ = [
-    "DemDelineator",
-    "CatchmentCoverageError",
-    "delineate_dem",
-    "delineate_catchment",
-    "delineate_coordinates",
-    "get_default_tiles_dir",
-    "get_default_cache_dir",
-    "DEFAULT_CACHE_DIR",
-    "latlon_to_tile_key",
-    "tile_key_to_filename",
-    "is_tile_available",
-    "list_available_tiles",
-    "download_tile_from_gcs",
-    "download_tiles_for_bbox",
-    "is_gcs_path",
-    "GCS_DEM_BUCKET_URI",
-    "GCS_TILES_URI",
-    "GCS_ELEVATION_TILES_URI",
-    "INFLOW_MAP",
-    "RES_DEG",
-    "TILE_DEG",
-    "TILE_CELLS",
+    'DEM_MAX_LAT',
+    'DEM_MAX_LON',
+    'DEM_MIN_LAT',
+    'DEM_MIN_LON',
+    'INFLOW_MAP',
+    'RES_DEG',
+    'TILE_CELLS',
+    'TILE_DEG',
+    'CatchmentCoverageError',
+    'DemDelineator',
+    'delineate_catchment',
+    'delineate_coordinates',
+    'delineate_dem',
+    'download_tile_from_gcs',
+    'download_tiles_for_bbox',
+    'is_gcs_path',
+    'is_tile_available',
+    'latlon_to_tile_key',
+    'list_available_tiles',
+    'tile_key_to_filename',
 ]
-

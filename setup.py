@@ -57,9 +57,6 @@ setup(
             'benchmark-catchment=catchment_delineation.benchmark:main',
         ]
     },
-    package_data={
-        'catchment_delineation': ['data/*.parquet'],
-    },
     python_requires='>=3.12',
     install_requires=[],
     classifiers=[
