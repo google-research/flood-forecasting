@@ -22,23 +22,11 @@ predictive dist, and searches for quantiles. 10 points are
 When n_samples is low, this algorithm should serve as a better approximation.
 """
 
-import logging
 import torch
 import torch.cuda
 
-logger = logging.getLogger(__name__)
 
-try:
-    _compile_decorator = torch.compile()
-except Exception as e:
-    logger.warning(
-        "torch.compile() unavailable on this platform (%s); running generate_predictions eager.",
-        e,
-    )
-    _compile_decorator = lambda fn: fn
-
-
-@_compile_decorator
+@torch.compile()
 def generate_predictions(
     mu: torch.Tensor, b: torch.Tensor, tau: torch.Tensor, pi: torch.Tensor
 ) -> torch.Tensor:

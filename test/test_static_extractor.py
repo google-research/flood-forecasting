@@ -875,3 +875,41 @@ def test_batch_runner_preserve_caravan_dirs(tmp_path, monkeypatch):
       dest == "gs://open-multimet/caravan-new/google-internal/attributes/camelsfr/"
       for _, dest in uploaded_uris
   )
+
+
+def test_no_silent_fallbacks_or_masked_errors(tmp_path):
+  """Ensures out-of-bounds polygons, missing baseline years, and malformed inputs are not silently masked."""
+  import zarr
+  from static_extractor.climate import ERA5GriddedExtractor
+
+  zarr_path = tmp_path / "synthetic_era5.zarr"
+  root = zarr.open(str(zarr_path), mode="w")
+  lats = np.array([10.0, 11.0], dtype=np.float64)
+  lons = np.array([20.0, 21.0], dtype=np.float64)
+  times = np.arange(10, dtype=np.int64)
+  lat_arr = root.create_array("latitude", shape=lats.shape, dtype=lats.dtype)
+  lat_arr[:] = lats
+  lon_arr = root.create_array("longitude", shape=lons.shape, dtype=lons.dtype)
+  lon_arr[:] = lons
+  t_arr = root.create_array("time", shape=times.shape, dtype=times.dtype)
+  t_arr[:] = times
+  t_arr.attrs["units"] = "days since 2022-01-01"
+  p_arr = root.create_array("total_precipitation", shape=(10, 2, 2), dtype=np.float32)
+  p_arr[:] = 2.0
+  p_arr.attrs["units"] = "mm"
+  temp_arr = root.create_array("temperature_2m", shape=(10, 2, 2), dtype=np.float32)
+  temp_arr[:] = 15.0
+  temp_arr.attrs["units"] = "degC"
+
+  gridded = ERA5GriddedExtractor(zarr_uri=str(zarr_path))
+
+  # 1. Polygon outside coordinate domain -> must return NaN (no centroid snapping)
+  out_of_bounds_poly = shapely.geometry.box(50.0, 50.0, 51.0, 51.0)
+  res_oob = gridded.extract_climate_metrics_for_polygon(out_of_bounds_poly, baseline_years=(2022, 2022))
+  assert np.isnan(res_oob["p_mean"])
+
+  # 2. Polygon inside domain, but no dates in baseline_years -> must return NaN (no silent date fallback)
+  in_bounds_poly = shapely.geometry.box(20.0, 10.0, 21.0, 11.0)
+  res_no_dates = gridded.extract_climate_metrics_for_polygon(in_bounds_poly, baseline_years=(1981, 2020))
+  assert np.isnan(res_no_dates["p_mean"])
+

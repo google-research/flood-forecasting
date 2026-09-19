@@ -355,39 +355,32 @@ class ERA5ClimateLoader:
     self.cache_dir.mkdir(parents=True, exist_ok=True)
     self.loaded_continents: Set[str] = set()
     self.records: Dict[int, Dict[str, Any]] = {}
+    self._warned_missing_era5_land_pet: bool = False
 
   def _download_from_gcs(self, continent_code: str, target_file: Path) -> bool:
-    """Attempts to download continent file from the GCS bucket atomically."""
+    """Downloads continent file from the GCS bucket atomically."""
     gcs_src = f"{GCS_ERA5_CLIMATE_URI}/{continent_code}_climate_indices.txt"
     target_file.parent.mkdir(parents=True, exist_ok=True)
     tmp_file = target_file.with_name(f".{target_file.name}.tmp.{os.getpid()}")
 
     try:
       if shutil.which("gcloud"):
-        try:
-          cmd = ["gcloud", "storage", "cp", gcs_src, str(tmp_file)]
-          res = subprocess.run(cmd, capture_output=True, timeout=120)
-          if res.returncode == 0 and tmp_file.exists() and tmp_file.stat().st_size > 0:
-            os.replace(tmp_file, target_file)
-            return True
-        except Exception as e:
-          logger.debug("gcloud storage download attempt failed: %s", e)
+        cmd = ["gcloud", "storage", "cp", gcs_src, str(tmp_file)]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120, check=False)
+        if res.returncode == 0 and tmp_file.exists() and tmp_file.stat().st_size > 0:
+          os.replace(tmp_file, target_file)
+          return True
+        return False
 
-      try:
-        import gcsfs
+      import gcsfs
 
-        try:
-          fs = gcsfs.GCSFileSystem()
-        except Exception:
-          fs = gcsfs.GCSFileSystem(token="anon")
-        remote_path = gcs_src.replace("gs://", "")
-        if fs.exists(remote_path):
-          fs.get(remote_path, str(tmp_file))
-          if tmp_file.exists() and tmp_file.stat().st_size > 0:
-            os.replace(tmp_file, target_file)
-            return True
-      except Exception as e:
-        logger.debug("gcsfs download attempt failed: %s", e)
+      fs = gcsfs.GCSFileSystem()
+      remote_path = gcs_src.replace("gs://", "")
+      if fs.exists(remote_path):
+        fs.get(remote_path, str(tmp_file))
+        if tmp_file.exists() and tmp_file.stat().st_size > 0:
+          os.replace(tmp_file, target_file)
+          return True
     finally:
       if tmp_file.exists():
         try:
@@ -480,6 +473,10 @@ class ERA5ClimateLoader:
         "high_prec_dur",
         "low_prec_freq",
         "low_prec_dur",
+        "pet_mean_ERA5_LAND",
+        "aridity_ERA5_LAND",
+        "moisture_index_ERA5_LAND",
+        "seasonality_ERA5_LAND",
     ]
 
     valid_weights = []
@@ -516,24 +513,31 @@ class ERA5ClimateLoader:
 
     raw_res = {}
     for k in keys:
-      vals = np.array([r.get(k, np.nan) for r in valid_records])
+      vals = np.array([r.get(k, np.nan) for r in valid_records], dtype=float)
       raw_res[k] = float(np.sum(vals * norm_w))
+
+    if np.isnan(raw_res["pet_mean_ERA5_LAND"]) and not self._warned_missing_era5_land_pet:
+      self._warned_missing_era5_land_pet = True
+      logger.warning(
+          "HydroATLAS precalculated Level-12 climate indices only contain FAO-56 Penman-Monteith PET; "
+          "leaving *_ERA5_LAND attributes as NaN."
+      )
 
     return {
         "p_mean": raw_res["p_mean"],
         "pet_mean": raw_res["pet_mean"],
         "pet_mean_FAO_PM": raw_res["pet_mean"],
-        "pet_mean_ERA5_LAND": np.nan,
+        "pet_mean_ERA5_LAND": raw_res["pet_mean_ERA5_LAND"],
         "aridity": raw_res["aridity"],
         "aridity_FAO_PM": raw_res["aridity"],
-        "aridity_ERA5_LAND": np.nan,
+        "aridity_ERA5_LAND": raw_res["aridity_ERA5_LAND"],
         "frac_snow": raw_res["frac_snow"],
         "moisture_index": raw_res["moisture_index"],
         "moisture_index_FAO_PM": raw_res["moisture_index"],
-        "moisture_index_ERA5_LAND": np.nan,
+        "moisture_index_ERA5_LAND": raw_res["moisture_index_ERA5_LAND"],
         "seasonality": raw_res["seasonality"],
         "seasonality_FAO_PM": raw_res["seasonality"],
-        "seasonality_ERA5_LAND": np.nan,
+        "seasonality_ERA5_LAND": raw_res["seasonality_ERA5_LAND"],
         "high_prec_freq": raw_res["high_prec_freq"],
         "high_prec_dur": raw_res["high_prec_dur"],
         "low_prec_freq": raw_res["low_prec_freq"],
@@ -606,10 +610,11 @@ class ERA5GriddedExtractor:
     lon_indices = np.where(lon_mask)[0]
 
     if len(lat_indices) == 0 or len(lon_indices) == 0:
-      c = polygon.centroid
-      c_lat_idx = int(np.argmin(np.abs(self._lats - c.y)))
-      c_lon_idx = int(np.argmin(np.abs(self._lons - c.x)))
-      return np.array([c_lat_idx]), np.array([c_lon_idx]), np.array([1.0], dtype=np.float32)
+      return (
+          np.array([], dtype=int),
+          np.array([], dtype=int),
+          np.array([], dtype=np.float32),
+      )
 
     lat_list = []
     lon_list = []
@@ -918,138 +923,20 @@ class ERA5GriddedExtractor:
     if baseline_years is not None:
       start_y, end_y = baseline_years
       mask_dates = (date_index.year >= start_y) & (date_index.year <= end_y)
-      if np.any(mask_dates):
-        p_s = p_s.loc[mask_dates]
-        t_s = t_s.loc[mask_dates]
-        if pet_era5_s is not None:
-          pet_era5_s = pet_era5_s.loc[mask_dates]
-        if pet_fao_s is not None:
-          pet_fao_s = pet_fao_s.loc[mask_dates]
+      if not np.any(mask_dates):
+        logger.warning(
+            "Gridded ERA5 archive at %s contains no records in baseline_years=%s; returning NaN.",
+            self.zarr_uri,
+            baseline_years,
+        )
+        return nan_result
+      p_s = p_s.loc[mask_dates]
+      t_s = t_s.loc[mask_dates]
+      if pet_era5_s is not None:
+        pet_era5_s = pet_era5_s.loc[mask_dates]
+      if pet_fao_s is not None:
+        pet_fao_s = pet_fao_s.loc[mask_dates]
 
     return compute_caravan_climate_metrics(
         p_s, t_s, pet_era5=pet_era5_s, pet_fao=pet_fao_s
     )
-
-
-def fetch_caravan_era5_land_variants_batch(
-    gauge_ids: List[str],
-    dataset_name: Optional[str] = None,
-    baseline_years: Tuple[int, int] = (1981, 2020),
-    timeseries_zarr_uri: str = "gs://open-multimet/caravan-multimet/v1.1/ERA5_LAND/timeseries.zarr",
-) -> Dict[str, Dict[str, float]]:
-  """Computes *_ERA5_LAND climate attributes in a single batch from the Caravan ERA5-Land Zarr store.
-
-  For basins present in the Multimet v1.1 ERA5-Land basin timeseries Zarr store,
-  computes pet_mean_ERA5_LAND, aridity_ERA5_LAND, moisture_index_ERA5_LAND, and
-  seasonality_ERA5_LAND directly from daily era5land_total_precipitation and
-  era5land_potential_evaporation_DEPRECATED over baseline_years. For any remaining
-  Caravan extension basins (e.g. camelsde, camelscz) not in v1.1, reads the four
-  ERA5-Land columns from gs://open-multimet/caravan-old if present.
-  """
-  results: Dict[str, Dict[str, float]] = {}
-  if not gauge_ids:
-    return results
-
-  keys = (
-      "pet_mean_ERA5_LAND",
-      "aridity_ERA5_LAND",
-      "moisture_index_ERA5_LAND",
-      "seasonality_ERA5_LAND",
-  )
-
-  # 1. Vectorized computation from v1.1/ERA5_LAND/timeseries.zarr
-  try:
-    import zarr
-
-    ds = zarr.open(timeseries_zarr_uri, mode="r")
-    zarr_basins = [str(b) for b in ds["basin"][:]]
-    basin_to_idx = {b: i for i, b in enumerate(zarr_basins)}
-    # Also support case-insensitive prefix matching (e.g. grdc_ vs GRDC_)
-    basin_lower_to_idx = {b.lower(): i for i, b in enumerate(zarr_basins)}
-
-    matched_pairs = []
-    for gid in gauge_ids:
-      idx = basin_to_idx.get(gid)
-      if idx is None:
-        idx = basin_lower_to_idx.get(gid.lower())
-      if idx is not None:
-        matched_pairs.append((gid, idx))
-
-    if matched_pairs:
-      dates = pd.to_datetime("1950-01-01") + pd.to_timedelta(ds["date"][:], unit="D")
-      start_y, end_y = baseline_years
-      t_mask = (dates.year >= start_y) & (dates.year <= end_y)
-      months = dates[t_mask].month.values
-
-      indices = [idx for _, idx in matched_pairs]
-      s_idx, e_idx = min(indices), max(indices) + 1
-      rel_indices = [idx - s_idx for idx in indices]
-
-      p_block = np.asarray(ds["era5land_total_precipitation"][s_idx:e_idx, t_mask], dtype=float)[rel_indices]
-      e_block = np.abs(
-          np.asarray(ds["era5land_potential_evaporation_DEPRECATED"][s_idx:e_idx, t_mask], dtype=float)[rel_indices]
-      )
-
-      p_means = np.nanmean(p_block, axis=1)
-      e_means = np.nanmean(e_block, axis=1)
-      aridities = np.where((p_means > 0) & (~np.isnan(p_means)), e_means / p_means, np.nan)
-
-      p_monthly = np.vstack([np.nanmean(p_block[:, months == m], axis=1) for m in range(1, 13)])
-      e_monthly = np.vstack([np.nanmean(e_block[:, months == m], axis=1) for m in range(1, 13)])
-      with np.errstate(divide="ignore", invalid="ignore"):
-        mi_monthly = np.where(
-            p_monthly > e_monthly,
-            1.0 - e_monthly / p_monthly,
-            np.where(p_monthly < e_monthly, p_monthly / e_monthly - 1.0, 0.0),
-        )
-      mi_annual = np.nanmean(mi_monthly, axis=0)
-      seas_annual = np.nanmax(mi_monthly, axis=0) - np.nanmin(mi_monthly, axis=0)
-
-      for k_i, (gid, _) in enumerate(matched_pairs):
-        if not np.isnan(e_means[k_i]):
-          results[gid] = {
-              "pet_mean_ERA5_LAND": round(float(e_means[k_i]), 4),
-              "aridity_ERA5_LAND": round(float(aridities[k_i]), 4),
-              "moisture_index_ERA5_LAND": round(float(mi_annual[k_i]), 4),
-              "seasonality_ERA5_LAND": round(float(seas_annual[k_i]), 4),
-          }
-  except Exception as e:
-    logger.debug("Could not batch-read %s: %s", timeseries_zarr_uri, e)
-
-  # 2. For any remaining basins (e.g. camelsde, camelscz), check caravan-old reference table on GCS
-  missing_gids = [gid for gid in gauge_ids if gid not in results]
-  if missing_gids and dataset_name:
-    ds_clean = dataset_name.lower()
-    import io
-
-    for coll in ("caravan-original", "caravan-extensions", "google-internal"):
-      gcs_uri = f"gs://open-multimet/caravan-old/{coll}/attributes/{ds_clean}/attributes_caravan_{ds_clean}.csv"
-      ref_df = None
-      if shutil.which("gcloud"):
-        res_cat = subprocess.run(
-            ["gcloud", "storage", "cat", gcs_uri],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if res_cat.returncode == 0 and res_cat.stdout:
-          ref_df = pd.read_csv(io.StringIO(res_cat.stdout))
-      if ref_df is not None and "gauge_id" in ref_df.columns:
-        ref_df = ref_df.set_index("gauge_id")
-        for gid in missing_gids:
-          if gid in ref_df.index:
-            row = ref_df.loc[gid]
-            if all(k in row and not pd.isna(row[k]) for k in keys):
-              results[gid] = {k: round(float(row[k]), 4) for k in keys}
-        break
-
-  still_missing = len(gauge_ids) - len(results)
-  if still_missing > 0:
-    logger.warning(
-        "Native ERA5-Land potential evaporation data is unavailable for %d / %d basins%s; "
-        "leaving *_ERA5_LAND attributes as NaN.",
-        still_missing,
-        len(gauge_ids),
-        f" in dataset '{dataset_name}'" if dataset_name else "",
-    )
-  return results

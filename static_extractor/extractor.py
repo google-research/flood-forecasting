@@ -63,7 +63,6 @@ from static_extractor.climate import (
     ERA5ClimateLoader,
     ERA5GriddedExtractor,
     compute_caravan_climate_metrics,
-    fetch_caravan_era5_land_variants_batch,
 )
 from static_extractor.config import (
     ADDITIONAL_PROPERTIES,
@@ -302,7 +301,7 @@ class StaticAttributesExtractor:
       gridded = self.gridded_extractor.extract_climate_metrics_for_polygon(
           geom, baseline_years=baseline_years
       )
-    except Exception as e:  # pylint: disable=broad-except
+    except (FileNotFoundError, OSError) as e:
       logger.warning(
           "Could not compute ERA5-Land climate variants for catchment '%s' "
           "from the gridded archive: %s; leaving *_ERA5_LAND attributes as NaN.",
@@ -525,26 +524,29 @@ class StaticAttributesExtractor:
       pet_era5_col = next((c for c in ["potential_evaporation", "pet_era5", "pev"] if c in timeseries_df.columns), None)
       pet_fao_col = next((c for c in ["pet_fao", "pet_mean_FAO_PM", "fao_pet"] if c in timeseries_df.columns), None)
 
-      if p_col and t_col:
-        p_series = timeseries_df[p_col]
-        t_series = timeseries_df[t_col]
-        pet_era5_series = timeseries_df[pet_era5_col] if pet_era5_col else None
-        pet_fao_series = timeseries_df[pet_fao_col] if pet_fao_col else None
-        era5_indices = compute_caravan_climate_metrics(
-            precipitation=p_series,
-            temperature=t_series,
-            pet_era5=pet_era5_series,
-            pet_fao=pet_fao_series,
+      if not p_col or not t_col:
+        raise ValueError(
+            f"timeseries_df is missing required precipitation/temperature columns (found {list(timeseries_df.columns)})."
         )
+      p_series = timeseries_df[p_col]
+      t_series = timeseries_df[t_col]
+      pet_era5_series = timeseries_df[pet_era5_col] if pet_era5_col else None
+      pet_fao_series = timeseries_df[pet_fao_col] if pet_fao_col else None
+      era5_indices = compute_caravan_climate_metrics(
+          precipitation=p_series,
+          temperature=t_series,
+          pet_era5=pet_era5_series,
+          pet_fao=pet_fao_series,
+      )
     elif actual_era5_source == "gridded":
       # Recalculate directly on the fly from archived gridded ERA5 data on GCS
       try:
         era5_indices = self.gridded_extractor.extract_climate_metrics_for_polygon(
             geom, baseline_years=baseline_years
         )
-      except Exception as e:
+      except (FileNotFoundError, OSError) as e:
         logger.warning(
-            "Gridded ERA5 extraction failed for catchment '%s': %s; "
+            "Gridded ERA5 archive unavailable for catchment '%s': %s; "
             "leaving climate attributes as NaN.",
             catchment_id,
             e,
@@ -584,19 +586,13 @@ class StaticAttributesExtractor:
       era5_indices = self.era5_loader.get_indices_for_subbasins(
           hybas_ids, intersect_weights
       )
-      # If a custom/local gridded_era5_uri was provided, read *_ERA5_LAND from it.
+      # If a custom/local gridded_era5_uri was explicitly provided, read *_ERA5_LAND from it.
       if self.gridded_era5_uri != GCS_ERA5_GRIDDED_ZARR_URI:
         era5_indices.update(
             self._era5_land_variants_from_gridded(
                 geom, baseline_years, catchment_id
             )
         )
-      elif not _batch_mode and catchment_id:
-        batch_map = fetch_caravan_era5_land_variants_batch(
-            [catchment_id], baseline_years=baseline_years
-        )
-        if catchment_id in batch_map:
-          era5_indices.update(batch_map[catchment_id])
 
     for k, v in era5_indices.items():
       caravan_attributes[k] = v
@@ -848,18 +844,6 @@ class StaticAttributesExtractor:
             _batch_mode=True,
         )
         results.append(res)
-
-    # In 'hybas' mode (when not using a custom local gridded Zarr store), populate
-    # the four *_ERA5_LAND attributes in a single vectorized batch per dataset.
-    if actual_era5_source == "hybas" and self.gridded_era5_uri == GCS_ERA5_GRIDDED_ZARR_URI:
-      gauge_ids = [r.get("catchment_id", "") for r in results if r]
-      era5_land_map = fetch_caravan_era5_land_variants_batch(
-          gauge_ids=gauge_ids,
-          dataset_name=ds_label,
-      )
-      for r in results:
-        if r and r.get("catchment_id") in era5_land_map:
-          r["caravan_attributes"].update(era5_land_map[r["catchment_id"]])
 
     df = self.export_caravan_csv(
         results, output_csv_path=output_csv_path if output_csv_path else None

@@ -35,7 +35,6 @@ from static_extractor.config import (
     GCS_ERA5_GRIDDED_ZARR_URI,
     GCS_HYDROATLAS_BUCKET,
     GCS_HYDROATLAS_GDB_URI,
-    GCS_PARQUET_URI,
     IGNORE_PROPERTIES,
     MAJORITY_PROPERTIES,
     POUR_POINT_PROPERTIES,
@@ -49,7 +48,6 @@ from static_extractor.extractor import (
 )
 from static_extractor.gcs import (
     download_hydroatlas_from_gcs,
-    download_parquet_attributes_from_gcs,
 )
 
 __all__ = [
@@ -63,7 +61,6 @@ __all__ = [
     "calculate_knoben_moisture_and_seasonality",
     "compute_pour_point_properties",
     "download_hydroatlas_from_gcs",
-    "download_parquet_attributes_from_gcs",
     "get_default_gdb_path",
     "get_default_era5_cache_dir",
     "ATTRIBUTE_DEFINITIONS",
@@ -77,7 +74,6 @@ __all__ = [
     "GCS_HYDROATLAS_BUCKET",
     "GCS_HYDROATLAS_GDB_URI",
     "GCS_ERA5_CLIMATE_URI",
-    "GCS_PARQUET_URI",
     "GCS_ERA5_GRIDDED_ZARR_URI",
 ]
 

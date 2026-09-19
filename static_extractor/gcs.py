@@ -26,7 +26,6 @@ from typing import Optional, Union
 from static_extractor.config import (
     GCS_HYDROATLAS_BUCKET,
     GCS_HYDROATLAS_GDB_URI,
-    GCS_PARQUET_URI,
     get_default_gdb_path,
 )
 
@@ -69,83 +68,25 @@ def download_hydroatlas_from_gcs(
   dest_path.parent.mkdir(parents=True, exist_ok=True)
   logger.info("Downloading HydroATLAS GDB from %s to %s...", source_uri, dest_path)
 
-  # 1. Try gcloud storage CLI
   if shutil.which("gcloud"):
-    try:
-      cmd = ["gcloud", "storage", "cp", "-r", source_uri, str(dest_path.parent)]
-      res = subprocess.run(cmd, capture_output=True, timeout=600)
-      if res.returncode == 0 and dest_path.exists():
-        logger.debug("Successfully downloaded BasinATLAS GDB via gcloud storage.")
-        return dest_path
-    except Exception as e:
-      logger.warning("gcloud storage download attempt failed: %s", e)
-
-  # 2. Try gcsfs
-  try:
-    import gcsfs
-
-    try:
-      fs = gcsfs.GCSFileSystem()
-    except Exception:
-      fs = gcsfs.GCSFileSystem(token="anon")
-    clean_src = source_uri.replace("gs://", "").rstrip("/")
-    if fs.exists(clean_src):
-      dest_path.mkdir(parents=True, exist_ok=True)
-      fs.get(clean_src, str(dest_path), recursive=True)
-      logger.debug("Successfully downloaded BasinATLAS GDB via gcsfs.")
+    cmd = ["gcloud", "storage", "cp", "-r", source_uri, str(dest_path.parent)]
+    res = subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=False)
+    if res.returncode == 0 and dest_path.exists():
+      logger.debug("Successfully downloaded BasinATLAS GDB via gcloud storage.")
       return dest_path
-  except Exception as e:
-    logger.warning("gcsfs download attempt failed: %s", e)
-
-  raise RuntimeError(
-      f"Failed to download BasinATLAS GDB from {source_uri} to {dest_path}. "
-      "Please ensure Google Cloud credentials are configured or specify a local GDB path."
-  )
-
-
-def download_parquet_attributes_from_gcs(
-    target_path: Optional[Union[str, Path]] = None,
-    source_uri: str = GCS_PARQUET_URI,
-) -> Path:
-  """Downloads precomputed hydro_atlas_lev12.parquet from GCS."""
-  if target_path is None:
-    dest_path = (
-        Path.home()
-        / ".cache"
-        / "googlehydrology"
-        / "hydroatlas"
-        / "hydro_atlas_lev12.parquet"
+    raise RuntimeError(
+        f"Failed to download BasinATLAS GDB from {source_uri} to {dest_path}: {res.stderr.strip()}"
     )
-  else:
-    dest_path = Path(target_path)
 
-  if dest_path.exists() and dest_path.stat().st_size > 0:
-    return dest_path
+  import gcsfs
 
-  dest_path.parent.mkdir(parents=True, exist_ok=True)
-  logger.debug("Downloading HydroATLAS parquet from %s to %s...", source_uri, dest_path)
-
-  if shutil.which("gcloud"):
-    try:
-      cmd = ["gcloud", "storage", "cp", source_uri, str(dest_path)]
-      res = subprocess.run(cmd, capture_output=True, timeout=300)
-      if res.returncode == 0 and dest_path.exists():
-        return dest_path
-    except Exception:
-      pass
-
-  try:
-    import gcsfs
-
-    try:
-      fs = gcsfs.GCSFileSystem()
-    except Exception:
-      fs = gcsfs.GCSFileSystem(token="anon")
-    clean_src = source_uri.replace("gs://", "")
-    if fs.exists(clean_src):
-      fs.get(clean_src, str(dest_path))
-      return dest_path
-  except Exception as e:
-    raise RuntimeError(f"Failed to download parquet from {source_uri}: {e}")
-
+  fs = gcsfs.GCSFileSystem()
+  clean_src = source_uri.replace("gs://", "").rstrip("/")
+  if not fs.exists(clean_src):
+    raise FileNotFoundError(
+        f"BasinATLAS GDB does not exist at {source_uri}."
+    )
+  dest_path.mkdir(parents=True, exist_ok=True)
+  fs.get(clean_src, str(dest_path), recursive=True)
+  logger.debug("Successfully downloaded BasinATLAS GDB via gcsfs.")
   return dest_path
