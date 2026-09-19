@@ -519,13 +519,6 @@ class ERA5ClimateLoader:
       vals = np.array([r.get(k, np.nan) for r in valid_records], dtype=float)
       raw_res[k] = float(np.sum(vals * norm_w))
 
-    if np.isnan(raw_res["pet_mean_ERA5_LAND"]) and not self._warned_missing_era5_land_pet:
-      self._warned_missing_era5_land_pet = True
-      logger.warning(
-          "HydroATLAS precalculated Level-12 climate indices only contain FAO-56 Penman-Monteith PET; "
-          "leaving *_ERA5_LAND attributes as NaN."
-      )
-
     return {
         "p_mean": raw_res["p_mean"],
         "pet_mean": raw_res["pet_mean"],
