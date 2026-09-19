@@ -463,3 +463,75 @@ def test_gcs_helpers() -> None:
     assert normalize_gcs_path('gs:/bucket/path') == 'gs://bucket/path'
     with pytest.raises(ValueError, match='Cannot normalize'):
         normalize_gcs_path('')
+
+
+@pytest.mark.unit
+def test_expected_area_hint_snaps_past_small_tributary(
+    tmp_path: Path,
+) -> None:
+    """When expected_area_km2 is supplied, snap skips a tiny local creek to find the matching river."""
+    tile_arr = np.zeros((TILE_CELLS, TILE_CELLS), dtype=np.uint8)
+    # Small 3-cell creek at (r=100, c=100)
+    tile_arr[99, 100] = _SOUTH_D8
+    tile_arr[98, 100] = _SOUTH_D8
+
+    # Larger 30-cell river at (r=100, c=135) -- 35 cells east (outside default 12-cell snap window)
+    for row in range(71, 101):
+        tile_arr[row, 135] = _SOUTH_D8
+    np.save(tmp_path / 'n40w090.npy', tile_arr)
+
+    delin = DemDelineator(tiles_dir=tmp_path)
+    lat = 40.0 - 100 * RES_DEG
+    lon = -90.0 + 100 * RES_DEG
+
+    no_hint = delin.delineate(lat=lat, lon=lon, snap_window_cells=12)
+    assert no_hint['properties']['upstream_cells_count'] == 3
+
+    # Expected area for 30 cells at ~40N (~0.0066 km2/cell -> ~0.20 km2)
+    with_hint = delin.delineate(
+        lat=lat,
+        lon=lon,
+        snap_window_cells=12,
+        expected_area_km2=0.20,
+        area_tolerance=0.40,
+    )
+    assert with_hint['properties']['upstream_cells_count'] == 30
+
+
+@pytest.mark.unit
+def test_expected_area_hint_failure_logs_loudly_and_produces_no_polygon(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """If expected_area_km2 cannot be matched, log loudly to stderr and produce no polygon."""
+    from catchment_delineation import CatchmentAreaMismatchError
+
+    _write_synthetic_tile(tmp_path)
+    delin = DemDelineator(tiles_dir=tmp_path)
+    with pytest.raises(CatchmentAreaMismatchError, match='AREA HINT FAILURE'):
+        delin.delineate(
+            lat=39.6828,
+            lon=-88.7729,
+            expected_area_km2=5000.0,
+            catchment_id='bad_gauge_99',
+        )
+    captured = capsys.readouterr()
+    assert '[AREA HINT FAILURE]' in captured.err
+    assert 'bad_gauge_99' in captured.err
+
+    out_file = tmp_path / 'should_not_exist.geojson'
+    rc = main(
+        [
+            '--lat',
+            '39.6828',
+            '--lon',
+            '-88.7729',
+            '--tiles-dir',
+            str(tmp_path),
+            '--expected-area',
+            '5000.0',
+            '-o',
+            str(out_file),
+        ]
+    )
+    assert rc == 1
+    assert not out_file.exists()

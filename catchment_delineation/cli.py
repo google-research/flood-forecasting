@@ -102,6 +102,8 @@ def _delineate_worker(
         str | None,
         int,
         int | None,
+        float | None,
+        float,
     ],
 ) -> tuple[dict[str, Any], list[str]]:
     """Run single-basin delineation in a worker process."""
@@ -114,6 +116,8 @@ def _delineate_worker(
         cache_dir,
         snap_window,
         max_cells,
+        expected_area,
+        area_tolerance,
     ) = task
     delineator = DemDelineator(
         tiles_dir=Path(tiles_dir) if tiles_dir else None,
@@ -128,6 +132,8 @@ def _delineate_worker(
             catchment_id=cid,
             snap_window_cells=snap_window,
             max_cells=max_cells,
+            expected_area_km2=expected_area,
+            area_tolerance=area_tolerance,
         )
     except CatchmentCoverageError as err:
         logger.warning(
@@ -540,6 +546,24 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help='Optional upstream cell limit (default: None, no truncation).',
     )
+    config_group.add_argument(
+        '--expected-area',
+        type=float,
+        default=None,
+        help='Optional expected drainage area in km2 for single pour point.',
+    )
+    config_group.add_argument(
+        '--area-col',
+        type=str,
+        default=None,
+        help='Optional column name in CSV/Parquet with expected area in km2.',
+    )
+    config_group.add_argument(
+        '--area-tolerance',
+        type=float,
+        default=0.50,
+        help='Relative tolerance around expected area (default: 0.50).',
+    )
 
     output_group = parser.add_argument_group('Output Options')
     output_group.add_argument(
@@ -615,15 +639,18 @@ def main(argv: list[str] | None = None) -> int:
 
     coords_to_process: list[tuple[float, float]] = []
     ids_to_process: list[str | None] = []
+    areas_to_process: list[float | None] = []
 
     if args.lat is not None and args.lon is not None:
         coords_to_process.append((args.lat, args.lon))
         ids_to_process.append(args.id)
+        areas_to_process.append(args.expected_area)
 
     if args.coords:
         for c_str in args.coords:
             coords_to_process.append(parse_coord_str(c_str))
             ids_to_process.append(None)
+            areas_to_process.append(args.expected_area)
 
     if args.csv:
         csv_coords, csv_ids = load_coords_from_file(
@@ -634,6 +661,24 @@ def main(argv: list[str] | None = None) -> int:
         )
         coords_to_process.extend(csv_coords)
         ids_to_process.extend(csv_ids)
+        if args.area_col:
+            df_area = _read_single_coord_table(
+                normalize_gcs_path(args.csv)
+                if is_gcs_path(args.csv)
+                else str(args.csv)
+            )
+            if args.area_col not in df_area.columns:
+                sys.stderr.write(
+                    f"Error: --area-col '{args.area_col}' not found in "
+                    f'columns {list(df_area.columns)}.\n'
+                )
+                return 1
+            areas_to_process.extend(
+                float(v) if pd.notna(v) else None
+                for v in pd.to_numeric(df_area[args.area_col], errors='raise')
+            )
+        else:
+            areas_to_process.extend([args.expected_area] * len(csv_coords))
 
     if not coords_to_process:
         parser.print_help(sys.stderr)
@@ -658,12 +703,15 @@ def main(argv: list[str] | None = None) -> int:
         if len(coords_to_process) == 1 and not args.coords and not args.csv:
             lat, lon = coords_to_process[0]
             cid = ids_to_process[0]
+            exp_area = areas_to_process[0]
             result = delineator.delineate(
                 lat=lat,
                 lon=lon,
                 snap_window_cells=args.snap_window,
                 max_cells=args.max_cells,
                 catchment_id=cid,
+                expected_area_km2=exp_area,
+                area_tolerance=args.area_tolerance,
             )
             created_cache_files.update(delineator.created_cache_files)
         elif args.workers > 1 and len(coords_to_process) > 1:
@@ -711,9 +759,14 @@ def main(argv: list[str] | None = None) -> int:
                     str(delineator.cache_dir) if delineator.cache_dir else None,
                     args.snap_window,
                     args.max_cells,
+                    exp_area,
+                    args.area_tolerance,
                 )
-                for (lat, lon), cid in zip(
-                    coords_to_process, ids_to_process, strict=True
+                for (lat, lon), cid, exp_area in zip(
+                    coords_to_process,
+                    ids_to_process,
+                    areas_to_process,
+                    strict=True,
                 )
             ]
             indexed_features: list[tuple[int, dict[str, Any]]] = []
@@ -752,6 +805,8 @@ def main(argv: list[str] | None = None) -> int:
                 ids=ids_to_process,
                 snap_window_cells=args.snap_window,
                 max_cells=args.max_cells,
+                expected_areas_km2=areas_to_process,
+                area_tolerance=args.area_tolerance,
             )
             created_cache_files.update(delineator.created_cache_files)
     except CatchmentCoverageError as err:
