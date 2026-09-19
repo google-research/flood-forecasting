@@ -9,6 +9,7 @@ SPHINXAPIDOC  ?= sphinx-apidoc
 SOURCEDIR     = source
 BUILDDIR      = build
 PACKAGEDIR    = ../googlehydrology
+MULTIMETDIR   = ../multimet
 
 # Put it first so that "make" without argument is like "make help".
 help:
@@ -23,6 +24,8 @@ help:
 apidoc:
 	@echo "Generating API documentation..."
 	@$(SPHINXAPIDOC) -f -e -o "$(SOURCEDIR)/api" "$(PACKAGEDIR)"
+	@$(SPHINXAPIDOC) -f -e -o "$(SOURCEDIR)/api" --tocfile multimet_modules \
+		"$(MULTIMETDIR)" "$(MULTIMETDIR)/test"
 
 # Target to clean API docs
 clean-api:
