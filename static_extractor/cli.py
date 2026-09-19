@@ -83,8 +83,8 @@ def parse_args(args=None):
   parser.add_argument(
       "--era5-source",
       choices=["hybas", "gridded"],
-      default="hybas",
-      help="Source for ERA5 climate metrics: 'hybas' (fast area-weighted aggregation of precalculated Level 12 sub-basin statistics) or 'gridded' (recalculated on the fly from archived gridded ERA5 daily surface data on GCS).",
+      required=True,
+      help="Source for ERA5 climate metrics (required): 'hybas' (fast area-weighted aggregation of precalculated Level 12 sub-basin statistics) or 'gridded' (recalculated on the fly from archived gridded ERA5 daily surface data on GCS).",
   )
   parser.add_argument(
       "--gridded-era5-uri",

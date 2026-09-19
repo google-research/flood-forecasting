@@ -312,7 +312,7 @@ def test_extract_attributes_for_polygon_end_to_end(tmp_path):
 
   # Non-intersecting polygon returns NaN (never substitutes nearest sub-basin)
   non_inter_poly = shapely.geometry.box(-89.0, 40.1, -88.5, 40.5)
-  res_no_inter = extractor.extract_attributes_for_polygon(non_inter_poly, catchment_id="offshore")
+  res_no_inter = extractor.extract_attributes_for_polygon(non_inter_poly, catchment_id="offshore", era5_source="hybas")
   assert res_no_inter["intersected_subbasins_count"] == 0
   assert res_no_inter["caravan_attributes"]["area_fraction_used_for_aggregation"] == 0.0
   assert np.isnan(res_no_inter["caravan_attributes"]["ele_mt_sav"])
@@ -320,10 +320,14 @@ def test_extract_attributes_for_polygon_end_to_end(tmp_path):
 
   # High min_overlap_threshold filtering all slivers returns NaN (never falls back to iloc[0])
   res_filtered = extractor.extract_attributes_for_polygon(
-      query_poly, catchment_id="filtered", min_overlap_threshold=1e6
+      query_poly, catchment_id="filtered", min_overlap_threshold=1e6, era5_source="hybas"
   )
   assert res_filtered["caravan_attributes"]["area_fraction_used_for_aggregation"] == 0.0
   assert np.isnan(res_filtered["caravan_attributes"]["ele_mt_sav"])
+
+  # Omitting era5_source when timeseries_df is not provided must raise ValueError
+  with pytest.raises(ValueError, match="era5_source must be explicitly specified"):
+    extractor.extract_attributes_for_polygon(query_poly)
 
 
 def test_extract_attributes_batch_and_file_io(tmp_path):
@@ -336,6 +340,7 @@ def test_extract_attributes_batch_and_file_io(tmp_path):
       era5_cache_dir=era5_cache,
       gridded_era5_uri=str(zarr_dir),
       auto_download=False,
+      era5_source="hybas",
   )
 
   b1 = shapely.geometry.box(-86.8, 40.2, -86.2, 40.8)
@@ -365,6 +370,15 @@ def test_extract_attributes_batch_and_file_io(tmp_path):
   assert np.isclose(df.loc["g1", "pet_mean_FAO_PM"], 1.5)
   assert np.isnan(df.loc["g1", "pet_mean_ERA5_LAND"])
 
+  # Test single-pass gridded batch extraction via extract_attributes_from_file(era5_source="gridded")
+  df_gridded = extractor.extract_attributes_from_file(
+      geojson_path, era5_source="gridded", workers=1, show_progress=False
+  )
+  assert list(df_gridded.index) == ["g1", "g2"]
+  assert np.isclose(df_gridded.loc["g1", "p_mean"], 4.0)
+  assert np.isclose(df_gridded.loc["g1", "pet_mean_FAO_PM"], 2.0)
+  assert np.isnan(df_gridded.loc["g1", "pet_mean_ERA5_LAND"])
+
   # GeoDataFrame and raw geometry dict inputs
   res_gdf = extractor.extract_attributes_for_polygon(basins_gdf.iloc[[0]])
   assert res_gdf["catchment_id"] == "g1"
@@ -372,7 +386,7 @@ def test_extract_attributes_batch_and_file_io(tmp_path):
   assert res_geom_dict["catchment_id"] == "custom_catchment"
 
   # Worker function and export_caravan_csv with DataFrame
-  w_res = _worker_extract_polygon((b1, "w1", 0.0, "hybas", str(shp_path), str(era5_cache), str(zarr_dir)))
+  w_res = _worker_extract_polygon((b1, "w1", 0.0, "hybas", str(shp_path), str(era5_cache), str(zarr_dir), False))
   assert w_res["catchment_id"] == "w1"
   assert extractor.export_caravan_csv(df).shape == df.shape
 
@@ -396,6 +410,7 @@ def test_extract_attributes_batch_and_file_io(tmp_path):
   cli_main([
       "--input", str(geojson_path),
       "--output", str(cli_out_csv),
+      "--era5-source", "hybas",
       "--gdb-path", str(shp_path),
       "--era5-cache-dir", str(era5_cache),
       "--gridded-era5-uri", str(zarr_dir),
@@ -408,8 +423,11 @@ def test_extract_attributes_batch_and_file_io(tmp_path):
 
 
 def test_cli_parsing():
-  """Tests CLI argument parsing."""
-  args = parse_args(["--input", "basins.geojson", "--output", "attrs.csv"])
+  """Tests CLI argument parsing and verifies --era5-source is required."""
+  with pytest.raises(SystemExit):
+    parse_args(["--input", "basins.geojson", "--output", "attrs.csv"])
+
+  args = parse_args(["--input", "basins.geojson", "--output", "attrs.csv", "--era5-source", "hybas"])
   assert args.input == "basins.geojson"
   assert args.output == "attrs.csv"
   assert args.min_overlap_threshold == 0.0
@@ -592,12 +610,12 @@ def test_batch_runner_clean_cache_flag(tmp_path):
   (fake_cache / "test.txt").write_text("hello")
 
   # Test parser recognition
-  args = parse_args(["-o", str(tmp_path / "out"), "--clean-cache", "--cache-dir", str(fake_cache)])
+  args = parse_args(["-o", str(tmp_path / "out"), "--era5-source", "hybas", "--clean-cache", "--cache-dir", str(fake_cache)])
   assert args.clean_cache is True
 
   # Verify cleanup behavior in main finally block
   with pytest.raises(SystemExit):
-    main(["-o", str(tmp_path / "out"), "--clean-cache", "--cache-dir", str(fake_cache)])
+    main(["-o", str(tmp_path / "out"), "--era5-source", "hybas", "--clean-cache", "--cache-dir", str(fake_cache)])
   assert not fake_cache.exists()
 
 
@@ -610,6 +628,7 @@ def test_batch_runner_gcs_output_and_args(tmp_path, monkeypatch):
       "-p", "gs://open-multimet/data/caravan_shapefiles/caravan/",
       "-p", "gs://open-multimet/data/caravan_shapefiles/caravan_extensions/",
       "-o", "gs://open-multimet/data/caravan_static_attributes/",
+      "--era5-source", "hybas",
       "--workers", "14",
       "--combine",
   ])
@@ -622,6 +641,7 @@ def test_batch_runner_gcs_output_and_args(tmp_path, monkeypatch):
   args_multi = parse_args([
       "-p", "dir1", "dir2", "dir3",
       "-o", "/tmp/out",
+      "--era5-source", "gridded",
   ])
   assert len(args_multi.parent_dirs) == 1
   assert len(args_multi.parent_dirs[0]) == 3
@@ -645,6 +665,7 @@ def test_batch_runner_gcs_output_and_args(tmp_path, monkeypatch):
   results = run_batch_extraction(
       dataset_map={"test_ds": dummy_shp},
       output_dir="gs://open-multimet/data/caravan_static_attributes/",
+      era5_source="hybas",
       workers=1,
       staging_cache_dir=tmp_path / "staged",
       combine=True,
@@ -662,12 +683,12 @@ def test_batch_runner_progress_and_quiet_logging(tmp_path):
   from static_extractor.batch_runner import parse_args, setup_logging
 
   # Test default parser flags
-  args = parse_args(["-o", str(tmp_path / "out")])
+  args = parse_args(["-o", str(tmp_path / "out"), "--era5-source", "hybas"])
   assert args.verbose is False
   assert args.show_progress is True
 
   # Test verbose and no-progress flags
-  args_v = parse_args(["-o", str(tmp_path / "out"), "-v", "--no-progress"])
+  args_v = parse_args(["-o", str(tmp_path / "out"), "--era5-source", "hybas", "-v", "--no-progress"])
   assert args_v.verbose is True
   assert args_v.show_progress is False
 
@@ -775,6 +796,7 @@ def test_batch_runner_partitioned_caravan_new(tmp_path, monkeypatch):
   results = run_batch_extraction(
       dataset_map={"camels": dummy_shp},
       output_dir="gs://open-multimet/caravan-new/caravan-original/attributes/",
+      era5_source="hybas",
       workers=1,
       staging_cache_dir=tmp_path / "staged",
       resume=True,
@@ -794,6 +816,7 @@ def test_batch_runner_partitioned_caravan_new(tmp_path, monkeypatch):
   results_resume = run_batch_extraction(
       dataset_map={"camels": dummy_shp},
       output_dir="gs://open-multimet/caravan-new/caravan-original/attributes/",
+      era5_source="hybas",
       workers=1,
       staging_cache_dir=tmp_path / "staged",
       resume=True,
@@ -807,7 +830,7 @@ def test_batch_runner_preserve_caravan_dirs(tmp_path, monkeypatch):
   from unittest.mock import MagicMock
   from static_extractor.batch_runner import parse_args, run_batch_extraction
 
-  args = parse_args(["-o", "gs://open-multimet/caravan-new/", "--preserve-caravan-dirs"])
+  args = parse_args(["-o", "gs://open-multimet/caravan-new/", "--era5-source", "hybas", "--preserve-caravan-dirs"])
   assert args.preserve_caravan_dirs is True
 
   uploaded_uris = []
@@ -850,6 +873,7 @@ def test_batch_runner_preserve_caravan_dirs(tmp_path, monkeypatch):
   results = run_batch_extraction(
       dataset_map=dataset_map,
       output_dir="gs://open-multimet/caravan-new/",
+      era5_source="hybas",
       preserve_caravan_dirs=True,
       workers=1,
       staging_cache_dir=tmp_path / "staged",

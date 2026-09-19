@@ -178,7 +178,10 @@ def calculate_knoben_moisture_and_seasonality(
       / mean_monthly_pet.loc[mean_monthly_precip < mean_monthly_pet]
       - 1.0
   )
-  monthly_moisture_index = pd.concat([p_gt_et, p_eq_et, p_lt_et])
+  non_empty = [s for s in (p_gt_et, p_eq_et, p_lt_et) if not s.empty]
+  monthly_moisture_index = (
+      pd.concat(non_empty) if non_empty else pd.Series(dtype=np.float64)
+  )
 
   annual_moisture_index = float(monthly_moisture_index.mean())
   seasonality = float(
@@ -722,14 +725,31 @@ class ERA5GriddedExtractor:
       polygon: Any,
       baseline_years: Optional[Tuple[int, int]] = (1981, 2020),
   ) -> Dict[str, float]:
-    """Extracts daily gridded series and calculates the Caravan climate metrics.
+    """Extracts daily gridded series and calculates the Caravan climate metrics for a single polygon."""
+    batch_res = self.extract_climate_metrics_for_polygons_batch(
+        [(polygon, "_single_catchment")],
+        baseline_years=baseline_years,
+    )
+    return batch_res["_single_catchment"]
+
+  def extract_climate_metrics_for_polygons_batch(
+      self,
+      polygons: List[Tuple[Any, str]],
+      baseline_years: Optional[Tuple[int, int]] = (1981, 2020),
+      chunk_days: int = 365,
+  ) -> Dict[str, Dict[str, float]]:
+    """Extracts Caravan climate metrics for a batch of polygons in a single pass over Zarr time chunks.
+
+    Computes spatial grid-cell weights (lat_idx, lon_idx, weights) for all polygons
+    upfront and streams each daily Zarr slice once across all polygons in the batch.
 
     Args:
-      polygon: Polygon, MultiPolygon, or GeoJSON dict.
-      baseline_years: Optional tuple of start and end years for climate baseline.
+      polygons: List of (polygon, catchment_id) tuples.
+      baseline_years: Optional (start_year, end_year) climate baseline.
+      chunk_days: Number of daily time steps to read per Zarr slice.
 
     Returns:
-      Dictionary of Caravan climate metrics.
+      Dictionary mapping each catchment_id to its 18 Caravan climate metrics.
     """
     nan_result = {
         "p_mean": np.nan,
@@ -752,14 +772,10 @@ class ERA5GriddedExtractor:
         "low_prec_dur": np.nan,
     }
 
+    if not polygons:
+      return {}
+
     ds = self._open_dataset()
-    lat_idx, lon_idx, weights = self.compute_zonal_weights(polygon)
-    if len(weights) == 0:
-      logger.warning(
-          "Catchment polygon does not intersect gridded ERA5 coordinate domain at %s; returning NaN.",
-          self.zarr_uri,
-      )
-      return nan_result
 
     p_name = next(
         (
@@ -820,123 +836,171 @@ class ERA5GriddedExtractor:
           f"Available keys: {list(ds.keys())[:10]}"
       )
 
-    min_lat_i, max_lat_i = int(np.min(lat_idx)), int(np.max(lat_idx)) + 1
-    min_lon_i, max_lon_i = int(np.min(lon_idx)), int(np.max(lon_idx)) + 1
+    # Parse time coordinate and restrict to baseline_years before reading any spatial chunks
+    time_keys = [k for k in ["time", "date"] if k in ds]
+    if not time_keys:
+      raise KeyError(f"Time coordinate ('time' or 'date') not found in {self.zarr_uri}")
+    time_arr = np.asarray(ds[time_keys[0]][:])
+    time_attrs = dict(ds[time_keys[0]].attrs)
+    full_date_index = self._parse_time_coordinate(time_arr, time_attrs, self.zarr_uri)
 
-    rel_lat_idx = lat_idx - min_lat_i
-    rel_lon_idx = lon_idx - min_lon_i
+    if baseline_years is not None:
+      start_y, end_y = baseline_years
+      t_indices = np.where(
+          (full_date_index.year >= start_y) & (full_date_index.year <= end_y)
+      )[0]
+      if len(t_indices) == 0:
+        logger.warning(
+            "Gridded ERA5 archive at %s contains no records in baseline_years=%s; returning NaN.",
+            self.zarr_uri,
+            baseline_years,
+        )
+        return {cid: dict(nan_result) for _, cid in polygons}
+    else:
+      t_indices = np.arange(len(full_date_index), dtype=int)
 
-    # Read data sub-cube
-    p_sub = ds[p_name][:, min_lat_i:max_lat_i, min_lon_i:max_lon_i]
-    t_sub = ds[t_name][:, min_lat_i:max_lat_i, min_lon_i:max_lon_i]
-    pet_fao_sub = (
-        ds[pet_fao_name][:, min_lat_i:max_lat_i, min_lon_i:max_lon_i]
+    date_index = full_date_index[t_indices]
+    t_start = int(t_indices[0])
+    t_end = int(t_indices[-1]) + 1
+    rel_t_indices = t_indices - t_start
+    num_days = len(t_indices)
+
+    # 1. Compute spatial grid-cell weights for all polygons upfront
+    results: Dict[str, Dict[str, float]] = {}
+    valid_specs = []
+    for poly, cid in polygons:
+      lat_idx, lon_idx, weights = self.compute_zonal_weights(poly)
+      if len(weights) == 0:
+        logger.warning(
+            "Catchment polygon '%s' does not intersect gridded ERA5 coordinate domain at %s; returning NaN.",
+            cid,
+            self.zarr_uri,
+        )
+        results[cid] = dict(nan_result)
+      else:
+        valid_specs.append((cid, lat_idx, lon_idx, weights.reshape(1, -1)))
+
+    if not valid_specs:
+      return results
+
+    min_lat_i = min(int(np.min(lat_idx)) for _, lat_idx, _, _ in valid_specs)
+    max_lat_i = max(int(np.max(lat_idx)) for _, lat_idx, _, _ in valid_specs) + 1
+    min_lon_i = min(int(np.min(lon_idx)) for _, _, lon_idx, _ in valid_specs)
+    max_lon_i = max(int(np.max(lon_idx)) for _, _, lon_idx, _ in valid_specs) + 1
+
+    num_valid = len(valid_specs)
+    total_span = t_end - t_start
+    p_daily_raw = np.full((num_valid, total_span), np.nan, dtype=np.float64)
+    t_daily_raw = np.full((num_valid, total_span), np.nan, dtype=np.float64)
+    pet_fao_daily_raw = (
+        np.full((num_valid, total_span), np.nan, dtype=np.float64)
         if pet_fao_name
         else None
     )
-    pet_era5_sub = (
-        ds[pet_era5_name][:, min_lat_i:max_lat_i, min_lon_i:max_lon_i]
+    pet_era5_daily_raw = (
+        np.full((num_valid, total_span), np.nan, dtype=np.float64)
         if pet_era5_name
         else None
     )
 
-    # Extract indexed cells (time, num_cells)
-    p_cells = p_sub[:, rel_lat_idx, rel_lon_idx]
-    t_cells = t_sub[:, rel_lat_idx, rel_lon_idx]
-
-    # Handle all NaNs (e.g. unpopulated Zarr or offshore)
-    if np.all(np.isnan(p_cells)) or np.all(np.isnan(t_cells)):
-      logger.warning(
-          "Gridded ERA5 archive at %s returned all NaNs for this catchment bounds.",
-          self.zarr_uri,
-      )
-      return nan_result
-
-    # Area-weighted spatial mean (renormalizing weights over non-NaN cells)
-    w_matrix = weights.reshape(1, -1)
-
-    def _weighted_nanmean(cells: np.ndarray) -> np.ndarray:
+    def _weighted_nanmean(cells: np.ndarray, w_matrix: np.ndarray) -> np.ndarray:
       valid_w = np.where(np.isnan(cells), 0.0, w_matrix)
       w_sum = np.sum(valid_w, axis=1)
       num = np.nansum(cells * w_matrix, axis=1)
       return np.where(w_sum > 0, num / w_sum, np.nan)
 
-    p_series = self._depth_to_mm(
-        _weighted_nanmean(p_cells),
-        dict(ds[p_name].attrs).get("units"),
-        p_name,
-    )
-    t_series = self._temp_to_celsius(
-        _weighted_nanmean(t_cells),
-        dict(ds[t_name].attrs).get("units"),
-        t_name,
-    )
+    # 2. Stream through time chunks once across all polygons in the batch
+    step = max(1, int(chunk_days))
+    for offset in range(0, total_span, step):
+      b_start = t_start + offset
+      b_end = min(t_end, b_start + step)
+      rel_slice = slice(offset, offset + (b_end - b_start))
 
-    def _pet_series(sub, var_name: Optional[str]):
-      """Area-weighted daily PET in mm/day, or None if the variable is absent."""
-      if sub is None or var_name is None:
-        return None
-      cells = sub[:, rel_lat_idx, rel_lon_idx]
-      if np.all(np.isnan(cells)):
-        return None
-      series = _weighted_nanmean(cells)
-      units = dict(ds[var_name].attrs).get("units")
-      return np.abs(self._depth_to_mm(series, units, var_name))
+      p_block = ds[p_name][b_start:b_end, min_lat_i:max_lat_i, min_lon_i:max_lon_i]
+      t_block = ds[t_name][b_start:b_end, min_lat_i:max_lat_i, min_lon_i:max_lon_i]
+      pet_fao_block = (
+          ds[pet_fao_name][b_start:b_end, min_lat_i:max_lat_i, min_lon_i:max_lon_i]
+          if pet_fao_name
+          else None
+      )
+      pet_era5_block = (
+          ds[pet_era5_name][b_start:b_end, min_lat_i:max_lat_i, min_lon_i:max_lon_i]
+          if pet_era5_name
+          else None
+      )
 
-    pet_fao_series = _pet_series(pet_fao_sub, pet_fao_name)
-    pet_era5_series = _pet_series(pet_era5_sub, pet_era5_name)
+      for i, (_, lat_idx, lon_idx, w_matrix) in enumerate(valid_specs):
+        r_lat = lat_idx - min_lat_i
+        r_lon = lon_idx - min_lon_i
+        p_daily_raw[i, rel_slice] = _weighted_nanmean(p_block[:, r_lat, r_lon], w_matrix)
+        t_daily_raw[i, rel_slice] = _weighted_nanmean(t_block[:, r_lat, r_lon], w_matrix)
+        if pet_fao_block is not None and pet_fao_daily_raw is not None:
+          pet_fao_daily_raw[i, rel_slice] = _weighted_nanmean(
+              pet_fao_block[:, r_lat, r_lon], w_matrix
+          )
+        if pet_era5_block is not None and pet_era5_daily_raw is not None:
+          pet_era5_daily_raw[i, rel_slice] = _weighted_nanmean(
+              pet_era5_block[:, r_lat, r_lon], w_matrix
+          )
 
-    if pet_fao_series is None:
+    p_units = dict(ds[p_name].attrs).get("units")
+    t_units = dict(ds[t_name].attrs).get("units")
+    pet_fao_units = dict(ds[pet_fao_name].attrs).get("units") if pet_fao_name else None
+    pet_era5_units = dict(ds[pet_era5_name].attrs).get("units") if pet_era5_name else None
+
+    if pet_fao_name is None:
       logger.warning(
           "No FAO-56 Penman-Monteith PET variable found in %s; "
           "unsuffixed and *_FAO_PM PET attributes will be NaN.",
           self.zarr_uri,
       )
-    if pet_era5_series is None:
+    if pet_era5_name is None:
       logger.warning(
           "No native ERA5-Land potential evaporation variable found in %s; "
           "*_ERA5_LAND PET attributes will be NaN.",
           self.zarr_uri,
       )
 
-    # Time coordinate
-    time_keys = [k for k in ["time", "date"] if k in ds]
-    if not time_keys:
-      raise KeyError(f"Time coordinate ('time' or 'date') not found in {self.zarr_uri}")
-    time_arr = np.asarray(ds[time_keys[0]][:])
-    time_attrs = dict(ds[time_keys[0]].attrs)
-    date_index = self._parse_time_coordinate(time_arr, time_attrs, self.zarr_uri)
-
-    p_s = pd.Series(p_series, index=date_index)
-    t_s = pd.Series(t_series, index=date_index)
-    pet_era5_s = (
-        pd.Series(pet_era5_series, index=date_index)
-        if pet_era5_series is not None
-        else None
-    )
-    pet_fao_s = (
-        pd.Series(pet_fao_series, index=date_index)
-        if pet_fao_series is not None
-        else None
-    )
-
-    if baseline_years is not None:
-      start_y, end_y = baseline_years
-      mask_dates = (date_index.year >= start_y) & (date_index.year <= end_y)
-      if not np.any(mask_dates):
+    # 3. Compute Caravan climate indices for each polygon
+    for i, (cid, _, _, _) in enumerate(valid_specs):
+      p_vals = p_daily_raw[i, rel_t_indices]
+      t_vals = t_daily_raw[i, rel_t_indices]
+      if np.all(np.isnan(p_vals)) or np.all(np.isnan(t_vals)):
         logger.warning(
-            "Gridded ERA5 archive at %s contains no records in baseline_years=%s; returning NaN.",
+            "Gridded ERA5 archive at %s returned all NaNs for catchment '%s'.",
             self.zarr_uri,
-            baseline_years,
+            cid,
         )
-        return nan_result
-      p_s = p_s.loc[mask_dates]
-      t_s = t_s.loc[mask_dates]
-      if pet_era5_s is not None:
-        pet_era5_s = pet_era5_s.loc[mask_dates]
-      if pet_fao_s is not None:
-        pet_fao_s = pet_fao_s.loc[mask_dates]
+        results[cid] = dict(nan_result)
+        continue
 
-    return compute_caravan_climate_metrics(
-        p_s, t_s, pet_era5=pet_era5_s, pet_fao=pet_fao_s
-    )
+      p_series = self._depth_to_mm(p_vals, p_units, p_name)
+      t_series = self._temp_to_celsius(t_vals, t_units, t_name)
+
+      pet_fao_s = None
+      if pet_fao_daily_raw is not None and pet_fao_name is not None:
+        fao_vals = pet_fao_daily_raw[i, rel_t_indices]
+        if not np.all(np.isnan(fao_vals)):
+          pet_fao_s = pd.Series(
+              np.abs(self._depth_to_mm(fao_vals, pet_fao_units, pet_fao_name)),
+              index=date_index,
+          )
+
+      pet_era5_s = None
+      if pet_era5_daily_raw is not None and pet_era5_name is not None:
+        era5_vals = pet_era5_daily_raw[i, rel_t_indices]
+        if not np.all(np.isnan(era5_vals)):
+          pet_era5_s = pd.Series(
+              np.abs(self._depth_to_mm(era5_vals, pet_era5_units, pet_era5_name)),
+              index=date_index,
+          )
+
+      results[cid] = compute_caravan_climate_metrics(
+          pd.Series(p_series, index=date_index),
+          pd.Series(t_series, index=date_index),
+          pet_era5=pet_era5_s,
+          pet_fao=pet_fao_s,
+      )
+
+    return results
+

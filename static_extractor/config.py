@@ -108,7 +108,6 @@ GCS_HYDROATLAS_GDB_URI: str = f"{GCS_HYDROATLAS_BUCKET}/BasinATLAS_v10.gdb"
 GCS_ERA5_CLIMATE_URI: str = f"{GCS_HYDROATLAS_BUCKET}/era5_climate"
 GCS_ERA5_GRIDDED_ZARR_URI: str = "gs://open-multimet/gridded-data-archives/ERA5_LAND/daily_surface.zarr"
 GCS_BENCHMARK_URI: str = "gs://open-multimet/ancillary-data/benchmarks/benchmark_basins_500.parquet"
-DEFAULT_ERA5_SOURCE: str = "hybas"  # Options: "hybas" (precalculated subbasins), "gridded" (recalculated on the fly from archived gridded Zarr)
 
 # Caravan Collection and Subdataset Subdirectory Mapping
 CARAVAN_SUBDIR_MAPPING: Dict[str, Tuple[str, str]] = {

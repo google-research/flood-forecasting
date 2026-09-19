@@ -533,11 +533,11 @@ def discover_datasets(
 def run_batch_extraction(
     dataset_map: Dict[str, Path],
     output_dir: Union[str, Path],
-    workers: int = 1,
-    era5_source: str = "hybas",
+    workers: int = 4,
+    era5_source: Optional[str] = None,
     gridded_era5_uri: Optional[str] = None,
-    gdb_path: Optional[str] = None,
-    era5_cache_dir: Optional[str] = None,
+    gdb_path: Optional[Union[str, Path]] = None,
+    era5_cache_dir: Optional[Union[str, Path]] = None,
     staging_cache_dir: Optional[Path] = None,
     gcs_output_uri: Optional[str] = None,
     min_overlap_threshold: float = 0.0,
@@ -548,6 +548,12 @@ def run_batch_extraction(
     preserve_caravan_dirs: bool = False,
 ) -> Dict[str, pd.DataFrame]:
   """Runs static attribute extraction across all discovered datasets."""
+  if not era5_source or era5_source.lower() not in {"hybas", "gridded"}:
+    raise ValueError(
+        "era5_source must be explicitly specified as either 'hybas' or 'gridded' "
+        "(no default is assumed)."
+    )
+  era5_source = era5_source.lower()
   is_gcs_output = str(output_dir).startswith("gs://")
   target_gcs_uri = str(output_dir) if is_gcs_output else gcs_output_uri
 
@@ -816,8 +822,8 @@ def parse_args(args=None):
   parser.add_argument(
       "--era5-source",
       choices=["hybas", "gridded"],
-      default="hybas",
-      help="Source for ERA5 climate metrics: 'hybas' (fast precalculated) or 'gridded' (on-the-fly Zarr recalculation).",
+      required=True,
+      help="Source for ERA5 climate metrics (required): 'hybas' (fast precalculated) or 'gridded' (on-the-fly Zarr recalculation).",
   )
   parser.add_argument(
       "--gridded-era5-uri",

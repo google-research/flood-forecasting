@@ -68,7 +68,6 @@ from static_extractor.config import (
     ADDITIONAL_PROPERTIES,
     ATTRIBUTE_DEFINITIONS,
     CONTINENT_MAP,
-    DEFAULT_ERA5_SOURCE,
     GCS_ERA5_GRIDDED_ZARR_URI,
     GCS_HYDROATLAS_GDB_URI,
     IGNORE_PROPERTIES,
@@ -110,6 +109,7 @@ def _worker_extract_polygon(args: tuple) -> Dict[str, Any]:
       gdb_path,
       era5_cache_dir,
       gridded_era5_uri,
+      skip_climate,
   ) = args
   ext = _get_worker_extractor(gdb_path, era5_cache_dir, gridded_era5_uri)
   return ext.extract_attributes_for_polygon(
@@ -118,6 +118,7 @@ def _worker_extract_polygon(args: tuple) -> Dict[str, Any]:
       min_overlap_threshold=min_overlap_threshold,
       era5_source=era5_source,
       _batch_mode=True,
+      _skip_climate=skip_climate,
   )
 
 
@@ -186,7 +187,7 @@ class StaticAttributesExtractor:
       gdb_path: Optional[Union[str, Path]] = None,
       era5_cache_dir: Optional[Union[str, Path]] = None,
       auto_download: bool = True,
-      era5_source: str = DEFAULT_ERA5_SOURCE,
+      era5_source: Optional[str] = None,
       gridded_era5_uri: Optional[str] = None,
   ):
     """Initializes the StaticAttributesExtractor.
@@ -202,14 +203,16 @@ class StaticAttributesExtractor:
       era5_cache_dir: Path to runtime staging directory for ERA5 climate files.
       auto_download: Whether to automatically download BasinATLAS_v10.gdb from
         GCS if not staged locally. Defaults to True.
-      era5_source: Sourcing mode for ERA5 climate attributes. Options:
-        - "hybas": Fast area-weighted aggregation of precalculated Level 12
-          sub-basin climate metrics (default, ~20ms per basin).
-        - "gridded": Recalculate directly on the fly from archived gridded ERA5
-          daily surface Zarr data on GCS.
+      era5_source: Optional sourcing mode for ERA5 climate attributes ("hybas"
+        or "gridded"). Must be provided either at initialization or when calling
+        extraction methods (unless timeseries_df is passed).
       gridded_era5_uri: Optional GCS URI or path to gridded daily ERA5 Zarr store.
     """
-    self.era5_source = era5_source.lower() if era5_source else "hybas"
+    if era5_source is not None and era5_source.lower() not in {"hybas", "gridded"}:
+      raise ValueError(
+          f"Invalid era5_source {era5_source!r}; must be explicitly set to 'hybas' or 'gridded'."
+      )
+    self.era5_source = era5_source.lower() if era5_source else None
     self.gridded_era5_uri = gridded_era5_uri or GCS_ERA5_GRIDDED_ZARR_URI
 
     if gdb_path is not None:
@@ -330,6 +333,53 @@ class StaticAttributesExtractor:
       return pyogrio.read_dataframe(self.gdb_path, **read_kwargs)
     return gpd.read_file(self.gdb_path, **read_kwargs)
 
+  def _resolve_era5_source(self, era5_source: Optional[str]) -> str:
+    source = (era5_source or self.era5_source or "").strip().lower()
+    if source not in {"hybas", "gridded"}:
+      raise ValueError(
+          "era5_source must be explicitly specified as either 'hybas' or 'gridded' "
+          "(no default is assumed)."
+      )
+    return source
+
+  def _apply_climate_indices_to_result(
+      self, res: Dict[str, Any], era5_indices: Dict[str, float]
+  ) -> None:
+    """Merges climate indices into a result dictionary's caravan_attributes, processed_attributes, categories, and summary."""
+    caravan_attributes = res["caravan_attributes"]
+    processed_attributes = res["processed_attributes"]
+    categories_dict = res["categories"]
+    summary = res["summary"]
+
+    for k, v in era5_indices.items():
+      caravan_attributes[k] = v
+
+    # Remove any previously added Climate category items for era5_indices keys to avoid duplicates
+    categories_dict["Climate"] = [
+        item for item in categories_dict.get("Climate", []) if item["key"] not in era5_indices
+    ]
+    for attr_key in era5_indices:
+      if attr_key in ATTRIBUTE_DEFINITIONS:
+        defn = ATTRIBUTE_DEFINITIONS[attr_key]
+        raw_val = caravan_attributes[attr_key]
+        scaled_val = np.nan if pd.isna(raw_val) else round(float(raw_val) * defn["scale"], 3)
+        processed_attributes[attr_key] = scaled_val
+        categories_dict[defn["category"]].append({
+            "key": attr_key,
+            "name": defn["name"],
+            "value": scaled_val,
+            "unit": defn["unit"],
+            "description": defn["desc"],
+            "category": defn["category"],
+        })
+
+    summary["era5_p_mean_mm_day"] = processed_attributes.get("p_mean", np.nan)
+    summary["era5_pet_mean_mm_day"] = processed_attributes.get("pet_mean_ERA5_LAND", np.nan)
+    summary["era5_fao_pet_mean_mm_day"] = processed_attributes.get("pet_mean_FAO_PM", np.nan)
+    summary["era5_aridity"] = processed_attributes.get("aridity_ERA5_LAND", np.nan)
+    summary["era5_fao_aridity"] = processed_attributes.get("aridity_FAO_PM", np.nan)
+    summary["era5_frac_snow_pc"] = processed_attributes.get("frac_snow", np.nan)
+
   def extract_attributes_for_polygon(
       self,
       polygon_geojson: Union[Dict, Polygon, MultiPolygon, gpd.GeoSeries, gpd.GeoDataFrame],
@@ -339,6 +389,7 @@ class StaticAttributesExtractor:
       timeseries_df: Optional[pd.DataFrame] = None,
       era5_source: Optional[str] = None,
       _batch_mode: bool = False,
+      _skip_climate: bool = False,
   ) -> Dict[str, Any]:
     """Calculates exact Caravan HydroATLAS static attributes for an arbitrary watershed polygon.
 
@@ -351,6 +402,7 @@ class StaticAttributesExtractor:
       timeseries_df: Optional daily timeseries DataFrame containing columns
         (total_precipitation or prcp, temperature or 2m_temperature,
         potential_evaporation or pet) to compute climate indices directly.
+      era5_source: Required ERA5 sourcing mode ('hybas' or 'gridded') when timeseries_df is not provided.
 
     Returns:
       Dictionary containing:
@@ -362,6 +414,10 @@ class StaticAttributesExtractor:
       - intersected_subbasins_count: Total HydroATLAS Level 12 units intersected
       - total_area_km2: Drainage area in km²
     """
+    actual_era5_source = None
+    if (timeseries_df is None or timeseries_df.empty) and not _skip_climate:
+      actual_era5_source = self._resolve_era5_source(era5_source)
+
     # 1. Parse Input Geometry
     if isinstance(polygon_geojson, (gpd.GeoDataFrame, gpd.GeoSeries)):
       geom = polygon_geojson.geometry.iloc[0] if hasattr(polygon_geojson, "geometry") else polygon_geojson.iloc[0]
@@ -515,87 +571,86 @@ class StaticAttributesExtractor:
 
     # 6. Extract / Compute ERA5-Land Climate Attributes (1981-2020)
     era5_indices = {}
-    actual_era5_source = (era5_source or self.era5_source).lower()
+    if not _skip_climate:
+      if timeseries_df is not None and not timeseries_df.empty:
+        # Compute directly from provided daily timeseries DataFrame
+        p_col = next((c for c in ["total_precipitation", "prcp", "precip", "tp"] if c in timeseries_df.columns), None)
+        t_col = next((c for c in ["temperature", "2m_temperature", "temp", "t2m"] if c in timeseries_df.columns), None)
+        pet_era5_col = next((c for c in ["potential_evaporation", "pet_era5", "pev"] if c in timeseries_df.columns), None)
+        pet_fao_col = next((c for c in ["pet_fao", "pet_mean_FAO_PM", "fao_pet"] if c in timeseries_df.columns), None)
 
-    if timeseries_df is not None and not timeseries_df.empty:
-      # Compute directly from provided daily timeseries DataFrame
-      p_col = next((c for c in ["total_precipitation", "prcp", "precip", "tp"] if c in timeseries_df.columns), None)
-      t_col = next((c for c in ["temperature", "2m_temperature", "temp", "t2m"] if c in timeseries_df.columns), None)
-      pet_era5_col = next((c for c in ["potential_evaporation", "pet_era5", "pev"] if c in timeseries_df.columns), None)
-      pet_fao_col = next((c for c in ["pet_fao", "pet_mean_FAO_PM", "fao_pet"] if c in timeseries_df.columns), None)
+        if not p_col or not t_col:
+          raise ValueError(
+              f"timeseries_df is missing required precipitation/temperature columns (found {list(timeseries_df.columns)})."
+          )
+        p_series = timeseries_df[p_col]
+        t_series = timeseries_df[t_col]
+        pet_era5_series = timeseries_df[pet_era5_col] if pet_era5_col else None
+        pet_fao_series = timeseries_df[pet_fao_col] if pet_fao_col else None
+        era5_indices = compute_caravan_climate_metrics(
+            precipitation=p_series,
+            temperature=t_series,
+            pet_era5=pet_era5_series,
+            pet_fao=pet_fao_series,
+        )
+      elif actual_era5_source == "gridded":
+        # Recalculate directly on the fly from archived gridded ERA5 data on GCS
+        try:
+          era5_indices = self.gridded_extractor.extract_climate_metrics_for_polygon(
+              geom, baseline_years=baseline_years
+          )
+        except (FileNotFoundError, OSError) as e:
+          logger.warning(
+              "Gridded ERA5 archive unavailable for catchment '%s': %s; "
+              "leaving climate attributes as NaN.",
+              catchment_id,
+              e,
+          )
+          era5_indices = {
+              "p_mean": np.nan,
+              "pet_mean": np.nan,
+              "pet_mean_FAO_PM": np.nan,
+              "pet_mean_ERA5_LAND": np.nan,
+              "aridity": np.nan,
+              "aridity_FAO_PM": np.nan,
+              "aridity_ERA5_LAND": np.nan,
+              "frac_snow": np.nan,
+              "moisture_index": np.nan,
+              "moisture_index_FAO_PM": np.nan,
+              "moisture_index_ERA5_LAND": np.nan,
+              "seasonality": np.nan,
+              "seasonality_FAO_PM": np.nan,
+              "seasonality_ERA5_LAND": np.nan,
+              "high_prec_freq": np.nan,
+              "high_prec_dur": np.nan,
+              "low_prec_freq": np.nan,
+              "low_prec_dur": np.nan,
+          }
+      else:
+        # Load from Level 12 precomputed continental climate indices table
+        hybas_ids = (
+            [int(hid) for hid in gdf_matched["HYBAS_ID"].values]
+            if len(gdf_matched) > 0
+            else []
+        )
+        intersect_weights = (
+            [float(w) for w in gdf_matched["intersect_area_km2"].values]
+            if len(gdf_matched) > 0
+            else []
+        )
+        era5_indices = self.era5_loader.get_indices_for_subbasins(
+            hybas_ids, intersect_weights
+        )
+        # If a custom/local gridded_era5_uri was explicitly provided, read *_ERA5_LAND from it.
+        if self.gridded_era5_uri != GCS_ERA5_GRIDDED_ZARR_URI:
+          era5_indices.update(
+              self._era5_land_variants_from_gridded(
+                  geom, baseline_years, catchment_id
+              )
+          )
 
-      if not p_col or not t_col:
-        raise ValueError(
-            f"timeseries_df is missing required precipitation/temperature columns (found {list(timeseries_df.columns)})."
-        )
-      p_series = timeseries_df[p_col]
-      t_series = timeseries_df[t_col]
-      pet_era5_series = timeseries_df[pet_era5_col] if pet_era5_col else None
-      pet_fao_series = timeseries_df[pet_fao_col] if pet_fao_col else None
-      era5_indices = compute_caravan_climate_metrics(
-          precipitation=p_series,
-          temperature=t_series,
-          pet_era5=pet_era5_series,
-          pet_fao=pet_fao_series,
-      )
-    elif actual_era5_source == "gridded":
-      # Recalculate directly on the fly from archived gridded ERA5 data on GCS
-      try:
-        era5_indices = self.gridded_extractor.extract_climate_metrics_for_polygon(
-            geom, baseline_years=baseline_years
-        )
-      except (FileNotFoundError, OSError) as e:
-        logger.warning(
-            "Gridded ERA5 archive unavailable for catchment '%s': %s; "
-            "leaving climate attributes as NaN.",
-            catchment_id,
-            e,
-        )
-        era5_indices = {
-            "p_mean": np.nan,
-            "pet_mean": np.nan,
-            "pet_mean_FAO_PM": np.nan,
-            "pet_mean_ERA5_LAND": np.nan,
-            "aridity": np.nan,
-            "aridity_FAO_PM": np.nan,
-            "aridity_ERA5_LAND": np.nan,
-            "frac_snow": np.nan,
-            "moisture_index": np.nan,
-            "moisture_index_FAO_PM": np.nan,
-            "moisture_index_ERA5_LAND": np.nan,
-            "seasonality": np.nan,
-            "seasonality_FAO_PM": np.nan,
-            "seasonality_ERA5_LAND": np.nan,
-            "high_prec_freq": np.nan,
-            "high_prec_dur": np.nan,
-            "low_prec_freq": np.nan,
-            "low_prec_dur": np.nan,
-        }
-    else:
-      # Load from Level 12 precomputed continental climate indices table
-      hybas_ids = (
-          [int(hid) for hid in gdf_matched["HYBAS_ID"].values]
-          if len(gdf_matched) > 0
-          else []
-      )
-      intersect_weights = (
-          [float(w) for w in gdf_matched["intersect_area_km2"].values]
-          if len(gdf_matched) > 0
-          else []
-      )
-      era5_indices = self.era5_loader.get_indices_for_subbasins(
-          hybas_ids, intersect_weights
-      )
-      # If a custom/local gridded_era5_uri was explicitly provided, read *_ERA5_LAND from it.
-      if self.gridded_era5_uri != GCS_ERA5_GRIDDED_ZARR_URI:
-        era5_indices.update(
-            self._era5_land_variants_from_gridded(
-                geom, baseline_years, catchment_id
-            )
-        )
-
-    for k, v in era5_indices.items():
-      caravan_attributes[k] = v
+      for k, v in era5_indices.items():
+        caravan_attributes[k] = v
 
     # 7. Drainage Area & Aggregation Fraction
     total_frag_area = (
@@ -699,6 +754,51 @@ class StaticAttributesExtractor:
         "total_area_km2": round(total_frag_area, 2),
     }
 
+  def _populate_gridded_climate_batch(
+      self,
+      results: List[Dict[str, Any]],
+      poly_tasks: List[Tuple[Any, str]],
+      baseline_years: Tuple[int, int] = (1981, 2020),
+  ) -> None:
+    """Computes gridded ERA5 climate metrics in a single pass over Zarr chunks for all polygons."""
+    nan_climate = {
+        "p_mean": np.nan,
+        "pet_mean": np.nan,
+        "pet_mean_FAO_PM": np.nan,
+        "pet_mean_ERA5_LAND": np.nan,
+        "aridity": np.nan,
+        "aridity_FAO_PM": np.nan,
+        "aridity_ERA5_LAND": np.nan,
+        "frac_snow": np.nan,
+        "moisture_index": np.nan,
+        "moisture_index_FAO_PM": np.nan,
+        "moisture_index_ERA5_LAND": np.nan,
+        "seasonality": np.nan,
+        "seasonality_FAO_PM": np.nan,
+        "seasonality_ERA5_LAND": np.nan,
+        "high_prec_freq": np.nan,
+        "high_prec_dur": np.nan,
+        "low_prec_freq": np.nan,
+        "low_prec_dur": np.nan,
+    }
+    try:
+      climate_map = self.gridded_extractor.extract_climate_metrics_for_polygons_batch(
+          poly_tasks, baseline_years=baseline_years
+      )
+    except (FileNotFoundError, OSError) as e:
+      logger.warning(
+          "Gridded ERA5 archive unavailable (%s); leaving climate attributes as NaN.",
+          e,
+      )
+      climate_map = {cid: dict(nan_climate) for _, cid in poly_tasks}
+
+    for r in results:
+      if r:
+        cid = r.get("catchment_id", "")
+        self._apply_climate_indices_to_result(
+            r, climate_map.get(cid, dict(nan_climate))
+        )
+
   def extract_attributes_batch(
       self,
       features: List[Union[Dict[str, Any], Polygon, MultiPolygon]],
@@ -706,7 +806,11 @@ class StaticAttributesExtractor:
       era5_source: Optional[str] = None,
   ) -> List[Dict[str, Any]]:
     """Extracts exact Caravan attributes for a list of watershed features."""
+    actual_era5_source = self._resolve_era5_source(era5_source)
+    skip_climate = actual_era5_source == "gridded"
+
     results = []
+    poly_tasks = []
     for i, feat in enumerate(features):
       c_id = None
       if isinstance(feat, dict):
@@ -717,15 +821,23 @@ class StaticAttributesExtractor:
             or props.get("id")
             or f"basin_{i+1}"
         )
+        geom = shape(feat["geometry"] if feat.get("type") == "Feature" else feat)
       else:
         c_id = f"basin_{i+1}"
+        geom = feat
+      poly_tasks.append((geom, c_id))
       res = self.extract_attributes_for_polygon(
           feat,
           catchment_id=c_id,
           min_overlap_threshold=min_overlap_threshold,
-          era5_source=era5_source,
+          era5_source=actual_era5_source,
+          _skip_climate=skip_climate,
       )
       results.append(res)
+
+    if skip_climate:
+      self._populate_gridded_climate_batch(results, poly_tasks)
+
     return results
 
   def extract_attributes_from_file(
@@ -746,7 +858,7 @@ class StaticAttributesExtractor:
       output_csv_path: Optional path to save extracted attributes CSV.
       id_column: Name of column to use for basin / gauge ID.
       min_overlap_threshold: Minimum area threshold in km2.
-      era5_source: Optional ERA5 sourcing mode override ('hybas' or 'gridded').
+      era5_source: Required ERA5 sourcing mode ('hybas' or 'gridded') if not set on extractor.
       workers: Number of parallel processes to use (default 1).
       show_progress: Whether to show an interactive tqdm progress bar.
       dataset_name: Optional dataset label to display in the progress bar.
@@ -754,6 +866,9 @@ class StaticAttributesExtractor:
     Returns:
       Pandas DataFrame with extracted attributes, indexed by gauge_id.
     """
+    actual_era5_source = self._resolve_era5_source(era5_source)
+    skip_climate = actual_era5_source == "gridded"
+
     if str(input_path).endswith((".parquet", ".geoparquet")):
       gdf = gpd.read_parquet(input_path)
     else:
@@ -774,7 +889,6 @@ class StaticAttributesExtractor:
       tasks.append((row.geometry, gid))
 
     ds_label = dataset_name or Path(input_path).stem.replace("_basin_shapes", "").replace("_basins", "")
-    actual_era5_source = (era5_source or self.era5_source).lower()
 
     if workers > 1 and len(tasks) > 1:
       import concurrent.futures
@@ -794,10 +908,11 @@ class StaticAttributesExtractor:
               geom,
               gid,
               min_overlap_threshold,
-              era5_source,
+              actual_era5_source,
               str(self.gdb_path),
               str(self.era5_cache_dir),
               self.gridded_era5_uri,
+              skip_climate,
           )
           for geom, gid in tasks
       ]
@@ -840,10 +955,14 @@ class StaticAttributesExtractor:
             geom,
             catchment_id=gid,
             min_overlap_threshold=min_overlap_threshold,
-            era5_source=era5_source,
+            era5_source=actual_era5_source,
             _batch_mode=True,
+            _skip_climate=skip_climate,
         )
         results.append(res)
+
+    if skip_climate:
+      self._populate_gridded_climate_batch(results, tasks)
 
     df = self.export_caravan_csv(
         results, output_csv_path=output_csv_path if output_csv_path else None

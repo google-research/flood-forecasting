@@ -43,7 +43,6 @@ from tqdm.auto import tqdm
 
 from static_extractor.config import (
     ATTRIBUTE_DEFINITIONS,
-    DEFAULT_ERA5_SOURCE,
     GCS_BENCHMARK_URI,
     MAJORITY_PROPERTIES,
     POUR_POINT_PROPERTIES,
@@ -308,10 +307,16 @@ def run_benchmark(
     workers: int = 8,
     gdb_path: Optional[str] = None,
     era5_cache_dir: Optional[str] = None,
-    era5_source: str = DEFAULT_ERA5_SOURCE,
+    era5_source: Optional[str] = None,
     output_dir: Optional[str] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
   """Executes the comprehensive Caravan static attributes extraction benchmark."""
+  if not era5_source or era5_source.lower() not in {"hybas", "gridded"}:
+    raise ValueError(
+        "era5_source must be explicitly specified as either 'hybas' or 'gridded' "
+        "(no default is assumed)."
+    )
+  era5_source = era5_source.lower()
   ds_path = (
       Path(dataset_path) if dataset_path else DEFAULT_BENCHMARK_PATH
   ).resolve()
@@ -903,9 +908,9 @@ def main():
   parser.add_argument(
       "--era5-source",
       type=str,
-      default=DEFAULT_ERA5_SOURCE,
+      required=True,
       choices=["hybas", "gridded"],
-      help="ERA5 data source: 'hybas' (precomputed subbasins) or 'gridded' (Zarr).",
+      help="ERA5 data source (required): 'hybas' (precomputed subbasins) or 'gridded' (Zarr).",
   )
   parser.add_argument(
       "-o",
