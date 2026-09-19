@@ -111,6 +111,8 @@ def _evaluate_single_basin(
     gcs_uri: str | None = None,
     cache_dir: str | None = None,
     snap_window_cells: int = 12,
+    use_area_hint: bool = True,
+    area_tolerance: float = 0.50,
 ) -> tuple[dict[str, Any], list[str]]:
     """Evaluate a single reference basin in a worker process."""
     gauge_id = str(row_dict['gauge_id'])
@@ -135,6 +137,8 @@ def _evaluate_single_basin(
             lon=lon,
             catchment_id=gauge_id,
             snap_window_cells=snap_window_cells,
+            expected_area_km2=ref_area_km2 if use_area_hint else None,
+            area_tolerance=area_tolerance,
         )
         elapsed = time.time() - t0
         props = res['properties']
@@ -253,6 +257,8 @@ def run_benchmark(
     output_path: str | Path | None = None,
     snap_window_cells: int = 12,
     clean_cache: bool = False,
+    use_area_hint: bool = True,
+    area_tolerance: float = 0.50,
 ) -> pd.DataFrame:
     """Execute catchment delineation benchmark on an explicit dataset."""
     delineator = DemDelineator(
@@ -338,6 +344,8 @@ def run_benchmark(
                         else None
                     ),
                     snap_window_cells=snap_window_cells,
+                    use_area_hint=use_area_hint,
+                    area_tolerance=area_tolerance,
                 ): idx
                 for idx, row in enumerate(rows)
             }
@@ -495,6 +503,17 @@ def main(argv: list[str] | None = None) -> int:
         action='store_true',
         help='Delete only the tile files downloaded during this benchmark run.',
     )
+    parser.add_argument(
+        '--no-area-hint',
+        action='store_true',
+        help='Disable using reference_area_km2 as expected_area_km2 hint.',
+    )
+    parser.add_argument(
+        '--area-tolerance',
+        type=float,
+        default=0.50,
+        help='Relative tolerance around expected_area_km2 (default: 0.50).',
+    )
     args = parser.parse_args(argv)
     run_benchmark(
         dataset_path=args.dataset,
@@ -508,6 +527,8 @@ def main(argv: list[str] | None = None) -> int:
         output_path=args.output,
         snap_window_cells=args.snap_window,
         clean_cache=args.clean_cache,
+        use_area_hint=not args.no_area_hint,
+        area_tolerance=args.area_tolerance,
     )
     return 0
 

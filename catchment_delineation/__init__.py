@@ -30,6 +30,7 @@ from catchment_delineation.config import (
     TILE_DEG,
 )
 from catchment_delineation.delineator import (
+    CatchmentAreaMismatchError,
     CatchmentCoverageError,
     DemDelineator,
     delineate_catchment,
@@ -57,6 +58,7 @@ __all__ = [
     'RES_DEG',
     'TILE_CELLS',
     'TILE_DEG',
+    'CatchmentAreaMismatchError',
     'CatchmentCoverageError',
     'DemDelineator',
     'delineate_catchment',
