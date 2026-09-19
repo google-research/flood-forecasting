@@ -202,3 +202,20 @@ def test_group_features_list_dict_no_underscores():
     features = {'group': ['temperature', 'wind', 'pressure']}
     expected = {'group': ['temperature', 'wind', 'pressure']}
     assert group_features_list(features) == expected
+
+
+def test_group_features_list_compound_product_names():
+    """Tests that compound product names with underscores group accurately."""
+    features = [
+        'chirps_gefs_precipitation',
+        'chirps_precipitation',
+        'era5_land_temperature',
+        'era5land_pressure',
+    ]
+    expected = {
+        'chirps_gefs': ['chirps_gefs_precipitation'],
+        'chirps': ['chirps_precipitation'],
+        'era5_land': ['era5_land_temperature', 'era5land_pressure'],
+    }
+    assert group_features_list(features) == expected
+
