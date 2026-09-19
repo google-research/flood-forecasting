@@ -178,6 +178,15 @@ class DemDelineator:
 
     def clean_created_cache(self) -> None:
         """Delete only the tile files created in cache_dir by this instance."""
+        import gc
+
+        for arr in self._tile_cache.values():
+            mmap_obj = getattr(arr, '_mmap', None)
+            if mmap_obj is not None:
+                with contextlib.suppress(Exception):
+                    mmap_obj.close()
+        self._tile_cache.clear()
+        gc.collect()
         for file_path in list(self.created_cache_files):
             if file_path.is_file():
                 with contextlib.suppress(OSError):
