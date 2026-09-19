@@ -70,7 +70,7 @@ _STREAM_ORDER_2_MAX_KM2: float = 500.0
 _COORD_SCALE: int = 10000
 
 
-class CatchmentCoverageError(ValueError):
+class CatchmentCoverageError(FileNotFoundError, ValueError):
     """Raised when a pour point or its watershed extends outside DEM bounds."""
 
 
@@ -155,7 +155,12 @@ class DemDelineator:
             )
 
         if tiles_dir is not None:
-            self.tiles_dir: Path | None = Path(tiles_dir).expanduser().resolve()
+            resolved_tiles = Path(tiles_dir).expanduser().resolve()
+            if not resolved_tiles.is_dir():
+                raise FileNotFoundError(
+                    f'DEM tiles_dir does not exist: {resolved_tiles}'
+                )
+            self.tiles_dir: Path | None = resolved_tiles
             self.gcs_uri: str | None = None
             self.cache_dir: Path | None = (
                 Path(cache_dir).expanduser().resolve() if cache_dir else None
@@ -232,7 +237,7 @@ class DemDelineator:
         if self.tiles_dir is not None:
             tile_path = self.tiles_dir / tile_name
             if not tile_path.is_file():
-                raise FileNotFoundError(
+                raise CatchmentCoverageError(
                     f'Required DEM tile {tile_name} not found in '
                     f'user-supplied tiles_dir ({self.tiles_dir}).'
                 )
