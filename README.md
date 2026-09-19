@@ -92,6 +92,18 @@ A small sample is provided in tutorial/data/Caravan-nc. For full runs:
 
 The MultiMet forcing data extension is accessed directly from **Google Cloud Storage**. Ensure your configuration points to: gs://caravan-multimet/v1.1
 
+#### Building your own gridded weather archives (Optional)
+
+Most users only need the pre-built MultiMet dataset in `gs://caravan-multimet/v1.1` above. If you want to download raw gridded weather data directly from NOAA, ECMWF, or NASA and build your own Zarr archives locally or in Google Cloud Storage, this repository includes three command-line tools in the [`multimet`](multimet/README.md) package:
+
+| Command | Dataset | Grid Resolution | Time Coverage |
+| --- | --- | --- | --- |
+| `build-cpc-archive` | NOAA CPC Global Unified daily precipitation | 0.5° | 1979 to present |
+| `build-hres-archive` | ECMWF IFS HRES daily surface forecasts (lead days 1–10) | 0.25° | 2016 to present |
+| `build-imerg-archive` | NASA GPM IMERG Early V07 daily precipitation | 0.1° | 2000 to present |
+
+See [`multimet/README.md`](multimet/README.md) for step-by-step usage instructions.
+
 ## **Usage**
 
 The package installs the run command as the primary entry point.

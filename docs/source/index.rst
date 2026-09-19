@@ -12,6 +12,7 @@ The source code is available on `GitHub <https://github.com/google-research/floo
 On this documentation page, you'll find a :doc:`quickstart guide <usage/quickstart>` with step-by-step instructions on installation, required datasets, and command-line usage.
 There is also a :doc:`tutorial <tutorial/tutorial>` that walks you through training your first model.
 The :doc:`modelzoo <usage/models>` lists the models avaialble in this repository.
+The :doc:`gridded archive builders <usage/gridded_archives>` guide covers the ETL pipelines that assemble the unified Open-MultiMet meteorological archives.
 Finally, the :doc:`API docs <api/googlehydrology>` show in-depth information on all modules, classes, and functions within OpenHydroNet.
 
 You might also be interested in our `team's webpage <https://sites.research.google/gr/floodforecasting/>`_.
@@ -22,7 +23,9 @@ You might also be interested in our `team's webpage <https://sites.research.goog
 
    usage/quickstart
    usage/models
+   usage/gridded_archives
    tutorial/tutorial
    usage/config
    api/modules
+   api/multimet_modules
    example-configs/example-configs

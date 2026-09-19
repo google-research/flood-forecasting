@@ -36,6 +36,7 @@ setup(
         'googlehydrology.modelzoo',
         'googlehydrology.training',
         'googlehydrology.evaluation',
+        'multimet',
     ],
     url='https://googlehydrology.readthedocs.io',
     project_urls={
@@ -52,6 +53,9 @@ setup(
         'console_scripts': [
             'schedule-runs=googlehydrology.run_scheduler:_main',
             'run=googlehydrology.run:_main',
+            'build-cpc-archive=multimet.build_cpc_archive:main',
+            'build-hres-archive=multimet.build_hres_archive:main',
+            'build-imerg-archive=multimet.build_imerg_archive:main',
         ]
     },
     python_requires='>=3.12',

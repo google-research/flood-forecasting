@@ -30,6 +30,8 @@ dependencies:
   - bokeh=3.8.*
   - cachey=0.2.*
   - dask=2025.12.*
+  - eccodes
+  - fsspec
   - gcsfs=2025.12.*
   - geopandas=1.1.*
   - gh
@@ -48,6 +50,8 @@ dependencies:
   - pytest
   - pytest-cov
   - pytest-xdist
+  - python-eccodes
+  - requests
   - ruamel.yaml=0.18.*
   - ruff
   - scipy=1.16.*
