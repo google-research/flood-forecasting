@@ -9,6 +9,7 @@ SPHINXAPIDOC  ?= sphinx-apidoc
 SOURCEDIR     = source
 BUILDDIR      = build
 PACKAGEDIR    = ../googlehydrology
+PACKAGEDIR2   = ../catchment_delineation
 
 # Put it first so that "make" without argument is like "make help".
 help:
@@ -20,9 +21,12 @@ help:
 # -f: Force overwriting of any existing generated files.
 # -o: Directory to place the output files.
 # -e: Put documentation for each module on its own page.
+# -T: Do not generate a table of contents file (managed manually).
 apidoc:
 	@echo "Generating API documentation..."
-	@$(SPHINXAPIDOC) -f -e -o "$(SOURCEDIR)/api" "$(PACKAGEDIR)"
+	@$(SPHINXAPIDOC) -f -e -T -o "$(SOURCEDIR)/api" "$(PACKAGEDIR)"
+	@$(SPHINXAPIDOC) -f -e -T -o "$(SOURCEDIR)/api" "$(PACKAGEDIR2)"
+	@printf "Modules\n=======\n\n.. toctree::\n   :maxdepth: 4\n\n   googlehydrology\n   catchment_delineation\n" > "$(SOURCEDIR)/api/modules.rst"
 
 # Target to clean API docs
 clean-api:
