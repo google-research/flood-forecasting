@@ -27,16 +27,21 @@ dependencies:
   - torchaudio=2.5.*
   - torchvision=0.20.*
   - absl-py=2.3.*
+  - aiohttp
   - bokeh=3.8.*
   - cachey=0.2.*
+  - cfgrib
   - dask=2025.12.*
+  - distributed
   - eccodes
   - fsspec
   - gcsfs=2025.12.*
   - geopandas=1.1.*
   - gh
+  - google-cloud-storage
   - h5netcdf=1.7.*
   - h5py=3.15.*
+  - icechunk
   - ipython
   - jupyter
   - matplotlib=3.10.*
@@ -46,19 +51,26 @@ dependencies:
   - numpy=2.4.*
   - pandas=2.3.*
   - parso=0.8.*
+  - pip
+  - psutil
   - pydantic=2.12.*
+  - pyproj
   - pytest
   - pytest-cov
   - pytest-xdist
   - python-eccodes
+  - pyyaml
   - requests
   - ruamel.yaml=0.18.*
   - ruff
   - scipy=1.16.*
   - seaborn
+  - shapely
   - sphinx=8.2.*
   - sphinx-rtd-theme=3.0.*
   - tensorboard=2.20.*
   - tqdm=4.67.*
   - xarray=2025.12.*
   - zarr=3.1.*
+  - pip:
+    - dynamical-catalog

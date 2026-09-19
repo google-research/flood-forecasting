@@ -37,6 +37,7 @@ setup(
         'googlehydrology.training',
         'googlehydrology.evaluation',
         'multimet',
+        'multimet.canary',
     ],
     url='https://googlehydrology.readthedocs.io',
     project_urls={
@@ -53,6 +54,7 @@ setup(
         'console_scripts': [
             'schedule-runs=googlehydrology.run_scheduler:_main',
             'run=googlehydrology.run:_main',
+            'extract-multimet=multimet.runner:main',
             'build-cpc-archive=multimet.build_cpc_archive:main',
             'build-hres-archive=multimet.build_hres_archive:main',
             'build-imerg-archive=multimet.build_imerg_archive:main',
