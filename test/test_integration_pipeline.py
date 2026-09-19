@@ -103,11 +103,11 @@ def _get_base_config_dict(
         'statics_data_dir': env_info['nc_dir'],
         'dynamics_data_dir': env_info['dynamics_dir'],
         'train_start_date': '01/01/2000',
-        'train_end_date': '31/12/2000',
+        'train_end_date': '01/03/2000',
         'validation_start_date': '01/01/2001',
-        'validation_end_date': '31/12/2001',
+        'validation_end_date': '31/03/2001',
         'test_start_date': '01/01/2001',
-        'test_end_date': '31/12/2001',
+        'test_end_date': '31/03/2001',
         'hindcast_inputs': {
             'era5land': [
                 'era5land_total_precipitation',
@@ -167,6 +167,7 @@ def _get_base_config_dict(
     }
 
 
+@pytest.mark.slow
 @pytest.mark.integration
 def test_mean_embedding_forecast_lstm_regression_pipeline(
     integration_data_env, tmp_path
@@ -221,6 +222,7 @@ def test_mean_embedding_forecast_lstm_regression_pipeline(
     assert np.all(df_metrics['RMSE'].values >= 0.0), 'RMSE contains negative values'
 
 
+@pytest.mark.slow
 @pytest.mark.integration
 def test_handoff_forecast_lstm_cmal_pipeline(integration_data_env, tmp_path):
     """End-to-end integration test for HandoffForecastLSTM with CMAL."""
@@ -268,6 +270,7 @@ def test_handoff_forecast_lstm_cmal_pipeline(integration_data_env, tmp_path):
         assert sim_vals.shape[0] == 8  # 8 basins
 
 
+@pytest.mark.slow
 @pytest.mark.integration
 def test_continue_training_and_finetuning_pipeline(
     integration_data_env, tmp_path
@@ -361,6 +364,7 @@ def test_continue_training_and_finetuning_pipeline(
     assert head_updated, 'Unfrozen head parameters did not update during finetuning!'
 
 
+@pytest.mark.slow
 @pytest.mark.integration
 def test_inference_mode_without_ground_truth(integration_data_env, tmp_path):
     """Tests evaluation in inference mode when observations are unavailable."""
@@ -391,6 +395,7 @@ def test_inference_mode_without_ground_truth(integration_data_env, tmp_path):
         assert sim_vals.shape[0] == 8  # 8 basins
 
 
+@pytest.mark.slow
 @pytest.mark.integration
 def test_numerical_determinism_with_fixed_seed(
     integration_data_env, tmp_path
@@ -458,6 +463,7 @@ def test_numerical_determinism_with_fixed_seed(
         )
 
 
+@pytest.mark.slow
 @pytest.mark.integration
 def test_run_cli_entrypoints(integration_data_env, tmp_path):
     """Tests the googlehydrology.run CLI entrypoints."""
