@@ -13,9 +13,7 @@ Submodules
    googlehydrology.utils.errors
    googlehydrology.utils.logging_utils
    googlehydrology.utils.lstm_utils
-   googlehydrology.utils.memory
    googlehydrology.utils.samplingutils
-   googlehydrology.utils.tqdm
 
 Module contents
 ---------------

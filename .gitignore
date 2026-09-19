@@ -14,4 +14,3 @@ googlehydrology.egg-info/*
 .idea/*
 .ipynb_checkpoints/
 docs/build/*
-docs/source/tutorial/*.ipynb
