@@ -337,6 +337,168 @@ class DemDelineator:
         )
         return outlet_lat, outlet_lon, best_r, best_c, start_key, snap_dist_m
 
+    def _traverse_upstream_bfs(
+        self,
+        start_key: tuple[int, int],
+        best_r: int,
+        best_c: int,
+        *,
+        max_cells: int | None = None,
+    ) -> tuple[dict[tuple[int, int], np.ndarray], int]:
+        """Run 1D-vectorized NumPy reverse-flow BFS across 5x5 degree tiles."""
+        offsets_1d = [
+            (dr, dc, dr * TILE_CELLS + dc, np.uint8(req))
+            for dr, dc, req in INFLOW_MAP
+        ]
+        visited_tiles: dict[tuple[int, int], np.ndarray] = {
+            start_key: np.zeros((TILE_CELLS, TILE_CELLS), dtype=bool)
+        }
+        visited_tiles[start_key][best_r, best_c] = True
+        frontiers: dict[tuple[int, int], np.ndarray] = {
+            start_key: np.array(
+                [best_r * TILE_CELLS + best_c], dtype=np.int32
+            )
+        }
+        total_accum = 0
+
+        while frontiers:
+            next_frontiers: dict[tuple[int, int], np.ndarray] = {}
+            for (t_lat, t_lon), idx_arr in frontiers.items():
+                n_cur = int(idx_arr.size)
+                if max_cells is not None and total_accum + n_cur > max_cells:
+                    raise CatchmentCoverageError(
+                        f'Watershed exceeded max_cells={max_cells} with '
+                        f'{n_cur} upstream cells still queued. Delineation '
+                        'aborted to prevent returning a truncated catchment.'
+                    )
+                total_accum += n_cur
+
+                grid_1d = self.get_tile(t_lat, t_lon).ravel()
+                v_mask = visited_tiles[(t_lat, t_lon)]
+                v_1d = v_mask.ravel()
+
+                r_arr = idx_arr // TILE_CELLS
+                c_arr = idx_arr % TILE_CELLS
+                all_interior = (
+                    int(r_arr.min()) > 0
+                    and int(r_arr.max()) < TILE_CELLS - 1
+                    and int(c_arr.min()) > 0
+                    and int(c_arr.max()) < TILE_CELLS - 1
+                )
+
+                in_idx_list: list[np.ndarray] = []
+                if all_interior:
+                    for _, _, d_idx, req_val in offsets_1d:
+                        n_idx = idx_arr + d_idx
+                        hit = (grid_1d[n_idx] == req_val) & (~v_1d[n_idx])
+                        if np.any(hit):
+                            h_idx = n_idx[hit]
+                            v_1d[h_idx] = True
+                            in_idx_list.append(h_idx)
+                else:
+                    for dr, dc, d_idx, req_val in offsets_1d:
+                        nr = r_arr + dr
+                        nc = c_arr + dc
+                        inside = (
+                            (nr >= 0)
+                            & (nr < TILE_CELLS)
+                            & (nc >= 0)
+                            & (nc < TILE_CELLS)
+                        )
+                        if np.any(inside):
+                            n_idx = idx_arr[inside] + d_idx
+                            hit = (grid_1d[n_idx] == req_val) & (~v_1d[n_idx])
+                            if np.any(hit):
+                                h_idx = n_idx[hit]
+                                v_1d[h_idx] = True
+                                in_idx_list.append(h_idx)
+                        if not np.all(inside):
+                            br = nr[~inside]
+                            bc = nc[~inside]
+                            orig_c = c_arr[~inside]
+                            for k in range(br.size):
+                                rr = int(br[k])
+                                cc = int(bc[k])
+                                cc_src = int(orig_c[k])
+                                nt_lat, nt_lon = t_lat, t_lon
+                                if rr < 0:
+                                    rr += TILE_CELLS
+                                    nt_lat += int(TILE_DEG)
+                                elif rr >= TILE_CELLS:
+                                    rr -= TILE_CELLS
+                                    nt_lat -= int(TILE_DEG)
+                                if cc < 0:
+                                    cc += TILE_CELLS
+                                    nt_lon -= int(TILE_DEG)
+                                elif cc >= TILE_CELLS:
+                                    cc -= TILE_CELLS
+                                    nt_lon += int(TILE_DEG)
+
+                                if not is_tile_in_coverage(nt_lat, nt_lon):
+                                    if nt_lat > int(DEM_MAX_LAT):
+                                        raise CatchmentCoverageError(
+                                            'Watershed extends north past the '
+                                            'DEM coverage boundary '
+                                            f'({DEM_MAX_LAT}°N) at longitude '
+                                            f'{t_lon + cc_src * RES_DEG:.4f}°.'
+                                            ' Delineation stopped to prevent '
+                                            'returning a partial catchment.'
+                                        )
+                                    if nt_lat < MIN_TILE_LAT_TOP:
+                                        raise CatchmentCoverageError(
+                                            'Watershed extends south past the '
+                                            'DEM coverage boundary '
+                                            f'({DEM_MIN_LAT}°S) at longitude '
+                                            f'{t_lon + cc_src * RES_DEG:.4f}°.'
+                                            ' Delineation stopped to prevent '
+                                            'returning a partial catchment.'
+                                        )
+                                    raise CatchmentCoverageError(
+                                        'Watershed extends past the longitude '
+                                        f'domain boundary into tile '
+                                        f'({nt_lat}, {nt_lon}). Delineation '
+                                        'stopped to prevent returning a '
+                                        'partial catchment.'
+                                    )
+
+                                nkey = (nt_lat, nt_lon)
+                                ngrid = self.get_tile(*nkey)
+                                if nkey not in visited_tiles:
+                                    visited_tiles[nkey] = np.zeros(
+                                        (TILE_CELLS, TILE_CELLS), dtype=bool
+                                    )
+                                nv_mask = visited_tiles[nkey]
+                                if (
+                                    not nv_mask[rr, cc]
+                                    and ngrid[rr, cc] == req_val
+                                ):
+                                    nv_mask[rr, cc] = True
+                                    single = np.array(
+                                        [rr * TILE_CELLS + cc], dtype=np.int32
+                                    )
+                                    prev = next_frontiers.get(nkey)
+                                    next_frontiers[nkey] = (
+                                        single
+                                        if prev is None
+                                        else np.concatenate((prev, single))
+                                    )
+
+                if in_idx_list:
+                    new_idx = (
+                        np.concatenate(in_idx_list)
+                        if len(in_idx_list) > 1
+                        else in_idx_list[0]
+                    )
+                    prev = next_frontiers.get((t_lat, t_lon))
+                    next_frontiers[(t_lat, t_lon)] = (
+                        new_idx
+                        if prev is None
+                        else np.concatenate((prev, new_idx))
+                    )
+            frontiers = next_frontiers
+
+        return visited_tiles, total_accum
+
     def delineate(
         self,
         lat: float,
@@ -370,73 +532,9 @@ class DemDelineator:
             snap_dist_m,
         ) = self.snap_outlet(lat, lon, snap_window_cells=snap_window_cells)
 
-        q = deque([(start_key, best_r, best_c)])
-        visited_tiles: dict[tuple[int, int], np.ndarray] = {
-            start_key: np.zeros((TILE_CELLS, TILE_CELLS), dtype=bool)
-        }
-        visited_tiles[start_key][best_r, best_c] = True
-        total_accum = 0
-
-        while q:
-            if max_cells is not None and total_accum >= max_cells:
-                raise CatchmentCoverageError(
-                    f'Watershed exceeded max_cells={max_cells} with '
-                    f'{len(q)} upstream cells still queued. Delineation '
-                    'aborted to prevent returning a truncated catchment.'
-                )
-            (t_lat, t_lon), cr, cc = q.popleft()
-            total_accum += 1
-
-            for dr, dc, req_val in INFLOW_MAP:
-                nr, nc = cr + dr, cc + dc
-                nt_lat, nt_lon = t_lat, t_lon
-
-                if nr < 0:
-                    nr += TILE_CELLS
-                    nt_lat += int(TILE_DEG)
-                elif nr >= TILE_CELLS:
-                    nr -= TILE_CELLS
-                    nt_lat -= int(TILE_DEG)
-
-                if nc < 0:
-                    nc += TILE_CELLS
-                    nt_lon -= int(TILE_DEG)
-                elif nc >= TILE_CELLS:
-                    nc -= TILE_CELLS
-                    nt_lon += int(TILE_DEG)
-
-                if not is_tile_in_coverage(nt_lat, nt_lon):
-                    if nt_lat > int(DEM_MAX_LAT):
-                        raise CatchmentCoverageError(
-                            'Watershed extends north past the DEM coverage '
-                            f'boundary ({DEM_MAX_LAT}°N) at longitude '
-                            f'{t_lon + cc * RES_DEG:.4f}°. Delineation '
-                            'stopped to prevent returning a partial catchment.'
-                        )
-                    if nt_lat < MIN_TILE_LAT_TOP:
-                        raise CatchmentCoverageError(
-                            'Watershed extends south past the DEM coverage '
-                            f'boundary ({DEM_MIN_LAT}°S) at longitude '
-                            f'{t_lon + cc * RES_DEG:.4f}°. Delineation '
-                            'stopped to prevent returning a partial catchment.'
-                        )
-                    raise CatchmentCoverageError(
-                        'Watershed extends past the longitude domain boundary '
-                        f'into tile ({nt_lat}, {nt_lon}). Delineation '
-                        'stopped to prevent returning a partial catchment.'
-                    )
-
-                nkey = (nt_lat, nt_lon)
-                ngrid = self.get_tile(*nkey)
-                if nkey not in visited_tiles:
-                    visited_tiles[nkey] = np.zeros(
-                        (TILE_CELLS, TILE_CELLS), dtype=bool
-                    )
-
-                v_mask = visited_tiles[nkey]
-                if not v_mask[nr, nc] and ngrid[nr, nc] == req_val:
-                    v_mask[nr, nc] = True
-                    q.append((nkey, nr, nc))
+        visited_tiles, total_accum = self._traverse_upstream_bfs(
+            start_key, best_r, best_c, max_cells=max_cells
+        )
 
         total_area_km2 = _compute_visited_area_km2(visited_tiles)
 
