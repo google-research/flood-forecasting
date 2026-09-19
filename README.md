@@ -92,20 +92,16 @@ A small sample is provided in tutorial/data/Caravan-nc. For full runs:
 
 The MultiMet forcing data extension is accessed directly from **Google Cloud Storage**. Ensure your configuration points to: gs://caravan-multimet/v1.1
 
-## **Catchment Delineation (DEM Watershed Extractor)**
+## **Catchment Delineation**
 
-This repository includes a standalone DEM flow-direction catchment delineation module (`catchment_delineation`), enabling automated extraction of upstream drainage basin polygons from arbitrary latitude and longitude coordinates.
+The `catchment_delineation` module traces the boundary (polygon) and drainage area ($\text{km}^2$) of the watershed upstream of any latitude/longitude point using 90-meter (3-arc-second) flow-direction maps.
 
-- **D8 Flow Traversal:** Pure DEM reverse-flow BFS graph traversal on 3 arc-second (~90m) D8 flow direction grids.
-- **Seamless Cross-Tile Routing:** Dynamically routes across 5°×5° tile boundaries without edge truncation or boundary artifacts.
-- **Canonical Cloud Storage:** DEM tiles are retrieved on demand exclusively from Google Cloud Storage (`gs://open-multimet/ancillary-data/dems/tiles_5deg/`) and cached in `~/.cache/googlehydrology/dem/`.
-- **Direct GCS Read & Write:** Reads pour-point coordinates directly from GCS (`gs://open-multimet/caravan-new/all_caravan_coordinates.csv`) and writes partitioned results directly back to GCS (`gs://open-multimet/caravan-new/`) with `--preserve-caravan-dirs`.
-- **Multi-Format & Parallel Processing:** Multi-worker batch processing (`--workers`) outputting GeoParquet, GeoJSON, and ESRI Shapefiles simultaneously (`--format all`).
-- **Global Benchmarking Suite:** Built-in `benchmark-catchment` CLI to evaluate accuracy against 1,200 globally distributed and stratified reference catchments (median IoU 0.940, Dice 0.969).
-- **Custom Local Paths:** Users can supply their own local tile directory via `--tiles-dir` or `tiles_dir=...` (strictly uses that path, no candidate path searching).
-- **CLI & Python API:** Run via console scripts (`delineate-catchment`, `benchmark-catchment`) or import directly via `googlehydrology.delineate_dem` or `from catchment_delineation import DemDelineator`.
+* **Traces across tile borders automatically:** Large river basins that span multiple 5°×5° map tiles are stitched together into a single polygon without being cut off at tile edges.
+* **Snaps gauges to the right river channel:** Streamflow gauge coordinates are often slightly off the center of the river in a 90-meter grid. The tool searches nearby grid cells for the river channel and supports an optional **expected drainage area hint** (`--expected-area` or `--area-col`) so gauges on wide rivers snap to the main river rather than a small bankside creek.
+* **You control all input and output paths:** Nothing is hardcoded. You pass the folder or Google Cloud (`gs://`) path containing your `.npy` flow-direction tiles and the path where you want your GeoJSON, GeoParquet, or Shapefile saved.
+* **Fails loudly on missing data:** If a required map tile is missing, if a river extends outside the map's latitude bounds (`-56°` to `60°`), or if no nearby river matches your expected area hint, the tool stops and logs a clear error instead of returning a chopped-off or made-up polygon.
 
-👉 **See the [Catchment Delineation Subproject README](catchment_delineation/README.md) and [Sphinx Documentation](docs/source/usage/catchment_delineation.rst) for full documentation, API reference, and CLI examples.**
+👉 **See the [Catchment Delineation Guide](catchment_delineation/README.md) and [Sphinx Documentation](docs/source/usage/catchment_delineation.rst) for step-by-step command-line and Python examples.**
 
 ## **Usage**
 

@@ -2,231 +2,144 @@
 Catchment Delineation
 =====================
 
-The ``catchment_delineation`` module provides high-performance, pure DEM flow-direction watershed delineation capabilities for ``googlehydrology``.
-It performs authentic reverse-flow breadth-first search (BFS) graph traversal on high-resolution (90m / 3 arc-second) D8 flow-direction matrices with seamless cross-tile boundary routing.
+The ``catchment_delineation`` module traces the boundary (polygon) and drainage area (:math:`\text{km}^2`) of the watershed upstream of any latitude and longitude point using 90-meter (3-arc-second) flow-direction maps.
 
---------------------
-Methodology & Design
---------------------
+-------------
+How It Works
+-------------
 
-* **D8 Flow Matrix Routing**: Traverses high-resolution ESRI D8 flow routing grids (HydroSHEDS v1.4 / MERIT Hydro) where each cell encodes downstream outflow direction.
-* **Seamless Multi-Tile Traversal**: Automatically bridges across 5°×5° tile boundaries without edge truncation or perimeter artifacts, reconstructing the true natural watershed basin geometry regardless of river basin size.
-* **Channel Outlet Snapping**: Given user-specified or gauge coordinates, evaluates upstream channel connectivity within a configurable window (default 12 cells ~1.1 km) to accurately snap coordinates to the physical stream outlet.
-* **Geodesic Area Calculation**: Integrates cell ground surface footprints with exact latitude scaling (:math:`\text{lat\_scale} \times \text{lon\_scale}`) to calculate accurate drainage area in :math:`\text{km}^2`.
-* **Run-Length Vectorization**: Combines row run-length raster interval fusion with Shapely ``unary_union`` and boundary simplification to output valid GeoJSON, GeoParquet, and ESRI Shapefile geometries.
-* **Coverage Boundary Detection**: Detects when pour points or upstream watersheds exceed global DEM coverage bounds (-56° to 60° latitude) and cleanly aborts to prevent partial or truncated polygons.
-* **Minimal Dependencies**: Pure Python implementation relying strictly on ``numpy``, ``shapely``, and ``geopandas`` (no GIS servers or GDAL runtime required).
-
------------------------------
-Data Sources & Cloud Storage
------------------------------
-
-In this open-source repository, DEM flow-direction grids and ancillary datasets are hosted canonically in Google Cloud Storage (GCS) under ``gs://open-multimet/``:
-
-Where the Paths Are
-^^^^^^^^^^^^^^^^^^^
-
-.. list-table:: Canonical Storage Locations
-   :widths: 25 35 40
-   :header-rows: 1
-
-   * - Resource
-     - Path / URI
-     - Description
-   * - **Remote DEM Tiles**
-     - ``gs://open-multimet/ancillary-data/dems/tiles_5deg/``
-     - 763 pre-sliced 5°×5° D8 flow-direction tiles (``uint8``, 6000×6000 cells, ~34 MB each)
-   * - **Master Continental DEMs**
-     - ``gs://open-multimet/ancillary-data/dems/{na,sa,eu,af,as,au}_dir_3s.tif``
-     - Full continental HydroSHEDS 3-arc-second flow-direction GeoTIFFs
-   * - **Remote Benchmark Catalog**
-     - ``gs://open-multimet/ancillary-data/benchmarks/benchmark_basins_1000.parquet``
-     - Stratified global evaluation catalog of 1,200 validated reference catchments
-   * - **Local Benchmark Catalog**
-     - ``~/ancillary-data/benchmarks/benchmark_basins_1000.parquet``
-     - Canonical local directory for benchmark evaluation datasets
-   * - **Caravan Master Coordinates**
-     - ``gs://open-multimet/caravan-new/all_caravan_coordinates.csv``
-     - Master coordinate catalog of 26,708 Caravan pour points across 21 subdatasets
-   * - **Rederived Catchments**
-     - ``gs://open-multimet/caravan-new/<collection>/shapefiles-rederived/<subdataset>/``
-     - Partitioned catchment polygons across the three Caravan provenance collections
-   * - **Local Tile Cache**
-     - ``~/.cache/googlehydrology/dem/``
-     - Default local directory where required DEM tiles are cached automatically on first use
-   * - **Custom User Path**
-     - ``--tiles-dir <path>`` or ``tiles_dir="<path>"``
-     - Optional user-supplied directory containing local ``.npy`` tiles
+* **Upstream Flow Tracing**: Each 90-meter grid cell in a D8 flow-direction map records which of its 8 neighboring cells water flows into. Starting from your outlet coordinate, the tool traces upstream through every cell that drains into that point.
+* **Crosses Tile Borders Seamlessly**: Elevation maps are stored in 5°×5° tiles (``6000 × 6000`` cells each). When a river basin crosses from one tile into another, the tool loads the neighboring tile automatically and stitches the basin into a single continuous polygon without cutting rivers off at tile edges.
+* **Snapping to the River Channel**: Streamflow gauge coordinates are often slightly off the center of a river on a 90-meter grid. The tool searches nearby grid cells (default ``12`` cells ≈ ``1.1 km``) to snap the point onto the stream channel.
+* **Optional Expected Area Hint**: On wide rivers (such as the Amazon or Danube) or when gauge coordinates are rounded, a small bankside creek may sit closer to the reported coordinate than the center of the main river. If you supply an approximate drainage area (``--expected-area`` or ``--area-col``), the tool searches up to ``80`` cells (``~7.2 km``) for the river channel matching that area (within ``±50%`` by default). **If no nearby channel matches the expected area, the tool logs an error and refuses to output a polygon.**
+* **Explicit Paths & Loud Errors**: Nothing is hardcoded. You always provide the path to your tile folder (or ``gs://`` bucket) and your output path. If a required tile is missing or a watershed crosses outside the map's latitude bounds (``-56°S`` to ``60°N``), the tool stops and raises an error rather than returning a partial or made-up polygon.
 
 ----------------
 Python API Usage
 ----------------
 
-Direct Access via ``googlehydrology``
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-.. code-block:: python
-
-   import googlehydrology
-
-   # Delineate a single catchment from coordinates
-   watershed = googlehydrology.delineate_dem(lat=39.6828, lon=-88.7729)
-
-   print("Catchment ID:", watershed["properties"]["catchment_id"])
-   print("Basin Area:", watershed["properties"]["area_km2"], "km²")
-   print("Upstream Cells:", watershed["properties"]["upstream_cells_count"])
-   print("Bounding Box:", watershed["properties"]["bbox"])
-
-Using ``DemDelineator`` Class
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Single Point
+^^^^^^^^^^^^
 
 .. code-block:: python
 
    from catchment_delineation import DemDelineator
 
-   # Uses GCS bucket with local cache (~/.cache/googlehydrology/dem/)
-   delineator = DemDelineator()
+   delineator = DemDelineator(tiles_dir="/path/to/tiles_5deg")
 
-   # Delineate single catchment
    feature = delineator.delineate(
        lat=39.6828,
        lon=-88.7729,
-       snap_window_cells=12,
        catchment_id="USGS_05592500",
+       expected_area_km2=480.0,  # optional expected drainage area in km²
    )
 
-   # Output is a GeoJSON Feature dict with standardized properties
-   print(feature["properties"])
+   print("Catchment ID:", feature["properties"]["catchment_id"])
+   print("Area (km²):", feature["properties"]["area_km2"])
+   print("Upstream Cells:", feature["properties"]["upstream_cells_count"])
 
-Batch Processing Coordinates
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Batch Processing Multiple Points
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: python
 
    from catchment_delineation import DemDelineator
 
-   delineator = DemDelineator()
+   delineator = DemDelineator(tiles_dir="/path/to/tiles_5deg")
 
    coords = [(39.6828, -88.7729), (40.4172, -86.8858)]
-   ids = ["DALTON_CITY", "LAFAYETTE"]
+   ids = ["camels_05592500", "camels_03335500"]
+   expected_areas = [480.0, 18821.0]  # optional
 
-   feature_collection = delineator.delineate_batch(coords, ids=ids)
+   feature_collection = delineator.delineate_batch(
+       coords=coords,
+       ids=ids,
+       expected_areas_km2=expected_areas,
+   )
 
    for feat in feature_collection["features"]:
        props = feat["properties"]
-       print(f"{props['catchment_id']}: {props['area_km2']} km²")
+       print(props["catchment_id"], props["area_km2"], props["status"])
 
-Using a Custom Local Tiles Directory
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Reading Tiles from Google Cloud Storage
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+When reading tiles from a ``gs://`` bucket, provide both ``gcs_uri`` and a local ``cache_dir`` where downloaded tiles will be stored:
 
 .. code-block:: python
 
    from catchment_delineation import DemDelineator
 
-   # Strictly load from custom directory (no GCS download or searching)
-   delineator = DemDelineator(tiles_dir="/path/to/custom/tiles")
-   watershed = delineator.delineate(lat=39.6828, lon=-88.7729)
+   delineator = DemDelineator(
+       gcs_uri="gs://your-bucket/tiles_5deg",
+       cache_dir="/tmp/dem_tile_cache",
+   )
+   feature = delineator.delineate(lat=39.6828, lon=-88.7729)
+   delineator.clean_created_cache()  # removes only tiles downloaded in this run
 
 ----------------------------
 Command-Line Interface (CLI)
 ----------------------------
 
-The package installs the ``delineate-catchment`` CLI command (also runnable via ``python -m catchment_delineation.cli``).
+The package installs the ``delineate-catchment`` command (also runnable via ``python -m catchment_delineation``).
 
 Single Coordinate Pair
 ^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: bash
 
-   # Output GeoJSON to stdout
-   delineate-catchment --lat 39.6828 --lon -88.7729 --pretty
-
-   # Save GeoJSON directly to file
-   delineate-catchment --lat 39.6828 --lon -88.7729 -o dalton_city.geojson
-
-Multiple Coordinate Pairs
-^^^^^^^^^^^^^^^^^^^^^^^^^
-
-.. code-block:: bash
-
+   # Save GeoJSON to a local file using local DEM tiles
    delineate-catchment \
-     --coords "39.6828,-88.7729" "40.4172,-86.8858" \
-     --pretty -o multi_basins.geojson
+     --lat 39.6828 \
+     --lon -88.7729 \
+     --tiles-dir /path/to/tiles_5deg \
+     -o dalton_city.geojson \
+     --pretty
 
-Batch Processing from CSV
-^^^^^^^^^^^^^^^^^^^^^^^^^
+   # Supply an expected drainage area hint (in km²)
+   delineate-catchment \
+     --lat 48.25 \
+     --lon 16.30 \
+     --expected-area 101750 \
+     --tiles-dir /path/to/tiles_5deg \
+     -o danube_vienna.geojson
 
-Given a CSV file ``gauges.csv`` with ``latitude`` and ``longitude`` headers:
+Batch Processing from a CSV or Parquet File
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Given a CSV file ``gauges.csv``:
 
 .. code-block:: text
 
-   gauge_id,latitude,longitude
-   USGS_05592500,39.6828,-88.7729
-   USGS_03335500,40.4172,-86.8858
+   gauge_id,latitude,longitude,expected_area_km2
+   camels_01013500,47.2374,-68.5826,2252.7
+   camels_03335500,40.4172,-86.8858,18821.0
 
-Run parallel delineation with 8 worker processes:
-
-.. code-block:: bash
-
-   delineate-catchment --csv gauges.csv --workers 8 -o basins.geojson
-
-Direct GCS Input and Output
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Delineate directly from GCS and write GeoParquet directly back to cloud storage:
+Run in parallel across 8 worker processes:
 
 .. code-block:: bash
 
    delineate-catchment \
-     --csv gs://open-multimet/caravan-new/all_caravan_coordinates.csv \
-     -o gs://open-multimet/caravan-new/all_delineated.geoparquet \
-     --workers 16 \
-     --clean-cache
+     --csv gauges.csv \
+     --area-col expected_area_km2 \
+     --tiles-dir /path/to/tiles_5deg \
+     --workers 8 \
+     -o basins.geoparquet
 
-Caravan Reorganization & Partitioned Outputs
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Saving in Standard Caravan Folder Structure
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-To delineate all 26,708 Caravan basins and automatically partition them into their canonical collections (``caravan-original``, ``caravan-extensions``, ``google-internal``) across all 21 subdatasets in all formats:
+When your ``gauge_id`` values use the Caravan ``<subdataset>_<id>`` convention (for example, ``camels_01013500`` or ``grdc_6340110``), ``--preserve-caravan-dirs`` saves outputs into ``<output-dir>/shapefiles/<subdataset>/<subdataset>_basin_shapes.*``:
 
 .. code-block:: bash
 
    delineate-catchment \
-     --csv gs://open-multimet/caravan-new/all_caravan_coordinates.csv \
-     --output-dir gs://open-multimet/caravan-new \
+     --csv gauges.csv \
+     --tiles-dir /path/to/tiles_5deg \
+     --output-dir /path/to/caravan_output \
      --preserve-caravan-dirs \
      --format all \
-     --workers 20 \
-     --clean-cache
-
-This automatically writes:
-
-* GeoParquet: ``<subdataset>_basin_shapes.geoparquet``
-* GeoJSON: ``<subdataset>_basin_shapes.geojson``
-* Full Shapefile suite: ``<subdataset>_basin_shapes.shp``, ``.shx``, ``.dbf``, ``.prj``, ``.cpg``
-
----------------------------
-Global Benchmarking Suite
----------------------------
-
-The package includes a comprehensive global benchmarking runner (``benchmark-catchment`` or ``python -m catchment_delineation.benchmark``) to evaluate delineation accuracy against official reference catchment polygons:
-
-* **1,200 Balanced Global Basins**: Dataset stratified equally across all 6 continents (200 each in Africa, Asia, Europe, North America, South America, Oceania), all 4 hemisphere quadrants (NW, NE, SW, SE), and 5 size tiers (micro to macro).
-* **Core Spatial Metrics**: Computes Intersection-over-Union (IoU / Jaccard Index), Dice similarity coefficient, relative area bias (:math:`\Delta \text{Area} \%`), and stream snapping distances.
-* **Hermetic Execution**: Slices required 5°×5° tiles on demand from ``gs://open-multimet/ancillary-data/dems/tiles_5deg/`` and benchmarks from ``gs://open-multimet/ancillary-data/benchmarks/benchmark_basins_1000.parquet`` (cached locally in ``~/ancillary-data/benchmarks/``).
-
-Running Benchmarks
-^^^^^^^^^^^^^^^^^^
-
-.. code-block:: bash
-
-   # Run 200-basin benchmark using 20 workers with automatic cache cleanup
-   benchmark-catchment --samples 200 --workers 20 --clean-cache -o benchmark_200.csv
-
-   # Run specific continents (e.g. Europe and Africa)
-   benchmark-catchment --continents Europe Africa --workers 8
-
-   # Filter by basin size tiers
-   benchmark-catchment --size-tiers 1_micro 2_small 3_medium 4_large 5_macro
+     --workers 8
 
 --------------------
 CLI Option Reference
@@ -236,7 +149,7 @@ Delineation CLI (``delineate-catchment``)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. list-table::
-   :widths: 25 15 20 40
+   :widths: 25 15 15 45
    :header-rows: 1
 
    * - Argument
@@ -246,11 +159,11 @@ Delineation CLI (``delineate-catchment``)
    * - ``--lat``
      - float
      - None
-     - Latitude of pour point outlet
+     - Latitude of the outlet point
    * - ``--lon``
      - float
      - None
-     - Longitude of pour point outlet
+     - Longitude of the outlet point
    * - ``--coords``
      - string(s)
      - None
@@ -258,35 +171,59 @@ Delineation CLI (``delineate-catchment``)
    * - ``--csv``
      - path / URI
      - None
-     - CSV/Parquet file path or ``gs://`` URI (shorthand ``caravan`` supported)
+     - Path to CSV/Parquet coordinate file (or Caravan directory)
    * - ``--id``
      - string
      - None
-     - Custom catchment ID for single-coordinate runs
-   * - ``--workers``, ``-w``
-     - int
-     - 1
-     - Number of parallel worker processes for batch processing
+     - Custom catchment ID for single-point runs
+   * - ``--expected-area``
+     - float
+     - None
+     - Optional expected drainage area (:math:`\text{km}^2`) for single-point snapping
+   * - ``--area-col``
+     - string
+     - None
+     - Optional column in ``--csv`` with expected drainage area (:math:`\text{km}^2`)
+   * - ``--area-tolerance``
+     - float
+     - 0.50
+     - Allowed relative tolerance around expected area (``0.50`` = ``±50%``)
+   * - ``--tiles-dir``
+     - path / URI
+     - None
+     - Folder (or ``gs://`` URI) containing 5°×5° ``.npy`` flow-direction tiles
+   * - ``--gcs-uri``
+     - URI
+     - None
+     - GCS URI containing 5°×5° ``.npy`` tiles (requires ``--cache-dir``)
+   * - ``--cache-dir``
+     - path
+     - None
+     - Local folder used to store tiles downloaded from ``--gcs-uri``
    * - ``--snap-window``
      - int
      - 12
      - Search window half-width in cells (~1.1 km at 90m resolution)
    * - ``--max-cells``
      - int
-     - 50000000
-     - Traversal safety limit for maximum upstream raster cells
+     - None
+     - Optional upstream cell limit (default ``None``: no river is cut off)
+   * - ``--workers``, ``-w``
+     - int
+     - 1
+     - Number of parallel worker processes for batch runs
    * - ``-o``, ``--output``
      - path / URI
      - stdout
-     - Output file path (``.geojson``, ``.parquet``, ``.shp``) or ``gs://`` URI
+     - Output file path (``.geojson``, ``.geoparquet``, ``.parquet``, ``.shp``)
    * - ``--output-dir``
      - path / URI
      - None
-     - Directory or GCS bucket prefix for partitioned catchment outputs
+     - Output directory for partitioned outputs
    * - ``--preserve-caravan-dirs``
      - flag
      - False
-     - Partition catchments into ``<collection>/shapefiles-rederived/<subdataset>/``
+     - Save outputs into ``<output-dir>/shapefiles/<subdataset>/<subdataset>_basin_shapes.*``
    * - ``--format``
      - choice
      - all
@@ -294,60 +231,23 @@ Delineation CLI (``delineate-catchment``)
    * - ``--clean-cache``
      - flag
      - False
-     - Automatically purge local DEM tile cache after completion
+     - Delete only the ``.npy`` tile files downloaded during this run
    * - ``--pretty``
      - flag
      - False
-     - Pretty-print output JSON with indentation
+     - Pretty-print JSON output with indentation
    * - ``--list-tiles``
      - flag
      - False
-     - Print available ``.npy`` tile files and exit
+     - List available ``.npy`` tile files in ``--tiles-dir`` and exit
 
 Benchmark CLI (``benchmark-catchment``)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. list-table::
-   :widths: 25 15 20 40
-   :header-rows: 1
+.. code-block:: bash
 
-   * - Argument
-     - Type
-     - Default
-     - Description
-   * - ``--samples``
-     - int
-     - 1000
-     - Number of basins to evaluate (max 1200)
-   * - ``--continents``
-     - strings
-     - None
-     - Filter by continents (e.g. ``Africa``, ``Europe``, ``North America``)
-   * - ``--size-tiers``
-     - strings
-     - None
-     - Filter by size tiers (``1_micro``, ``2_small``, ``3_medium``, ``4_large``, ``5_macro``)
-   * - ``--workers``
-     - int
-     - 8
-     - Number of parallel worker processes
-   * - ``--dataset``
-     - path / URI
-     - ``~/ancillary-data/benchmarks/...``
-     - Custom benchmark dataset file path or ``gs://`` URI
-   * - ``--tiles-dir``
-     - path
-     - None
-     - Optional local DEM tile folder (defaults to GCS auto-download)
-   * - ``--snap-window``
-     - int
-     - 12
-     - Outlet snap window half-width in cells (~1.1 km)
-   * - ``--clean-cache``
-     - flag
-     - False
-     - Automatically purge local DEM tile cache after benchmark completes
-   * - ``-o``, ``--output``
-     - path
-     - ``benchmark_results.csv``
-     - Output file path (``.csv`` or ``.parquet``) for detailed per-basin metrics
+   benchmark-catchment \
+     --dataset /path/to/benchmark_basins_1000.parquet \
+     --tiles-dir /path/to/tiles_5deg \
+     --workers 16 \
+     --output benchmark_results.csv
