@@ -71,10 +71,10 @@ import googlehydrology
 # Delineate a single catchment (e.g., Dalton City, IL)
 basin = googlehydrology.delineate_dem(lat=39.6828, lon=-88.7729)
 
-print("Catchment ID:", basin["properties"]["catchment_id"])
-print("Area (km²):", basin["properties"]["area_km2"])
-print("Upstream Cells:", basin["properties"]["upstream_cells_count"])
-print("Geometry Type:", basin["geometry"]["type"])
+print('Catchment ID:', basin['properties']['catchment_id'])
+print('Area (km²):', basin['properties']['area_km2'])
+print('Upstream Cells:', basin['properties']['upstream_cells_count'])
+print('Geometry Type:', basin['geometry']['type'])
 ```
 
 ### B. Using `DemDelineator` Class
@@ -90,11 +90,11 @@ feature = delineator.delineate(
     lat=39.6828,
     lon=-88.7729,
     snap_window_cells=4,  # Half-width of snap search window (~360m)
-    catchment_id="USGS_05592500",
+    catchment_id='USGS_05592500',
 )
 
 # Output is a standard GeoJSON Feature dict
-print(feature["properties"])
+print(feature['properties'])
 ```
 
 ### C. Batch Processing Multiple Coordinates
@@ -105,13 +105,13 @@ from catchment_delineation import DemDelineator
 delineator = DemDelineator()
 
 coords = [(39.6828, -88.7729), (40.4172, -86.8858)]
-ids = ["DALTON_CITY", "LAFAYETTE"]
+ids = ['DALTON_CITY', 'LAFAYETTE']
 
 feature_collection = delineator.delineate_batch(coords, ids=ids)
 
-for feat in feature_collection["features"]:
-  props = feat["properties"]
-  print(f"{props['catchment_id']}: {props['area_km2']:.1f} km²")
+for feat in feature_collection['features']:
+    props = feat['properties']
+    print(f'{props["catchment_id"]}: {props["area_km2"]:.1f} km²')
 ```
 
 ### D. Using a Custom Local Tiles Directory
@@ -120,7 +120,7 @@ for feat in feature_collection["features"]:
 from catchment_delineation import DemDelineator
 
 # Strict local loading (no GCS download or fallback searching)
-delineator = DemDelineator(tiles_dir="/path/to/custom/tiles")
+delineator = DemDelineator(tiles_dir='/path/to/custom/tiles')
 feature = delineator.delineate(lat=39.6828, lon=-88.7729)
 ```
 

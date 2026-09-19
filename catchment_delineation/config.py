@@ -1,66 +1,39 @@
-"""Configuration and constants for DEM catchment delineation."""
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-from pathlib import Path
-from typing import List, Tuple
+"""Grid and D8 flow-direction constants for DEM catchment delineation."""
 
 # ESRI D8 Flow Direction reverse inflow mapping:
 # (row_offset, col_offset, required_d8_value_in_neighbor)
-INFLOW_MAP: List[Tuple[int, int, int]] = [
-    (-1, 0, 4),    # North neighbor flows South (4)
-    (-1, 1, 8),    # Northeast neighbor flows Southwest (8)
-    (0, 1, 16),    # East neighbor flows West (16)
-    (1, 1, 32),    # Southeast neighbor flows Northwest (32)
-    (1, 0, 64),    # South neighbor flows North (64)
+INFLOW_MAP: list[tuple[int, int, int]] = [
+    (-1, 0, 4),  # North neighbor flows South (4)
+    (-1, 1, 8),  # Northeast neighbor flows Southwest (8)
+    (0, 1, 16),  # East neighbor flows West (16)
+    (1, 1, 32),  # Southeast neighbor flows Northwest (32)
+    (1, 0, 64),  # South neighbor flows North (64)
     (1, -1, 128),  # Southwest neighbor flows Northeast (128)
-    (0, -1, 1),    # West neighbor flows East (1)
-    (-1, -1, 2),   # Northwest neighbor flows Southeast (2)
+    (0, -1, 1),  # West neighbor flows East (1)
+    (-1, -1, 2),  # Northwest neighbor flows Southeast (2)
 ]
 
 # Resolution & Tile Grid Constants (HydroSHEDS / MERIT 3 arc-second ~90m)
 RES_DEG: float = 1.0 / 1200.0  # 3 arc-seconds (~90 meters at equator)
-TILE_DEG: float = 5.0          # 5x5 degrees per tile
-TILE_CELLS: int = 6000         # 5 deg * 1200 cells/deg = 6000 cells
+TILE_DEG: float = 5.0  # 5x5 degrees per tile
+TILE_CELLS: int = 6000  # 5 deg * 1200 cells/deg = 6000 cells
 
 # Geographic DEM Coverage Bounds (HydroSHEDS 3 arc-second SRTM global domain)
 DEM_MIN_LAT: float = -56.0
 DEM_MAX_LAT: float = 60.0
-
-
-# Cloud Storage Source URIs (Reorganized Canonical Bucket Layout)
-GCS_BUCKET_ROOT: str = "gs://open-multimet"
-
-# Ancillary Reference Layers
-GCS_ANCILLARY_URI: str = f"{GCS_BUCKET_ROOT}/ancillary-data"
-GCS_DEM_BUCKET_URI: str = f"{GCS_ANCILLARY_URI}/dems"
-GCS_TILES_URI: str = f"{GCS_DEM_BUCKET_URI}/tiles_5deg"
-GCS_ELEVATION_TILES_URI: str = f"{GCS_DEM_BUCKET_URI}/elevation_tiles_5deg"
-GCS_HYDROATLAS_LEV12_URI: str = f"{GCS_ANCILLARY_URI}/hydroatlas/hydro_atlas_lev12.parquet"
-GCS_BENCHMARKS_DIR_URI: str = f"{GCS_ANCILLARY_URI}/benchmarks"
-GCS_BENCHMARK_URI: str = f"{GCS_BENCHMARKS_DIR_URI}/benchmark_basins_1000.parquet"
-
-# Caravan Datasets & Output Contract
-GCS_CARAVAN_NEW_URI: str = f"{GCS_BUCKET_ROOT}/caravan-new"
-GCS_CARAVAN_COORDINATES_URI: str = f"{GCS_CARAVAN_NEW_URI}/all_caravan_coordinates.csv"
-GCS_CATCHMENT_POLYGONS_URI: str = f"{GCS_CARAVAN_NEW_URI}"
-
-# Backward compatibility alias
-GCS_DATA_URI: str = f"{GCS_BUCKET_ROOT}/data"
-
-# Local Canonical Ancillary Paths
-LOCAL_ANCILLARY_DIR: Path = Path.home() / "ancillary-data"
-LOCAL_BENCHMARKS_DIR: Path = LOCAL_ANCILLARY_DIR / "benchmarks"
-LOCAL_BENCHMARK_FILE: Path = LOCAL_BENCHMARKS_DIR / "benchmark_basins_1000.parquet"
-
-# Default local cache directory for DEM tiles downloaded from the gs bucket
-DEFAULT_CACHE_DIR: Path = Path.home() / ".cache" / "googlehydrology" / "dem"
-
-
-def get_default_cache_dir() -> Path:
-  """Returns the local cache directory for DEM tiles downloaded from the gs bucket."""
-  return DEFAULT_CACHE_DIR
-
-
-# Backwards compatibility alias
-get_default_tiles_dir = get_default_cache_dir
-
-
+DEM_MIN_LON: float = -180.0
+DEM_MAX_LON: float = 180.0

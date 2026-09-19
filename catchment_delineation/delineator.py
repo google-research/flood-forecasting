@@ -1,32 +1,57 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Pure DEM Flow-Direction Watershed Delineator.
 
-Performs authentic reverse-flow tree traversal on high-resolution (90m / 3 arc-second)
-D8 flow direction rasters (HydroSHEDS DIR / MERIT flwdir) with seamless multi-tile
-boundary traversal, delineating completely natural, curving watershed boundaries
-across arbitrary 5x5 degree tile boundaries without edge artifacts.
+Performs reverse-flow tree traversal on high-resolution (90m / 3 arc-second)
+D8 flow-direction rasters (HydroSHEDS DIR / MERIT flwdir) with seamless
+multi-tile boundary traversal across 5x5 degree tile boundaries.
 """
 
-from collections import deque
+from __future__ import annotations
+
+import contextlib
 import logging
 import math
-import os
+from collections import deque
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
+from typing import Any
+
 import numpy as np
-from shapely.geometry import MultiPolygon, Polygon, mapping, shape
+import rasterio.features
+from rasterio.transform import from_origin
+from shapely.geometry import Polygon, mapping, shape
 from shapely.ops import unary_union
 
 from catchment_delineation.config import (
     DEM_MAX_LAT,
+    DEM_MAX_LON,
     DEM_MIN_LAT,
-    GCS_TILES_URI,
+    DEM_MIN_LON,
     INFLOW_MAP,
     RES_DEG,
     TILE_CELLS,
     TILE_DEG,
-    get_default_cache_dir,
+)
+from catchment_delineation.gcs import (
+    download_tile_from_gcs,
+    is_gcs_path,
+    normalize_gcs_path,
 )
 from catchment_delineation.tiles import (
+    MIN_TILE_LAT_TOP,
     is_coord_in_coverage,
     is_tile_in_coverage,
     tile_key_to_filename,
@@ -34,542 +59,609 @@ from catchment_delineation.tiles import (
 
 logger = logging.getLogger(__name__)
 
+_SNAP_BFS_MAX_NODES: int = 5000
+_SNAP_BFS_MAX_DEPTH: int = 100
+_SNAP_DIST_PENALTY_WEIGHT: float = 2.0
+_METERS_PER_DEGREE: float = 111000.0
+_KM_PER_DEGREE: float = 111.0
+_SMALL_AREA_THRESHOLD_KM2: float = 0.1
+_STREAM_ORDER_1_MAX_KM2: float = 50.0
+_STREAM_ORDER_2_MAX_KM2: float = 500.0
+_COORD_SCALE: int = 10000
+
 
 class CatchmentCoverageError(ValueError):
-  """Raised when a requested catchment pour point or its upstream watershed
-  extends into an uncovered geographic region beyond DEM grid boundaries."""
-  pass
+    """Raised when a pour point or its watershed extends outside DEM bounds."""
+
+
+def build_missing_feature(
+    lat: float,
+    lon: float,
+    catchment_id: str | None,
+    reason: str,
+) -> dict[str, Any]:
+    """Build an explicit NaN/None Feature for missing or out-of-domain input."""
+    nan_val = float('nan')
+    return {
+        'type': 'Feature',
+        'properties': {
+            'catchment_id': catchment_id,
+            'gauge_id': catchment_id,
+            'area_km2': nan_val,
+            'area': nan_val,
+            'upstream_cells_count': None,
+            'tiles_spanned_count': None,
+            'grid_resolution': '90m (3 arc-second)',
+            'outlet': {
+                'input_latitude': lat,
+                'input_longitude': lon,
+                'latitude': nan_val,
+                'longitude': nan_val,
+                'reach_id': None,
+                'snap_distance_m': nan_val,
+            },
+            'reach_attributes': None,
+            'bbox': None,
+            'delineation_method': (
+                'DEM Digital Elevation Flow-Routing '
+                '(90m HydroSHEDS Multi-Tile Seamless Grid)'
+            ),
+            'delineation_mode': 'dem_flow_direction',
+            'status': f'MISSING_DATA: {reason}',
+        },
+        'geometry': None,
+    }
 
 
 class DemDelineator:
-  """High-performance multi-tile DEM watershed delineator using D8 flow direction matrices."""
+    """Multi-tile DEM watershed delineator using D8 flow-direction rasters."""
 
-  def __init__(
-      self,
-      tiles_dir: Optional[Union[str, Path]] = None,
-      cache_tiles: bool = True,
-      gcs_uri: str = GCS_TILES_URI,
-      cache_dir: Optional[Union[str, Path]] = None,
-  ):
-    """Initializes the DEM delineator.
+    def __init__(
+        self,
+        tiles_dir: str | Path | None = None,
+        *,
+        cache_tiles: bool = True,
+        gcs_uri: str | None = None,
+        cache_dir: str | Path | None = None,
+    ) -> None:
+        """Initialize the DEM delineator with explicit user-supplied I/O paths.
 
-    Args:
-        tiles_dir: Optional user-supplied directory containing DEM .npy tiles.
-          If provided, tiles are loaded exclusively from this path (no searching).
-          If None, tiles are loaded exclusively from the gs bucket (GCS_TILES_URI).
-        cache_tiles: If True, caches memory-mapped tile references in memory.
-        gcs_uri: GCS bucket URI for DEM tiles (default: gs://open-multimet/data/DEMs/tiles_5deg).
-        cache_dir: Local cache directory for tiles retrieved from GCS.
-    """
-    if tiles_dir is not None:
-      self.tiles_dir = Path(tiles_dir).expanduser().resolve()
-    else:
-      self.tiles_dir = None
+        Args:
+            tiles_dir: Local directory containing 5x5 degree DEM .npy tiles
+                (or a gs:// URI if gcs_uri is not set).
+            cache_tiles: Whether to memoize memory-mapped tile arrays in RAM.
+            gcs_uri: Explicit GCS URI containing 5x5 degree DEM .npy tiles.
+                Requires cache_dir to also be provided.
+            cache_dir: Explicit local directory used to store tiles downloaded
+                from gcs_uri.
+        """
+        if tiles_dir is not None and is_gcs_path(tiles_dir):
+            if gcs_uri is not None:
+                raise ValueError(
+                    'Provide either a gs:// tiles_dir or gcs_uri, not both.'
+                )
+            gcs_uri = normalize_gcs_path(tiles_dir)
+            tiles_dir = None
 
-    self.gcs_uri = gcs_uri
-    self.cache_dir = (
-        Path(cache_dir).expanduser() if cache_dir else get_default_cache_dir()
-    )
-    self.cache_tiles = cache_tiles
-    self._tile_cache: Dict[Tuple[int, int], Optional[np.ndarray]] = {}
-
-  def get_tile(self, lat_top: float, lon_left: float) -> Optional[np.ndarray]:
-    """Loads a 5x5 degree tile array with memory-mapping for instant retrieval.
-
-    Args:
-        lat_top: Northern boundary of the 5x5 degree tile (integer multiple of 5).
-        lon_left: Western boundary of the 5x5 degree tile (integer multiple of 5).
-
-    Returns:
-        Memory-mapped 2D numpy array of shape (6000, 6000), or None if tile not found.
-    """
-    key = (int(round(lat_top)), int(round(lon_left)))
-    if self.cache_tiles and key in self._tile_cache:
-      return self._tile_cache[key]
-
-    if not is_tile_in_coverage(key[0], key[1]):
-      if self.cache_tiles:
-        self._tile_cache[key] = None
-      return None
-
-    tile_name = tile_key_to_filename(key[0], key[1])
-
-    if self.tiles_dir is not None:
-      # User supplied their own path: ONLY load from this path, no searching or falling back
-      tile_path = self.tiles_dir / tile_name
-      if not tile_path.exists():
-        if self.cache_tiles:
-          self._tile_cache[key] = None
-        return None
-    else:
-      # Default: ONLY load from the gs bucket (cached locally)
-      tile_path = self.cache_dir / tile_name
-      if not tile_path.exists():
-        try:
-          from catchment_delineation.gcs import download_tile_from_gcs
-
-          tile_path = download_tile_from_gcs(
-              key[0], key[1], target_dir=self.cache_dir, source_uri=self.gcs_uri
-          )
-        except Exception as e:
-          logger.debug("Tile %s download skipped or failed: %s", tile_name, e)
-          if self.cache_tiles:
-            self._tile_cache[key] = None
-          return None
-
-    try:
-      arr = np.load(tile_path, mmap_mode="r")
-      if self.cache_tiles:
-        self._tile_cache[key] = arr
-      return arr
-    except Exception as e:
-      logger.debug("Error loading DEM tile %s: %s", tile_path, e)
-      if self.cache_tiles:
-        self._tile_cache[key] = None
-      return None
-
-  def snap_outlet(
-      self,
-      lat: float,
-      lon: float,
-      snap_window_cells: int = 4,
-  ) -> Tuple[float, float, int, int, Tuple[int, int], float]:
-    """Snaps input coordinates to the nearest channel outlet cell within search window.
-
-    Args:
-        lat: Target latitude.
-        lon: Target longitude.
-        snap_window_cells: Half-width of search box in grid cells.
-
-    Returns:
-        Tuple of (snapped_lat, snapped_lon, best_r, best_c, start_key, snap_distance_m).
-    """
-    if not is_coord_in_coverage(lat, lon):
-      raise CatchmentCoverageError(
-          f"Pour point coordinates ({lat:.4f}, {lon:.4f}) are outside the global DEM "
-          f"coverage domain ({DEM_MIN_LAT}° to {DEM_MAX_LAT}° latitude). "
-          "Catchment cannot be delineated."
-      )
-
-    lat_top = float(math.ceil(lat / TILE_DEG) * TILE_DEG)
-    lon_left = float(math.floor(lon / TILE_DEG) * TILE_DEG)
-
-    r0 = int(round((lat_top - lat) / RES_DEG))
-    c0 = int(round((lon - lon_left) / RES_DEG))
-
-    r0 = max(0, min(TILE_CELLS - 1, r0))
-    c0 = max(0, min(TILE_CELLS - 1, c0))
-
-    start_key = (int(round(lat_top)), int(round(lon_left)))
-    start_grid = self.get_tile(*start_key)
-
-    if start_grid is None:
-      raise CatchmentCoverageError(
-          f"DEM tile {tile_key_to_filename(*start_key)} not found for coordinates "
-          f"({lat:.4f}, {lon:.4f}). Catchment cannot be delineated."
-      )
-
-    best_r, best_c = r0, c0
-    best_cnt = -1
-
-    for dr in range(-snap_window_cells, snap_window_cells + 1):
-      for dc in range(-snap_window_cells, snap_window_cells + 1):
-        tr, tc = r0 + dr, c0 + dc
-        if 0 <= tr < TILE_CELLS and 0 <= tc < TILE_CELLS:
-          # Bounded local search to measure upstream channel connectivity
-          sq = deque([(tr, tc, 0)])
-          svis = {(tr, tc)}
-          cnt = 0
-          while sq and cnt < 5000:
-            cr, cc, depth = sq.popleft()
-            cnt += 1
-            if depth >= 100:
-              continue
-            for d_r, d_c, req in INFLOW_MAP:
-              nr, nc = cr + d_r, cc + d_c
-              if 0 <= nr < TILE_CELLS and 0 <= nc < TILE_CELLS:
-                if (nr, nc) not in svis and start_grid[nr, nc] == req:
-                  svis.add((nr, nc))
-                  sq.append((nr, nc, depth + 1))
-          dist_penalty = float(math.hypot(dr, dc)) * 2.0
-          score = cnt - dist_penalty
-          if score > best_cnt:
-            best_cnt = score
-            best_r, best_c = tr, tc
-
-    outlet_lat = lat_top - best_r * RES_DEG
-    outlet_lon = lon_left + best_c * RES_DEG
-    snap_dist_m = float(
-        math.hypot(
-            (outlet_lat - lat) * 111000.0,
-            (outlet_lon - lon) * 111000.0 * math.cos(math.radians(lat)),
-        )
-    )
-
-    return outlet_lat, outlet_lon, best_r, best_c, start_key, snap_dist_m
-
-  def delineate(
-      self,
-      lat: float,
-      lon: float,
-      snap_window_cells: int = 12,
-      max_cells: int = 50000000,
-      simplify_tolerance: Optional[float] = None,
-      catchment_id: Optional[str] = None,
-  ) -> Dict[str, Any]:
-    """Delineates the upstream catchment basin draining to (lat, lon) on the DEM grid.
-
-    Seamlessly traverses across contiguous 5x5 degree tile boundaries.
-
-    Args:
-        lat: Target latitude.
-        lon: Target longitude.
-        snap_window_cells: Half-width of search box in grid cells to find local channel.
-        max_cells: Safety limit for total cells traversed.
-        simplify_tolerance: Geometry simplification tolerance in degrees (default: 0.4 * RES_DEG).
-        catchment_id: Custom catchment identifier string (auto-generated if None).
-
-    Returns:
-        GeoJSON Feature dict with natural multi-tile polygon geometry and properties.
-    """
-    (
-        outlet_lat,
-        outlet_lon,
-        best_r,
-        best_c,
-        start_key,
-        snap_dist_m,
-    ) = self.snap_outlet(lat, lon, snap_window_cells=snap_window_cells)
-
-    # 1. Multi-Tile BFS Reverse Flow Traversal
-    q = deque([(start_key, best_r, best_c)])
-    visited_tiles: Dict[Tuple[int, int], np.ndarray] = {
-        start_key: np.zeros((TILE_CELLS, TILE_CELLS), dtype=bool)
-    }
-    visited_tiles[start_key][best_r, best_c] = True
-    total_accum = 0
-
-    while q and total_accum < max_cells:
-      (t_lat, t_lon), cr, cc = q.popleft()
-      total_accum += 1
-
-      for dr, dc, req_val in INFLOW_MAP:
-        nr, nc = cr + dr, cc + dc
-        nt_lat, nt_lon = t_lat, t_lon
-
-        if nr < 0:
-          nr += TILE_CELLS
-          nt_lat += int(TILE_DEG)
-        elif nr >= TILE_CELLS:
-          nr -= TILE_CELLS
-          nt_lat -= int(TILE_DEG)
-
-        if nc < 0:
-          nc += TILE_CELLS
-          nt_lon -= int(TILE_DEG)
-        elif nc >= TILE_CELLS:
-          nc -= TILE_CELLS
-          nt_lon += int(TILE_DEG)
-
-        # Boundary checks: detect if watershed extends into uncovered regions
-        if not is_tile_in_coverage(nt_lat, nt_lon):
-          if nt_lat > int(DEM_MAX_LAT):
-            raise CatchmentCoverageError(
-                f"Watershed extends north past the DEM coverage boundary ({DEM_MAX_LAT}°N) "
-                f"at longitude {t_lon + cc * RES_DEG:.4f}°. "
-                "Delineation stopped to prevent returning a partial or misleading catchment."
+        if tiles_dir is not None and gcs_uri is not None:
+            raise ValueError(
+                'Provide either tiles_dir (local) or gcs_uri (GCS), not both.'
             )
-          if nt_lat < -55:
-            raise CatchmentCoverageError(
-                f"Watershed extends south past the DEM coverage boundary ({DEM_MIN_LAT}°S) "
-                f"at longitude {t_lon + cc * RES_DEG:.4f}°. "
-                "Delineation stopped to prevent returning a partial or misleading catchment."
-            )
-          continue
 
-        nkey = (nt_lat, nt_lon)
-        if nkey not in visited_tiles:
-          ngrid = self.get_tile(*nkey)
-          if ngrid is None:
-            if self.tiles_dir is not None:
-              raise CatchmentCoverageError(
-                  f"Watershed extends into missing tile {tile_key_to_filename(*nkey)} not "
-                  f"found in user-provided tiles directory ({self.tiles_dir}). "
-                  "Delineation stopped to prevent returning a partial or misleading catchment."
-              )
-            continue
-          visited_tiles[nkey] = np.zeros((TILE_CELLS, TILE_CELLS), dtype=bool)
+        if tiles_dir is None and gcs_uri is None:
+            raise ValueError(
+                'An explicit tile source is required: pass tiles_dir '
+                '(local directory) or gcs_uri + cache_dir.'
+            )
+
+        if tiles_dir is not None:
+            self.tiles_dir: Path | None = Path(tiles_dir).expanduser().resolve()
+            self.gcs_uri: str | None = None
+            self.cache_dir: Path | None = (
+                Path(cache_dir).expanduser().resolve() if cache_dir else None
+            )
+            self._created_cache_dir = False
         else:
-          ngrid = self.get_tile(*nkey)
-          if ngrid is None:
-            continue
+            if cache_dir is None:
+                raise ValueError(
+                    'An explicit cache_dir is required when using gcs_uri.'
+                )
+            self.tiles_dir = None
+            self.gcs_uri = normalize_gcs_path(gcs_uri)  # type: ignore[arg-type]
+            resolved_cache = Path(cache_dir).expanduser().resolve()
+            self._created_cache_dir = not resolved_cache.exists()
+            self.cache_dir = resolved_cache
 
-        v_mask = visited_tiles[nkey]
-        if not v_mask[nr, nc] and ngrid[nr, nc] == req_val:
-          v_mask[nr, nc] = True
-          q.append((nkey, nr, nc))
+        self.cache_tiles = cache_tiles
+        self._tile_cache: dict[tuple[int, int], np.ndarray] = {}
+        self.created_cache_files: set[Path] = set()
 
-    # 2. Calculate accurate ground area summed across all visited tiles
+    def clean_created_cache(self) -> None:
+        """Delete only the tile files created in cache_dir by this instance."""
+        for file_path in list(self.created_cache_files):
+            if file_path.is_file():
+                with contextlib.suppress(OSError):
+                    file_path.unlink()
+            self.created_cache_files.discard(file_path)
+        if (
+            self._created_cache_dir
+            and self.cache_dir is not None
+            and self.cache_dir.is_dir()
+            and not any(self.cache_dir.iterdir())
+        ):
+            with contextlib.suppress(OSError):
+                self.cache_dir.rmdir()
+
+    def get_tile(self, lat_top: float, lon_left: float) -> np.ndarray:
+        """Load a 5x5 degree (6000, 6000) uint8 tile array or raise on failure.
+
+        Args:
+            lat_top: Northern boundary of the 5x5 degree tile.
+            lon_left: Western boundary of the 5x5 degree tile.
+
+        Returns:
+            Memory-mapped 2D uint8 numpy array of shape (6000, 6000).
+
+        Raises:
+            CatchmentCoverageError: If the tile coordinates are out of domain.
+            FileNotFoundError: If the tile does not exist in tiles_dir.
+            RuntimeError: If downloading the tile from GCS fails.
+            ValueError: If the loaded tile array has invalid shape or dtype.
+        """
+        key = (int(round(lat_top)), int(round(lon_left)))
+        if self.cache_tiles and key in self._tile_cache:
+            return self._tile_cache[key]
+
+        tile_name = tile_key_to_filename(key[0], key[1])
+        if not is_tile_in_coverage(key[0], key[1]):
+            raise CatchmentCoverageError(
+                f'DEM tile {tile_name} is outside the global DEM coverage '
+                f'domain ({DEM_MIN_LAT}° to {DEM_MAX_LAT}° latitude, '
+                f'{DEM_MIN_LON}° to {DEM_MAX_LON}° longitude).'
+            )
+
+        if self.tiles_dir is not None:
+            tile_path = self.tiles_dir / tile_name
+            if not tile_path.is_file():
+                raise FileNotFoundError(
+                    f'Required DEM tile {tile_name} not found in '
+                    f'user-supplied tiles_dir ({self.tiles_dir}).'
+                )
+        else:
+            assert self.cache_dir is not None
+            assert self.gcs_uri is not None
+            tile_path = self.cache_dir / tile_name
+            if not tile_path.is_file():
+                tile_path = download_tile_from_gcs(
+                    key[0],
+                    key[1],
+                    target_dir=self.cache_dir,
+                    source_uri=self.gcs_uri,
+                    created_files=self.created_cache_files,
+                )
+
+        arr = np.load(tile_path, mmap_mode='r')
+        if arr.shape != (TILE_CELLS, TILE_CELLS) or arr.dtype != np.uint8:
+            raise ValueError(
+                f'Invalid DEM tile {tile_path}: expected shape '
+                f'({TILE_CELLS}, {TILE_CELLS}) and dtype uint8, '
+                f'got shape {arr.shape} and dtype {arr.dtype}.'
+            )
+
+        if self.cache_tiles:
+            self._tile_cache[key] = arr
+        return arr
+
+    def snap_outlet(
+        self,
+        lat: float,
+        lon: float,
+        snap_window_cells: int = 12,
+    ) -> tuple[float, float, int, int, tuple[int, int], float]:
+        """Snap input coordinates to the nearest channel outlet cell."""
+        if not (math.isfinite(lat) and math.isfinite(lon)):
+            raise CatchmentCoverageError(
+                f'Pour point coordinates ({lat}, {lon}) are missing or '
+                'non-finite. Catchment cannot be delineated.'
+            )
+        if not is_coord_in_coverage(lat, lon):
+            raise CatchmentCoverageError(
+                f'Pour point coordinates ({lat:.4f}, {lon:.4f}) are outside '
+                f'the global DEM coverage domain ({DEM_MIN_LAT}° to '
+                f'{DEM_MAX_LAT}° latitude, {DEM_MIN_LON}° to {DEM_MAX_LON}° '
+                'longitude). Catchment cannot be delineated.'
+            )
+
+        lat_top = float(math.ceil(lat / TILE_DEG) * TILE_DEG)
+        lon_left = float(math.floor(lon / TILE_DEG) * TILE_DEG)
+
+        r0 = int(round((lat_top - lat) / RES_DEG))
+        c0 = int(round((lon - lon_left) / RES_DEG))
+        r0 = max(0, min(TILE_CELLS - 1, r0))
+        c0 = max(0, min(TILE_CELLS - 1, c0))
+
+        start_key = (int(round(lat_top)), int(round(lon_left)))
+        start_grid = self.get_tile(*start_key)
+
+        best_r, best_c = r0, c0
+        best_score = -1.0
+
+        for dr in range(-snap_window_cells, snap_window_cells + 1):
+            for dc in range(-snap_window_cells, snap_window_cells + 1):
+                tr, tc = r0 + dr, c0 + dc
+                if 0 <= tr < TILE_CELLS and 0 <= tc < TILE_CELLS:
+                    sq = deque([(tr, tc, 0)])
+                    svis = {(tr, tc)}
+                    cnt = 0
+                    while sq and cnt < _SNAP_BFS_MAX_NODES:
+                        cr, cc, depth = sq.popleft()
+                        cnt += 1
+                        if depth >= _SNAP_BFS_MAX_DEPTH:
+                            continue
+                        for d_r, d_c, req in INFLOW_MAP:
+                            nr, nc = cr + d_r, cc + d_c
+                            if (
+                                0 <= nr < TILE_CELLS
+                                and 0 <= nc < TILE_CELLS
+                                and (nr, nc) not in svis
+                                and start_grid[nr, nc] == req
+                            ):
+                                svis.add((nr, nc))
+                                sq.append((nr, nc, depth + 1))
+                    dist_penalty = (
+                        float(math.hypot(dr, dc)) * _SNAP_DIST_PENALTY_WEIGHT
+                    )
+                    score = cnt - dist_penalty
+                    if score > best_score:
+                        best_score = score
+                        best_r, best_c = tr, tc
+
+        outlet_lat = lat_top - best_r * RES_DEG
+        outlet_lon = lon_left + best_c * RES_DEG
+        snap_dist_m = float(
+            math.hypot(
+                (outlet_lat - lat) * _METERS_PER_DEGREE,
+                (outlet_lon - lon)
+                * _METERS_PER_DEGREE
+                * math.cos(math.radians(lat)),
+            )
+        )
+        return outlet_lat, outlet_lon, best_r, best_c, start_key, snap_dist_m
+
+    def delineate(
+        self,
+        lat: float,
+        lon: float,
+        snap_window_cells: int = 12,
+        max_cells: int | None = None,
+        simplify_tolerance: float | None = None,
+        catchment_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Delineate the upstream catchment draining to (lat, lon).
+
+        Args:
+            lat: Target latitude.
+            lon: Target longitude.
+            snap_window_cells: Half-width of local channel snap window.
+            max_cells: Optional hard cell cap. Defaults to None (no cap). If
+                specified and exceeded, raises CatchmentCoverageError rather
+                than returning a truncated catchment.
+            simplify_tolerance: Geometry simplification tolerance in degrees.
+            catchment_id: Optional identifier for the catchment feature.
+
+        Returns:
+            GeoJSON Feature dict with multi-tile polygon geometry.
+        """
+        (
+            outlet_lat,
+            outlet_lon,
+            best_r,
+            best_c,
+            start_key,
+            snap_dist_m,
+        ) = self.snap_outlet(lat, lon, snap_window_cells=snap_window_cells)
+
+        q = deque([(start_key, best_r, best_c)])
+        visited_tiles: dict[tuple[int, int], np.ndarray] = {
+            start_key: np.zeros((TILE_CELLS, TILE_CELLS), dtype=bool)
+        }
+        visited_tiles[start_key][best_r, best_c] = True
+        total_accum = 0
+
+        while q:
+            if max_cells is not None and total_accum >= max_cells:
+                raise CatchmentCoverageError(
+                    f'Watershed exceeded max_cells={max_cells} with '
+                    f'{len(q)} upstream cells still queued. Delineation '
+                    'aborted to prevent returning a truncated catchment.'
+                )
+            (t_lat, t_lon), cr, cc = q.popleft()
+            total_accum += 1
+
+            for dr, dc, req_val in INFLOW_MAP:
+                nr, nc = cr + dr, cc + dc
+                nt_lat, nt_lon = t_lat, t_lon
+
+                if nr < 0:
+                    nr += TILE_CELLS
+                    nt_lat += int(TILE_DEG)
+                elif nr >= TILE_CELLS:
+                    nr -= TILE_CELLS
+                    nt_lat -= int(TILE_DEG)
+
+                if nc < 0:
+                    nc += TILE_CELLS
+                    nt_lon -= int(TILE_DEG)
+                elif nc >= TILE_CELLS:
+                    nc -= TILE_CELLS
+                    nt_lon += int(TILE_DEG)
+
+                if not is_tile_in_coverage(nt_lat, nt_lon):
+                    if nt_lat > int(DEM_MAX_LAT):
+                        raise CatchmentCoverageError(
+                            'Watershed extends north past the DEM coverage '
+                            f'boundary ({DEM_MAX_LAT}°N) at longitude '
+                            f'{t_lon + cc * RES_DEG:.4f}°. Delineation '
+                            'stopped to prevent returning a partial catchment.'
+                        )
+                    if nt_lat < MIN_TILE_LAT_TOP:
+                        raise CatchmentCoverageError(
+                            'Watershed extends south past the DEM coverage '
+                            f'boundary ({DEM_MIN_LAT}°S) at longitude '
+                            f'{t_lon + cc * RES_DEG:.4f}°. Delineation '
+                            'stopped to prevent returning a partial catchment.'
+                        )
+                    raise CatchmentCoverageError(
+                        'Watershed extends past the longitude domain boundary '
+                        f'into tile ({nt_lat}, {nt_lon}). Delineation '
+                        'stopped to prevent returning a partial catchment.'
+                    )
+
+                nkey = (nt_lat, nt_lon)
+                ngrid = self.get_tile(*nkey)
+                if nkey not in visited_tiles:
+                    visited_tiles[nkey] = np.zeros(
+                        (TILE_CELLS, TILE_CELLS), dtype=bool
+                    )
+
+                v_mask = visited_tiles[nkey]
+                if not v_mask[nr, nc] and ngrid[nr, nc] == req_val:
+                    v_mask[nr, nc] = True
+                    q.append((nkey, nr, nc))
+
+        total_area_km2 = _compute_visited_area_km2(visited_tiles)
+
+        if simplify_tolerance is None:
+            simplify_tolerance = RES_DEG * 0.4
+
+        tile_polys: list[Polygon] = []
+        for (t_lat, t_lon), mask in visited_tiles.items():
+            if mask.any():
+                poly_part = self._vectorize_tile_mask(
+                    mask, float(t_lat), float(t_lon), simplify_tolerance
+                )
+                tile_polys.append(poly_part)
+
+        if not tile_polys:
+            raise RuntimeError(
+                'Failed to vectorize delineated catchment mask into a polygon.'
+            )
+        if len(tile_polys) == 1:
+            poly = tile_polys[0]
+        else:
+            poly = unary_union(tile_polys)
+            if not poly.is_valid:
+                poly = poly.buffer(0)
+            poly = poly.simplify(simplify_tolerance)
+
+        bounds = poly.bounds
+        bbox_dict = {
+            'min_lon': round(float(bounds[0]), 5),
+            'min_lat': round(float(bounds[1]), 5),
+            'max_lon': round(float(bounds[2]), 5),
+            'max_lat': round(float(bounds[3]), 5),
+        }
+
+        if catchment_id is None:
+            lat_tag = abs(int(outlet_lat * _COORD_SCALE))
+            lon_tag = abs(int(outlet_lon * _COORD_SCALE))
+            catchment_id = f'catchment_dem_{lat_tag}_{lon_tag}'
+
+        if total_area_km2 < _STREAM_ORDER_1_MAX_KM2:
+            stream_order = 1
+        elif total_area_km2 < _STREAM_ORDER_2_MAX_KM2:
+            stream_order = 2
+        else:
+            stream_order = 3
+
+        return {
+            'type': 'Feature',
+            'properties': {
+                'catchment_id': catchment_id,
+                'gauge_id': catchment_id,
+                'area_km2': total_area_km2,
+                'area': total_area_km2,
+                'upstream_cells_count': int(total_accum),
+                'tiles_spanned_count': sum(
+                    1 for m in visited_tiles.values() if m.any()
+                ),
+                'grid_resolution': '90m (3 arc-second)',
+                'outlet': {
+                    'input_latitude': lat,
+                    'input_longitude': lon,
+                    'latitude': round(outlet_lat, 5),
+                    'longitude': round(outlet_lon, 5),
+                    'reach_id': f'DEM_{int(best_r)}_{int(best_c)}',
+                    'snap_distance_m': round(snap_dist_m, 1),
+                },
+                'reach_attributes': {
+                    'reach_id': f'DEM_CELL_{int(best_r)}_{int(best_c)}',
+                    'dataset': 'dem_flow_direction',
+                    'river_name': (
+                        f'DEM Flow Path ({outlet_lat:.4f}°N, '
+                        f'{outlet_lon:.4f}°E)'
+                    ),
+                    'stream_order': stream_order,
+                    'upstream_area_km2': total_area_km2,
+                },
+                'bbox': bbox_dict,
+                'delineation_method': (
+                    'DEM Digital Elevation Flow-Routing '
+                    '(90m HydroSHEDS Multi-Tile Seamless Grid)'
+                ),
+                'delineation_mode': 'dem_flow_direction',
+                'status': 'SUCCESS',
+            },
+            'geometry': mapping(poly),
+        }
+
+    def delineate_batch(
+        self,
+        coords: Iterable[tuple[float, float]],
+        ids: Iterable[str | None] | None = None,
+        snap_window_cells: int = 12,
+        max_cells: int | None = None,
+        simplify_tolerance: float | None = None,
+    ) -> dict[str, Any]:
+        """Delineate catchments for multiple coordinates.
+
+        Missing or out-of-coverage inputs emit explicit NaN/None Feature records
+        so missing data in always produces missing data out. Missing tiles or
+        I/O failures raise immediately.
+        """
+        coords_list = list(coords)
+        ids_list = list(ids) if ids is not None else [None] * len(coords_list)
+        features: list[dict[str, Any]] = []
+
+        for (lat, lon), cid in zip(coords_list, ids_list, strict=True):
+            try:
+                feat = self.delineate(
+                    lat=lat,
+                    lon=lon,
+                    snap_window_cells=snap_window_cells,
+                    max_cells=max_cells,
+                    simplify_tolerance=simplify_tolerance,
+                    catchment_id=cid,
+                )
+                features.append(feat)
+            except CatchmentCoverageError as err:
+                logger.warning(
+                    'Catchment %s at (%s, %s) out of coverage or missing: %s',
+                    cid or f'{lat},{lon}',
+                    lat,
+                    lon,
+                    err,
+                )
+                features.append(build_missing_feature(lat, lon, cid, str(err)))
+
+        return {
+            'type': 'FeatureCollection',
+            'features': features,
+        }
+
+    def _vectorize_tile_mask(
+        self,
+        mask: np.ndarray,
+        lat_top: float,
+        lon_left: float,
+        simplify_tolerance: float,
+    ) -> Polygon:
+        """Convert a 2D boolean tile mask into a simplified Shapely Polygon."""
+        row_indices = np.where(mask.any(axis=1))[0]
+        col_indices = np.where(mask.any(axis=0))[0]
+        if row_indices.size == 0 or col_indices.size == 0:
+            raise ValueError('Cannot vectorize an empty tile mask.')
+
+        min_r, max_r = int(row_indices[0]), int(row_indices[-1])
+        min_c, max_c = int(col_indices[0]), int(col_indices[-1])
+        sub_mask = mask[min_r : max_r + 1, min_c : max_c + 1]
+
+        sub_lat_top = lat_top - min_r * RES_DEG
+        sub_lon_left = lon_left + min_c * RES_DEG
+
+        transform = from_origin(sub_lon_left, sub_lat_top, RES_DEG, RES_DEG)
+        shapes = rasterio.features.shapes(
+            sub_mask.astype(np.uint8), mask=sub_mask, transform=transform
+        )
+        polys = [shape(geom) for geom, val in shapes if val == 1]
+        if not polys:
+            raise RuntimeError(
+                'rasterio.features.shapes produced no polygons for non-empty '
+                'mask.'
+            )
+
+        poly = polys[0] if len(polys) == 1 else unary_union(polys)
+        if not poly.is_valid:
+            poly = poly.buffer(0)
+        if simplify_tolerance:
+            poly = poly.simplify(simplify_tolerance)
+        return poly
+
+
+def _compute_visited_area_km2(
+    visited_tiles: dict[tuple[int, int], np.ndarray],
+) -> float:
+    """Compute surface area in km2 using per-row latitude cosine scaling."""
+    lat_scale = RES_DEG * _KM_PER_DEGREE
+    row_offsets = (np.arange(TILE_CELLS, dtype=np.float64) + 0.5) * RES_DEG
     total_area_km2 = 0.0
     for (t_lat, _), mask in visited_tiles.items():
-      cell_cnt = int(mask.sum())
-      if cell_cnt > 0:
-        mid_lat = t_lat - 2.5
-        lat_scale = RES_DEG * 111.0
-        lon_scale = RES_DEG * 111.0 * math.cos(math.radians(mid_lat))
-        total_area_km2 += cell_cnt * lat_scale * lon_scale
-    if total_area_km2 < 0.1:
-      total_area_km2 = round(float(total_area_km2), 4)
-    else:
-      total_area_km2 = round(float(total_area_km2), 1)
+        row_counts = mask.sum(axis=1)
+        if not np.any(row_counts):
+            continue
+        row_lats_rad = np.radians(float(t_lat) - row_offsets)
+        row_lon_scales = RES_DEG * _KM_PER_DEGREE * np.cos(row_lats_rad)
+        total_area_km2 += float(np.sum(row_counts * lat_scale * row_lon_scales))
 
-    # 3. Vectorize boolean raster masks across all visited tiles into unified polygon
-    if simplify_tolerance is None:
-      simplify_tolerance = RES_DEG * 0.4
-
-    tile_polys = []
-    for (t_lat, t_lon), mask in visited_tiles.items():
-      if mask.any():
-        p = self._vectorize_tile_mask(
-            mask, float(t_lat), float(t_lon), simplify_tolerance
-        )
-        if p and not p.is_empty:
-          tile_polys.append(p)
-
-    if not tile_polys:
-      p0 = (outlet_lon, outlet_lat)
-      poly = Polygon([
-          (p0[0], p0[1]),
-          (p0[0] + RES_DEG, p0[1]),
-          (p0[0] + RES_DEG, p0[1] - RES_DEG),
-          (p0[0], p0[1] - RES_DEG),
-      ])
-    elif len(tile_polys) == 1:
-      poly = tile_polys[0]
-    else:
-      poly = unary_union(tile_polys)
-      if not poly.is_valid:
-        poly = poly.buffer(0)
-      poly = poly.simplify(simplify_tolerance)
-
-    # Compute bounding box
-    bounds = poly.bounds
-    bbox_dict = {
-        "min_lon": round(float(bounds[0]), 5),
-        "min_lat": round(float(bounds[1]), 5),
-        "max_lon": round(float(bounds[2]), 5),
-        "max_lat": round(float(bounds[3]), 5),
-    }
-
-    if catchment_id is None:
-      catchment_id = (
-          f"catchment_dem_{abs(int(outlet_lat * 10000))}_{abs(int(outlet_lon * 10000))}"
-      )
-
-    geojson_feature = {
-        "type": "Feature",
-        "properties": {
-            "catchment_id": catchment_id,
-            "area_km2": total_area_km2,
-            "upstream_cells_count": int(total_accum),
-            "tiles_spanned_count": len(
-                [k for k, m in visited_tiles.items() if m.any()]
-            ),
-            "grid_resolution": "90m (3 arc-second)",
-            "outlet": {
-                "input_latitude": lat,
-                "input_longitude": lon,
-                "latitude": round(outlet_lat, 5),
-                "longitude": round(outlet_lon, 5),
-                "reach_id": f"DEM_{int(best_r)}_{int(best_c)}",
-                "snap_distance_m": round(snap_dist_m, 1),
-            },
-            "reach_attributes": {
-                "reach_id": f"DEM_CELL_{int(best_r)}_{int(best_c)}",
-                "dataset": "dem_flow_direction",
-                "river_name": (
-                    f"DEM Flow Path ({outlet_lat:.4f}°N, {outlet_lon:.4f}°E)"
-                ),
-                "stream_order": (
-                    1
-                    if total_area_km2 < 50
-                    else (2 if total_area_km2 < 500 else 3)
-                ),
-                "upstream_area_km2": total_area_km2,
-            },
-            "bbox": bbox_dict,
-            "delineation_method": (
-                "DEM Digital Elevation Flow-Routing (90m HydroSHEDS Multi-Tile Seamless Grid)"
-            ),
-            "delineation_mode": "dem_flow_direction",
-        },
-        "geometry": mapping(poly),
-    }
-
-    return geojson_feature
-
-  def delineate_batch(
-      self,
-      coords: Iterable[Tuple[float, float]],
-      ids: Optional[Iterable[str]] = None,
-      snap_window_cells: int = 4,
-      max_cells: int = 5000000,
-      simplify_tolerance: Optional[float] = None,
-  ) -> Dict[str, Any]:
-    """Delineates catchments for multiple coordinate pairs and returns a GeoJSON FeatureCollection.
-
-    Args:
-        coords: List or iterable of (lat, lon) coordinate tuples.
-        ids: Optional list of catchment IDs corresponding to coords.
-        snap_window_cells: Half-width of search box in grid cells.
-        max_cells: Maximum cells to traverse per catchment.
-        simplify_tolerance: Geometry simplification tolerance in degrees.
-
-    Returns:
-        GeoJSON FeatureCollection dict containing features for each delineated catchment.
-    """
-    coords_list = list(coords)
-    ids_list = list(ids) if ids is not None else [None] * len(coords_list)
-    features = []
-
-    for (lat, lon), cid in zip(coords_list, ids_list):
-      try:
-        feat = self.delineate(
-            lat=lat,
-            lon=lon,
-            snap_window_cells=snap_window_cells,
-            max_cells=max_cells,
-            simplify_tolerance=simplify_tolerance,
-            catchment_id=cid,
-        )
-        features.append(feat)
-      except CatchmentCoverageError as e:
-        logger.warning(
-            "Catchment %s at (%s, %s) could not be delineated: %s",
-            cid or f"{lat},{lon}",
-            lat,
-            lon,
-            e,
-        )
-
-    return {
-        "type": "FeatureCollection",
-        "features": features,
-    }
-
-  def _vectorize_tile_mask(
-      self,
-      mask: np.ndarray,
-      lat_top: float,
-      lon_left: float,
-      simplify_tolerance: float,
-  ) -> Optional[Polygon]:
-    """Converts a 2D boolean tile mask into a simplified Shapely Polygon using row run-length fusion."""
-    if not mask.any():
-      return None
-    min_r, max_r = np.where(mask.any(axis=1))[0][[0, -1]]
-    min_c, max_c = np.where(mask.any(axis=0))[0][[0, -1]]
-    sub_mask = mask[min_r : max_r + 1, min_c : max_c + 1]
-
-    sub_lat_top = lat_top - min_r * RES_DEG
-    sub_lon_left = lon_left + min_c * RES_DEG
-
-    try:
-      import rasterio.features
-      from rasterio.transform import from_origin
-
-      transform = from_origin(sub_lon_left, sub_lat_top, RES_DEG, RES_DEG)
-      shapes = rasterio.features.shapes(
-          sub_mask.astype(np.uint8), mask=sub_mask, transform=transform
-      )
-      polys = [shape(geom) for geom, val in shapes if val == 1]
-      if polys:
-        if len(polys) == 1:
-          poly = polys[0]
-        else:
-          poly = unary_union(polys)
-        if not poly.is_valid:
-          poly = poly.buffer(0)
-        if simplify_tolerance:
-          poly = poly.simplify(simplify_tolerance)
-        return poly
-    except Exception as e:
-      logger.debug("rasterio polygonize failed, using box fallback: %s", e)
-
-    boxes = []
-    for r in range(sub_mask.shape[0]):
-      row = sub_mask[r]
-      if not np.any(row):
-        continue
-      diff = np.diff(np.pad(row.astype(int), 1))
-      starts = np.where(diff == 1)[0]
-      ends = np.where(diff == -1)[0]
-      y_top = sub_lat_top - r * RES_DEG
-      y_bot = sub_lat_top - (r + 1) * RES_DEG
-      for s, e in zip(starts, ends):
-        x_left = sub_lon_left + s * RES_DEG
-        x_right = sub_lon_left + e * RES_DEG
-        boxes.append(
-            Polygon([
-                (x_left, y_bot),
-                (x_right, y_bot),
-                (x_right, y_top),
-                (x_left, y_top),
-            ])
-        )
-
-    if not boxes:
-      p0 = (lon_left + min_c * RES_DEG, lat_top - min_r * RES_DEG)
-      return Polygon([
-          (p0[0], p0[1]),
-          (p0[0] + RES_DEG, p0[1]),
-          (p0[0] + RES_DEG, p0[1] - RES_DEG),
-          (p0[0], p0[1] - RES_DEG),
-      ])
-
-    poly = unary_union(boxes)
-    if not poly.is_valid:
-      poly = poly.buffer(0)
-    return poly.simplify(simplify_tolerance)
+    if total_area_km2 < _SMALL_AREA_THRESHOLD_KM2:
+        return round(float(total_area_km2), 4)
+    return round(float(total_area_km2), 1)
 
 
 def delineate_dem(
     lat: float,
     lon: float,
-    tiles_dir: Optional[Union[str, Path]] = None,
-    snap_window_cells: int = 4,
-    max_cells: int = 5000000,
-    catchment_id: Optional[str] = None,
-) -> Dict[str, Any]:
-  """Convenience function to delineate a catchment from (lat, lon) coordinates using DEM flow direction."""
-  delineator = DemDelineator(tiles_dir=tiles_dir)
-  return delineator.delineate(
-      lat=lat,
-      lon=lon,
-      snap_window_cells=snap_window_cells,
-      max_cells=max_cells,
-      catchment_id=catchment_id,
-  )
+    tiles_dir: str | Path | None = None,
+    *,
+    gcs_uri: str | None = None,
+    cache_dir: str | Path | None = None,
+    snap_window_cells: int = 12,
+    max_cells: int | None = None,
+    catchment_id: str | None = None,
+) -> dict[str, Any]:
+    """Delineate a catchment from (lat, lon) using explicit DEM tile paths."""
+    delineator = DemDelineator(
+        tiles_dir=tiles_dir, gcs_uri=gcs_uri, cache_dir=cache_dir
+    )
+    return delineator.delineate(
+        lat=lat,
+        lon=lon,
+        snap_window_cells=snap_window_cells,
+        max_cells=max_cells,
+        catchment_id=catchment_id,
+    )
 
 
-# Alias
 delineate_catchment = delineate_dem
 
 
 def delineate_coordinates(
-    coords: Iterable[Tuple[float, float]],
-    tiles_dir: Optional[Union[str, Path]] = None,
-    ids: Optional[Iterable[str]] = None,
-    snap_window_cells: int = 4,
-    max_cells: int = 5000000,
-) -> Dict[str, Any]:
-  """Convenience function to delineate multiple catchments from coordinate tuples."""
-  delineator = DemDelineator(tiles_dir=tiles_dir)
-  return delineator.delineate_batch(
-      coords=coords,
-      ids=ids,
-      snap_window_cells=snap_window_cells,
-      max_cells=max_cells,
-  )
-
-
+    coords: Iterable[tuple[float, float]],
+    tiles_dir: str | Path | None = None,
+    *,
+    gcs_uri: str | None = None,
+    cache_dir: str | Path | None = None,
+    ids: Iterable[str | None] | None = None,
+    snap_window_cells: int = 12,
+    max_cells: int | None = None,
+) -> dict[str, Any]:
+    """Delineate multiple catchments from coordinate tuples."""
+    delineator = DemDelineator(
+        tiles_dir=tiles_dir, gcs_uri=gcs_uri, cache_dir=cache_dir
+    )
+    return delineator.delineate_batch(
+        coords=coords,
+        ids=ids,
+        snap_window_cells=snap_window_cells,
+        max_cells=max_cells,
+    )

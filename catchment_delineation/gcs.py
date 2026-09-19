@@ -1,10 +1,10 @@
-# Copyright 2026 Google LLC
+# Copyright 2025 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     https://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,18 +16,13 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 from pathlib import Path
-import shutil
-import subprocess
-from typing import List, Optional, Set, Tuple, Union
 
-from catchment_delineation.config import (
-    GCS_TILES_URI,
-    get_default_cache_dir,
-    get_default_tiles_dir,
-)
+import fsspec
+
 from catchment_delineation.tiles import (
     get_required_tiles_for_bbox,
     is_tile_in_coverage,
@@ -37,142 +32,91 @@ from catchment_delineation.tiles import (
 logger = logging.getLogger(__name__)
 
 
-def is_gcs_path(path: Union[str, Path]) -> bool:
-  """Checks if path is a Google Cloud Storage URI."""
-  return str(path).startswith(("gs://", "gcs://", "gs:/", "gcs:/"))
+def is_gcs_path(path: str | Path | None) -> bool:
+    """Return whether path is a Google Cloud Storage URI."""
+    if path is None:
+        return False
+    return str(path).startswith(('gs://', 'gcs://', 'gs:/', 'gcs:/'))
 
 
-def normalize_gcs_path(path: Union[str, Path]) -> str:
-  """Normalizes a GCS URI ensuring proper gs:// or gcs:// scheme even if Path() stripped a slash."""
-  s = str(path).strip()
-  if s.startswith("gs:/") and not s.startswith("gs://"):
-    return "gs://" + s[4:]
-  if s.startswith("gcs:/") and not s.startswith("gcs://"):
-    return "gcs://" + s[5:]
-  return s
+def normalize_gcs_path(path: str | Path) -> str:
+    """Normalize a GCS URI even if Path() stripped a slash."""
+    if path is None:
+        raise ValueError('Cannot normalize a None path.')
+    raw = str(path).strip()
+    if not raw:
+        raise ValueError('Cannot normalize an empty path.')
+    if raw.startswith('gs:/') and not raw.startswith('gs://'):
+        return 'gs://' + raw[4:]
+    if raw.startswith('gcs:/') and not raw.startswith('gcs://'):
+        return 'gcs://' + raw[5:]
+    return raw
 
 
-def upload_file_to_gcs(local_path: Union[str, Path], gcs_uri: str) -> None:
-  """Uploads a local file to a Google Cloud Storage URI.
-
-  Args:
-      local_path: Local file path.
-      gcs_uri: Target GCS URI (gs://bucket/path/to/file).
-  """
-  local_p = Path(local_path)
-  if not local_p.exists():
-    raise FileNotFoundError(f"Local file {local_p} not found for GCS upload.")
-
-  # 1. Try fsspec stream copy
-  try:
-    import fsspec
-
-    with open(local_p, "rb") as src, fsspec.open(gcs_uri, "wb") as dst:
-      dst.write(src.read())
-    return
-  except Exception as e:
-    logger.debug("fsspec GCS upload failed: %s, trying google.cloud.storage", e)
-
-  # 2. Try google.cloud.storage client
-  try:
-    from google.cloud import storage
-
-    clean_uri = str(gcs_uri).replace("gs://", "").replace("gcs://", "")
-    bucket_name, blob_name = clean_uri.split("/", 1)
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(blob_name)
-    blob.upload_from_filename(str(local_p))
-    return
-  except Exception as e:
-    logger.debug("google.cloud.storage upload failed: %s", e)
-
-  # 3. Try gcloud storage CLI
-  if shutil.which("gcloud"):
-    cmd = ["gcloud", "storage", "cp", str(local_p), str(gcs_uri)]
-    res = subprocess.run(cmd, capture_output=True, timeout=120)
-    if res.returncode == 0:
-      return
-
-  raise RuntimeError(f"Failed to upload {local_p} to {gcs_uri}.")
+def upload_file_to_gcs(local_path: str | Path, gcs_uri: str) -> None:
+    """Upload a local file to an explicit Google Cloud Storage URI."""
+    local_p = Path(local_path)
+    if not local_p.is_file():
+        raise FileNotFoundError(
+            f'Local file {local_p} not found for GCS upload.'
+        )
+    normalized_uri = normalize_gcs_path(gcs_uri)
+    with local_p.open('rb') as src, fsspec.open(normalized_uri, 'wb') as dst:
+        dst.write(src.read())
 
 
 def download_tile_from_gcs(
     lat_top: int,
     lon_left: int,
-    target_dir: Optional[Union[str, Path]] = None,
-    source_uri: Optional[str] = None,
+    target_dir: str | Path,
+    source_uri: str,
+    *,
+    created_files: set[Path] | None = None,
 ) -> Path:
-  """Downloads a single 5x5 degree DEM tile from GCS to local directory.
+    """Download a single 5x5 degree DEM tile from an explicit GCS URI."""
+    if not target_dir:
+        raise ValueError('An explicit target_dir must be provided.')
+    if not source_uri:
+        raise ValueError('An explicit source_uri must be provided.')
 
-  Args:
-      lat_top: Top (northern) latitude of the tile.
-      lon_left: Left (western) longitude of the tile.
-      target_dir: Local destination directory. Defaults to get_default_tiles_dir().
-      source_uri: GCS source directory. Defaults to GCS_TILES_URI.
+    filename = tile_key_to_filename(lat_top, lon_left)
+    if not is_tile_in_coverage(lat_top, lon_left):
+        raise ValueError(
+            f'Tile {filename} is outside the global DEM coverage domain.'
+        )
 
-  Returns:
-      Path to the local downloaded .npy file.
-  """
-  filename = tile_key_to_filename(lat_top, lon_left)
-  if not is_tile_in_coverage(lat_top, lon_left):
-    raise ValueError(
-        f"Tile {filename} is outside the global DEM coverage domain (-56° to 60° latitude)."
+    directory = Path(target_dir).expanduser().resolve()
+    directory.mkdir(parents=True, exist_ok=True)
+    dest_file = directory / filename
+
+    if dest_file.is_file() and dest_file.stat().st_size > 0:
+        return dest_file
+
+    base_uri = normalize_gcs_path(source_uri).rstrip('/')
+    tile_gcs_uri = f'{base_uri}/{filename}'
+    logger.info(
+        'Downloading DEM tile from %s to %s...', tile_gcs_uri, dest_file
     )
 
-  directory = Path(target_dir) if target_dir else get_default_tiles_dir()
-  directory.mkdir(parents=True, exist_ok=True)
-
-  dest_file = directory / filename
-
-  if dest_file.exists() and dest_file.stat().st_size > 0:
-    return dest_file
-
-  base_uri = (source_uri or GCS_TILES_URI).rstrip("/")
-  tile_gcs_uri = f"{base_uri}/{filename}"
-
-  logger.info("Downloading DEM tile from %s to %s...", tile_gcs_uri, dest_file)
-
-  # Download to a process-unique temporary file first, then atomically rename
-  tmp_file = directory / f".tmp_{os.getpid()}_{filename}"
-  try:
-    # 1. Try gcloud storage CLI
-    if shutil.which("gcloud"):
-      try:
-        cmd = ["gcloud", "storage", "cp", tile_gcs_uri, str(tmp_file)]
-        res = subprocess.run(cmd, capture_output=True, timeout=120)
-        if res.returncode == 0 and tmp_file.exists() and tmp_file.stat().st_size > 0:
-          tmp_file.replace(dest_file)
-          logger.info("Successfully downloaded tile %s via gcloud storage.", filename)
-          return dest_file
-      except Exception as e:
-        logger.warning("gcloud storage tile download failed: %s", e)
-
-    # 2. Try gcsfs
+    tmp_file = directory / f'.tmp_{os.getpid()}_{filename}'
     try:
-      import gcsfs
-
-      fs = gcsfs.GCSFileSystem()
-      clean_src = tile_gcs_uri.replace("gs://", "")
-      if fs.exists(clean_src):
-        fs.get(clean_src, str(tmp_file))
-        if tmp_file.exists() and tmp_file.stat().st_size > 0:
-          tmp_file.replace(dest_file)
-          logger.info("Successfully downloaded tile %s via gcsfs.", filename)
-          return dest_file
-    except Exception as e:
-      logger.warning("gcsfs tile download failed: %s", e)
-  finally:
-    if tmp_file.exists():
-      try:
-        tmp_file.unlink()
-      except OSError:
-        pass
-
-  raise RuntimeError(
-      f"Failed to download DEM tile {filename} from {tile_gcs_uri} to {dest_file}. "
-      "Please verify GCS bucket accessibility and cloud credentials."
-  )
+        with (
+            fsspec.open(tile_gcs_uri, 'rb') as src,
+            tmp_file.open('wb') as dst,
+        ):
+            dst.write(src.read())
+        if not tmp_file.is_file() or tmp_file.stat().st_size == 0:
+            raise RuntimeError(
+                f'Downloaded empty DEM tile {filename} from {tile_gcs_uri}.'
+            )
+        tmp_file.replace(dest_file)
+        if created_files is not None:
+            created_files.add(dest_file)
+        return dest_file
+    finally:
+        if tmp_file.exists():
+            with contextlib.suppress(OSError):
+                tmp_file.unlink()
 
 
 def download_tiles_for_bbox(
@@ -180,30 +124,23 @@ def download_tiles_for_bbox(
     min_lon: float,
     max_lat: float,
     max_lon: float,
-    target_dir: Optional[Union[str, Path]] = None,
-    source_uri: Optional[str] = None,
-) -> List[Path]:
-  """Downloads all missing tiles covering a bounding box from GCS.
-
-  Args:
-      min_lat: Minimum latitude.
-      min_lon: Minimum longitude.
-      max_lat: Maximum latitude.
-      max_lon: Maximum longitude.
-      target_dir: Destination directory.
-      source_uri: Source GCS URI.
-
-  Returns:
-      List of paths to required tile files.
-  """
-  required_keys = get_required_tiles_for_bbox(min_lat, min_lon, max_lat, max_lon)
-  downloaded_paths = []
-  for lat_top, lon_left in sorted(required_keys):
-    p = download_tile_from_gcs(
-        lat_top=lat_top,
-        lon_left=lon_left,
-        target_dir=target_dir,
-        source_uri=source_uri,
+    target_dir: str | Path,
+    source_uri: str,
+    *,
+    created_files: set[Path] | None = None,
+) -> list[Path]:
+    """Download all missing tiles covering a bounding box from GCS."""
+    required_keys = get_required_tiles_for_bbox(
+        min_lat, min_lon, max_lat, max_lon
     )
-    downloaded_paths.append(p)
-  return downloaded_paths
+    downloaded_paths: list[Path] = []
+    for lat_top, lon_left in sorted(required_keys):
+        path = download_tile_from_gcs(
+            lat_top=lat_top,
+            lon_left=lon_left,
+            target_dir=target_dir,
+            source_uri=source_uri,
+            created_files=created_files,
+        )
+        downloaded_paths.append(path)
+    return downloaded_paths

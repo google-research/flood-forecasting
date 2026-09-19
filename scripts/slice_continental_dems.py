@@ -1,133 +1,139 @@
-#!/usr/bin/env python3
-"""Slices continental HydroSHEDS 3 arc-second flow direction GeoTIFFs into 5x5 degree .npy tiles."""
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Slice continental HydroSHEDS D8 GeoTIFFs into 5x5 degree .npy tiles."""
+
+from __future__ import annotations
 
 import argparse
-from concurrent.futures import ProcessPoolExecutor, as_completed
 import math
-import os
-from pathlib import Path
+import multiprocessing
 import sys
-import time
-from typing import List, Tuple
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from pathlib import Path
 
 import numpy as np
 import rasterio
 from rasterio.windows import Window
 
+from catchment_delineation.config import RES_DEG, TILE_CELLS, TILE_DEG
 from catchment_delineation.tiles import tile_key_to_filename
 
-VALID_D8_VALS = np.array([1, 2, 4, 8, 16, 32, 64, 128], dtype=np.uint8)
 
+def _slice_single_tile(
+    task: tuple[Path, Path, int, int, float, float],
+) -> tuple[str, bool, int]:
+    """Slice a single 5x5 degree tile window from a continental GeoTIFF."""
+    tif_path, out_path, lat_top, lon_left, tif_left, tif_top = task
+    if out_path.exists() and out_path.stat().st_size > 0:
+        return out_path.name, False, 0
 
-def process_single_tile(
-    tif_path: str,
-    lat_top: int,
-    lon_left: int,
-    col_off: int,
-    row_off: int,
-    out_dir: str,
-) -> Tuple[str, bool, int]:
-  """Extracts a 5x5 degree window and saves it as .npy if land exists."""
-  out_path = Path(out_dir) / tile_key_to_filename(lat_top, lon_left)
-  try:
+    col_off = int(round((lon_left - tif_left) / RES_DEG))
+    row_off = int(round((tif_top - lat_top) / RES_DEG))
+
     with rasterio.open(tif_path) as src:
-      win = Window(col_off, row_off, 6000, 6000)
-      data = src.read(1, window=win)
+        win = Window(col_off, row_off, TILE_CELLS, TILE_CELLS)
+        data = src.read(1, window=win)
 
-    # Check for valid flow direction cells
-    is_valid = np.isin(data, VALID_D8_VALS)
-    valid_count = int(is_valid.sum())
+    valid_mask = (data > 0) & (data <= 128)
+    valid_count = int(np.count_nonzero(valid_mask))
+    if valid_count == 0:
+        return out_path.name, False, 0
 
-    if valid_count < 50:
-      return out_path.name, False, 0
-
-    if out_path.exists():
-      existing = np.load(out_path)
-      # Merge new valid cells onto existing
-      existing[is_valid] = data[is_valid]
-      np.save(out_path, existing)
-      return out_path.name, True, valid_count
-    else:
-      np.save(out_path, data)
-      return out_path.name, True, valid_count
-
-  except Exception as e:
-    return f"{out_path.name}: {e}", False, -1
+    arr = np.where(valid_mask, data, 0).astype(np.uint8)
+    np.save(out_path, arr)
+    return out_path.name, True, valid_count
 
 
-def slice_geotiff(
-    tif_path: Path,
-    out_dir: Path,
-    max_workers: int = 16,
-) -> int:
-  """Slices a continental GeoTIFF into 5x5 degree tiles."""
-  print(f"\n--- Processing {tif_path.name} ---")
-  start_time = time.time()
+def main(argv: list[str] | None = None) -> int:
+    """Slice user-supplied continental D8 GeoTIFF files into 5x5 .npy tiles."""
+    parser = argparse.ArgumentParser(
+        description='Slice continental D8 GeoTIFFs into 5x5 degree .npy tiles.'
+    )
+    parser.add_argument(
+        '--input-tifs',
+        nargs='+',
+        required=True,
+        help='Explicit paths to input continental D8 flow-direction GeoTIFFs.',
+    )
+    parser.add_argument(
+        '--out-dir',
+        type=str,
+        required=True,
+        help='Explicit output directory for 5x5 degree .npy tiles.',
+    )
+    parser.add_argument(
+        '--workers',
+        type=int,
+        default=16,
+        help='Number of worker processes.',
+    )
+    args = parser.parse_args(argv)
 
-  with rasterio.open(tif_path) as src:
-    left, bottom, right, top = src.bounds
-    width, height = src.width, src.height
-    print(f"Bounds: [{left:.2f}, {bottom:.2f}, {right:.2f}, {top:.2f}], Dimensions: {width}x{height}")
+    out_dir = Path(args.out_dir).expanduser().resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    tif_paths = [Path(p).expanduser().resolve() for p in args.input_tifs]
+    for tif_p in tif_paths:
+        if not tif_p.is_file():
+            raise FileNotFoundError(f'Input GeoTIFF not found: {tif_p}')
 
-    min_lat = int(math.floor(bottom / 5.0) * 5)
-    max_lat = int(math.ceil(top / 5.0) * 5)
-    min_lon = int(math.floor(left / 5.0) * 5)
-    max_lon = int(math.ceil(right / 5.0) * 5)
+    tasks: list[tuple[Path, Path, int, int, float, float]] = []
+    for tif_p in tif_paths:
+        with rasterio.open(tif_p) as src:
+            b = src.bounds
+            min_lon = int(math.floor(b.left / TILE_DEG) * TILE_DEG)
+            max_lon = int(math.ceil(b.right / TILE_DEG) * TILE_DEG)
+            min_lat = int(math.floor(b.bottom / TILE_DEG) * TILE_DEG)
+            max_lat = int(math.ceil(b.top / TILE_DEG) * TILE_DEG)
 
-    tasks = []
-    for lat_top in range(min_lat + 5, max_lat + 5, 5):
-      for lon_left in range(min_lon, max_lon, 5):
-        col_off = int(round((lon_left - left) * 1200))
-        row_off = int(round((top - lat_top) * 1200))
+            for lat_top in range(
+                min_lat + int(TILE_DEG), max_lat + int(TILE_DEG), int(TILE_DEG)
+            ):
+                for lon_left in range(min_lon, max_lon, int(TILE_DEG)):
+                    if (
+                        lon_left < b.left - 1e-6
+                        or lon_left + TILE_DEG > b.right + 1e-6
+                        or lat_top - TILE_DEG < b.bottom - 1e-6
+                        or lat_top > b.top + 1e-6
+                    ):
+                        continue
+                    fname = tile_key_to_filename(lat_top, lon_left)
+                    tasks.append(
+                        (
+                            tif_p,
+                            out_dir / fname,
+                            lat_top,
+                            lon_left,
+                            b.left,
+                            b.top,
+                        )
+                    )
 
-        if 0 <= col_off and col_off + 6000 <= width and 0 <= row_off and row_off + 6000 <= height:
-          tasks.append((str(tif_path), lat_top, lon_left, col_off, row_off, str(out_dir)))
+    written = 0
+    mp_ctx = multiprocessing.get_context('spawn')
+    with ProcessPoolExecutor(
+        max_workers=args.workers, mp_context=mp_ctx
+    ) as pool:
+        futures = [pool.submit(_slice_single_tile, t) for t in tasks]
+        for fut in as_completed(futures):
+            _, did_write, _ = fut.result()
+            if did_write:
+                written += 1
 
-  print(f"Candidate 5x5 tiles to check: {len(tasks)}")
-  saved_count = 0
-
-  with ProcessPoolExecutor(max_workers=max_workers) as executor:
-    futures = [executor.submit(process_single_tile, *task) for task in tasks]
-    for fut in as_completed(futures):
-      name, saved, cnt = fut.result()
-      if saved:
-        saved_count += 1
-
-  elapsed = time.time() - start_time
-  print(f"Finished {tif_path.name}: {saved_count} valid tiles saved/merged in {elapsed:.1f}s")
-  return saved_count
-
-
-def main():
-  parser = argparse.ArgumentParser(description="Slice continental HydroSHEDS GeoTIFFs to 5x5 degree .npy tiles")
-  parser.add_argument("--tifs", nargs="+", help="Paths to continental GeoTIFF files")
-  parser.add_argument("--out-dir", default="/usr/local/google/home/gsnearing/data/DEMs/tiles_5deg", help="Output directory for .npy tiles")
-  parser.add_argument("--workers", type=int, default=16, help="Worker processes")
-  args = parser.parse_args()
-
-  out_dir = Path(args.out_dir)
-  out_dir.mkdir(parents=True, exist_ok=True)
-
-  tifs = [Path(p) for p in args.tifs] if args.tifs else [
-      Path("/usr/local/google/home/gsnearing/data/DEMs/continental/au_dir_3s.tif"),
-      Path("/usr/local/google/home/gsnearing/data/DEMs/continental/sa_dir_3s.tif"),
-      Path("/usr/local/google/home/gsnearing/data/DEMs/continental/eu_dir_3s.tif"),
-      Path("/usr/local/google/home/gsnearing/data/DEMs/continental/af_dir_3s.tif"),
-      Path("/usr/local/google/home/gsnearing/data/DEMs/continental/as_dir_3s.tif"),
-  ]
-
-  total_saved = 0
-  for tif in tifs:
-    if not tif.exists():
-      print(f"Warning: {tif} not found, skipping.")
-      continue
-    total_saved += slice_geotiff(tif, out_dir, max_workers=args.workers)
-
-  print(f"\n==========================================")
-  print(f"All continental grids sliced successfully!")
-  print(f"Total tiles in {out_dir}: {len(list(out_dir.glob('*.npy')))}")
-  print(f"==========================================")
+    sys.stdout.write(f'Sliced {written} non-empty 5x5 tiles to {out_dir}\n')
+    return 0
 
 
-if __name__ == "__main__":
-  main()
+if __name__ == '__main__':
+    sys.exit(main())
