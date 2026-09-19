@@ -16,6 +16,7 @@
 
 from pathlib import Path
 import gc
+import logging
 import shutil
 from typing import Any
 
@@ -24,6 +25,9 @@ import pandas as pd
 import pytest
 import torch
 import xarray as xr
+from tensorboard.backend.event_processing.event_accumulator import (
+    EventAccumulator,
+)
 
 from googlehydrology.datasetzoo.caravan import load_caravan_timeseries_together
 from googlehydrology.evaluation.evaluate import start_evaluation
@@ -224,7 +228,9 @@ def test_mean_embedding_forecast_lstm_regression_pipeline(
 
 @pytest.mark.slow
 @pytest.mark.integration
-def test_handoff_forecast_lstm_cmal_pipeline(integration_data_env, tmp_path):
+def test_handoff_forecast_lstm_cmal_pipeline(
+    integration_data_env, tmp_path, caplog
+):
     """End-to-end integration test for HandoffForecastLSTM with CMAL."""
     run_dir = str(tmp_path / 'runs_handoff_cmal')
     cfg_dict = _get_base_config_dict(
@@ -236,6 +242,9 @@ def test_handoff_forecast_lstm_cmal_pipeline(integration_data_env, tmp_path):
         'loss': 'CMAL',
         'n_distributions': 3,
         'n_samples': 5,
+        'clip_gradient_norm': 1.0,
+        'log_tensorboard': True,
+        'log_loss_every_nth_update': 100,
         'state_handoff_network': {
             'type': 'fc',
             'hiddens': [32, 16],
@@ -247,13 +256,34 @@ def test_handoff_forecast_lstm_cmal_pipeline(integration_data_env, tmp_path):
     cfg = Config(cfg_dict)
 
     # 1. Train CMAL model
-    start_training(cfg)
+    with caplog.at_level(logging.INFO):
+        start_training(cfg)
 
     created_runs = list((tmp_path / 'runs_handoff_cmal').glob('*'))
     assert len(created_runs) == 1
     actual_run_dir = created_runs[0]
 
     assert (actual_run_dir / 'model_epoch001.pt').is_file()
+
+    # Gradient diagnostics must reach both logging and TensorBoard even
+    # when loss logging is sampled. Validation must not consume these metrics.
+    assert 'Epoch 1 gradient clipped' in caplog.text
+    assert 'median norm' in caplog.text
+    events = EventAccumulator(str(actual_run_dir)).Reload()
+    prefix = 'train/gradient_clipping/'
+    stats = {
+        name.removeprefix(prefix): events.Scalars(name)[0].value
+        for name in events.Tags()['scalars']
+        if name.startswith(prefix)
+    }
+    assert stats['checked_steps'] > 2
+    assert stats['nonfinite_steps'] == 0
+    assert stats['finite_steps'] == stats['checked_steps']
+    assert stats['clipped_fraction'] == pytest.approx(
+        stats['clipped_steps'] / stats['finite_steps']
+    )
+    assert 0 <= stats['norm_median'] <= stats['norm_p90'] <= stats['norm_p99']
+    assert events.Scalars(prefix + 'norm_median')[0].step == 1
 
     # 2. Evaluate CMAL probabilistic model
     start_evaluation(cfg=cfg, run_dir=actual_run_dir, epoch=1, period='test')
@@ -281,6 +311,7 @@ def test_continue_training_and_finetuning_pipeline(
         integration_data_env, 'test_finetune_base', run_dir
     )
     cfg_dict['epochs'] = 1
+    cfg_dict['clip_gradient_norm'] = 1.0
     cfg = Config(cfg_dict)
 
     # 1. Initial 1-epoch training
@@ -304,6 +335,7 @@ def test_continue_training_and_finetuning_pipeline(
         'is_continue_training': True,
         'continue_from_epoch': 1,
         'epochs': 1,
+        'clip_gradient_norm': 1.0,
     })
     continue_cfg = Config(continue_cfg_dict)
     start_training(continue_cfg)
@@ -336,6 +368,7 @@ def test_continue_training_and_finetuning_pipeline(
         'is_finetuning': True,
         'finetune_modules': ['head'],
         'epochs': 1,
+        'clip_gradient_norm': 1.0,
     })
     finetune_cfg = Config(finetune_cfg_dict)
     start_training(finetune_cfg)
@@ -362,6 +395,21 @@ def test_continue_training_and_finetuning_pipeline(
             if not torch.equal(weights_finetuned[k], weights_epoch1[k]):
                 head_updated = True
     assert head_updated, 'Unfrozen head parameters did not update during finetuning!'
+
+    # Resuming uses the restored epoch, whereas finetuning starts at epoch 1.
+    # Frozen parameters have no gradients and must not prevent diagnostics.
+    for directory, epoch in [
+        (actual_run_dir, 1),
+        (continue_run_dir, 2),
+        (actual_finetune_dir, 1),
+    ]:
+        events = EventAccumulator(str(directory)).Reload()
+        norms = events.Scalars('train/gradient_clipping/norm_median')
+        assert len(norms) == 1
+        assert norms[0].step == epoch
+        assert np.isfinite(norms[0].value)
+        counts = events.Scalars('train/gradient_clipping/checked_steps')
+        assert counts[0].value > 0
 
 
 @pytest.mark.slow
@@ -495,4 +543,3 @@ def test_run_cli_entrypoints(integration_data_env, tmp_path):
     continue_run(run_dir=actual_run_dir, gpu=-1)
     continue_dir = actual_run_dir / 'continue_training_from_epoch001'
     assert continue_dir.is_dir()
-

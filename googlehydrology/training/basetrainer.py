@@ -434,6 +434,7 @@ class BaseTrainer(object):
 
         # Iterate in batches over training set
         nan_count = 0
+        gradient_norms = []
         for i, data in enumerate(pbar):
             for key in data.keys():
                 if key.startswith('x_d'):
@@ -483,9 +484,12 @@ class BaseTrainer(object):
 
                 if self.cfg.clip_gradient_norm is not None:
                     self.scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(
+                    gradient_norm = torch.nn.utils.clip_grad_norm_(
                         self.model.parameters(), self.cfg.clip_gradient_norm
                     )
+                    # Keep detached scalars on device until epoch end to avoid
+                    # an extra GPU synchronization on every training step.
+                    gradient_norms.append(gradient_norm.detach())
 
                 # update weights
                 self.scaler.step(self.optimizer)
@@ -498,6 +502,16 @@ class BaseTrainer(object):
                 self.experiment_logger.log_step(
                     **{k: v.item() for k, v in all_losses.items()}
                 )
+
+        if self.cfg.clip_gradient_norm is not None:
+            norms = (
+                torch.stack(gradient_norms).cpu().double().numpy()
+                if gradient_norms
+                else np.empty(0)
+            )
+            self.experiment_logger.log_gradient_norms(
+                norms, self.cfg.clip_gradient_norm, epoch
+            )
 
     def _set_random_seeds(self):
         if self.cfg.seed is None:

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 from collections import defaultdict
 from pathlib import Path
 
@@ -22,6 +23,8 @@ from torch.utils.tensorboard import SummaryWriter
 from googlehydrology.__about__ import __version__
 from googlehydrology.utils.config import Config
 from googlehydrology.utils.logging_utils import get_git_hash, save_git_diff
+
+LOGGER = logging.getLogger(__name__)
 
 
 class Logger(object):
@@ -151,6 +154,81 @@ class Logger(object):
             tag = self.tag
             for k, v in kwargs.items():
                 self.writer.add_scalar('/'.join([tag, k]), v, self.update)
+
+    def log_gradient_norms(
+        self,
+        norms: np.ndarray,
+        clip_gradient_norm: float,
+        epoch: int,
+    ) -> None:
+        """Log epoch statistics of unscaled, pre-clip gradient norms.
+
+        Each norm represents a clipping attempt, not necessarily a successful
+        optimizer update: AMP can skip updates with non-finite gradients.
+        Non-finite norms are reported separately and excluded from the clipping
+        fraction and percentiles. This method does not advance the loss logging
+        counters or add metrics to the training/validation loss buffer.
+
+        Parameters
+        ----------
+        norms : np.ndarray
+            One scalar norm for every clipping call in this epoch.
+        clip_gradient_norm : float
+            Configured maximum gradient norm.
+        epoch : int
+            Training epoch, including the offset when resuming training.
+        """
+        finite_norms = norms[np.isfinite(norms)]
+        checked_steps = norms.size
+        finite_steps = finite_norms.size
+        nonfinite_steps = checked_steps - finite_steps
+        clipped_steps = int(np.count_nonzero(finite_norms > clip_gradient_norm))
+        stats = {
+            'threshold': clip_gradient_norm,
+            'checked_steps': checked_steps,
+            'finite_steps': finite_steps,
+            'nonfinite_steps': nonfinite_steps,
+            'clipped_steps': clipped_steps,
+        }
+        if finite_steps:
+            fraction = clipped_steps / finite_steps
+            median, p90, p99 = np.percentile(finite_norms, [50, 90, 99])
+            stats.update(
+                clipped_fraction=fraction,
+                norm_median=median,
+                norm_p90=p90,
+                norm_p99=p99,
+            )
+            LOGGER.info(
+                'Epoch %d gradient clipped %d/%d finite steps (%.1f%%), '
+                'median norm %.4g, p90 %.4g, p99 %.4g '
+                '(threshold %.4g; %d non-finite / %d checked steps)',
+                epoch,
+                clipped_steps,
+                finite_steps,
+                100 * fraction,
+                median,
+                p90,
+                p99,
+                clip_gradient_norm,
+                nonfinite_steps,
+                checked_steps,
+            )
+        else:
+            LOGGER.info(
+                'Epoch %d gradient clipping: no finite gradient norms '
+                '(threshold %.4g; %d non-finite / %d checked steps)',
+                epoch,
+                clip_gradient_norm,
+                nonfinite_steps,
+                checked_steps,
+            )
+
+        if self.writer is not None:
+            for name, value in stats.items():
+                self.writer.add_scalar(
+                    f'train/gradient_clipping/{name}', value, epoch
+                )
 
     def summarise(self) -> float | dict[str, float]:
         """ "Log the results of the entire training or validation epoch.
