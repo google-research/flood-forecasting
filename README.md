@@ -92,16 +92,13 @@ A small sample is provided in tutorial/data/Caravan-nc. For full runs:
 
 The MultiMet forcing data extension is accessed directly from **Google Cloud Storage**. Ensure your configuration points to: gs://caravan-multimet/v1.1
 
-## **Catchment Delineation**
+### **3\. Catchment Delineation (Creating Polygons for New Gauges)**
 
-The `catchment_delineation` module traces the boundary (polygon) and drainage area ($\text{km}^2$) of the watershed upstream of any latitude/longitude point using 90-meter (3-arc-second) flow-direction maps.
+If you have latitude and longitude coordinates for streamflow gauges and need their upstream watershed boundary polygons and drainage areas ($\text{km}^2$), use the `delineate-catchment` command-line tool included in this repository. It traces upstream drainage areas across 90-meter flow-direction map tiles and writes polygons in Caravan-compatible GeoParquet, GeoJSON, or Shapefile format for downstream MultiMet and static attribute extraction.
 
-* **Traces across tile borders automatically:** Large river basins that span multiple 5°×5° map tiles are stitched together into a single polygon without being cut off at tile edges.
-* **Snaps gauges to the right river channel:** Streamflow gauge coordinates are often slightly off the center of the river in a 90-meter grid. The tool searches nearby grid cells for the river channel and supports an optional **expected drainage area hint** (`--expected-area` or `--area-col`) so gauges on wide rivers snap to the main river rather than a small bankside creek.
-* **You control all input and output paths:** Nothing is hardcoded. You pass the folder or Google Cloud (`gs://`) path containing your `.npy` flow-direction tiles and the path where you want your GeoJSON, GeoParquet, or Shapefile saved.
-* **Fails loudly on missing data:** If a required map tile is missing, if a river extends outside the map's latitude bounds (`-56°` to `60°`), or if no nearby river matches your expected area hint, the tool stops and logs a clear error instead of returning a chopped-off or made-up polygon.
-
-👉 **See the [Catchment Delineation Guide](catchment_delineation/README.md) and [Sphinx Documentation](docs/source/usage/catchment_delineation.rst) for step-by-step command-line and Python examples.**
+* **Package Guide & CLI Reference:** [`catchment_delineation/README.md`](catchment_delineation/README.md)
+* **Official Documentation:** [`docs/source/usage/catchment_delineation.rst`](docs/source/usage/catchment_delineation.rst)
+* **MultiMet Forcing Data:** See **MultiMet Data** above (`gs://caravan-multimet/v1.1`).
 
 ## **Usage**
 
