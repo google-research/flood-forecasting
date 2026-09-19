@@ -1,206 +1,209 @@
-# Catchment Delineation
+# Catchment Delineation (`catchment_delineation`)
 
-The `catchment_delineation` package finds the boundary (polygon) and drainage area ($\text{km}^2$) of the watershed that drains to any latitude and longitude point.
+This module creates watershed boundary polygons and calculates drainage areas ($\text{km}^2$) for streamflow gauges using 90-meter (3-arc-second) flow-direction maps.
 
-You give it:
-1. One or more `(latitude, longitude)` coordinates (for example, the location of a streamflow gauge), and
-2. The path to a folder (or Google Cloud Storage `gs://` bucket) containing 5°×5° flow-direction `.npy` tiles.
-
-It traces every grid cell that flows into your point and saves the resulting watershed boundary as a **GeoJSON**, **GeoParquet**, or **ESRI Shapefile**.
+You can use it from the command line (`delineate-catchment`) or from Python (`DemDelineator`) to prepare basin boundary polygons for Caravan static attribute extraction and MultiMet weather forcing extraction.
 
 ---
 
-## 1. Key Principles
+## 1. How It Works (Brief Overview)
 
-* **You provide all file paths:** Nothing is hardcoded. The tool only reads from the tile folder or `gs://` bucket you specify, and only writes to the output path you specify.
-* **No silent fallbacks or made-up numbers:**
-  * If a required map tile is missing or unreadable, the program stops immediately with an error.
-  * If a river basin extends past the latitude limits of the elevation map (`-56°S` to `60°N`), it aborts rather than saving a chopped-off polygon.
-  * In batch runs over a CSV table, any gauge with missing (`NaN`) or out-of-bounds coordinates is recorded with `geometry = None` and `area = NaN` (never filled with `0.0`).
-* **Optional expected drainage area hint (`--expected-area` / `--area-col`):**
-  Streamflow gauge coordinates are often slightly off the center of a river on a 90-meter grid — especially on wide rivers (like the Amazon or Danube) or when coordinates were rounded to two decimal places. If you know the approximate drainage area reported by a water agency, you can pass it as a hint. The tool will look for the river channel that matches that area (within `±50%` by default). **If no nearby river matches your area hint, the tool logs a clear error and refuses to save a polygon.**
+Given the latitude and longitude of a river gauge, the tool produces its watershed polygon in three steps:
+
+1. **Snaps to the river channel:** Gauge coordinates recorded by water agencies are often a few hundred meters off the center of the river on a digital map. The tool searches nearby 90-meter pixels (`12` cells ≈ `1.1 km` by default) to place the point on the river channel. If you also provide an approximate expected drainage area (`--expected-area` or `--area-col`), the tool searches up to `80` cells (`~7.2 km`) to find the river channel matching that area.
+2. **Traces upstream water flow:** Each 90-meter pixel in a D8 flow-direction map records which of its 8 neighboring pixels water flows into. Starting from the snapped river pixel, the tool follows water flow upstream through every pixel that drains into the gauge. When a river crosses from one 5°×5° map tile (`6000 × 6000` pixels) into neighboring tiles, those tiles are loaded automatically so rivers are never cut off at tile edges.
+3. **Saves the polygon:** All upstream pixels are merged into a single boundary polygon and written to **GeoJSON**, **GeoParquet**, or **ESRI Shapefile** along with the calculated drainage area in square kilometers ($\text{km}^2$).
 
 ---
 
-## 2. What Data You Need
+## 2. Preparing Map Tiles
 
-The delineator uses 3-arc-second (~90 m resolution) ESRI D8 flow-direction grids sliced into 5°×5° `.npy` files (`uint8`, shape `6000 × 6000`), named by their top-left (north-west) corner, such as `n40w090.npy` (covering `35°N–40°N`, `90°W–85°W`).
+Before running `delineate-catchment`, you need a folder (either on your computer or in Google Cloud Storage `gs://`) containing 5°×5° flow-direction `.npy` files (for example, `n35w090_dir.npy`).
 
-Each cell stores which of its 8 neighbors water flows into (`1=E, 2=SE, 4=S, 8=SW, 16=W, 32=NW, 64=N, 128=NE`).
+* **If you already have a folder or `gs://` bucket of `.npy` tiles:** Pass that folder directly using `--tiles-dir /path/to/tiles_5deg` (or `--gcs-uri gs://... --cache-dir /tmp/tile_cache`).
+* **If you are starting from raw HydroSHEDS or MERIT GeoTIFF files:** Run `scripts/slice_continental_dems.py` once to slice the continental `.tif` rasters into 5°×5° `.npy` tiles:
 
-You can either:
-* Store the `.npy` tiles in a local folder and pass `--tiles-dir /path/to/tiles`, or
-* Point to a Google Cloud Storage bucket with `--gcs-uri gs://my-bucket/tiles_5deg` and provide a local folder `--cache-dir /path/to/cache` where downloaded tiles should be stored.
-
-*(If you have continental HydroSHEDS GeoTIFFs such as `na_dir_3s.tif`, you can slice them into 5°×5° `.npy` tiles yourself using `python scripts/slice_continental_dems.py --input-tifs na_dir_3s.tif --out-dir /path/to/tiles`.)*
+```bash
+python scripts/slice_continental_dems.py \
+  --source-dir /path/to/raw_hydrosheds_tifs \
+  --output-dir /path/to/tiles_5deg
+```
 
 ---
 
-## 3. Command-Line Usage (`delineate-catchment`)
+## 3. Quick Start Examples
 
-After installing the repository (`pip install -e .` inside the `googlehydrology` Conda environment), you can run `delineate-catchment` from your terminal.
-
-### A. Single Point (Local Tiles)
+### A. Delineate a Single Gauge
 
 ```bash
 delineate-catchment \
   --lat 39.6828 \
   --lon -88.7729 \
+  --id USGS_05592500 \
+  --expected-area 480.0 \
   --tiles-dir /path/to/tiles_5deg \
-  -o dalton_city.geojson \
+  -o basin.geojson \
   --pretty
 ```
 
-### B. Single Point with an Expected Area Hint
+> **Tip:** Whenever your water agency publishes an approximate drainage area for a gauge, pass it with `--expected-area` (in $\text{km}^2$). This ensures the gauge snaps to the main river rather than a small nearby creek.
 
-If your gauge sits on the bank of a wide river and you know its approximate drainage area (for example, `101,750 km²`), pass `--expected-area`:
+### B. Delineate Many Gauges from a CSV or Parquet File
 
-```bash
-delineate-catchment \
-  --lat 48.25 \
-  --lon 16.30 \
-  --expected-area 101750 \
-  --tiles-dir /path/to/tiles_5deg \
-  -o danube_vienna.geojson
-```
-
-If no river channel near `(48.25, 16.30)` has an area within `±50%` of `101,750 km²`, the command prints `[AREA HINT FAILURE]` to `stderr`, exits with code `1`, and does not create `danube_vienna.geojson`.
-
-### C. Reading Tiles from Google Cloud Storage
-
-When reading tiles from a `gs://` bucket, pass both `--gcs-uri` and `--cache-dir`. Add `--clean-cache` if you want the tool to delete the tiles it downloaded when the run finishes (it will only delete the files it created, never any pre-existing files):
-
-```bash
-delineate-catchment \
-  --lat 39.6828 \
-  --lon -88.7729 \
-  --gcs-uri gs://your-bucket/tiles_5deg \
-  --cache-dir /tmp/dem_tile_cache \
-  --clean-cache \
-  -o dalton_city.geojson
-```
-
-### D. Batch Delineation from a CSV or Parquet Table
-
-Prepare a CSV or Parquet file with explicit latitude and longitude columns (such as `latitude` and `longitude`, or `gauge_lat` and `gauge_lon`):
+Create a CSV or Parquet table (for example, `gauges.csv`):
 
 ```csv
-gauge_id,latitude,longitude,expected_area_km2
+gauge_id,latitude,longitude,area_km2
 camels_01013500,47.2374,-68.5826,2252.7
 camels_03335500,40.4172,-86.8858,18821.0
 ```
 
-Run across multiple CPU cores with `--workers` and optionally pass `--area-col`:
+Run `delineate-catchment` across multiple CPU cores using `--workers`:
 
 ```bash
 delineate-catchment \
   --csv gauges.csv \
-  --area-col expected_area_km2 \
+  --area-col area_km2 \
   --tiles-dir /path/to/tiles_5deg \
   --workers 8 \
   -o basins.geoparquet
 ```
 
-### E. Saving in Standard Caravan Folder Structure (`--preserve-caravan-dirs`)
+### C. Save in Standard Caravan Folder Structure
 
-If your `gauge_id` values follow the Caravan `<subdataset>_<id>` naming convention (such as `camels_01013500` or `grdc_6340110`), adding `--preserve-caravan-dirs` organizes the output files into the standard Caravan `shapefiles/<subdataset>/` hierarchy:
+If your `gauge_id` column uses the Caravan naming format `<subdataset>_<id>` (such as `camels_01013500` or `grdc_6340110`), add `--preserve-caravan-dirs` and `--output-dir`:
 
 ```bash
 delineate-catchment \
   --csv gauges.csv \
+  --area-col area_km2 \
   --tiles-dir /path/to/tiles_5deg \
-  --output-dir /path/to/caravan_output \
+  --output-dir /path/to/caravan_dataset \
   --preserve-caravan-dirs \
   --format all \
   --workers 8
 ```
 
-This writes:
-* `/path/to/caravan_output/shapefiles/camels/camels_basin_shapes.geoparquet`
-* `/path/to/caravan_output/shapefiles/camels/camels_basin_shapes.geojson`
-* `/path/to/caravan_output/shapefiles/camels/camels_basin_shapes.shp` (plus `.shx`, `.dbf`, `.prj`, `.cpg`)
+This creates the exact folder structure expected by Caravan and MultiMet tools:
 
----
+```text
+/path/to/caravan_dataset/
+└── shapefiles/
+    └── camels/
+        ├── camels_basin_shapes.geoparquet
+        ├── camels_basin_shapes.geojson
+        ├── camels_basin_shapes.shp
+        ├── camels_basin_shapes.shx
+        ├── camels_basin_shapes.dbf
+        ├── camels_basin_shapes.prj
+        └── camels_basin_shapes.cpg
+```
 
-## 4. Python API Usage
+### D. Read Map Tiles from Google Cloud Storage (`gs://`)
 
-### Single Point
+When your `.npy` tiles live in a Google Cloud Storage bucket, pass both `--gcs-uri` and a local `--cache-dir` where downloaded tiles can be stored. Add `--clean-cache` to delete the downloaded tiles automatically when the command finishes:
+
+```bash
+delineate-catchment \
+  --csv gauges.csv \
+  --area-col area_km2 \
+  --gcs-uri gs://your-bucket/tiles_5deg \
+  --cache-dir /tmp/dem_tile_cache \
+  --clean-cache \
+  --workers 8 \
+  -o basins.geoparquet
+```
+
+### E. Use from Python
 
 ```python
 from catchment_delineation import DemDelineator
 
-delineator = DemDelineator(tiles_dir='/path/to/tiles_5deg')
+delineator = DemDelineator(tiles_dir="/path/to/tiles_5deg")
 
 feature = delineator.delineate(
     lat=39.6828,
     lon=-88.7729,
-    catchment_id='USGS_05592500',
-    expected_area_km2=480.0,  # optional area hint in km²
+    catchment_id="USGS_05592500",
+    expected_area_km2=480.0,  # optional expected area in km²
 )
 
-print('Catchment ID:', feature['properties']['catchment_id'])
-print('Area (km²):', feature['properties']['area_km2'])
-print('Upstream Cells:', feature['properties']['upstream_cells_count'])
-```
-
-### Multiple Points (Batch)
-
-```python
-from catchment_delineation import DemDelineator
-
-delineator = DemDelineator(tiles_dir='/path/to/tiles_5deg')
-
-coords = [(39.6828, -88.7729), (40.4172, -86.8858)]
-ids = ['camels_05592500', 'camels_03335500']
-expected_areas = [480.0, 18821.0]  # optional
-
-feature_collection = delineator.delineate_batch(
-    coords=coords,
-    ids=ids,
-    expected_areas_km2=expected_areas,
-)
-
-for feat in feature_collection['features']:
-    props = feat['properties']
-    print(props['catchment_id'], props['area_km2'], props['status'])
+print("Gauge ID:", feature["properties"]["catchment_id"])
+print("Area (km²):", feature["properties"]["area_km2"])
 ```
 
 ---
 
-## 5. CLI Options Reference (`delineate-catchment`)
+## 4. What to Watch Out For (Common Pitfalls)
 
-| Option | Type | Default | What It Does |
+1. **You must provide all file paths yourself (no hidden defaults)**
+   The tool never guesses file locations and never falls back to default paths. Always pass your tile location (`--tiles-dir` or `--gcs-uri` + `--cache-dir`) and your output destination (`-o` or `--output-dir`).
+
+2. **Gauges on wide rivers need `--expected-area` or `--area-col`**
+   On a 90-meter map, a wide river (such as the Danube, Mississippi, or Amazon) spans many grid cells across its width. A gauge coordinate near the riverbank can sit closer to a tiny creek on the bank than to the main river channel in the middle of the river.
+   * Passing `--expected-area` (or `--area-col` for CSV tables) tells the tool to find the nearby channel whose drainage area matches your expected area (within `±50%` by default, controlled by `--area-tolerance`).
+   * **Loud error if no river matches:** If you supply an expected area and no river within `~7.2 km` matches that area, the tool **will not guess or output a bad polygon**. It logs a `[AREA HINT FAILURE]` error and refuses to output a polygon (`CatchmentAreaMismatchError`).
+
+3. **Latitude limit (`-56°S` to `60°N`)**
+   The 90-meter HydroSHEDS maps cover latitudes from `-56°S` to `60°N`.
+   * If a gauge is north of `60°N` (such as northern Scandinavia, Alaska, or northern Canada), it is outside map coverage.
+   * If a gauge sits south of `60°N` (for example at `59.8°N`) but its upstream headwaters cross north of `60°N`, the tool stops rather than cutting the river off at the `60°N` border. In batch runs, these gauges are marked `status: "out_of_coverage"` with `geometry: null`.
+
+4. **All upstream map tiles must be in your tile folder**
+   Large rivers can start hundreds of kilometers away and cross several 5°×5° map tiles. If your `--tiles-dir` contains the tile for the gauge location but is missing an upstream tile that drains into that river, the tool stops with an error instead of returning an incomplete polygon.
+
+5. **Coordinate order and units**
+   * **Coordinates:** Standard decimal degrees (`EPSG:4326` / WGS84), with **latitude first** (`-56` to `60`) and **longitude second** (`-180` to `180`).
+   * **Drainage areas:** All area inputs (`--expected-area`, `--area-col`) and outputs (`area_km2`, `area`) are in **square kilometers ($\text{km}^2$)**.
+
+---
+
+## 5. Complete Command-Line Arguments (`delineate-catchment`)
+
+### Coordinate Input Options
+
+| Argument | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `--lat` | float | `None` | Latitude of the outlet point |
-| `--lon` | float | `None` | Longitude of the outlet point |
-| `--coords` | string(s) | `None` | Space-separated `"lat,lon"` coordinate pairs |
-| `--csv` | path / `gs://` | `None` | Path to a CSV/Parquet table (or a Caravan directory containing `attributes_other_*.csv`) |
-| `--id` | string | `None` | Custom ID for a single-point run |
-| `--lat-col` | string | auto | Exact latitude column name in `--csv` |
-| `--lon-col` | string | auto | Exact longitude column name in `--csv` |
-| `--id-col` | string | auto | Exact ID column name in `--csv` |
-| `--expected-area` | float | `None` | Optional expected drainage area ($\text{km}^2$) for single-point snapping |
-| `--area-col` | string | `None` | Optional column in `--csv` containing expected drainage area ($\text{km}^2$) |
-| `--area-tolerance` | float | `0.50` | Allowed relative difference around expected area (`0.50` = `±50%`) |
-| `--tiles-dir` | path / `gs://` | `None` | Folder (or `gs://` URI) containing 5°×5° `.npy` flow-direction tiles |
-| `--gcs-uri` | `gs://` URI | `None` | Google Cloud Storage URI containing 5°×5° `.npy` tiles (requires `--cache-dir`) |
-| `--cache-dir` | path | `None` | Local folder used to store tiles downloaded from `--gcs-uri` |
-| `--snap-window` | int | `12` | Half-width of initial channel search window in grid cells (`12` cells ≈ `1.1 km`) |
-| `--max-cells` | int | `None` | Optional hard cap on upstream cells (default `None`: no river is ever cut off) |
-| `--workers`, `-w` | int | `1` | Number of parallel CPU processes for batch runs |
-| `-o`, `--output` | path / `gs://` | stdout | Output file path (`.geojson`, `.geoparquet`, `.parquet`, `.shp`) |
-| `--output-dir` | path / `gs://` | `None` | Output directory for partitioned outputs |
-| `--preserve-caravan-dirs` | flag | `False` | Save outputs under `<output-dir>/shapefiles/<subdataset>/<subdataset>_basin_shapes.*` |
-| `--format` | choice | `all` | Which file formats to write in `--output-dir`: `all`, `geoparquet`, `geojson`, `shp` |
-| `--clean-cache` | flag | `False` | Delete only the `.npy` tile files downloaded during this run |
-| `--pretty` | flag | `False` | Indent JSON output for easier reading |
-| `--list-tiles` | flag | `False` | List `.npy` tile files in `--tiles-dir` and exit |
+| `--lat` | float | `None` | Latitude of a single river gauge or outlet point in decimal degrees (e.g., `39.6828`). Must be used with `--lon`. |
+| `--lon` | float | `None` | Longitude of a single river gauge or outlet point in decimal degrees (e.g., `-88.7729`). Must be used with `--lat`. |
+| `--id` | string | `None` | Custom gauge ID when running a single point with `--lat` and `--lon` (e.g., `USGS_05592500`). If omitted, an ID is generated from the coordinates. |
+| `--coords` | string(s) | `None` | One or more space-separated `"lat,lon"` pairs for running a few points without a CSV file (e.g., `--coords "39.68,-88.77" "40.42,-86.89"`). |
+| `--csv` | path / URI | `None` | Path (local or `gs://`) to a CSV or Parquet table of gauge coordinates, or a Caravan directory containing `attributes/` tables. |
+| `--lat-col` | string | Auto | Name of the latitude column in `--csv`. Only needed if your column is not named `latitude`, `lat`, `gauge_lat`, `caravan:gauge_lat`, `outlet_lat`, or `pour_point_lat`. |
+| `--lon-col` | string | Auto | Name of the longitude column in `--csv`. Only needed if your column is not named `longitude`, `lon`, `long`, `lng`, `gauge_lon`, `caravan:gauge_lon`, `outlet_lon`, or `pour_point_lon`. |
+| `--id-col` | string | Auto | Name of the gauge ID column in `--csv`. Only needed if your column is not named `gauge_id`, `catchment_id`, `station_id`, `hybas_id`, `id`, or `caravan:gauge_id`. |
+| `--workers`, `-w` | int | `1` | Number of CPU processes to run in parallel during batch runs (e.g., `--workers 8`). |
+
+### Map Tile & River Snapping Options
+
+| Argument | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--tiles-dir` | path / URI | `None` | Folder (local path or `gs://` URI) containing 5°×5° `.npy` flow-direction tiles. You must provide either `--tiles-dir` or `--gcs-uri`. |
+| `--gcs-uri` | URI | `None` | Google Cloud Storage folder (`gs://...`) containing 5°×5° `.npy` tiles. Must be used with `--cache-dir`. |
+| `--cache-dir` | path | `None` | Local folder where tiles downloaded from Google Cloud Storage are stored. Required whenever reading tiles from `gs://`. |
+| `--snap-window` | int | `12` | Half-width of the search box (in 90-meter pixels) around the gauge coordinate used to snap onto the nearest river channel (`12` cells ≈ `1.1 km`). |
+| `--expected-area` | float | `None` | Optional expected drainage area in $\text{km}^2$ for a single gauge (or applied to all gauges if `--area-col` is not set). Searches up to `80` cells (`~7.2 km`) for a matching river channel; raises an error if none matches. |
+| `--area-col` | string | `None` | Optional column name in `--csv` containing the expected drainage area in $\text{km}^2$ for each gauge. |
+| `--area-tolerance` | float | `0.50` | Allowed relative difference between delineated area and expected area (`0.50` = within `±50%`, i.e., `0.5×` to `1.5×`). |
+| `--max-cells` | int | `None` | Optional upper limit on upstream 90-meter pixels traced. Default is `None` (no limit — large rivers are never cut off). |
+
+### Output & Utility Options
+
+| Argument | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `-o`, `--output` | path / URI | `stdout` | Output file path (`.geojson`, `.json`, `.geoparquet`, `.parquet`, or `.shp`). Prints GeoJSON to the terminal if omitted. |
+| `--output-dir` | path / URI | `None` | Output root folder for multi-format or Caravan-structured outputs. |
+| `--preserve-caravan-dirs` | flag | `False` | Groups gauges by the prefix in `gauge_id` (before the first `_`) and writes files into `<output-dir>/shapefiles/<subdataset>/<subdataset>_basin_shapes.*`. |
+| `--format` | choice | `all` | File format(s) to write when using `--output-dir` or `--preserve-caravan-dirs`: `all`, `geoparquet`, `parquet`, `geojson`, or `shp`. |
+| `--pretty` | flag | `False` | Formats GeoJSON output with indentation and line breaks. |
+| `--clean-cache` | flag | `False` | Deletes only the `.npy` tile files downloaded into `--cache-dir` during this run. |
+| `--list-tiles` | flag | `False` | Lists all `.npy` tile files available in `--tiles-dir` and exits. |
 
 ---
 
-## 6. Benchmarking Against Reference Polygons (`benchmark-catchment`)
+## 6. Benchmark CLI (`benchmark-catchment`) & Accuracy Summary
 
-If you have a reference Parquet table of known watershed polygons (with columns `gauge_id`, `continent`, `hemisphere`, `size_tier`, `latitude`, `longitude`, `reference_area_km2`, `geometry_wkt`), you can compare the delineator's polygons against the reference polygons using `benchmark-catchment`:
+You can evaluate delineation accuracy against a reference dataset of published gauge polygons using `benchmark-catchment`:
 
 ```bash
 benchmark-catchment \
@@ -210,18 +213,33 @@ benchmark-catchment \
   --output benchmark_results.csv
 ```
 
-On the 1,200-basin global evaluation set (`1,127` basins within the `-56°` to `60°` DEM domain across 6 continents):
-* **Median Intersection-over-Union (IoU):** `0.976`
-* **Median Dice Score:** `0.988`
-* **Share of basins with IoU ≥ 0.80:** `97.4%`
-* **Median Absolute Area Error:** `1.8%`
+### Benchmark CLI Arguments
 
----
+| Argument | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--dataset` | path / URI | Required | Path (`.parquet` or `gs://`) to the benchmark reference dataset. |
+| `--tiles-dir` | path / URI | `None` | Local folder (or `gs://` URI) containing 5°×5° `.npy` flow-direction tiles. |
+| `--gcs-uri` | URI | `None` | Google Cloud Storage URI containing 5°×5° `.npy` tiles (requires `--cache-dir`). |
+| `--cache-dir` | path | `None` | Local folder for storing tiles downloaded from `--gcs-uri`. |
+| `--output` | path | `None` | Optional file path (`.csv` or `.parquet`) to save per-basin metrics. |
+| `--workers` | int | `8` | Number of parallel worker processes. |
+| `--samples` | int | `None` | Optional number of basins to randomly sample (balanced across continents and basin sizes). |
+| `--continents` | string(s) | `None` | Filter benchmark to specific continents (e.g., `--continents Europe "North America"`). |
+| `--size-tiers` | string(s) | `None` | Filter benchmark to specific basin size buckets (`1_micro`, `2_small`, `3_medium`, `4_large`, `5_macro`). |
+| `--snap-window` | int | `12` | Search window half-width in 90-meter pixels around each gauge. |
+| `--no-area-hint` | flag | `False` | Disable using `reference_area_km2` as `--expected-area` during the benchmark (enabled by default). |
+| `--area-tolerance` | float | `0.50` | Allowed relative tolerance around expected area (`0.50` = `±50%`). |
+| `--clean-cache` | flag | `False` | Delete only the `.npy` tile files downloaded during the benchmark run. |
 
-## 7. Running the Unit Tests
+### Global 1,200-Basin Benchmark Results
 
-```bash
-pytest test/test_catchment_delineation.py -v
-```
+Evaluated across `1,200` global gauges (`1,127` within the `[-56°S, 60°N]` HydroSHEDS coverage bounds, plus `73` gauges above `60°N` flagged as `out_of_coverage`):
 
-All 19 tests create temporary tiles inside pytest's temporary folder (`tmp_path`) and do not require internet access or cloud credentials.
+| Basin Size Bucket | In-Coverage Basins | Median IoU | Median Dice | Basins with $\text{IoU} \ge 0.80$ | Median Area Error |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **1_micro** ($< 10\text{ km}^2$) | 132 | **0.916** | **0.956** | **87.1%** (115 / 132) | 5.29% |
+| **2_small** ($10\text{–}100\text{ km}^2$) | 172 | **0.955** | **0.977** | **98.3%** (169 / 172) | 2.68% |
+| **3_medium** ($100\text{–}1,000\text{ km}^2$) | 222 | **0.975** | **0.988** | **98.2%** (218 / 222) | 1.88% |
+| **4_large** ($1,000\text{–}10,000\text{ km}^2$) | 282 | **0.984** | **0.992** | **98.9%** (279 / 282) | 1.38% |
+| **5_macro** ($> 10,000\text{ km}^2$) | 319 | **0.991** | **0.995** | **99.4%** (317 / 319) | 0.96% |
+| **All In-Coverage** | **1,127** | **0.976** | **0.988** | **97.4%** (1,098 / 1,127) | **1.80%** |
