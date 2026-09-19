@@ -650,3 +650,175 @@ def test_forecast_dataset_no_forecast_features_renames_key(
     assert 'x_d' in sample
     assert 'x_d_hindcast' not in sample
     assert 'x_d_forecast' not in sample
+
+
+def test_product_name_parsing_and_normalization():
+    from googlehydrology.datasetzoo.multimet import (
+        _canonical_product_name,
+        _get_products_and_bands_from_feature_strings,
+        _get_products_and_bands_from_features,
+        _normalize_product_key,
+        _product_name_from_feature,
+    )
+
+    assert _normalize_product_key('CHIRPS_GEFS') == 'chirpsgefs'
+    assert _normalize_product_key('era5-land') == 'era5land'
+
+    assert _canonical_product_name('chirps_gefs') == 'CHIRPS_GEFS'
+    assert _canonical_product_name('chirpsgefs') == 'CHIRPS_GEFS'
+    assert _canonical_product_name('ERA5_LAND') == 'ERA5_LAND'
+    assert _canonical_product_name('era5land') == 'ERA5_LAND'
+    assert _canonical_product_name('graphcast') == 'GRAPHCAST'
+    assert _canonical_product_name('custom_prod') == 'CUSTOM_PROD'
+
+    # Feature string parsing with underscores and token-boundary safety
+    assert (
+        _product_name_from_feature('chirps_gefs_precipitation')
+        == 'CHIRPS_GEFS'
+    )
+    assert _product_name_from_feature('CHIRPS_GEFS_precip') == 'CHIRPS_GEFS'
+    assert _product_name_from_feature('era5_land_temperature') == 'ERA5_LAND'
+    assert _product_name_from_feature('era5land_temperature') == 'ERA5_LAND'
+    assert _product_name_from_feature('cpc_precip') == 'CPC'
+    assert _product_name_from_feature('chirps2_precip') == 'CHIRPS2'
+
+    # Flat string feature list
+    features = ['chirps_gefs_precip', 'era5_land_temperature', 'cpc_precip']
+    pb = _get_products_and_bands_from_feature_strings(features)
+    assert pb == {
+        'CHIRPS_GEFS': ['chirps_gefs_precip'],
+        'ERA5_LAND': ['era5_land_temperature'],
+        'CPC': ['cpc_precip'],
+    }
+
+    # Nested feature groups (list[list[str]])
+    nested_features = [
+        ['chirps_gefs_precip', 'cpc_precip'],
+        ['era5_land_temperature'],
+    ]
+    pb_nested = _get_products_and_bands_from_features(nested_features)
+    assert pb_nested == {
+        'CHIRPS_GEFS': ['chirps_gefs_precip'],
+        'CPC': ['cpc_precip'],
+        'ERA5_LAND': ['era5_land_temperature'],
+    }
+
+    # Dict-formatted inputs (including duplicate canonical keys)
+    dict_features = {
+        'chirps_gefs': ['chirps_gefs_precip'],
+        'era5land': ['era5_land_temperature'],
+        'ERA5_LAND': ['era5_land_pressure'],
+    }
+    pb_dict = _get_products_and_bands_from_features(dict_features)
+    assert pb_dict == {
+        'CHIRPS_GEFS': ['chirps_gefs_precip'],
+        'ERA5_LAND': ['era5_land_temperature', 'era5_land_pressure'],
+    }
+
+
+@patch('googlehydrology.datasetzoo.multimet.load_caravan_attributes')
+@patch('googlehydrology.datasetzoo.multimet.load_caravan_timeseries_together')
+@patch('googlehydrology.datasetzoo.multimet._open_zarr')
+@patch('googlehydrology.datasetzoo.multimet.load_basin_file')
+def test_multimet_dict_inputs_and_missing_band_validation(
+    mock_load_basin_file,
+    mock_open_zarr,
+    mock_load_targets,
+    mock_load_statics,
+    get_config,
+    sample_basins,
+):
+    mock_load_basin_file.return_value = sample_basins
+    dates = pd.date_range('1999-12-25', '2006-03-10', freq='D')
+    lead_times = [pd.Timedelta(days=1)]
+    rng = np.random.default_rng(42)
+
+    mock_load_statics.return_value = xr.Dataset(
+        {
+            'static_f1': (
+                ('basin',),
+                rng.random(len(sample_basins), dtype=np.float32),
+            )
+        },
+        coords={'basin': sample_basins},
+    )
+    mock_load_targets.return_value = xr.Dataset(
+        {
+            'target_v1': (
+                ('basin', 'date'),
+                rng.random(
+                    (len(sample_basins), len(dates)), dtype=np.float32
+                ),
+            )
+        },
+        coords={'basin': sample_basins, 'date': dates},
+    )
+
+    chirps_gefs_ds = xr.Dataset(
+        {
+            'chirps_gefs_precip': (
+                ('basin', 'date', 'lead_time'),
+                rng.random(
+                    (len(sample_basins), len(dates), len(lead_times)),
+                    dtype=np.float32,
+                ),
+            )
+        },
+        coords={'basin': sample_basins, 'date': dates, 'lead_time': lead_times},
+    )
+    era5_land_ds = xr.Dataset(
+        {
+            'era5_land_temp': (
+                ('basin', 'date'),
+                rng.random(
+                    (len(sample_basins), len(dates)), dtype=np.float32
+                ),
+            )
+        },
+        coords={'basin': sample_basins, 'date': dates},
+    )
+
+    def fake_open_zarr(path: Path):
+        if 'CHIRPS_GEFS' in str(path):
+            return chirps_gefs_ds
+        if 'ERA5_LAND' in str(path):
+            return era5_land_ds
+        raise FileNotFoundError(path)
+
+    mock_open_zarr.side_effect = fake_open_zarr
+
+    cfg = get_config('dict_inputs')
+    cfg.update_config(
+        {
+            'hindcast_inputs': {
+                'chirps_gefs': ['chirps_gefs_precip'],
+                'era5_land': ['era5_land_temp'],
+            },
+            'forecast_inputs': {
+                'chirps_gefs': ['chirps_gefs_precip'],
+            },
+        }
+    )
+
+    dataset = Multimet(cfg=cfg, is_train=True, period='train')
+    sample = dataset[0]
+    assert 'chirps_gefs_precip' in sample['x_d_hindcast']
+    assert 'era5_land_temp' in sample['x_d_hindcast']
+    assert 'chirps_gefs_precip' in sample['x_d_forecast']
+
+    # Verify missing variable in Zarr store raises ValueError immediately
+    cfg_missing = get_config('dict_inputs_missing')
+    cfg_missing.update_config(
+        {
+            'hindcast_inputs': {
+                'era5_land': ['era5_land_missing_var'],
+            },
+            'forecast_inputs': {
+                'chirps_gefs': ['chirps_gefs_precip'],
+            },
+        }
+    )
+    with pytest.raises(ValueError, match='era5_land_missing_var'):
+        Multimet(cfg=cfg_missing, is_train=True, period='train')
+
+
