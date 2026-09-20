@@ -125,8 +125,12 @@ def _search_quantile(
        f'(x) = CDF(x) dx = PDF(x)
     """
     ppfs = _ppf(quantile, mu, b, tau)
-    low = frac_confine * torch.min(ppfs, dim=2, keepdim=True).values
-    high = frac_confine * torch.max(ppfs, dim=2, keepdim=True).values
+    min_ppf = torch.min(ppfs, dim=2, keepdim=True).values
+    max_ppf = torch.max(ppfs, dim=2, keepdim=True).values
+    margin = 0.1 * (max_ppf - min_ppf + 1e-6)
+    
+    low = min_ppf - margin
+    high = max_ppf + margin
 
     k = torch.mean(ppfs, dim=2, keepdim=True)
     for _ in range(iterations):
