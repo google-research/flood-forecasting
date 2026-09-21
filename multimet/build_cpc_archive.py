@@ -180,6 +180,11 @@ def process_cpc_netcdf_to_dataset(
   with xr.open_dataset(nc_path, decode_timedelta=False) as ds:
     precip_raw = ds["precip"].values
     time_raw = pd.to_datetime(ds["time"].values)
+    stations_raw = None
+    for st_cand in ("cpc_num_stations", "num_stations", "gcount"):
+      if st_cand in ds.data_vars:
+        stations_raw = ds[st_cand].values
+        break
 
   # Invert latitude: north->south [89.75 .. -89.75] to [-89.75 .. 89.75].
   precip_lat_inv = precip_raw[:, ::-1, :]
@@ -194,6 +199,16 @@ def process_cpc_netcdf_to_dataset(
       np.float32
   )
 
+  stations_clean = None
+  if stations_raw is not None:
+    st_lat_inv = stations_raw[:, ::-1, :]
+    st_shifted = np.concatenate(
+        [st_lat_inv[:, :, 360:], st_lat_inv[:, :, :360]], axis=2
+    )
+    stations_clean = np.where(st_shifted < 0, np.nan, st_shifted).astype(
+        np.float32
+    )
+
   dates = pd.DatetimeIndex(time_raw.strftime("%Y-%m-%d"))
 
   if target_start_date is not None or target_end_date is not None:
@@ -205,6 +220,8 @@ def process_cpc_netcdf_to_dataset(
 
     dates = dates[mask]
     precip_clean = precip_clean[mask]
+    if stations_clean is not None:
+      stations_clean = stations_clean[mask]
 
   if trim_trailing_unpublished and len(dates) > 0:
     finite_per_day = np.isfinite(precip_clean).any(axis=(1, 2))
@@ -212,26 +229,37 @@ def process_cpc_netcdf_to_dataset(
       last_valid_idx = int(np.where(finite_per_day)[0][-1])
       dates = dates[: last_valid_idx + 1]
       precip_clean = precip_clean[: last_valid_idx + 1]
+      if stations_clean is not None:
+        stations_clean = stations_clean[: last_valid_idx + 1]
     else:
       return None
 
   if len(dates) == 0:
     return None
 
+  data_vars = {
+      CPC_VARIABLE: (
+          ["time", "latitude", "longitude"],
+          precip_clean,
+          {
+              "units": "mm/day",
+              "long_name": "CPC Global Unified Gauge-Based Daily Precipitation",
+              "standard_name": "precipitation_amount",
+          },
+      ),
+  }
+  if stations_clean is not None:
+    data_vars["cpc_num_stations"] = (
+        ["time", "latitude", "longitude"],
+        stations_clean,
+        {
+            "units": "count",
+            "long_name": "CPC Reporting Rain Gauge Stations per Grid Cell",
+        },
+    )
+
   return xr.Dataset(
-      data_vars={
-          CPC_VARIABLE: (
-              ["time", "latitude", "longitude"],
-              precip_clean,
-              {
-                  "units": "mm/day",
-                  "long_name": (
-                      "CPC Global Unified Gauge-Based Daily Precipitation"
-                  ),
-                  "standard_name": "precipitation_amount",
-              },
-          ),
-      },
+      data_vars=data_vars,
       coords={
           "time": dates.values,
           "latitude": CPC_LATS,
