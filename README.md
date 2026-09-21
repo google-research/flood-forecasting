@@ -98,6 +98,39 @@ Most users do not need to build weather archives—pointing `dynamics_data_dir` 
 
 If you want to download raw gridded weather data directly from NOAA (CPC), ECMWF (HRES), or NASA (IMERG) and build your own Zarr archives, use the command-line tools in the [`multimet`](multimet/README.md) package (`build-cpc-archive`, `build-hres-archive`, and `build-imerg-archive`). See [`multimet/README.md`](multimet/README.md) and the [Gridded Weather Archives documentation](docs/source/usage/gridded_archives.rst) for usage instructions and command-line arguments.
 
+#### Extracting Catchment Timeseries (Optional)
+
+Also optional: the `extract-multimet` tool reduces gridded meteorology to per-basin daily forcing timeseries in the Caravan MultiMet schema, for **any** basin geometries and **any** date range.
+
+Each product can be read from either of two sources:
+
+* **`--source upstream`** (default) — fetch directly from the third-party provider (NOAA PSL, NASA GES DISC, ECMWF Open Data, WeatherBench 2, Copernicus). No archive required.
+* **`--source archive`** — read from a gridded archive built by the tools above. This is substantially faster, and requires you to pass the store URI explicitly via `--archive-store PRODUCT=URI`.
+
+```bash
+# Read straight from the upstream third-party providers.
+extract-multimet \
+  --basins_path /path/to/your/basins.geojson \
+  --output_dir /path/to/output \
+  --products CPC,ERA5_LAND,IMERG,HRES \
+  --start_date 2020-01-01 \
+  --end_date 2020-01-31
+
+# Read from gridded archives you built or were given. Every store URI is
+# supplied explicitly; there are no default or fallback locations.
+extract-multimet \
+  --basins_path /path/to/your/basins.geojson \
+  --output_dir /path/to/output \
+  --products CPC,HRES \
+  --source archive \
+  --archive-store CPC=gs://your-bucket/CPC/daily_surface.zarr \
+  --archive-store HRES=gs://your-bucket/HRES/daily_surface.zarr \
+  --start_date 2020-01-01 \
+  --end_date 2020-01-31
+```
+
+See [`multimet/README.md`](multimet/README.md) and the [MultiMet catchment extractor documentation](docs/source/usage/multimet_extractor.rst) for the full guide.
+
 ## **Usage**
 
 The package installs the run command as the primary entry point.

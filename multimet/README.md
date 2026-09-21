@@ -1,13 +1,29 @@
-# Gridded Weather Archive Builders (`multimet`)
+# Open-MultiMet (`multimet`)
 
-This folder contains command-line tools to download public gridded weather data from NOAA, ECMWF, and NASA and save it into standardized daily Zarr archives.
+This package contains two complementary sets of command-line tools:
+
+1. **Gridded weather archive builders** — download public gridded weather data
+   from NOAA, ECMWF and NASA and save it into standardized daily Zarr archives.
+2. **Catchment timeseries extractors** — reduce gridded meteorology to
+   per-basin daily forcing timeseries in the Caravan MultiMet schema.
+
+They compose: you can build an archive once and then extract many different
+basin sets from it, or you can skip the archive entirely and extract straight
+from the upstream third-party providers.
 
 > **Do you need these tools?**
 > If you only want to train or evaluate flood-forecasting models using the published MultiMet dataset, **you do not need to run these tools**. Simply point `dynamics_data_dir` in your training configuration file to `gs://caravan-multimet/v1.1`.
 >
-> Use these tools only if you want to download raw weather grids directly from the upstream providers and build or update your own Zarr archives.
+> Use these tools only if you want to download raw weather grids directly from the upstream providers, build or update your own Zarr archives, or extract forcings for your own basin geometries.
+
+### Contents
+
+* [Part I — Gridded weather archive builders](#part-i--gridded-weather-archive-builders)
+* [Part II — Catchment timeseries extractors](#part-ii--catchment-timeseries-extractors)
 
 ---
+
+# Part I — Gridded weather archive builders
 
 ## Overview
 
@@ -194,3 +210,175 @@ build-imerg-archive \
    * **No version mixing in IMERG:** `build-imerg-archive` accepts only **IMERG Version 07 (V07)** files (variable `precipitation`). Legacy **Version 06 (V06)** files (`precipitationCal`) raise an error immediately so different calibration versions are never mixed.
    * **Complete 48-half-hour requirement for local IMERG HDF5 files:** When summing 48 half-hourly `.RT-H5` files for a day, all 48 half-hours must be present and valid at a grid cell. If any half-hour is missing at a grid cell, that cell is set to `NaN` for the day rather than summing an incomplete day.
    * **Network or file errors stop the run:** If a file is corrupted or a network error persists after retries, the builder stops with an error rather than writing fake or empty data.
+
+---
+
+# Part II — Catchment timeseries extractors
+
+The extractors reduce gridded meteorology to catchment-averaged forcing time
+series standardized to the **Caravan benchmark specification**
+([Kratzert et al., 2023](https://nature.com/articles/s41597-023-01960-w);
+[Kratzert et al., 2024, arXiv:2411.09459](https://arxiv.org/abs/2411.09459)).
+
+## Supported Meteorological Products
+
+The extractor supports **5 core products**, operating either against user-supplied **Open-MultiMet Gridded Zarr Archives** (`--source archive --archive-store PRODUCT=URI`) or directly against **third-party agency upstream feeds** (`--source public`, for CPC, IMERG, and HRES):
+
+| Product | Type | Native Grid | Forecast Lead | Variables Extracted | Supported Sources |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **ERA5-Land** (`ERA5_LAND`) | Daily Reanalysis | $0.1^\circ$ (1801 $\times$ 3600) | N/A | **17 variables** (`era5land_temperature_2m`, `era5land_temperature_2m_min`, `era5land_temperature_2m_max`, `era5land_dewpoint_temperature_2m`, `era5land_surface_pressure`, `era5land_total_precipitation`, solar/thermal radiation, 10m U/V wind, soil moisture layers 1–4, snow depth water equivalent, FAO-56 & ERA5-Land PET) + `era5land_missing_fraction` | **Gridded Zarr archive only** (explicit user-supplied `gs://` or local `.zarr` URI; third-party sources are disabled to prevent 0.25° ERA5 substitution) |
+| **CPC Global Precip** (`CPC`) | Daily Gauge | $0.5^\circ$ (360 $\times$ 720) | N/A | **2 variables**: `cpc_precipitation` ($\text{mm/day}$) and `cpc_num_stations` (reporting rain-gauge count per cell) + `cpc_missing_fraction` | User-supplied gridded Zarr archive (`--source archive`), NOAA PSL NetCDF (`https://downloads.psl.noaa.gov/Datasets/cpc_global_precip/`), or local CPC binary grids |
+| **IMERG Early V07** (`IMERG`) | Daily / Half-Hourly Satellite | $0.1^\circ$ (1800 $\times$ 3600) | N/A | `imerg_precipitation` ($\text{mm/day}$) + `imerg_missing_fraction` | User-supplied gridded Zarr archive (`--source archive`), NASA GES DISC (`GPM_3IMERGDE.07`), or dynamical.org Icechunk catalog |
+| **ECMWF IFS HRES** (`HRES`) | Operational NWP Forecast | $0.25^\circ$ (721 $\times$ 1440) | 10 days ($1 \dots 10$) | **5 variables** (`hres_total_precipitation`, `hres_temperature_2m`, `hres_surface_pressure`, `hres_surface_net_solar_radiation`, `hres_surface_net_thermal_radiation`) + `hres_missing_fraction` | User-supplied gridded Zarr archive (`--source archive`) or explicit Zarr/GRIB store (`data_dir`) |
+| **DeepMind GraphCast** (`GRAPHCAST`) | AI Weather Forecast | $0.25^\circ$ (721 $\times$ 1440) | 10 days ($1 \dots 10$) | **4 variables** (`graphcast_total_precipitation`, `graphcast_temperature_2m`, `graphcast_u_component_of_wind_10m`, `graphcast_v_component_of_wind_10m`) + `graphcast_missing_fraction` | Explicit Zarr store (`data_dir`) |
+
+---
+
+## Architecture & Data-Quality Invariants
+
+### A. Exact Fractional Zonal Averaging & Coverage Auditing
+- **Fractional Polygon Intersection**: Computes exact fractional overlap between basin boundaries (Shapely polygons from GeoJSON or Shapefiles) and raster grid cells, with latitude cosine weighting ($\cos(\phi)$) to account for spherical surface distortion.
+- **No Out-of-Domain Nearest-Cell Snapping**: Sub-grid-scale polygons receive weight on a single cell **only** when the polygon genuinely lies inside that grid cell. Basins outside the grid domain receive zero weight and evaluate to `NaN` (`missing_fraction = 1.0`), never snapping to a distant edge pixel.
+- **Companion Coverage Variable (`<prefix>_missing_fraction`)**: Every extracted dataset records the area-weighted fraction $[0.0, 1.0]$ of missing (`NaN`) pixels within each catchment at each timestep (`cpc_missing_fraction`, `era5land_missing_fraction`, `imerg_missing_fraction`, `hres_missing_fraction`, `graphcast_missing_fraction`), matching the `CookieCutterResult.missing_values` audit trail in Google's internal flood-forecasting ingestion pipeline.
+- **No Hardcoded Bucket Paths or Placeholder Dates**: All `gs://` archive URIs, `start_date`, and `end_date` arguments must be explicitly supplied by the user.
+
+### B. Caravan Harmonization & Unit Standardization
+- Converts cumulative energy fluxes ($\text{J/m}^2$) to daily-mean rates ($\text{W/m}^2$).
+- Converts Kelvin temperatures to Celsius ($^\circ\text{C}$), including daily mean, daily minimum (`era5land_temperature_2m_min`), and daily maximum (`era5land_temperature_2m_max`) from 24 hourly steps.
+- Converts surface pressure from Pascals to $\text{kPa}$.
+- Implements the **FAO-56 Penman-Monteith** formulation for reference evapotranspiration (PET).
+- Converts HRES continuous accumulations into daily increments ($P_d = P_{24d} - P_{24(d-1)}$).
+
+### C. Consolidated Zarr Storage
+- Outputs are stored in standardized **Zarr v2** hierarchies with consolidated metadata (`.zmetadata`).
+- **Nowcast products** are indexed by `(basin, date)`.
+- **Forecast products** are indexed by `(basin, date, lead_time)` with daily lead times ($1 \dots 10$ days).
+
+---
+
+## Quickstart: Extracting from Gridded Archives & Upstream Feeds
+
+### Python API — Gridded Zarr Archives (`source="archive"`)
+
+```python
+from multimet import extract_multimet_serial
+
+output_stores = extract_multimet_serial(
+    basins="multimet/test/test_data/shapefiles/us/us_basin_shapes.geojson",
+    output_dir="/tmp/multimet_extracted",
+    products=["CPC", "ERA5_LAND", "IMERG", "HRES"],
+    start_date="2022-01-01",
+    end_date="2022-01-05",
+    source="archive",
+    archive_stores={
+        "CPC": "gs://<your-bucket>/gridded-data-archives/CPC/daily_surface.zarr",
+        "ERA5_LAND": "gs://<your-bucket>/data/era5_land/daily_surface.zarr",
+        "IMERG": "gs://<your-bucket>/gridded-data-archives/IMERG/daily_surface.zarr",
+        "HRES": "gs://<your-bucket>/gridded-data-archives/HRES/daily_surface.zarr",
+    },
+)
+```
+
+### Command-Line Interface (CLI)
+
+```bash
+# Extract from GCS gridded archives (user-supplied URIs required)
+python -m multimet.runner \
+  --basins_path multimet/test/test_data/shapefiles/us/us_basin_shapes.geojson \
+  --output_dir /tmp/multimet_extracted \
+  --products CPC,ERA5_LAND,IMERG,HRES \
+  --start_date 2022-01-01 \
+  --end_date 2022-01-05 \
+  --source archive \
+  --archive-store CPC=gs://<your-bucket>/gridded-data-archives/CPC/daily_surface.zarr \
+  --archive-store ERA5_LAND=gs://<your-bucket>/data/era5_land/daily_surface.zarr \
+  --archive-store IMERG=gs://<your-bucket>/gridded-data-archives/IMERG/daily_surface.zarr \
+  --archive-store HRES=gs://<your-bucket>/gridded-data-archives/HRES/daily_surface.zarr
+
+# Extract CPC and IMERG directly from upstream agency HTTP feeds
+python -m multimet.runner \
+  --basins_path multimet/test/test_data/shapefiles/us/us_basin_shapes.geojson \
+  --output_dir /tmp/multimet_upstream \
+  --products CPC,IMERG \
+  --start_date 2022-01-01 \
+  --end_date 2022-01-02 \
+  --source public
+```
+
+---
+
+## dynamical.org Universal Catalog Loader with Icechunk Acceleration
+
+The `DynamicalDataLoader` provides direct, cloud-optimized access to all weather and climate datasets in the [dynamical.org catalog](https://dynamical.org/catalog/).
+
+### Icechunk Accelerated Geospatial Bounding
+All dynamical.org datasets are stored in **Zarr v3 with Icechunk transactional repositories** on AWS S3. Rather than downloading multi-terabyte global or regional grids, the loader computes spatial bounding slices from requested watershed geometries (or bounding box tuples) and applies lazy slicing (`.sel()`):
+- **1D Geographic Datasets** (e.g. `nasa-imerg-analysis-early`, `noaa-gfs-forecast`, `ecmwf-aifs-single-forecast`, `noaa-mrms-conus-analysis-hourly`): Monotonicity is detected automatically to handle descending vs. ascending latitudes, and bounding slices are queried directly in degrees.
+- **2D Projected Datasets** (e.g. `noaa-hrrr-analysis`, `noaa-hrrr-forecast-48-hour`, `eccc-hrdps-forecast`): Watershed boundaries are reprojected on the fly into native projected coordinates (e.g. Lambert Conformal Conic in meters or Rotated Pole) via `pyproj` using the dataset's CRS WKT.
+- **Icechunk Range Requests**: Icechunk translates coordinate slices to chunk index keys and issues S3 byte-range HTTP GET requests only for the intersecting chunks, loading local watershed cubes in seconds.
+
+### Python API Examples
+
+#### 1. Quick Load via `load_dynamical`
+
+```python
+from multimet import load_dynamical
+
+# Load geographically-bounded gridded cube
+ds_cube = load_dynamical(
+    dataset_id="nasa-imerg-analysis-early",
+    watersheds="test/test_data/shapefiles/us/us_basin_shapes.geojson",
+    variables=["precipitation_surface"],
+    start_date="2023-01-01",
+    end_date="2023-01-05",
+    mode="cube",
+)
+
+# Extract catchment zonal timeseries directly
+ds_ts = load_dynamical(
+    dataset_id="nasa-imerg-analysis-early",
+    watersheds="test/test_data/shapefiles/us/us_basin_shapes.geojson",
+    variables=["precipitation_surface"],
+    start_date="2023-01-01",
+    end_date="2023-01-05",
+    mode="timeseries",
+)
+```
+
+#### 2. Advanced Usage with `DynamicalDataLoader` and `DynamicalExtractor`
+
+```python
+from multimet import DynamicalDataLoader, DynamicalExtractor
+
+# Inspect catalog and dataset schema
+loader = DynamicalDataLoader("noaa-hrrr-analysis")
+info = loader.get_info()
+print(f"Grid type: {info.grid_type}, Variables: {info.variables}")
+
+# Extract catchment averages with BaseExtractor pipeline adapter
+extractor = DynamicalExtractor(
+    dataset_id="nasa-imerg-analysis-early",
+    variable_map={"precipitation_surface": "imerg_precipitation"},
+)
+basin_forcing = extractor.extract_for_basins(
+    basins_gdf="test/test_data/shapefiles/us/us_basin_shapes.geojson",
+    start_date="2023-01-01",
+    end_date="2023-01-02",
+)
+```
+
+---
+
+## Relationship to the Caravan MultiMet Paper (arXiv:2411.09459)
+
+The Caravan MultiMet paper (*"Caravan MultiMet: Extending Caravan with Multiple Weather Nowcasts and Forecasts"*, [arXiv:2411.09459](https://arxiv.org/abs/2411.09459)) describes the creation of a large-scale, pre-computed benchmark dataset covering thousands of global watersheds and hosted as static NetCDF and Zarr archives on Zenodo and Google Cloud Platform.
+
+### Key Differences Between the Paper and This Module:
+
+1. **Static Benchmark vs. Active Extractor Engine**:
+   - The paper published pre-computed time series for fixed Caravan basins up to late 2023.
+   - This module is the **underlying reproducible extraction engine**, allowing researchers to generate forcing time series for **any custom basin geometries** (local watersheds, regional gauges) and **any arbitrary date intervals** (historical or near-real-time).
+2. **Zero Proprietary Infrastructure**:
+   - While original dataset production utilized distributed cloud batch jobs, this module is written entirely in portable Python (`xarray`, `zarr`, `geopandas`, `scipy`) and operates directly on public open-access endpoints without proprietary internal tools.
+3. **End-to-End Integration with OpenHydroNet**:
+   - Forcing data generated by this extractor can be consumed directly by `googlehydrology.datasetzoo.multimet.Multimet` to train and evaluate LSTM and Transformer flood forecasting models (e.g., `MeanEmbeddingForecastLSTM`).
