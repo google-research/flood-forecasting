@@ -26,35 +26,41 @@ dependencies:
   - cpuonly
   - torchaudio=2.5.*
   - torchvision=0.20.*
-  - absl-py=2.3.*
-  - bokeh=3.8.*
-  - cachey=0.2.*
-  - dask=2025.12.*
-  - gcsfs=2025.12.*
-  - geopandas=1.1.*
+  - absl-py
+  - bokeh
+  - cachey
+  - dask
+  - gcsfs
+  - geopandas
   - gh
-  - h5netcdf=1.7.*
-  - h5py=3.15.*
+  - google-cloud-storage
+  - h5netcdf
+  - h5py
   - ipython
   - jupyter
-  - matplotlib=3.10.*
-  - more-itertools=10.8.*
-  - nbsphinx=0.9.*
-  - netcdf4=1.7.*
-  - numpy=2.4.*
-  - pandas=2.3.*
-  - parso=0.8.*
-  - pydantic=2.12.*
+  - matplotlib
+  - more-itertools
+  - nbsphinx
+  - netcdf4
+  - numpy
+  - pandas<3
+  - parso
+  - pyarrow
+  - pydantic
+  - pyogrio
+  - pyproj
   - pytest
   - pytest-cov
   - pytest-xdist
-  - ruamel.yaml=0.18.*
+  - ruamel.yaml
   - ruff
-  - scipy=1.16.*
+  - scipy
   - seaborn
-  - sphinx=8.2.*
-  - sphinx-rtd-theme=3.0.*
-  - tensorboard=2.20.*
-  - tqdm=4.67.*
-  - xarray=2025.12.*
-  - zarr=3.1.*
+  - shapely
+  - sphinx
+  - sphinx-rtd-theme
+  - tensorboard
+  - tqdm
+  - xarray
+  - zarr
+

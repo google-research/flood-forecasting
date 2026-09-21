@@ -36,6 +36,7 @@ setup(
         'googlehydrology.modelzoo',
         'googlehydrology.training',
         'googlehydrology.evaluation',
+        'static_extractor',
     ],
     url='https://googlehydrology.readthedocs.io',
     project_urls={
@@ -52,6 +53,11 @@ setup(
         'console_scripts': [
             'schedule-runs=googlehydrology.run_scheduler:_main',
             'run=googlehydrology.run:_main',
+            'extract-caravan-static=static_extractor.cli:main',
+            'extract-static-attributes=static_extractor.cli:main',
+            'extract-caravan-static-batch=static_extractor.batch_runner:main',
+            'extract-static-attributes-batch=static_extractor.batch_runner:main',
+            'benchmark-static-extractor=static_extractor.benchmark:main',
         ]
     },
     python_requires='>=3.12',

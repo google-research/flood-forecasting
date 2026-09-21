@@ -101,6 +101,11 @@ MultiMet Data
 
 The MultiMet forcing data extension is accessed directly from **Google Cloud Storage** during runtime. You do not need to download it; ensure your configuration file's ``dynamics_data_dir`` argument points to: ``gs://caravan-multimet/v1.1``
 
+Static Attributes for Custom Watersheds
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If you want to run models on watersheds that are not part of the published Caravan dataset, see :doc:`Extracting Static Attributes for Custom Watersheds <static_extractor>` to generate Caravan-compatible static attribute tables from your own polygon files (``.geojson``, ``.shp``, or ``.gpkg``).
+
 ----------------------
 Training Configuration
 ----------------------

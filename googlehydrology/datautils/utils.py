@@ -233,8 +233,15 @@ def get_frequency_factor(freq_one: str, freq_two: str) -> float:
     if freq_one == freq_two:
         return 1
 
-    offset_one = to_offset(freq_one)
-    offset_two = to_offset(freq_two)
+    def _normalize_legacy_freq(f: str) -> str:
+        return re.sub(
+            r'^(\d*)A(?=-[A-Z]{3}$|$)',
+            lambda m: f'{m.group(1)}{_YE_FREQ}',
+            f,
+        )
+
+    offset_one = to_offset(_normalize_legacy_freq(freq_one))
+    offset_two = to_offset(_normalize_legacy_freq(freq_two))
     if offset_one.n < 0 or offset_two.n < 0:
         # Would be possible to implement, but we should never need negative frequencies, so it seems reasonable to
         # fail gracefully rather than to open ourselves to potential unexpected corner cases.

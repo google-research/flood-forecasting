@@ -10,7 +10,7 @@ This repository is a fork of [NeuralHydrology](https://github.com/neuralhydrolog
 
 ## 📖 Documentation
 
-Detailed instructions on how to configure, train, and evaluate OpenHydroNet models can be found on our official documentation page:
+Detailed instructions on how to configure, train, and evaluate OpenHydroNet models can be found on our documentation page:
 👉 **[openhydronet.readthedocs.io](https://openhydronet.readthedocs.io/)**
 
 Watch our high-level video introduction to the interactive tutorial on YouTube:
@@ -147,6 +147,21 @@ The `~/flood-forecasting/example-configs` directory contains reference YAML file
   * **Model Architecture:** `handoff_forecast_lstm`  
   * **Dataset:** CAMELS-US (531 basins)  
   * **Description:** A benchmarking configuration for the State Handoff model tailored for the CAMELS-US dataset, used to compare the handoff approach against other architectures on US-based basin data.
+
+## **Extracting Static Attributes for Your Own Watersheds**
+
+To run OpenHydroNet models on a watershed, the model needs a table of static watershed characteristics (such as area, elevation, slope, soil type, land cover, and long-term average climate). For basins in the published [Caravan](https://www.nature.com/articles/s41597-023-01975-w) dataset, these tables are already included.
+
+If you want to run models on **your own watersheds**, this repository includes a tool (`static_extractor`) that takes a map file of your watershed boundaries (`.geojson`, `.shp`, or `.gpkg`) and builds a Caravan-compatible CSV table of static attributes using the community [HydroATLAS](https://www.hydrosheds.org/hydroatlas) and [ERA5-Land](https://cds.climate.copernicus.eu/) datasets.
+
+```bash
+extract-caravan-static \
+    --input /path/to/watershed_polygons.geojson \
+    --output /path/to/extracted_caravan_attributes.csv \
+    --era5-source hybas
+```
+
+👉 **Full Usage Guide & Command-Line Flags:** See [`static_extractor/README.md`](static_extractor/README.md).
 
 ## **Issue Reporting**
 
