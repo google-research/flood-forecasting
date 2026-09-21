@@ -111,6 +111,8 @@ def test_era5_land_strict_missing_day_handling(basins_gdf):
   )
   for band in PRODUCT_BANDS[Product.ERA5_LAND]:
     assert np.all(np.isnan(res[band]))
+  assert "era5land_temperature_2m_min" in res
+  assert "era5land_temperature_2m_max" in res
 
 
 def test_era5_land_grid_resolution_by_source():

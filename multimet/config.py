@@ -68,6 +68,8 @@ PRODUCT_BANDS: Mapping[Product, Tuple[str, ...]] = {
         "era5land_surface_net_thermal_radiation",
         "era5land_surface_pressure",
         "era5land_temperature_2m",
+        "era5land_temperature_2m_min",
+        "era5land_temperature_2m_max",
         "era5land_total_precipitation",
         "era5land_u_component_of_wind_10m",
         "era5land_v_component_of_wind_10m",

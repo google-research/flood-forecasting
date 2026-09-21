@@ -315,6 +315,8 @@ class ERA5LandExtractor(BaseExtractor):
         continue
       t2m_arr = np.asarray(hourly_t2m[b_id], dtype=np.float32)
       t2m_mean_k = float(np.mean(t2m_arr))
+      t2m_min_k = float(np.min(t2m_arr))
+      t2m_max_k = float(np.max(t2m_arr))
       d2m_k = float(np.mean(hourly_d2m[b_id]))
       sp_pa = float(np.mean(hourly_sp[b_id]))
       u10_ms = float(np.mean(hourly_u10[b_id]))
@@ -338,6 +340,8 @@ class ERA5LandExtractor(BaseExtractor):
       )
 
       res_dict["era5land_temperature_2m"][idx] = t2m_mean_k - 273.15
+      res_dict["era5land_temperature_2m_min"][idx] = t2m_min_k - 273.15
+      res_dict["era5land_temperature_2m_max"][idx] = t2m_max_k - 273.15
       res_dict["era5land_dewpoint_temperature_2m"][idx] = d2m_k - 273.15
       res_dict["era5land_surface_pressure"][idx] = sp_pa / 1000.0
       res_dict["era5land_u_component_of_wind_10m"][idx] = u10_ms

@@ -208,7 +208,14 @@ def test_era5_land_archive_extraction_and_deduplicated_warning(
   for idx, band in enumerate(PRODUCT_BANDS[Product.ERA5_LAND]):
     if band == "era5land_snow_depth_water_equivalent":
       continue  # Intentionally omit one band to test deduplicated warning + NaN output
-    val = 20.0 if band == "era5land_temperature_2m" else 10.0 + float(idx)
+    if band == "era5land_temperature_2m_min":
+      val = 14.0
+    elif band == "era5land_temperature_2m":
+      val = 20.0
+    elif band == "era5land_temperature_2m_max":
+      val = 26.0
+    else:
+      val = 10.0 + float(idx)
     data_vars[band] = (
         ["time", "latitude", "longitude"],
         np.full((len(times), len(lats), len(lons)), val, dtype=np.float32),
@@ -232,7 +239,9 @@ def test_era5_land_archive_extraction_and_deduplicated_warning(
   for band in PRODUCT_BANDS[Product.ERA5_LAND]:
     assert band in ds_out.data_vars
   assert MISSING_FRACTION_VAR[Product.ERA5_LAND] in ds_out.data_vars
+  assert np.allclose(ds_out["era5land_temperature_2m_min"].values, 14.0, atol=1e-3)
   assert np.allclose(ds_out["era5land_temperature_2m"].values, 20.0, atol=1e-3)
+  assert np.allclose(ds_out["era5land_temperature_2m_max"].values, 26.0, atol=1e-3)
   assert np.all(np.isnan(ds_out["era5land_snow_depth_water_equivalent"].values))
   assert np.allclose(ds_out["era5land_missing_fraction"].values, 0.0)
 

@@ -42,7 +42,12 @@ from multimet.config import (
 
 logger = logging.getLogger(__name__)
 
-_OPTIONAL_SECONDARY_BANDS: Mapping[Product, Tuple[str, ...]] = {}
+_OPTIONAL_SECONDARY_BANDS: Mapping[Product, Tuple[str, ...]] = {
+    Product.ERA5_LAND: (
+        "era5land_temperature_2m_min",
+        "era5land_temperature_2m_max",
+    ),
+}
 
 
 def check_zarr_store_exists(store_path: str, max_retries: int = 6) -> bool:
