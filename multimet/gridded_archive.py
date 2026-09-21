@@ -17,7 +17,7 @@
 Supports extracting basin-averaged meteorological time series from user-supplied
 gridded Zarr archives (local paths or ``gs://`` URIs) for:
 
-- **CPC** (0.5 deg daily nowcast: ``cpc_precipitation``)
+- **CPC** (0.5 deg daily nowcast: ``cpc_precipitation``, ``cpc_num_stations``)
 - **IMERG** (0.1 deg daily nowcast: ``imerg_precipitation``)
 - **ERA5_LAND** (0.1 deg daily nowcast: 17 ``era5land_*`` surface bands)
 - **HRES** (0.25 deg 10-day daily forecast: 5 ``hres_*`` surface bands)
@@ -138,6 +138,18 @@ ARCHIVE_SPECS: Mapping[Product, GriddedArchiveSpec] = {
                 offset=0.0,
                 clip_min=0.0,
                 already_converted_names=("cpc_precipitation", "precip"),
+            ),
+            ArchiveBandSpec(
+                target_band="cpc_num_stations",
+                source_candidates=("cpc_num_stations", "num_stations", "gcount"),
+                scale=1.0,
+                offset=0.0,
+                clip_min=0.0,
+                already_converted_names=(
+                    "cpc_num_stations",
+                    "num_stations",
+                    "gcount",
+                ),
             ),
         ),
     ),

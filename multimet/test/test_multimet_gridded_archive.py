@@ -347,6 +347,10 @@ def test_serial_runner_with_archive_stores(tmp_path, basins_gdf):
               ["time", "latitude", "longitude"],
               np.full((2, 360, 720), 6.0, dtype=np.float32),
           ),
+          "cpc_num_stations": (
+              ["time", "latitude", "longitude"],
+              np.full((2, 360, 720), 4.0, dtype=np.float32),
+          ),
       },
       coords={"time": times.values, "latitude": lats, "longitude": lons},
   ).to_zarr(cpc_store)
@@ -364,4 +368,5 @@ def test_serial_runner_with_archive_stores(tmp_path, basins_gdf):
   assert "CPC" in stores
   ds_written = xr.open_zarr(stores["CPC"])
   assert np.allclose(ds_written["cpc_precipitation"].values, 6.0, atol=1e-3)
+  assert np.allclose(ds_written["cpc_num_stations"].values, 4.0, atol=1e-3)
   assert np.allclose(ds_written["cpc_missing_fraction"].values, 0.0, atol=1e-3)

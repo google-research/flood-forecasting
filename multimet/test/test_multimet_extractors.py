@@ -91,6 +91,12 @@ def test_cpc_extractor_binary_parsing(tmp_path):
   assert grid.shape == (360, 720)
   assert np.isclose(np.nanmean(grid), 15.0, atol=1e-3)
 
+  precip_grid, stations_grid = CPCExtractor.parse_cpc_file_fields(str(cpc_file))
+  assert precip_grid.shape == (360, 720)
+  assert stations_grid.shape == (360, 720)
+  assert np.isclose(np.nanmean(precip_grid), 15.0, atol=1e-3)
+  assert np.isclose(np.nanmean(stations_grid), 7.0, atol=1e-3)
+
 
 def test_era5_land_strict_missing_day_handling(basins_gdf):
   """Verifies that incomplete hourly file lists return all NaNs for ERA5-Land."""

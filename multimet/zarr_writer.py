@@ -42,7 +42,9 @@ from multimet.config import (
 
 logger = logging.getLogger(__name__)
 
-_OPTIONAL_SECONDARY_BANDS: Mapping[Product, Tuple[str, ...]] = {}
+_OPTIONAL_SECONDARY_BANDS: Mapping[Product, Tuple[str, ...]] = {
+    Product.CPC: ("cpc_num_stations",),
+}
 
 
 def check_zarr_store_exists(store_path: str, max_retries: int = 6) -> bool:

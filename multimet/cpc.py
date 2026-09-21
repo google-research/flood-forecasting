@@ -189,8 +189,13 @@ class CPCExtractor(BaseExtractor):
     )
 
   @staticmethod
-  def parse_cpc_file(file_path: str) -> np.ndarray:
-    """Reads a daily CPC binary file and returns a 2D array of (lat, lon) in mm/day."""
+  def parse_cpc_file_fields(
+      file_path: str,
+  ) -> Tuple[np.ndarray, np.ndarray]:
+    """Reads a daily CPC binary file and returns (precip_mm, num_stations).
+
+    Both arrays have shape (360, 720) on (-89.75..89.75, -179.75..179.75).
+    """
     with open(file_path, "rb") as f:
       content = f.read()
 
@@ -201,8 +206,14 @@ class CPCExtractor(BaseExtractor):
     # Shape is (2, 360, 720): field 0 is precip (0.1mm), field 1 is num_stations
     if len(raw_array) >= 360 * 720 * 2:
       precip_field = raw_array[: 360 * 720].reshape((360, 720))
+      stations_field = raw_array[360 * 720 : 360 * 720 * 2].reshape((360, 720))
+      stations_clean = np.where(stations_field < 0, np.nan, stations_field)
+      stations_shifted = np.concatenate(
+          [stations_clean[:, 360:], stations_clean[:, :360]], axis=1
+      ).astype(np.float32)
     elif len(raw_array) == 360 * 720:
       precip_field = raw_array.reshape((360, 720))
+      stations_shifted = np.full((360, 720), np.nan, dtype=np.float32)
     else:
       raise ValueError(
           f"Unexpected binary size {len(raw_array)} for CPC file {file_path}"
@@ -214,9 +225,15 @@ class CPCExtractor(BaseExtractor):
     # Shift longitudes from (0.25 .. 359.75) to (-179.75 .. 179.75)
     precip_shifted = np.concatenate(
         [precip_mm[:, 360:], precip_mm[:, :360]], axis=1
-    )
+    ).astype(np.float32)
 
-    return precip_shifted.astype(np.float32)
+    return precip_shifted, stations_shifted
+
+  @staticmethod
+  def parse_cpc_file(file_path: str) -> np.ndarray:
+    """Reads a daily CPC binary file and returns a 2D array of (lat, lon) in mm/day."""
+    precip_shifted, _ = CPCExtractor.parse_cpc_file_fields(file_path)
+    return precip_shifted
 
   def extract_day_from_cpc_file(
       self,
@@ -224,11 +241,12 @@ class CPCExtractor(BaseExtractor):
       basin_ids: List[str],
       weights_dict: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
   ) -> Dict[str, np.ndarray]:
-    """Extracts 1 day of CPC precipitation across all basins."""
+    """Extracts 1 day of CPC precipitation and gauge counts across all basins."""
     num_basins = len(basin_ids)
     res_precip = np.full(num_basins, np.nan, dtype=np.float32)
+    res_stations = np.full(num_basins, np.nan, dtype=np.float32)
     res_missing = np.ones(num_basins, dtype=np.float32)
-    precip_2d = self.parse_cpc_file(cpc_file)
+    precip_2d, stations_2d = self.parse_cpc_file_fields(cpc_file)
     for b_idx, b_id in enumerate(basin_ids):
       if b_id not in weights_dict:
         continue
@@ -238,10 +256,15 @@ class CPCExtractor(BaseExtractor):
       p_val, miss_frac = _weighted_mean_valid_with_coverage(
           precip_2d[lat_idx, lon_idx], w
       )
+      s_val, _ = _weighted_mean_valid_with_coverage(
+          stations_2d[lat_idx, lon_idx], w
+      )
       res_precip[b_idx] = p_val
+      res_stations[b_idx] = s_val
       res_missing[b_idx] = miss_frac
     return {
         "cpc_precipitation": res_precip,
+        "cpc_num_stations": res_stations,
         "cpc_missing_fraction": res_missing,
     }
 
@@ -254,6 +277,8 @@ class CPCExtractor(BaseExtractor):
       use_bounding_box: bool = True,
   ) -> xr.Dataset:
     """Extracts CPC daily precipitation using public NOAA PSL yearly NetCDF files."""
+    from multimet.gridded_archive import _warn_missing_variables_once
+
     basin_ids = list(basins_gdf.index)
     date_idx = pd.date_range(start_dt, end_dt, freq="D")
 
@@ -291,8 +316,14 @@ class CPCExtractor(BaseExtractor):
     precip_matrix = np.full(
         (len(basin_ids), len(date_idx)), np.nan, dtype=np.float32
     )
+    stations_matrix = np.full(
+        (len(basin_ids), len(date_idx)), np.nan, dtype=np.float32
+    )
     missing_matrix = np.ones(
         (len(basin_ids), len(date_idx)), dtype=np.float32
+    )
+    _warn_missing_variables_once(
+        self.data_dir, Product.CPC, ["cpc_num_stations"]
     )
 
     years = sorted(list(set(d.year for d in date_idx)))
@@ -363,6 +394,7 @@ class CPCExtractor(BaseExtractor):
     return xr.Dataset(
         data_vars={
             "cpc_precipitation": (["basin", "date"], precip_matrix),
+            "cpc_num_stations": (["basin", "date"], stations_matrix),
             "cpc_missing_fraction": (["basin", "date"], missing_matrix),
         },
         coords={
@@ -377,11 +409,17 @@ class CPCExtractor(BaseExtractor):
       matrix: ZonalWeightMatrix,
   ) -> Dict[str, np.ndarray]:
     """Extracts 1 day of CPC precipitation from PSL NetCDF."""
+    from multimet.gridded_archive import _warn_missing_variables_once
+
     dt = pd.to_datetime(dt)
     nc_path = ensure_psl_cpc_netcdf(dt.year, cache_dir=self.cache_dir)
     num_basins = matrix.matrix.shape[0]
     res = np.full(num_basins, np.nan, dtype=np.float32)
+    stations = np.full(num_basins, np.nan, dtype=np.float32)
     missing = np.ones(num_basins, dtype=np.float32)
+    _warn_missing_variables_once(
+        self.data_dir, Product.CPC, ["cpc_num_stations"]
+    )
 
     if netCDF4 is not None:
       with netCDF4.Dataset(nc_path, "r") as nc:
@@ -394,6 +432,7 @@ class CPCExtractor(BaseExtractor):
         if dt not in date_map:
           return {
               "cpc_precipitation": res,
+              "cpc_num_stations": stations,
               "cpc_missing_fraction": missing,
           }
         t_idx = date_map[dt]
@@ -413,6 +452,7 @@ class CPCExtractor(BaseExtractor):
         if dt not in date_map:
           return {
               "cpc_precipitation": res,
+              "cpc_num_stations": stations,
               "cpc_missing_fraction": missing,
           }
         t_idx = date_map[dt]
@@ -426,6 +466,7 @@ class CPCExtractor(BaseExtractor):
 
     return {
         "cpc_precipitation": res,
+        "cpc_num_stations": stations,
         "cpc_missing_fraction": missing,
     }
 
@@ -465,6 +506,7 @@ class CPCExtractor(BaseExtractor):
       num_basins = len(basins_gdf)
       return {
           "cpc_precipitation": np.full(num_basins, np.nan, dtype=np.float32),
+          "cpc_num_stations": np.full(num_basins, np.nan, dtype=np.float32),
           "cpc_missing_fraction": np.ones(num_basins, dtype=np.float32),
       }
     if matrix is None:
@@ -482,7 +524,7 @@ class CPCExtractor(BaseExtractor):
       use_bounding_box: bool = True,
       **kwargs,
   ) -> xr.Dataset:
-    """Extracts CPC daily precipitation for given basin geometries."""
+    """Extracts CPC daily precipitation and station count for given basin geometries."""
     if start_date is None or end_date is None:
       raise ValueError(
           "CPCExtractor.extract_for_basins requires both start_date and "
@@ -531,6 +573,9 @@ class CPCExtractor(BaseExtractor):
     precip_matrix = np.full(
         (len(basin_ids), len(date_idx)), np.nan, dtype=np.float32
     )
+    stations_matrix = np.full(
+        (len(basin_ids), len(date_idx)), np.nan, dtype=np.float32
+    )
     missing_matrix = np.ones(
         (len(basin_ids), len(date_idx)), dtype=np.float32
     )
@@ -550,11 +595,13 @@ class CPCExtractor(BaseExtractor):
       if fpath:
         day_res = self.extract_day_from_cpc_file(fpath, basin_ids, weights_dict)
         precip_matrix[:, d_idx] = day_res["cpc_precipitation"]
+        stations_matrix[:, d_idx] = day_res["cpc_num_stations"]
         missing_matrix[:, d_idx] = day_res["cpc_missing_fraction"]
 
     ds = xr.Dataset(
         data_vars={
             "cpc_precipitation": (["basin", "date"], precip_matrix),
+            "cpc_num_stations": (["basin", "date"], stations_matrix),
             "cpc_missing_fraction": (["basin", "date"], missing_matrix),
         },
         coords={

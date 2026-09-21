@@ -76,7 +76,10 @@ PRODUCT_BANDS: Mapping[Product, Tuple[str, ...]] = {
         "era5land_volumetric_soil_water_layer_3",
         "era5land_volumetric_soil_water_layer_4",
     ),
-    Product.CPC: ("cpc_precipitation",),
+    Product.CPC: (
+        "cpc_precipitation",
+        "cpc_num_stations",
+    ),
     Product.IMERG: ("imerg_precipitation",),
     Product.CHIRPS: ("chirps_precipitation",),
     Product.CHIRPS_GEFS: ("chirpsgefs_precipitation",),
@@ -142,7 +145,10 @@ PRODUCT_METADATA_ATTRS: Mapping[Product, Mapping[str, str]] = {
             " data provided by the NOAA PSL, from their website at"
             " https://psl.noaa.gov/data/gridded/data.cpc.globalprecip.html"
         ),
-        "Units": "cpc_precipitation: precipitation [mm/day]",
+        "Units": (
+            "cpc_precipitation: precipitation [mm/day]\n"
+            "cpc_num_stations: reporting rain gauge stations [count]"
+        ),
         "Version": "1.1",
     },
     Product.IMERG: {
