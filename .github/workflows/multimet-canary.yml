@@ -1,0 +1,88 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Nightly live checks for the upstream weather feeds used by the multimet
+# archive builders: NOAA PSL (CPC), WeatherBench 2, ECMWF Open Data, and NASA
+# Earthdata CMR (IMERG).
+#
+# Runs on a daily schedule and via manual workflow_dispatch so transient
+# third-party outages do not block pull requests.
+
+name: multimet canary
+
+on:
+  schedule:
+    # 06:17 UTC daily. Offset from the hour to avoid the scheduling stampede,
+    # and late enough that the ECMWF 00z run has published.
+    - cron: '17 6 * * *'
+  # Allows an on-demand run from the Actions tab, which is the quickest way to
+  # confirm an upstream outage has cleared.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    name: Upstream feed canaries
+    runs-on: ubuntu-latest
+    # Generous relative to the ~5 minute expected runtime, because these steps
+    # download real data over the public internet.
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            "numpy" \
+            "pandas" \
+            "xarray" \
+            "zarr>=3" \
+            "netcdf4" \
+            "h5netcdf" \
+            "h5py" \
+            "fsspec" \
+            "gcsfs" \
+            "requests" \
+            "scipy" \
+            "tqdm" \
+            "pytest" \
+            "pytest-timeout"
+
+      # ecCodes is only needed to decode ECMWF GRIB2. If it cannot be installed
+      # the two decoding canaries skip themselves and the remaining six still
+      # run, so a packaging problem here must not fail the job.
+      - name: Install ecCodes (optional, enables the GRIB decoding canaries)
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libeccodes0 libeccodes-tools
+          python -m pip install eccodes
+
+      - name: Run canaries
+        run: |
+          pytest multimet/test -m canary --run-canary \
+            -v -ra --timeout=900 --timeout-method=thread
