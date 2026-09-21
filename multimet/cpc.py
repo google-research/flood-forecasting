@@ -69,16 +69,30 @@ def ensure_psl_cpc_netcdf(year: int, cache_dir: str = "/tmp/cpc_cache") -> str:
   return local_path
 
 
-def _weighted_mean_valid(vals: np.ndarray, weights: np.ndarray) -> float:
-  """Computes weighted mean over non-NaN grid cells, normalizing by valid weights."""
+def _weighted_mean_valid_with_coverage(
+    vals: np.ndarray, weights: np.ndarray
+) -> Tuple[float, float]:
+  """Computes weighted mean over non-NaN grid cells and missing weight fraction."""
+  if len(weights) == 0:
+    return np.nan, 1.0
+  total_w = float(np.sum(weights))
+  if total_w <= 0.0:
+    return np.nan, 1.0
   valid = ~np.isnan(vals)
   if not np.any(valid):
-    return np.nan
+    return np.nan, 1.0
   w_valid = weights[valid]
-  sum_w = np.sum(w_valid)
+  sum_w = float(np.sum(w_valid))
   if sum_w <= 0.0:
-    return np.nan
-  return float(np.sum(vals[valid] * w_valid) / sum_w)
+    return np.nan, 1.0
+  missing_frac = float(np.clip((total_w - sum_w) / total_w, 0.0, 1.0))
+  return float(np.sum(vals[valid] * w_valid) / sum_w), missing_frac
+
+
+def _weighted_mean_valid(vals: np.ndarray, weights: np.ndarray) -> float:
+  """Computes weighted mean over non-NaN grid cells, normalizing by valid weights."""
+  mean_val, _ = _weighted_mean_valid_with_coverage(vals, weights)
+  return mean_val
 
 
 def resolve_date_to_cpc_file(
@@ -112,7 +126,7 @@ def resolve_date_to_cpc_file(
 
 
 class CPCExtractor(BaseExtractor):
-  """Extractor for NOAA CPC Global Unified Daily Precipitation."""
+  """Extractor for NOAA CPC Global Unified Daily Precipitation and Gauge Count."""
 
   def __init__(
       self,
@@ -121,19 +135,49 @@ class CPCExtractor(BaseExtractor):
       cache_dir: str = "/tmp/cpc_cache",
   ):
     super().__init__(Product.CPC, data_dir)
-    self.data_dir = (
-        data_dir
-        if data_dir is not None
-        else DEFAULT_STORAGE_PATHS[Product.CPC]["psl_netcdf"]
-    )
     self.cache_dir = cache_dir
 
-    if source in ("auto", "default", "psl", "public", "netcdf"):
+    source_lower = source.lower()
+    if source_lower in ("archive", "gridded_archive", "zarr", "zarr_archive"):
+      self.source = "archive"
+      if data_dir is None or not str(data_dir).strip():
+        raise ValueError(
+            "CPCExtractor with source='archive' requires an explicit Zarr "
+            "store URI or path via data_dir."
+        )
+      self.data_dir = str(data_dir)
+    elif source_lower in ("auto", "default"):
+      if data_dir is not None and (
+          str(data_dir).startswith(("gs://", "gcs://"))
+          or str(data_dir).rstrip("/").endswith(".zarr")
+      ):
+        self.source = "archive"
+        self.data_dir = str(data_dir)
+      else:
+        self.source = "psl"
+        self.data_dir = (
+            str(data_dir)
+            if data_dir is not None
+            else DEFAULT_STORAGE_PATHS[Product.CPC]["psl_netcdf"]
+        )
+    elif source_lower in ("psl", "public", "netcdf", "upstream"):
       self.source = "psl"
-    elif source in ("binary", "local"):
+      self.data_dir = (
+          str(data_dir)
+          if data_dir is not None
+          else DEFAULT_STORAGE_PATHS[Product.CPC]["psl_netcdf"]
+      )
+    elif source_lower in ("binary", "local"):
       self.source = "binary"
+      if data_dir is None or not str(data_dir).strip():
+        raise ValueError(
+            "CPCExtractor with source='binary' requires an explicit local "
+            "directory via data_dir."
+        )
+      self.data_dir = str(data_dir)
     else:
-      self.source = source
+      self.source = source_lower
+      self.data_dir = str(data_dir) if data_dir is not None else ""
 
     # Standard CPC 0.5 deg grid coordinates
     # Latitudes: -89.75 to 89.75 (south to north)
@@ -147,7 +191,7 @@ class CPCExtractor(BaseExtractor):
   @staticmethod
   def parse_cpc_file(file_path: str) -> np.ndarray:
     """Reads a daily CPC binary file and returns a 2D array of (lat, lon) in mm/day."""
-    with open(file_path, 'rb') as f:
+    with open(file_path, "rb") as f:
       content = f.read()
 
     if file_path.endswith(".gz"):
@@ -182,14 +226,24 @@ class CPCExtractor(BaseExtractor):
   ) -> Dict[str, np.ndarray]:
     """Extracts 1 day of CPC precipitation across all basins."""
     num_basins = len(basin_ids)
-    res = np.full(num_basins, np.nan, dtype=np.float32)
-    grid_2d = self.parse_cpc_file(cpc_file)
+    res_precip = np.full(num_basins, np.nan, dtype=np.float32)
+    res_missing = np.ones(num_basins, dtype=np.float32)
+    precip_2d = self.parse_cpc_file(cpc_file)
     for b_idx, b_id in enumerate(basin_ids):
       if b_id not in weights_dict:
         continue
       lat_idx, lon_idx, w = weights_dict[b_id]
-      res[b_idx] = _weighted_mean_valid(grid_2d[lat_idx, lon_idx], w)
-    return {"cpc_precipitation": res}
+      if len(w) == 0:
+        continue
+      p_val, miss_frac = _weighted_mean_valid_with_coverage(
+          precip_2d[lat_idx, lon_idx], w
+      )
+      res_precip[b_idx] = p_val
+      res_missing[b_idx] = miss_frac
+    return {
+        "cpc_precipitation": res_precip,
+        "cpc_missing_fraction": res_missing,
+    }
 
   def extract_for_basins_psl(
       self,
@@ -237,6 +291,9 @@ class CPCExtractor(BaseExtractor):
     precip_matrix = np.full(
         (len(basin_ids), len(date_idx)), np.nan, dtype=np.float32
     )
+    missing_matrix = np.ones(
+        (len(basin_ids), len(date_idx)), dtype=np.float32
+    )
 
     years = sorted(list(set(d.year for d in date_idx)))
     for yr in years:
@@ -270,7 +327,9 @@ class CPCExtractor(BaseExtractor):
             if use_bounding_box and lat_idx is not None and lon_idx is not None:
               day_shifted = day_shifted[lat_idx, :][:, lon_idx]
 
-            precip_matrix[:, d_idx] = matrix.reduce_2d(day_shifted)
+            vals, miss = matrix.reduce_2d_with_coverage(day_shifted)
+            precip_matrix[:, d_idx] = vals
+            missing_matrix[:, d_idx] = miss
       else:
         with xr.open_dataset(nc_path) as ds:
           t_series = pd.to_datetime(ds.time.values)
@@ -297,11 +356,14 @@ class CPCExtractor(BaseExtractor):
             if use_bounding_box and lat_idx is not None and lon_idx is not None:
               day_shifted = day_shifted[lat_idx, :][:, lon_idx]
 
-            precip_matrix[:, d_idx] = matrix.reduce_2d(day_shifted)
+            vals, miss = matrix.reduce_2d_with_coverage(day_shifted)
+            precip_matrix[:, d_idx] = vals
+            missing_matrix[:, d_idx] = miss
 
     return xr.Dataset(
         data_vars={
             "cpc_precipitation": (["basin", "date"], precip_matrix),
+            "cpc_missing_fraction": (["basin", "date"], missing_matrix),
         },
         coords={
             "basin": basin_ids,
@@ -319,6 +381,7 @@ class CPCExtractor(BaseExtractor):
     nc_path = ensure_psl_cpc_netcdf(dt.year, cache_dir=self.cache_dir)
     num_basins = matrix.matrix.shape[0]
     res = np.full(num_basins, np.nan, dtype=np.float32)
+    missing = np.ones(num_basins, dtype=np.float32)
 
     if netCDF4 is not None:
       with netCDF4.Dataset(nc_path, "r") as nc:
@@ -329,7 +392,10 @@ class CPCExtractor(BaseExtractor):
             pd.to_datetime(str(d)[:10]): i for i, d in enumerate(dates)
         }
         if dt not in date_map:
-          return {"cpc_precipitation": res}
+          return {
+              "cpc_precipitation": res,
+              "cpc_missing_fraction": missing,
+          }
         t_idx = date_map[dt]
         day_slice = precip_var[t_idx, :, :]
         day_lat_inv = day_slice[::-1, :]
@@ -337,7 +403,7 @@ class CPCExtractor(BaseExtractor):
             [day_lat_inv[:, 360:], day_lat_inv[:, :360]], axis=1
         )
         day_shifted = np.where(day_shifted < 0, np.nan, day_shifted)
-        res = matrix.reduce_2d(day_shifted)
+        res, missing = matrix.reduce_2d_with_coverage(day_shifted)
     else:
       with xr.open_dataset(nc_path) as ds:
         t_series = pd.to_datetime(ds.time.values)
@@ -345,7 +411,10 @@ class CPCExtractor(BaseExtractor):
             pd.to_datetime(str(d)[:10]): i for i, d in enumerate(t_series)
         }
         if dt not in date_map:
-          return {"cpc_precipitation": res}
+          return {
+              "cpc_precipitation": res,
+              "cpc_missing_fraction": missing,
+          }
         t_idx = date_map[dt]
         day_slice = ds["precip"].values[t_idx, :, :]
         day_lat_inv = day_slice[::-1, :]
@@ -353,9 +422,12 @@ class CPCExtractor(BaseExtractor):
             [day_lat_inv[:, 360:], day_lat_inv[:, :360]], axis=1
         )
         day_shifted = np.where(day_shifted < 0, np.nan, day_shifted)
-        res = matrix.reduce_2d(day_shifted)
+        res, missing = matrix.reduce_2d_with_coverage(day_shifted)
 
-    return {"cpc_precipitation": res}
+    return {
+        "cpc_precipitation": res,
+        "cpc_missing_fraction": missing,
+    }
 
   def extract_day(
       self,
@@ -368,6 +440,22 @@ class CPCExtractor(BaseExtractor):
   ) -> Dict[str, np.ndarray]:
     """Extracts 1 day of CPC precipitation across basins."""
     dt = pd.to_datetime(dt)
+    if self.source == "archive":
+      from multimet.gridded_archive import extract_nowcast_from_archive
+
+      ds_day = extract_nowcast_from_archive(
+          Product.CPC,
+          self.data_dir,
+          basins_gdf,
+          start_date=dt,
+          end_date=dt,
+          weights_matrix=matrix,
+          use_bounding_box=True,
+      )
+      return {
+          var: ds_day[var].values[:, 0].astype(np.float32)
+          for var in ds_day.data_vars
+      }
     if self.source == "binary":
       cpc_file = resolve_date_to_cpc_file(self.data_dir, dt)
       if cpc_file and weights_dict is not None:
@@ -376,7 +464,8 @@ class CPCExtractor(BaseExtractor):
         )
       num_basins = len(basins_gdf)
       return {
-          "cpc_precipitation": np.full(num_basins, np.nan, dtype=np.float32)
+          "cpc_precipitation": np.full(num_basins, np.nan, dtype=np.float32),
+          "cpc_missing_fraction": np.ones(num_basins, dtype=np.float32),
       }
     if matrix is None:
       matrix = ZonalWeightMatrix.from_geodataframe(
@@ -394,17 +483,30 @@ class CPCExtractor(BaseExtractor):
       **kwargs,
   ) -> xr.Dataset:
     """Extracts CPC daily precipitation for given basin geometries."""
-    basin_ids = list(basins_gdf.index)
+    if start_date is None or end_date is None:
+      raise ValueError(
+          "CPCExtractor.extract_for_basins requires both start_date and "
+          "end_date to be explicitly provided."
+      )
+    start_dt = pd.to_datetime(start_date)
+    end_dt = pd.to_datetime(end_date)
+    if end_dt < start_dt:
+      raise ValueError(
+          f"end_date ({end_dt}) must be >= start_date ({start_dt})."
+      )
 
-    if start_date is not None:
-      start_dt = pd.to_datetime(start_date)
-    else:
-      start_dt = pd.to_datetime("1979-01-01")
+    if self.source == "archive":
+      from multimet.gridded_archive import extract_nowcast_from_archive
 
-    if end_date is not None:
-      end_dt = pd.to_datetime(end_date)
-    else:
-      end_dt = pd.to_datetime("today")
+      return extract_nowcast_from_archive(
+          Product.CPC,
+          self.data_dir,
+          basins_gdf,
+          start_date=start_dt,
+          end_date=end_dt,
+          weights_matrix=weights_matrix,
+          use_bounding_box=use_bounding_box,
+      )
 
     if self.source == "psl":
       return self.extract_for_basins_psl(
@@ -415,6 +517,7 @@ class CPCExtractor(BaseExtractor):
           use_bounding_box=use_bounding_box,
       )
 
+    basin_ids = list(basins_gdf.index)
     date_idx = pd.date_range(start_dt, end_dt, freq="D")
 
     # Pre-reduce weights for basins
@@ -427,6 +530,9 @@ class CPCExtractor(BaseExtractor):
 
     precip_matrix = np.full(
         (len(basin_ids), len(date_idx)), np.nan, dtype=np.float32
+    )
+    missing_matrix = np.ones(
+        (len(basin_ids), len(date_idx)), dtype=np.float32
     )
 
     for d_idx, dt in enumerate(
@@ -444,10 +550,12 @@ class CPCExtractor(BaseExtractor):
       if fpath:
         day_res = self.extract_day_from_cpc_file(fpath, basin_ids, weights_dict)
         precip_matrix[:, d_idx] = day_res["cpc_precipitation"]
+        missing_matrix[:, d_idx] = day_res["cpc_missing_fraction"]
 
     ds = xr.Dataset(
         data_vars={
             "cpc_precipitation": (["basin", "date"], precip_matrix),
+            "cpc_missing_fraction": (["basin", "date"], missing_matrix),
         },
         coords={
             "basin": basin_ids,

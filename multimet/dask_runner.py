@@ -315,10 +315,17 @@ def extract_product_dask(
   basins_gdf = load_basin_geometries(basins, id_column=id_column)
   basin_ids = list(basins_gdf.index)
 
+  if start_date is None or end_date is None:
+    raise ValueError(
+        "extract_product_dask requires both start_date and end_date to be "
+        "explicitly provided; default placeholder dates are not permitted."
+    )
   start_dt = pd.to_datetime(start_date)
   end_dt = pd.to_datetime(end_date)
   if end_dt < start_dt:
-    raise ValueError(f"end_date ({end_dt}) cannot be before start_date ({start_dt})")
+    raise ValueError(
+        f"end_date ({end_dt}) cannot be before start_date ({start_dt})"
+    )
 
   all_dates = pd.date_range(start_dt, end_dt, freq="D")
   total_days = len(all_dates)
@@ -331,15 +338,38 @@ def extract_product_dask(
 
   # Configure extractor kwargs
   extractor_kwargs = dict(extractor_extra_kwargs)
-  if prod_name == "CPC":
-    src = "psl" if source in ("public", "auto") else ("binary" if source == "local" else source)
+  source_lower = source.lower().strip()
+  if prod_name == "ERA5_LAND":
+    extractor_kwargs["source"] = "archive"
+    if not extractor_kwargs.get("data_dir"):
+      raise ValueError(
+          "ERA5_LAND requires an explicit gridded archive URI via data_dir "
+          "or archive_stores['ERA5_LAND']."
+      )
+  elif source_lower in ("archive", "gridded_archive", "zarr_archive"):
+    extractor_kwargs["source"] = "archive"
+    if not extractor_kwargs.get("data_dir"):
+      raise ValueError(
+          f"Product {prod_name} in archive mode requires an explicit store "
+          f"URI via data_dir or archive_stores[{prod_name!r}]."
+      )
+  elif prod_name == "CPC":
+    src = (
+        "psl"
+        if source_lower in ("public", "auto", "upstream")
+        else ("binary" if source_lower == "local" else source_lower)
+    )
     extractor_kwargs["source"] = src
   elif prod_name == "IMERG":
-    if source in ("dynamical", "icechunk", "catalog"):
+    if source_lower in ("dynamical", "icechunk", "catalog"):
       extractor_cls = DynamicalIMERGExtractor
-      extractor_kwargs["source"] = source
+      extractor_kwargs["source"] = source_lower
     else:
-      src = "gesdisc" if source in ("public", "auto") else ("h5" if source == "local" else source)
+      src = (
+          "gesdisc"
+          if source_lower in ("public", "auto", "upstream")
+          else ("h5" if source_lower == "local" else source_lower)
+      )
       extractor_kwargs.update({
           "source": src,
           "username": earthdata_username,
@@ -347,25 +377,20 @@ def extract_product_dask(
           "token": earthdata_token,
           "netrc_path": netrc_path,
       })
-  elif prod_name in ("ERA5_LAND", "HRES", "GRAPHCAST"):
-    src = "wb2" if source in ("public", "auto") else ("local" if source == "local" else source)
+  elif prod_name in ("HRES", "GRAPHCAST"):
+    src = (
+        "wb2"
+        if source_lower in ("public", "auto", "upstream")
+        else ("local" if source_lower == "local" else source_lower)
+    )
     extractor_kwargs["source"] = src
   elif prod_name in ("AIFS", "DYNAMICAL_IMERG"):
-    extractor_kwargs["source"] = source
+    extractor_kwargs["source"] = source_lower
 
-  # Handle store initialization & overwrite
+  from multimet.zarr_writer import check_zarr_store_exists
+
   def _store_exists(p: str) -> bool:
-    try:
-      fs, fs_path = fsspec.core.url_to_fs(p)
-      return (
-          fs.exists(f"{fs_path}/zarr.json")
-          or fs.exists(f"{fs_path}/.zgroup")
-          or fs.exists(f"{fs_path}/.zmetadata")
-          or (fs.exists(fs_path) and fs.isdir(fs_path))
-      )
-    except Exception as e:
-      logger.debug("Error checking store existence for %s: %s", p, e)
-      return False
+    return check_zarr_store_exists(p)
 
   def _remove_store(p: str) -> None:
     try:
@@ -625,16 +650,20 @@ def extract_product_dask(
 
 
 def extract_multimet_dask(
-    basins: Union[str, os.PathLike, gpd.GeoDataFrame, Dict[str, Any], Sequence[Any]],
+    basins: Union[
+        str, os.PathLike, gpd.GeoDataFrame, Dict[str, Any], Sequence[Any]
+    ],
     output_dir: Union[str, os.PathLike],
     products: Optional[Sequence[Union[str, Product]]] = None,
-    start_date: Union[str, pd.Timestamp] = "2020-01-01",
-    end_date: Union[str, pd.Timestamp] = "2020-01-02",
+    start_date: Optional[Union[str, pd.Timestamp]] = None,
+    end_date: Optional[Union[str, pd.Timestamp]] = None,
     dask_scheduler: Optional[str] = None,
     num_workers: Optional[int] = None,
     batch_days: int = 1,
     memory_limit: Union[str, int, float, None] = "auto",
     source: str = "public",
+    archive_stores: Optional[Mapping[str, str]] = None,
+    data_dirs: Optional[Mapping[str, str]] = None,
     id_column: Optional[str] = None,
     overwrite: bool = False,
     resume: bool = True,
@@ -647,34 +676,22 @@ def extract_multimet_dask(
     netrc_path: Optional[str] = None,
     gcp_project: Optional[str] = None,
 ) -> Dict[str, str]:
-  """Runs massively parallel Dask extraction across requested products.
+  """Runs massively parallel Dask extraction across requested products."""
+  if start_date is None or end_date is None:
+    raise ValueError(
+        "extract_multimet_dask requires both start_date and end_date to be "
+        "explicitly provided; default placeholder dates are not permitted."
+    )
 
-  Args:
-    basins: Catchment geometries source (path or GeoDataFrame).
-    output_dir: Target directory for consolidated Zarr stores.
-    products: List of products to extract. Defaults to all 5 core products.
-    start_date: Start date string (YYYY-MM-DD) or Timestamp.
-    end_date: End date string (YYYY-MM-DD) or Timestamp.
-    dask_scheduler: Address of remote Dask scheduler if applicable.
-    num_workers: Number of workers for LocalCluster if local.
-    batch_days: Number of days per Dask worker task (default 1).
-    memory_limit: Per-worker RAM limit ('auto', '0' to disable nanny limits, etc.).
-    source: Source mode ('public' or 'local').
-    id_column: Optional column name for gauge ID in geometry file.
-    overwrite: Whether to overwrite existing stores.
-    resume: Whether to resume and only process missing days.
-    append: Whether to append new dates or new basins to existing stores.
-    weights_cache: Optional path to cached weights .npz file or directory.
-    use_bounding_box: Whether to use spatial bounding box reduction.
-    earthdata_username: Optional NASA Earthdata username.
-    earthdata_password: Optional NASA Earthdata password.
-    earthdata_token: Optional NASA Earthdata Bearer token.
-    netrc_path: Optional path to custom .netrc file.
-    gcp_project: Optional Google Cloud project ID for GCS quota/billing.
+  norm_archive_stores: Dict[str, str] = {
+      (k.value if isinstance(k, Product) else str(k).upper()): str(v)
+      for k, v in (archive_stores or {}).items()
+  }
+  norm_data_dirs: Dict[str, str] = {
+      (k.value if isinstance(k, Product) else str(k).upper()): str(v)
+      for k, v in (data_dirs or {}).items()
+  }
 
-  Returns:
-    Dictionary mapping product name to output Zarr store path.
-  """
   all_paths = [str(output_dir)]
   if isinstance(basins, (str, os.PathLike)):
     all_paths.append(str(basins))
@@ -682,11 +699,15 @@ def extract_multimet_dask(
     all_paths.extend(str(x) for x in basins)
   if weights_cache:
     all_paths.append(str(weights_cache))
+  all_paths.extend(norm_archive_stores.values())
+  all_paths.extend(norm_data_dirs.values())
 
   if any(p.startswith(("gs://", "gcs://")) for p in all_paths) or gcp_project:
     gcp_project = configure_gcp_project(gcp_project)
     if gcp_project:
-      logger.info("Configured Google Cloud project for GCS operations: %s", gcp_project)
+      logger.info(
+          "Configured Google Cloud project for GCS operations: %s", gcp_project
+      )
 
   client = init_dask_client(
       scheduler_address=dask_scheduler,
@@ -697,7 +718,7 @@ def extract_multimet_dask(
   target_prods = (
       [p.value if isinstance(p, Product) else str(p).upper() for p in products]
       if products is not None
-      else ["CPC", "ERA5_LAND", "IMERG", "HRES", "GRAPHCAST"]
+      else ["CPC", "ERA5_LAND", "IMERG", "HRES"]
   )
 
   output_stores: Dict[str, str] = {}
@@ -705,6 +726,14 @@ def extract_multimet_dask(
     w_path = weights_cache
     if weights_cache and os.path.isdir(weights_cache):
       w_path = os.path.join(weights_cache, f"weights_{prod_name.lower()}.npz")
+
+    prod_data_dir = norm_archive_stores.get(
+        prod_name, norm_data_dirs.get(prod_name)
+    )
+    prod_source = (
+        "archive" if prod_name in norm_archive_stores else source
+    )
+    extra_kw = {"data_dir": prod_data_dir} if prod_data_dir else {}
 
     store_path = extract_product_dask(
         product=prod_name,
@@ -715,7 +744,7 @@ def extract_multimet_dask(
         client=client,
         batch_days=batch_days,
         memory_limit=memory_limit,
-        source=source,
+        source=prod_source,
         id_column=id_column,
         overwrite=overwrite,
         resume=resume,
@@ -727,6 +756,7 @@ def extract_multimet_dask(
         earthdata_token=earthdata_token,
         netrc_path=netrc_path,
         gcp_project=gcp_project,
+        **extra_kw,
     )
     output_stores[prod_name] = store_path
 
@@ -756,20 +786,20 @@ def _build_parser() -> argparse.ArgumentParser:
   parser.add_argument(
       "--products",
       type=str,
-      default="CPC,ERA5_LAND,IMERG,HRES,GRAPHCAST",
+      default="CPC,ERA5_LAND,IMERG,HRES",
       help="Comma-separated product list to extract.",
   )
   parser.add_argument(
       "--start_date",
       type=str,
-      default="2020-01-01",
-      help="Start date (YYYY-MM-DD).",
+      required=True,
+      help="Required start date (YYYY-MM-DD).",
   )
   parser.add_argument(
       "--end_date",
       type=str,
-      default="2020-01-02",
-      help="End date (YYYY-MM-DD).",
+      required=True,
+      help="Required end date (YYYY-MM-DD).",
   )
   parser.add_argument(
       "--dask_scheduler",
@@ -799,7 +829,22 @@ def _build_parser() -> argparse.ArgumentParser:
       "--source",
       type=str,
       default="public",
-      help="Source mode: 'public' or 'local'.",
+      help=(
+          "Source mode: 'archive' (gridded Zarr archives via --archive-store), "
+          "'public'/'upstream', or 'local'."
+      ),
+  )
+  parser.add_argument(
+      "--archive-store",
+      "--archive_store",
+      dest="archive_stores",
+      action="append",
+      default=None,
+      metavar="PRODUCT=URI",
+      help=(
+          "Explicit gridded archive Zarr store URI for a product (repeatable), "
+          "e.g. --archive-store CPC=gs://.../CPC/daily_surface.zarr."
+      ),
   )
   parser.add_argument(
       "--id_column",
@@ -871,6 +916,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
+  from multimet.runner import _parse_product_uri_pairs
+
   logging.basicConfig(
       level=logging.INFO,
       format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -879,6 +926,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
   args = parser.parse_args(argv)
 
   prods = [p.strip() for p in args.products.split(",") if p.strip()]
+  archive_stores = _parse_product_uri_pairs(args.archive_stores)
   t0 = time.time()
   print(f"▶ Starting MultiMet Dask parallel extraction for: {prods}")
   try:
@@ -893,6 +941,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         batch_days=args.batch_days,
         memory_limit=args.memory_limit,
         source=args.source,
+        archive_stores=archive_stores,
         id_column=args.id_column,
         overwrite=args.overwrite,
         resume=args.resume,
@@ -905,7 +954,10 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         netrc_path=args.netrc_path,
         gcp_project=args.gcp_project,
     )
-    print(f"\n✓ Completed extraction of {len(stores)} products in {time.time() - t0:.2f}s:")
+    print(
+        f"\n✓ Completed extraction of {len(stores)} products in"
+        f" {time.time() - t0:.2f}s:"
+    )
     for prod, store_path in stores.items():
       print(f"  • {prod:12s} -> {store_path}")
   finally:

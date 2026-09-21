@@ -32,6 +32,7 @@ from multimet.config import (
     DEFAULT_CHUNKS_FORECAST,
     DEFAULT_CHUNKS_NOWCAST,
     FORECAST_LEAD_DAYS,
+    MISSING_FRACTION_VAR,
     PRODUCT_BANDS,
     PRODUCT_METADATA_ATTRS,
     PRODUCT_TYPES,
@@ -41,18 +42,64 @@ from multimet.config import (
 
 logger = logging.getLogger(__name__)
 
+_OPTIONAL_SECONDARY_BANDS: Mapping[Product, Tuple[str, ...]] = {}
+
+
+def check_zarr_store_exists(store_path: str, max_retries: int = 6) -> bool:
+  """Checks whether a Zarr store exists without masking storage/permission errors.
+
+  For local paths, checks descriptor files directly on disk. For remote URIs
+  (``gs://``, ``s3://``, etc.), retries transient ``OSError`` / HTTP 403 / 5xx
+  responses with exponential backoff and raises if storage access fails after
+  ``max_retries`` attempts — never silently returning ``False`` on an I/O or
+  permission error.
+  """
+  if not store_path.startswith(("gs://", "gcs://", "s3://", "abfs://", "az://")):
+    return (
+        os.path.exists(os.path.join(store_path, "zarr.json"))
+        or os.path.exists(os.path.join(store_path, ".zgroup"))
+        or os.path.exists(os.path.join(store_path, ".zmetadata"))
+    )
+
+  import fsspec
+
+  last_err: Optional[Exception] = None
+  for attempt in range(max_retries):
+    try:
+      fs, fs_path = fsspec.core.url_to_fs(store_path)
+      return bool(
+          fs.exists(f"{fs_path}/zarr.json")
+          or fs.exists(f"{fs_path}/.zgroup")
+          or fs.exists(f"{fs_path}/.zmetadata")
+      )
+    except FileNotFoundError:
+      return False
+    except (OSError, RuntimeError, TimeoutError) as err:
+      last_err = err
+      if attempt == max_retries - 1:
+        break
+      wait_s = (2**attempt) + random.uniform(0.1, 0.75)
+      logger.warning(
+          "Transient storage error checking Zarr store %s (attempt %d/%d): %s. "
+          "Retrying in %.2fs...",
+          store_path,
+          attempt + 1,
+          max_retries,
+          err,
+          wait_s,
+      )
+      time.sleep(wait_s)
+
+  raise RuntimeError(
+      f"Failed to check Zarr store existence at {store_path} after "
+      f"{max_retries} attempts: {last_err}"
+  ) from last_err
+
 
 def _safe_to_zarr(
     ds: xr.Dataset, store_path: Union[str, os.PathLike], **kwargs
 ) -> None:
-  """Writes dataset to Zarr, targeting Zarr format 2 for broad compatibility.
-
-  Zarr V3 introduces an unstable data type warning for fixed-length Unicode
-  strings (<U22) and currently does not standardize consolidated metadata
-  (.zmetadata). Targeting zarr_format=2 ensures seamless interoperability with
-  Google/CNS Caravan datasets, NetCDF, and existing readers across Zarr 2.x and
-  3.x. Includes exponential backoff retry for transient cloud storage errors.
-  """
+  """Writes dataset to Zarr, targeting Zarr format 2 for broad compatibility."""
   sig = inspect.signature(xr.Dataset.to_zarr)
   if "zarr_format" in sig.parameters:
     kwargs.setdefault("zarr_format", 2)
@@ -63,26 +110,10 @@ def _safe_to_zarr(
       ds.to_zarr(store_path, **kwargs)
       return
     except Exception as e:
-      err_str = str(e).lower()
-      is_transient = any(
-          code in err_str
-          for code in [
-              "forbidden",
-              "403",
-              "429",
-              "503",
-              "rate",
-              "quota",
-              "serviceusage",
-              "storage.objects",
-              "slowdown",
-          ]
-      )
-      if is_transient and attempt < max_retries - 1:
+      if attempt < max_retries - 1:
         backoff = (2**attempt) + random.uniform(0.5, 2.0)
         logger.warning(
-            "Transient GCS error during to_zarr for %s (attempt %d/%d): %s."
-            " Retrying in %.2fs...",
+            "Transient error in to_zarr(%s) on attempt %d/%d: %s. Retrying in %.1fs...",
             store_path,
             attempt + 1,
             max_retries,
@@ -111,67 +142,96 @@ class MultiMetZarrWriter:
   def store_exists(self, product: Product) -> bool:
     """Checks whether the product's Zarr store exists."""
     store_path = self.get_store_path(product)
-    try:
-      import fsspec
-      fs, fs_path = fsspec.core.url_to_fs(store_path)
-      return (
-          fs.exists(f"{fs_path}/zarr.json")
-          or fs.exists(f"{fs_path}/.zgroup")
-          or fs.exists(f"{fs_path}/.zmetadata")
-          or (fs.exists(fs_path) and fs.isdir(fs_path))
-      )
-    except Exception:
-      return os.path.exists(os.path.join(store_path, ".zmetadata")) or os.path.exists(
-          os.path.join(store_path, ".zgroup")
-      )
+    return check_zarr_store_exists(store_path)
 
   def get_store_info(self, product: Product) -> Optional[Dict[str, Any]]:
-    """Inspects an existing Zarr store and returns its metadata structure.
-
-    Args:
-      product: MultiMet Product enum.
-
-    Returns:
-      Dict with 'store_path', 'basins', 'dates', 'bands', 'is_forecast',
-      'lead_time', and 'shape', or None if store does not exist.
-    """
+    """Inspects an existing Zarr store and returns its metadata structure."""
     if not self.store_exists(product):
       return None
 
     store_path = self.get_store_path(product)
-    try:
-      with xr.open_zarr(store_path) as ds:
-        if "basin" not in ds.coords or "date" not in ds.coords:
-          return None
+    last_err: Optional[Exception] = None
+    for attempt in range(5):
+      try:
+        with xr.open_zarr(store_path) as ds:
+          if "basin" not in ds.coords or "date" not in ds.coords:
+            return None
 
-        basins = [str(b).rstrip("\x00") for b in ds["basin"].values]
-        basin_dtype = ds["basin"].dtype
-        dates = pd.DatetimeIndex(ds["date"].values)
+          basins = [str(b).rstrip("\x00") for b in ds["basin"].values]
+          basin_dtype = ds["basin"].dtype
+          dates = pd.DatetimeIndex(ds["date"].values)
 
-        prod_type = PRODUCT_TYPES[product]
-        is_forecast = prod_type == ProductType.FORECAST
-        lead_time = (
-            list(ds["lead_time"].values)
-            if is_forecast and "lead_time" in ds.coords
-            else None
+          prod_type = PRODUCT_TYPES[product]
+          is_forecast = prod_type == ProductType.FORECAST
+          lead_time = (
+              list(ds["lead_time"].values)
+              if is_forecast and "lead_time" in ds.coords
+              else None
+          )
+
+          bands = [
+              band for band in PRODUCT_BANDS[product] if band in ds.data_vars
+          ]
+          shape = ds[bands[0]].shape if bands else None
+
+          return {
+              "store_path": store_path,
+              "basins": basins,
+              "basin_dtype": basin_dtype,
+              "dates": dates,
+              "bands": bands,
+              "is_forecast": is_forecast,
+              "lead_time": lead_time,
+              "shape": shape,
+          }
+      except (OSError, RuntimeError, TimeoutError) as err:
+        last_err = err
+        if attempt < 4:
+          time.sleep((2**attempt) + random.uniform(0.1, 0.5))
+          continue
+        raise
+
+    if last_err is not None:
+      raise last_err
+    return None
+
+  def _ensure_companion_variables(
+      self, ds: xr.Dataset, product: Product
+  ) -> xr.Dataset:
+    """Ensures optional secondary bands and the companion missing_fraction band exist."""
+    prod_type = PRODUCT_TYPES[product]
+    expected_dims = (
+        ["basin", "date"]
+        if prod_type == ProductType.NOWCAST
+        else ["basin", "date", "lead_time"]
+    )
+    shape = tuple(len(ds[d]) for d in expected_dims)
+
+    optional_bands = set(_OPTIONAL_SECONDARY_BANDS.get(product, ()))
+    required_bands = [
+        b for b in PRODUCT_BANDS[product] if b not in optional_bands
+    ]
+    primary_band = next(
+        (b for b in required_bands if b in ds.data_vars), None
+    )
+    if primary_band is None:
+      return ds
+
+    out = ds.copy()
+    for opt_band in optional_bands:
+      if opt_band not in out.data_vars:
+        out[opt_band] = (
+            expected_dims,
+            np.full(shape, np.nan, dtype=np.float32),
         )
 
-        bands = [band for band in PRODUCT_BANDS[product] if band in ds.data_vars]
-        shape = ds[bands[0]].shape if bands else None
-
-        return {
-            "store_path": store_path,
-            "basins": basins,
-            "basin_dtype": basin_dtype,
-            "dates": dates,
-            "bands": bands,
-            "is_forecast": is_forecast,
-            "lead_time": lead_time,
-            "shape": shape,
-        }
-    except Exception as e:
-      logger.warning("Failed to inspect Zarr store at %s: %s", store_path, e)
-      return None
+    missing_var = MISSING_FRACTION_VAR.get(product)
+    if missing_var and missing_var not in out.data_vars:
+      out[missing_var] = (
+          expected_dims,
+          np.isnan(out[primary_band].values).astype(np.float32),
+      )
+    return out
 
   def validate_dataset_schema(self, ds: xr.Dataset, product: Product) -> None:
     """Validates that an xarray Dataset strictly complies with MultiMet schema.
@@ -230,10 +290,12 @@ class MultiMetZarrWriter:
             f" found {len(ds['lead_time'])}"
         )
 
-    # Check data variables and dtypes
+    optional_bands = set(_OPTIONAL_SECONDARY_BANDS.get(product, ()))
     expected_bands = PRODUCT_BANDS[product]
     for band in expected_bands:
       if band not in ds.data_vars:
+        if band in optional_bands:
+          continue
         raise ValueError(
             f"Product {product.value} missing required band variable '{band}'"
         )
@@ -285,8 +347,13 @@ class MultiMetZarrWriter:
       shape = (len(basin_ids), len(dates), lead_steps)
       chunk_spec["lead_time"] = lead_steps
 
+    all_store_vars = list(PRODUCT_BANDS[product])
+    missing_var = MISSING_FRACTION_VAR.get(product)
+    if missing_var and missing_var not in all_store_vars:
+      all_store_vars.append(missing_var)
+
     data_vars = {}
-    for band in PRODUCT_BANDS[product]:
+    for band in all_store_vars:
       var_attrs = {}
       if band in (
           "hres_surface_net_solar_radiation",
@@ -299,7 +366,11 @@ class MultiMetZarrWriter:
                 " WeatherBench 2 HRES archive."
             ),
         }
-      data_vars[band] = (dims, np.full(shape, np.nan, dtype=np.float32), var_attrs)
+      data_vars[band] = (
+          dims,
+          np.full(shape, np.nan, dtype=np.float32),
+          var_attrs,
+      )
 
     global_attrs = dict(PRODUCT_METADATA_ATTRS.get(product, {}))
     ds = xr.Dataset(data_vars=data_vars, coords=coords, attrs=global_attrs)
@@ -533,7 +604,11 @@ class MultiMetZarrWriter:
       shape = (num_basins, len(dates_to_add), lead_steps)
       chunk_spec["lead_time"] = lead_steps
 
-    for band in PRODUCT_BANDS[product]:
+    all_store_vars = list(PRODUCT_BANDS[product])
+    missing_var = MISSING_FRACTION_VAR.get(product)
+    if missing_var and missing_var not in all_store_vars:
+      all_store_vars.append(missing_var)
+    for band in all_store_vars:
       nan_vars[band] = (dims, np.full(shape, np.nan, dtype=np.float32))
 
     nan_ds = xr.Dataset(data_vars=nan_vars, coords=coords).chunk(chunk_spec)
@@ -686,6 +761,7 @@ class MultiMetZarrWriter:
         ds_to_write[var] = ds_to_write[var].astype(np.float32)
 
     self.validate_dataset_schema(ds_to_write, product)
+    ds_to_write = self._ensure_companion_variables(ds_to_write, product)
 
     existing_dates = info["dates"]
     incoming_dates = pd.to_datetime(ds_to_write["date"].values)
@@ -737,30 +813,14 @@ class MultiMetZarrWriter:
       product: Product,
       overwrite_existing_basins: bool = False,
   ) -> str:
-    """Writes or appends a dataset into the product's Zarr store.
-
-    Disallows adding both new basins and new dates simultaneously, as Zarr
-    requires a dense rectangular grid.
-
-    Args:
-      ds: xarray Dataset matching MultiMet schema.
-      product: MultiMet Product enum.
-      overwrite_existing_basins: If True and store exists, existing overlapping
-        basins will be replaced. If False, only new basins are appended.
-
-    Returns:
-      Store path written to.
-
-    Raises:
-      ValueError: If both new basins and new dates are provided simultaneously.
-    """
-    # Ensure float32 and ensure chunks
+    """Writes or appends a dataset into the product's Zarr store."""
     ds_to_write = ds.copy()
     for var in ds_to_write.data_vars:
       if ds_to_write[var].dtype != np.float32:
         ds_to_write[var] = ds_to_write[var].astype(np.float32)
 
     self.validate_dataset_schema(ds_to_write, product)
+    ds_to_write = self._ensure_companion_variables(ds_to_write, product)
     store_path = self.get_store_path(product)
     prod_type = PRODUCT_TYPES[product]
     is_forecast = prod_type == ProductType.FORECAST

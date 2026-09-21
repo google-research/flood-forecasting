@@ -24,6 +24,7 @@ Catchment timeseries extractors
    multimet.dynamical
    multimet.era5_land
    multimet.graphcast
+   multimet.gridded_archive
    multimet.hres
    multimet.imerg
 

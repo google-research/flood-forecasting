@@ -78,22 +78,17 @@ def test_fao56_penman_monteith_pet():
 
 
 def test_cpc_extractor_binary_parsing(tmp_path):
-  """Tests CPCExtractor binary reading and scaling logic."""
-  # Create synthetic CPC daily binary file (360 lat x 720 lon)
-  # Values in 0.1 mm
+  """Tests CPCExtractor binary reading, scaling, and gauge station count logic."""
   shape = (360, 720)
   precip_data = np.full(shape, 150.0, dtype="<f4")  # 15.0 mm/day
-  num_stations = np.ones(shape, dtype="<f4")
-  binary_content = (
-      precip_data.tobytes() + num_stations.tobytes()
-  )
+  num_stations = np.full(shape, 7.0, dtype="<f4")  # 7 rain gauges per cell
+  binary_content = precip_data.tobytes() + num_stations.tobytes()
 
   cpc_file = tmp_path / "PRCP_CU_GAUGE_V1.0GLB_0.50deg.lnx.20200101"
   cpc_file.write_bytes(binary_content)
 
   grid = CPCExtractor.parse_cpc_file(str(cpc_file))
   assert grid.shape == (360, 720)
-  # Should be scaled to 15.0 mm/day
   assert np.isclose(np.nanmean(grid), 15.0, atol=1e-3)
 
 
@@ -119,22 +114,26 @@ def test_era5_land_strict_missing_day_handling(basins_gdf):
 
 
 def test_era5_land_grid_resolution_by_source():
-  """Verifies ERA5-Land extractor configures 0.25 deg for WB2 and 0.1 deg for GRIB."""
-  ext_wb2 = ERA5LandExtractor(source="wb2")
-  assert ext_wb2.lats.shape == (721,)
-  assert ext_wb2.lons.shape == (1440,)
-  assert np.isclose(abs(ext_wb2.lats[1] - ext_wb2.lats[0]), 0.25)
-  assert np.isclose(abs(ext_wb2.lons[1] - ext_wb2.lons[0]), 0.25)
-  assert np.isclose(ext_wb2.zonal_calc.dlat, 0.25)
-  assert np.isclose(ext_wb2.zonal_calc.dlon, 0.25)
+  """Verifies ERA5-Land extractor enforces archive-only source on a 0.1 deg grid."""
+  for forbidden_src in ("wb2", "grib", "public", "local", "upstream"):
+    with pytest.raises(ValueError, match="does not support third-party"):
+      ERA5LandExtractor(source=forbidden_src)
 
-  ext_grib = ERA5LandExtractor(source="grib")
-  assert ext_grib.lats.shape == (1801,)
-  assert ext_grib.lons.shape == (3600,)
-  assert np.isclose(abs(ext_grib.lats[1] - ext_grib.lats[0]), 0.1)
-  assert np.isclose(abs(ext_grib.lons[1] - ext_grib.lons[0]), 0.1)
-  assert np.isclose(ext_grib.zonal_calc.dlat, 0.1)
-  assert np.isclose(ext_grib.zonal_calc.dlon, 0.1)
+  ext = ERA5LandExtractor(source="archive", data_dir="gs://bucket/era5_land.zarr")
+  assert ext.source == "archive"
+  assert ext.lats.shape == (1801,)
+  assert ext.lons.shape == (3600,)
+  assert np.isclose(abs(ext.lats[1] - ext.lats[0]), 0.1)
+  assert np.isclose(abs(ext.lons[1] - ext.lons[0]), 0.1)
+  assert np.isclose(ext.zonal_calc.dlat, 0.1)
+  assert np.isclose(ext.zonal_calc.dlon, 0.1)
+
+  # Calling extract_for_basins without an explicit archive URI must fail
+  ext_no_uri = ERA5LandExtractor()
+  with pytest.raises(ValueError, match="explicit gridded archive"):
+    ext_no_uri.extract_for_basins(
+        basins_gdf=None, start_date="2020-01-01", end_date="2020-01-02"
+    )
 
 
 def test_imerg_daily_extraction(tmp_path, basins_gdf):

@@ -229,16 +229,43 @@ class IMERGExtractor(BaseExtractor):
         "gesdisc_url",
         "https://gpm1.gesdisc.eosdis.nasa.gov/data/GPM_L3/GPM_3IMERGDE.07/",
     )
-    self.data_dir = data_dir if data_dir is not None else default_url
 
-    if source in ("auto", "default", "gesdisc", "public", "nasa"):
+    source_lower = source.lower().strip()
+    if source_lower in ("archive", "gridded_archive", "zarr", "zarr_archive"):
+      self.source = "archive"
+      if data_dir is None or not str(data_dir).strip():
+        raise ValueError(
+            "IMERGExtractor with source='archive' requires an explicit Zarr "
+            "store URI or path via data_dir."
+        )
+      self.data_dir = str(data_dir)
+    elif source_lower in ("auto", "default"):
+      if data_dir is not None and (
+          str(data_dir).startswith(("gs://", "gcs://"))
+          or str(data_dir).rstrip("/").endswith(".zarr")
+      ):
+        self.source = "archive"
+        self.data_dir = str(data_dir)
+      else:
+        self.source = "gesdisc"
+        self.data_dir = str(data_dir) if data_dir is not None else default_url
+    elif source_lower in ("gesdisc", "public", "nasa", "upstream"):
       self.source = "gesdisc"
-    elif source == "dynamical":
+      self.data_dir = str(data_dir) if data_dir is not None else default_url
+    elif source_lower == "dynamical":
       self.source = "dynamical"
-    elif source in ("h5", "local"):
+      self.data_dir = str(data_dir) if data_dir is not None else ""
+    elif source_lower in ("h5", "local"):
       self.source = "h5"
+      if data_dir is None or not str(data_dir).strip():
+        raise ValueError(
+            "IMERGExtractor with source='h5' requires an explicit local "
+            "directory via data_dir."
+        )
+      self.data_dir = str(data_dir)
     else:
-      self.source = source
+      self.source = source_lower
+      self.data_dir = str(data_dir) if data_dir is not None else default_url
 
     self.session = EarthdataSession(
         username=username, password=password, token=token, netrc_path=netrc_path
@@ -360,8 +387,11 @@ class IMERGExtractor(BaseExtractor):
             basins_gdf, sub_lats, sub_lons, cell_res_lat=0.1, cell_res_lon=0.1
         )
 
-      reduced = matrix.reduce_2d(raw_vals)
-      return {"imerg_precipitation": reduced.astype(np.float32)}
+      res, missing = matrix.reduce_2d_with_coverage(raw_vals)
+      return {
+          "imerg_precipitation": res,
+          "imerg_missing_fraction": missing,
+      }
 
   @staticmethod
   def parse_imerg_h5_bytes(content: bytes) -> np.ndarray:
@@ -387,41 +417,73 @@ class IMERGExtractor(BaseExtractor):
       basin_ids: List[str],
       weights_dict: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
   ) -> Dict[str, np.ndarray]:
-    """Extracts 1 day of IMERG precipitation across all basins from 48 half-hourly files.
-
-    Strict validation: requires exactly 48 half-hourly files for a full day.
-    If any file is missing or unreadable, returns all NaNs.
-    """
+    """Extracts 1 day of IMERG precipitation across half-hourly HDF5 files."""
     num_basins = len(basin_ids)
     res = np.full(num_basins, np.nan, dtype=np.float32)
+    missing_out = np.ones(num_basins, dtype=np.float32)
 
     if len(imerg_files) != 48:
-      return {"imerg_precipitation": res}
+      return {
+          "imerg_precipitation": res,
+          "imerg_missing_fraction": missing_out,
+      }
 
-    daily_basin_sums = np.zeros(num_basins, dtype=np.float64)
-    basin_has_nan = np.zeros(num_basins, dtype=bool)
+    import h5py
+
+    daily_accum = np.zeros((1800, 3600), dtype=np.float32)
+    valid_count = np.zeros((1800, 3600), dtype=np.int32)
 
     for fpath in imerg_files:
-      with open(fpath, "rb") as f:
-        content = f.read()
-      grid_2d = self.parse_imerg_h5_bytes(content)
-
-      for b_idx, b_id in enumerate(basin_ids):
-        if b_id not in weights_dict:
-          basin_has_nan[b_idx] = True
-          continue
-        lat_idx, lon_idx, w = weights_dict[b_id]
-        val = _weighted_mean_valid(grid_2d[lat_idx, lon_idx], w)
-        if np.isnan(val):
-          basin_has_nan[b_idx] = True
+      if not os.path.exists(fpath):
+        return {
+            "imerg_precipitation": res,
+            "imerg_missing_fraction": missing_out,
+        }
+      with h5py.File(fpath, "r") as hf:
+        if "Grid/precipitation" in hf:
+          arr = hf["Grid/precipitation"][:]
+        elif "Grid/precipitationCal" in hf:
+          arr = hf["Grid/precipitationCal"][:]
         else:
-          daily_basin_sums[b_idx] += val * 0.5
+          return {
+              "imerg_precipitation": res,
+              "imerg_missing_fraction": missing_out,
+          }
 
-    for b_idx in range(num_basins):
-      if not basin_has_nan[b_idx]:
-        res[b_idx] = np.float32(daily_basin_sums[b_idx])
+        if arr.ndim == 3:
+          arr = arr[0]
+        if arr.shape == (3600, 1800):
+          arr = arr.T
 
-    return {"imerg_precipitation": res}
+        valid = arr >= 0.0
+        # Rate (mm/hr) * 0.5 hr = mm per 30-minute step
+        daily_accum[valid] += arr[valid] * 0.5
+        valid_count[valid] += 1
+
+    daily_grid = np.where(valid_count == 48, daily_accum, np.nan)
+
+    for b_idx, b_id in enumerate(basin_ids):
+      if b_id not in weights_dict:
+        continue
+      lat_idx, lon_idx, w = weights_dict[b_id]
+      if len(w) == 0:
+        continue
+      vals = daily_grid[lat_idx, lon_idx]
+      valid = ~np.isnan(vals)
+      total_w = float(np.sum(w))
+      if np.any(valid) and total_w > 0.0:
+        w_valid = w[valid]
+        sum_w = float(np.sum(w_valid))
+        if sum_w > 0.0:
+          res[b_idx] = float(np.sum(vals[valid] * w_valid) / sum_w)
+          missing_out[b_idx] = float(
+              np.clip((total_w - sum_w) / total_w, 0.0, 1.0)
+          )
+
+    return {
+        "imerg_precipitation": res,
+        "imerg_missing_fraction": missing_out,
+    }
 
   def extract_for_basins_dynamical(
       self,
@@ -431,70 +493,16 @@ class IMERGExtractor(BaseExtractor):
       weights_matrix: Optional[ZonalWeightMatrix] = None,
       use_bounding_box: bool = True,
   ) -> xr.Dataset:
-    """Extracts IMERG precipitation using dynamical.org cloud-optimized Zarr on S3."""
-    import dynamical_catalog
+    """Delegates to DynamicalIMERGExtractor for dynamical.org Icechunk catalog."""
+    from multimet.dynamical import DynamicalIMERGExtractor
 
-    ds = dynamical_catalog.open("nasa-imerg-analysis-early")
-    basin_ids = list(basins_gdf.index)
-
-    min_lon, min_lat, max_lon, max_lat = basins_gdf.total_bounds
-    pad = 0.2
-
-    lat_slice = slice(float(max_lat + pad), float(min_lat - pad))
-    lon_slice = slice(float(min_lon - pad), float(max_lon + pad))
-    time_slice = slice(
-        f"{start_dt.strftime('%Y-%m-%d')}T00:00:00",
-        f"{end_dt.strftime('%Y-%m-%d')}T23:30:00",
-    )
-
-    if use_bounding_box:
-      sub_da = ds["precipitation_surface"].sel(
-          time=time_slice,
-          latitude=lat_slice,
-          longitude=lon_slice,
-      ).load()
-    else:
-      sub_da = ds["precipitation_surface"].sel(
-          time=time_slice,
-      ).load()
-
-    sub_lats = sub_da.latitude.values
-    sub_lons = sub_da.longitude.values
-    if weights_matrix is not None and (
-        weights_matrix.grid_shape == (len(sub_lats), len(sub_lons))
-        and np.allclose(weights_matrix.lats, sub_lats)
-        and np.allclose(weights_matrix.lons, sub_lons)
-    ):
-      matrix = weights_matrix
-    else:
-      matrix = ZonalWeightMatrix.from_geodataframe(
-          basins_gdf, sub_lats, sub_lons, cell_res_lat=0.1, cell_res_lon=0.1
-      )
-
-    daily_depth = (sub_da * 1800.0).resample(time="1D").sum(dim="time")
-
-    date_idx = pd.date_range(start_dt, end_dt, freq="D")
-    precip_matrix = np.full(
-        (len(basin_ids), len(date_idx)), np.nan, dtype=np.float32
-    )
-
-    reduced_depth = matrix.reduce_3d(daily_depth.values)
-    daily_times = pd.to_datetime(daily_depth.time.values)
-
-    for t_idx, t_val in enumerate(daily_times):
-      dt_target = pd.to_datetime(t_val.strftime("%Y-%m-%d"))
-      if dt_target in date_idx:
-        d_pos = date_idx.get_loc(dt_target)
-        precip_matrix[:, d_pos] = reduced_depth[:, t_idx]
-
-    return xr.Dataset(
-        data_vars={
-            "imerg_precipitation": (["basin", "date"], precip_matrix),
-        },
-        coords={
-            "basin": basin_ids,
-            "date": date_idx.values,
-        },
+    dyn_ext = DynamicalIMERGExtractor(data_dir=self.data_dir)
+    return dyn_ext.extract_for_basins(
+        basins_gdf=basins_gdf,
+        start_date=start_dt,
+        end_date=end_dt,
+        weights_matrix=weights_matrix,
+        use_bounding_box=use_bounding_box,
     )
 
   def extract_day(
@@ -509,6 +517,22 @@ class IMERGExtractor(BaseExtractor):
   ) -> Dict[str, np.ndarray]:
     """Extracts 1 day of IMERG precipitation across basins."""
     dt = pd.to_datetime(dt)
+    if self.source == "archive":
+      from multimet.gridded_archive import extract_nowcast_from_archive
+
+      ds_day = extract_nowcast_from_archive(
+          Product.IMERG,
+          self.data_dir,
+          basins_gdf,
+          start_date=dt,
+          end_date=dt,
+          weights_matrix=matrix,
+          use_bounding_box=use_bounding_box,
+      )
+      return {
+          var: ds_day[var].values[:, 0].astype(np.float32)
+          for var in ds_day.data_vars
+      }
     if self.source in ("gesdisc", "auto", "default", "public", "nasa"):
       nc_path = self.get_daily_file(dt)
       try:
@@ -540,11 +564,16 @@ class IMERGExtractor(BaseExtractor):
           weights_matrix=matrix,
           use_bounding_box=use_bounding_box,
       )
-      return {
+      out = {
           "imerg_precipitation": ds["imerg_precipitation"].values[:, 0].astype(
               np.float32
           )
       }
+      if "imerg_missing_fraction" in ds.data_vars:
+        out["imerg_missing_fraction"] = ds["imerg_missing_fraction"].values[
+            :, 0
+        ].astype(np.float32)
+      return out
     else:
       imerg_files = resolve_date_to_imerg_files(self.data_dir, dt)
       basin_ids = list(basins_gdf.index)
@@ -569,17 +598,31 @@ class IMERGExtractor(BaseExtractor):
       **kwargs,
   ) -> xr.Dataset:
     """Extracts daily accumulated IMERG precipitation for given basins."""
-    basin_ids = list(basins_gdf.index)
+    del kwargs
+    if start_date is None or end_date is None:
+      raise ValueError(
+          "IMERGExtractor.extract_for_basins requires both start_date and "
+          "end_date to be explicitly provided."
+      )
+    start_dt = pd.to_datetime(start_date)
+    end_dt = pd.to_datetime(end_date)
+    if end_dt < start_dt:
+      raise ValueError(
+          f"end_date ({end_dt}) must be >= start_date ({start_dt})."
+      )
 
-    if start_date is not None:
-      start_dt = pd.to_datetime(start_date)
-    else:
-      start_dt = pd.to_datetime("2000-06-01")
+    if self.source == "archive":
+      from multimet.gridded_archive import extract_nowcast_from_archive
 
-    if end_date is not None:
-      end_dt = pd.to_datetime(end_date)
-    else:
-      end_dt = pd.to_datetime("today")
+      return extract_nowcast_from_archive(
+          Product.IMERG,
+          self.data_dir,
+          basins_gdf,
+          start_date=start_dt,
+          end_date=end_dt,
+          weights_matrix=weights_matrix,
+          use_bounding_box=use_bounding_box,
+      )
 
     if self.source == "dynamical":
       return self.extract_for_basins_dynamical(
@@ -590,9 +633,13 @@ class IMERGExtractor(BaseExtractor):
           use_bounding_box=use_bounding_box,
       )
 
+    basin_ids = list(basins_gdf.index)
     date_idx = pd.date_range(start_dt, end_dt, freq="D")
     precip_matrix = np.full(
         (len(basin_ids), len(date_idx)), np.nan, dtype=np.float32
+    )
+    missing_matrix = np.ones(
+        (len(basin_ids), len(date_idx)), dtype=np.float32
     )
 
     if self.source in ("gesdisc", "auto", "default", "public", "nasa"):
@@ -614,6 +661,8 @@ class IMERGExtractor(BaseExtractor):
             use_bounding_box=use_bounding_box,
         )
         precip_matrix[:, d_idx] = day_res["imerg_precipitation"]
+        if "imerg_missing_fraction" in day_res:
+          missing_matrix[:, d_idx] = day_res["imerg_missing_fraction"]
     else:
       weights_dict = {}
       for b_id in basin_ids:
@@ -639,10 +688,12 @@ class IMERGExtractor(BaseExtractor):
               sub_files, basin_ids, weights_dict
           )
           precip_matrix[:, d_idx] = day_res["imerg_precipitation"]
+          missing_matrix[:, d_idx] = day_res["imerg_missing_fraction"]
 
     ds = xr.Dataset(
         data_vars={
             "imerg_precipitation": (["basin", "date"], precip_matrix),
+            "imerg_missing_fraction": (["basin", "date"], missing_matrix),
         },
         coords={
             "basin": basin_ids,

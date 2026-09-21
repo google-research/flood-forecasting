@@ -55,13 +55,41 @@ PRODUCT_MAP: Dict[str, tuple[Product, type[BaseExtractor]]] = {
 }
 
 
+def _parse_product_uri_pairs(
+    pairs: Optional[Sequence[str]],
+) -> Dict[str, str]:
+  """Parses repeatable ``PRODUCT=URI`` CLI arguments into an uppercase dict."""
+  out: Dict[str, str] = {}
+  if not pairs:
+    return out
+  for item in pairs:
+    if "=" not in item:
+      raise ValueError(
+          f"Invalid --archive-store entry {item!r}; expected format PRODUCT=URI "
+          "(e.g. CPC=gs://.../daily_surface.zarr)."
+      )
+    k, v = item.split("=", 1)
+    k = k.strip().upper()
+    v = v.strip()
+    if not k or not v:
+      raise ValueError(
+          f"Invalid --archive-store entry {item!r}; both PRODUCT and URI must be non-empty."
+      )
+    out[k] = v
+  return out
+
+
 def extract_multimet_serial(
-    basins: Union[str, os.PathLike, gpd.GeoDataFrame, Dict[str, Any], Sequence[Any]],
+    basins: Union[
+        str, os.PathLike, gpd.GeoDataFrame, Dict[str, Any], Sequence[Any]
+    ],
     output_dir: Union[str, os.PathLike],
     products: Optional[Sequence[Union[str, Product]]] = None,
-    start_date: Optional[Union[str, pd.Timestamp]] = "2020-01-01",
-    end_date: Optional[Union[str, pd.Timestamp]] = "2020-01-02",
+    start_date: Optional[Union[str, pd.Timestamp]] = None,
+    end_date: Optional[Union[str, pd.Timestamp]] = None,
     source: str = "public",
+    archive_stores: Optional[Mapping[str, str]] = None,
+    data_dirs: Optional[Mapping[str, str]] = None,
     id_column: Optional[str] = None,
     overwrite: bool = False,
     weights_cache: Optional[str] = None,
@@ -78,10 +106,14 @@ def extract_multimet_serial(
     output_dir: Directory where extracted consolidated Zarr stores will be saved.
     products: Products to extract (defaults to all 5 core products:
       CPC, ERA5_LAND, IMERG, HRES, GRAPHCAST).
-    start_date: Start date string (YYYY-MM-DD) or Timestamp.
-    end_date: End date string (YYYY-MM-DD) or Timestamp.
-    source: Mode: 'public' (WeatherBench 2 / NOAA PSL / NASA / ECMWF Open Data)
-      or 'local' (local files / custom directory).
+    start_date: Required start date string (YYYY-MM-DD) or Timestamp.
+    end_date: Required end date string (YYYY-MM-DD) or Timestamp.
+    source: Source mode: 'archive' (gridded Zarr archives), 'public'/'upstream'
+      (third-party agency HTTP/Zarr feeds), or 'local'.
+    archive_stores: Mapping of product name (e.g. ``"CPC"``, ``"ERA5_LAND"``,
+      ``"IMERG"``, ``"HRES"``) to its explicit gridded archive Zarr URI or path.
+    data_dirs: Optional per-product data directory / URI mapping for non-archive
+      sources.
     id_column: Optional column name for gauge/basin identifiers in geometries.
     overwrite: Whether to overwrite existing basins in destination Zarr stores.
     weights_cache: Optional path to .npz file for loading/saving weights.
@@ -94,6 +126,21 @@ def extract_multimet_serial(
   Returns:
     Dictionary mapping product name to the output Zarr store path.
   """
+  if start_date is None or end_date is None:
+    raise ValueError(
+        "extract_multimet_serial requires both start_date and end_date to be "
+        "explicitly provided; default placeholder dates are not permitted."
+    )
+
+  norm_archive_stores: Dict[str, str] = {
+      (k.value if isinstance(k, Product) else str(k).upper()): str(v)
+      for k, v in (archive_stores or {}).items()
+  }
+  norm_data_dirs: Dict[str, str] = {
+      (k.value if isinstance(k, Product) else str(k).upper()): str(v)
+      for k, v in (data_dirs or {}).items()
+  }
+
   all_paths = [str(output_dir)]
   if isinstance(basins, (str, os.PathLike)):
     all_paths.append(str(basins))
@@ -101,16 +148,19 @@ def extract_multimet_serial(
     all_paths.extend(str(x) for x in basins)
   if weights_cache:
     all_paths.append(str(weights_cache))
+  all_paths.extend(norm_archive_stores.values())
+  all_paths.extend(norm_data_dirs.values())
 
   if any(p.startswith(("gs://", "gcs://")) for p in all_paths) or gcp_project:
     gcp_project = configure_gcp_project(gcp_project)
     if gcp_project:
-      logger.info("Configured Google Cloud project for GCS operations: %s", gcp_project)
+      logger.info(
+          "Configured Google Cloud project for GCS operations: %s", gcp_project
+      )
 
   if not str(output_dir).startswith(("gs://", "gcs://")):
     os.makedirs(output_dir, exist_ok=True)
   basins_gdf = load_basin_geometries(basins, id_column=id_column)
-  basin_ids = list(basins_gdf.index)
 
   if products is None:
     target_prods = list(PRODUCT_MAP.keys())
@@ -128,6 +178,13 @@ def extract_multimet_serial(
     loaded_weights = ZonalWeightMatrix.load(weights_cache)
     logger.info("Loaded precomputed weight matrix from %s", weights_cache)
 
+  source_lower = source.lower().strip()
+  is_archive_mode = source_lower in (
+      "archive",
+      "gridded_archive",
+      "zarr_archive",
+  )
+
   for prod_name in target_prods:
     if prod_name not in PRODUCT_MAP:
       raise ValueError(
@@ -136,36 +193,92 @@ def extract_multimet_serial(
       )
 
     prod_enum, extractor_cls = PRODUCT_MAP[prod_name]
-    logger.info("Starting extraction for %s [%s to %s]...", prod_name, start_date, end_date)
+    logger.info(
+        "Starting extraction for %s [%s to %s]...",
+        prod_name,
+        start_date,
+        end_date,
+    )
 
-    if prod_name == "CPC":
-      src = "psl" if source in ("public", "auto") else ("binary" if source == "local" else source)
-      extractor = CPCExtractor(source=src)
+    prod_archive_uri = norm_archive_stores.get(
+        prod_name, norm_data_dirs.get(prod_name)
+    )
+
+    if prod_name == "ERA5_LAND":
+      # ERA5-Land is strictly archive-only.
+      extractor = ERA5LandExtractor(
+          data_dir=prod_archive_uri,
+          source="archive",
+      )
+    elif is_archive_mode or prod_name in norm_archive_stores:
+      if not prod_archive_uri:
+        raise ValueError(
+            f"Product {prod_name} in archive mode requires an explicit store "
+            f"URI via archive_stores[{prod_name!r}] or --archive-store "
+            f"{prod_name}=<URI>."
+        )
+      if prod_name == "CPC":
+        extractor = CPCExtractor(data_dir=prod_archive_uri, source="archive")
+      elif prod_name == "IMERG":
+        extractor = IMERGExtractor(data_dir=prod_archive_uri, source="archive")
+      elif prod_name == "HRES":
+        extractor = HRESExtractor(data_dir=prod_archive_uri, source="archive")
+      elif prod_name == "GRAPHCAST":
+        extractor = GraphCastExtractor(
+            data_dir=prod_archive_uri, source="archive"
+        )
+      else:
+        extractor = extractor_cls(data_dir=prod_archive_uri)
+    elif prod_name == "CPC":
+      src = (
+          "psl"
+          if source_lower in ("public", "auto", "upstream")
+          else ("binary" if source_lower == "local" else source_lower)
+      )
+      extractor = CPCExtractor(
+          data_dir=norm_data_dirs.get(prod_name), source=src
+      )
     elif prod_name == "IMERG":
-      src = "gesdisc" if source in ("public", "auto") else ("h5" if source == "local" else source)
+      src = (
+          "gesdisc"
+          if source_lower in ("public", "auto", "upstream")
+          else ("h5" if source_lower == "local" else source_lower)
+      )
       extractor = IMERGExtractor(
+          data_dir=norm_data_dirs.get(prod_name),
           source=src,
           username=earthdata_username,
           password=earthdata_password,
           token=earthdata_token,
           netrc_path=netrc_path,
       )
-    elif prod_name == "ERA5_LAND":
-      src = "wb2" if source in ("public", "auto") else ("grib" if source == "local" else source)
-      extractor = ERA5LandExtractor(source=src)
     elif prod_name == "HRES":
-      src = "wb2" if source in ("public", "auto") else source
-      extractor = HRESExtractor(source=src)
+      src = (
+          "wb2"
+          if source_lower in ("public", "auto", "upstream")
+          else source_lower
+      )
+      extractor = HRESExtractor(
+          data_dir=norm_data_dirs.get(prod_name), source=src
+      )
     elif prod_name == "GRAPHCAST":
-      src = "wb2" if source in ("public", "auto") else source
-      extractor = GraphCastExtractor(source=src)
+      src = (
+          "wb2"
+          if source_lower in ("public", "auto", "upstream")
+          else source_lower
+      )
+      extractor = GraphCastExtractor(
+          data_dir=norm_data_dirs.get(prod_name), source=src
+      )
     else:
-      extractor = extractor_cls()
+      extractor = extractor_cls(data_dir=norm_data_dirs.get(prod_name))
 
     weights_matrix = loaded_weights
     if weights_matrix is not None:
-      # Verify compatibility with extractor's coordinate resolution
-      if weights_matrix.grid_shape != (len(extractor.lats), len(extractor.lons)):
+      if weights_matrix.grid_shape != (
+          len(extractor.lats),
+          len(extractor.lons),
+      ):
         weights_matrix = None
 
     ds = extractor.extract_for_basins(
@@ -210,20 +323,20 @@ def _build_parser() -> argparse.ArgumentParser:
   parser.add_argument(
       "--products",
       type=str,
-      default="CPC,ERA5_LAND,IMERG,HRES,GRAPHCAST",
+      default="CPC,ERA5_LAND,IMERG,HRES",
       help="Comma-separated product list to extract.",
   )
   parser.add_argument(
       "--start_date",
       type=str,
-      default="2020-01-01",
-      help="Start date (YYYY-MM-DD).",
+      required=True,
+      help="Required start date (YYYY-MM-DD).",
   )
   parser.add_argument(
       "--end_date",
       type=str,
-      default="2020-01-02",
-      help="End date (YYYY-MM-DD).",
+      required=True,
+      help="Required end date (YYYY-MM-DD).",
   )
   parser.add_argument(
       "--id_column",
@@ -235,7 +348,22 @@ def _build_parser() -> argparse.ArgumentParser:
       "--source",
       type=str,
       default="public",
-      help="Source mode: 'public' (WeatherBench 2, NOAA, NASA) or 'local'.",
+      help=(
+          "Source mode: 'archive' (gridded Zarr archives via --archive-store), "
+          "'public'/'upstream' (NOAA PSL, NASA GES DISC, etc.), or 'local'."
+      ),
+  )
+  parser.add_argument(
+      "--archive-store",
+      "--archive_store",
+      dest="archive_stores",
+      action="append",
+      default=None,
+      metavar="PRODUCT=URI",
+      help=(
+          "Explicit gridded archive Zarr store URI for a product (repeatable), "
+          "e.g. --archive-store CPC=gs://.../CPC/daily_surface.zarr."
+      ),
   )
   parser.add_argument(
       "--overwrite",
@@ -295,6 +423,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
   args = parser.parse_args(argv)
 
   prods = [p.strip() for p in args.products.split(",") if p.strip()]
+  archive_stores = _parse_product_uri_pairs(args.archive_stores)
   t0 = time.time()
   print(f"▶ Starting MultiMet serial extraction for: {prods}")
   stores = extract_multimet_serial(
@@ -304,6 +433,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
       start_date=args.start_date,
       end_date=args.end_date,
       source=args.source,
+      archive_stores=archive_stores,
       id_column=args.id_column,
       overwrite=args.overwrite,
       weights_cache=args.weights_cache,
@@ -313,7 +443,10 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
       netrc_path=args.netrc_path,
       gcp_project=args.gcp_project,
   )
-  print(f"\n✓ Completed extraction of {len(stores)} products in {time.time() - t0:.2f}s:")
+  print(
+      f"\n✓ Completed extraction of {len(stores)} products in"
+      f" {time.time() - t0:.2f}s:"
+  )
   for prod, store_path in stores.items():
     print(f"  • {prod:12s} -> {store_path}")
 

@@ -266,27 +266,30 @@ class HRESExtractor(BaseExtractor):
       source: str = "auto",
   ):
     super().__init__(Product.HRES, data_dir)
-    source_lower = source.lower()
-    if source_lower in ("auto", "default"):
+    source_lower = source.lower().strip()
+    if source_lower in ("archive", "gridded_archive", "zarr_archive"):
+      self.source = "archive"
+      if data_dir is None or not str(data_dir).strip():
+        raise ValueError(
+            "HRESExtractor with source='archive' requires an explicit Zarr "
+            "store URI or path via data_dir."
+        )
+      self.data_dir = str(data_dir)
+    elif source_lower in ("auto", "default"):
+      self.source = "archive"
+      self.data_dir = str(data_dir) if data_dir is not None else ""
+    elif source_lower in ("wb2", "public", "gcs", "upstream"):
       self.source = "wb2"
-    elif source_lower in ("wb2", "public", "gcs"):
-      self.source = "wb2"
-    elif source_lower in ("local", "zarr", "archive"):
+      self.data_dir = str(data_dir) if data_dir is not None else ""
+    elif source_lower in ("local", "cns", "zarr"):
       self.source = "zarr"
+      self.data_dir = str(data_dir) if data_dir is not None else ""
     else:
       self.source = source_lower
+      self.data_dir = str(data_dir) if data_dir is not None else ""
 
-    if self.source == "wb2":
-      self.data_dir = (
-          data_dir
-          if data_dir is not None
-          else DEFAULT_STORAGE_PATHS[Product.HRES]["wb2_zarr"]
-      )
-    else:
-      self.data_dir = data_dir if data_dir is not None else ""
-
-    if self.source == "wb2":
-      # WeatherBench 2 HRES 0.25 deg grid: 721 lats x 1440 lons
+    if self.source in ("wb2", "archive"):
+      # HRES 0.25 deg grid: 721 lats x 1440 lons
       self.lats = np.linspace(-90.0, 90.0, 721, dtype=np.float64)
       self.lons = np.linspace(-180.0, 179.75, 1440, dtype=np.float64)
       self.sort_lon_idx = np.arange(1440)
@@ -309,6 +312,58 @@ class HRESExtractor(BaseExtractor):
     self._cached_matrix = None
     self._cached_basin_keys = None
 
+  def extract_day(
+      self,
+      dt: Union[str, pd.Timestamp],
+      basins_gdf: gpd.GeoDataFrame,
+      matrix: Optional[ZonalWeightMatrix] = None,
+      weights_dict: Optional[
+          Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]
+      ] = None,
+  ) -> Dict[str, np.ndarray]:
+    """Extracts 1 forecast initialization date across 10 lead days."""
+    del weights_dict
+    dt_ts = pd.to_datetime(dt)
+    if self.source == "archive":
+      if not self.data_dir:
+        raise ValueError(
+            "HRESExtractor requires an explicit data_dir URI for archive extraction."
+        )
+      from multimet.gridded_archive import extract_forecast_from_archive
+
+      ds_day = extract_forecast_from_archive(
+          Product.HRES,
+          self.data_dir,
+          basins_gdf,
+          start_date=dt_ts,
+          end_date=dt_ts,
+          weights_matrix=matrix,
+          use_bounding_box=True,
+      )
+      return {
+          var: ds_day[var].values[:, 0, :].astype(np.float32)
+          for var in ds_day.data_vars
+      }
+    if self.source == "wb2":
+      if not self.data_dir:
+        raise ValueError(
+            "HRESExtractor requires an explicit data_dir URI; default gs:// "
+            "bucket paths are not permitted."
+        )
+      return self._extract_day_wb2(dt_ts, basins_gdf)
+    if not self.data_dir:
+      raise ValueError(
+          "HRESExtractor requires an explicit data_dir path for local Zarr extraction."
+      )
+    basin_ids = list(basins_gdf.index)
+    w_dict = {
+        b_id: self.zonal_calc.compute_weights(b_id, basins_gdf.loc[b_id].geometry)
+        for b_id in basin_ids
+    }
+    return extract_day_from_hres(
+        self.data_dir, dt_ts, basin_ids, w_dict, self.sort_lon_idx
+    )
+
   def extract_for_basins(
       self,
       basins_gdf: gpd.GeoDataFrame,
@@ -319,6 +374,29 @@ class HRESExtractor(BaseExtractor):
       **kwargs,
   ) -> xr.Dataset:
     """Extracts HRES forecast dataset for given basin geometries."""
+    del kwargs
+    if start_date is None or end_date is None:
+      raise ValueError(
+          "HRESExtractor.extract_for_basins requires both start_date and "
+          "end_date to be explicitly provided."
+      )
+    if not self.data_dir:
+      raise ValueError(
+          "HRESExtractor requires an explicit data_dir Zarr URI or path; "
+          "hardcoded default bucket paths are not permitted."
+      )
+    if self.source == "archive":
+      from multimet.gridded_archive import extract_forecast_from_archive
+
+      return extract_forecast_from_archive(
+          Product.HRES,
+          self.data_dir,
+          basins_gdf,
+          start_date=start_date,
+          end_date=end_date,
+          weights_matrix=weights_matrix,
+          use_bounding_box=use_bounding_box,
+      )
     if self.source == "wb2":
       return self.extract_for_basins_wb2(
           basins_gdf,
@@ -486,18 +564,21 @@ class HRESExtractor(BaseExtractor):
       use_bounding_box: bool = True,
   ) -> xr.Dataset:
     """Extracts 10-day HRES forecasts from WeatherBench 2 on GCS."""
+    from multimet.gridded_archive import _warn_missing_variables_once
+
+    if start_date is None or end_date is None:
+      raise ValueError(
+          "HRESExtractor.extract_for_basins_wb2 requires both start_date and "
+          "end_date to be explicitly provided."
+      )
+    start_dt = pd.to_datetime(start_date)
+    end_dt = pd.to_datetime(end_date)
+    if end_dt < start_dt:
+      raise ValueError(
+          f"end_date ({end_dt}) must be >= start_date ({start_dt})."
+      )
+
     basin_ids = list(basins_gdf.index)
-
-    if start_date is not None:
-      start_dt = pd.to_datetime(start_date)
-    else:
-      start_dt = pd.to_datetime("2020-01-01")
-
-    if end_date is not None:
-      end_dt = pd.to_datetime(end_date)
-    else:
-      end_dt = pd.to_datetime("2020-01-02")
-
     date_idx = pd.date_range(start_dt, end_dt, freq="D")
     lead_steps = FORECAST_LEAD_DAYS[Product.HRES]  # 10 days
     lead_time_idx = pd.to_timedelta(range(1, lead_steps + 1), unit="D")
@@ -508,8 +589,17 @@ class HRESExtractor(BaseExtractor):
         band: np.full(shape, np.nan, dtype=np.float32)
         for band in expected_bands
     }
+    missing_fraction = np.ones(shape, dtype=np.float32)
 
     ds_raw = open_wb2_hres_dataset(self.data_dir)
+    _warn_missing_variables_once(
+        str(self.data_dir),
+        Product.HRES,
+        [
+            "hres_surface_net_solar_radiation",
+            "hres_surface_net_thermal_radiation",
+        ],
+    )
 
     # Scope to valid requested times first to keep the Dask graph minimal
     requested_times = [
@@ -521,39 +611,26 @@ class HRESExtractor(BaseExtractor):
 
     if not valid_times:
       ds_raw.close()
-      data_vars = {}
-      for band in expected_bands:
-        var_attrs = {}
-        if band in (
-            "hres_surface_net_solar_radiation",
-            "hres_surface_net_thermal_radiation",
-        ):
-          var_attrs = {
-              "status": "unavailable",
-              "comment": (
-                  "Surface radiation flux variables are unavailable in"
-                  " WeatherBench 2 HRES archive."
-              ),
-          }
-        data_vars[band] = (
-            ["basin", "date", "lead_time"],
-            data_dict[band],
-            var_attrs,
-        )
-      return xr.Dataset(
-          data_vars=data_vars,
-          coords={
-              "basin": basin_ids,
-              "date": date_idx.values,
-              "lead_time": lead_time_idx.values,
-          },
-          attrs=dict(PRODUCT_METADATA_ATTRS.get(Product.HRES, {})),
+      min_avail = (
+          ds_raw_times.min().strftime("%Y-%m-%d")
+          if len(ds_raw_times) > 0
+          else "empty"
+      )
+      max_avail = (
+          ds_raw_times.max().strftime("%Y-%m-%d")
+          if len(ds_raw_times) > 0
+          else "empty"
+      )
+      raise ValueError(
+          f"Requested date range [{start_dt.strftime('%Y-%m-%d')}, "
+          f"{end_dt.strftime('%Y-%m-%d')}] has no overlap with HRES store at "
+          f"{self.data_dir!r} (available range: [{min_avail}, {max_avail}])."
       )
 
     ds_raw = ds_raw.sel(time=valid_times)
 
     if use_bounding_box:
-      bounds = basins_gdf.total_bounds  # (minx, miny, maxx, maxy)
+      bounds = basins_gdf.total_bounds
       minx, miny, maxx, maxy = bounds
       lat_slice = slice(max(-90.0, miny - 0.5), min(90.0, maxy + 0.5))
 
@@ -606,7 +683,7 @@ class HRESExtractor(BaseExtractor):
         if "total_precipitation_24hr" in sub
         else "total_precipitation"
     )
-    has_tp24 = (tp_var == "total_precipitation_24hr")
+    has_tp24 = tp_var == "total_precipitation_24hr"
 
     for d_pos, dt in enumerate(
         tqdm.tqdm(
@@ -625,13 +702,19 @@ class HRESExtractor(BaseExtractor):
 
       # 1. 2m Temperature
       with dask.config.set(scheduler="threads"):
-        t2m_arr = sub["2m_temperature"].sel(time=time_target).compute().values - 273.15
-      t2m_reduced = matrix.reduce_3d(t2m_arr)
+        t2m_arr = (
+            sub["2m_temperature"].sel(time=time_target).compute().values
+            - 273.15
+        )
+      t2m_reduced, t2m_miss = matrix.reduce_3d_with_coverage(t2m_arr)
       del t2m_arr
 
       # 2. Surface Pressure
       with dask.config.set(scheduler="threads"):
-        sp_arr = sub["surface_pressure"].sel(time=time_target).compute().values * 0.001
+        sp_arr = (
+            sub["surface_pressure"].sel(time=time_target).compute().values
+            * 0.001
+        )
       sp_reduced = matrix.reduce_3d(sp_arr)
       del sp_arr
 
@@ -649,6 +732,7 @@ class HRESExtractor(BaseExtractor):
 
         mean_t2m = np.nanmean(t2m_reduced[:, step_slice], axis=1)
         mean_sp = np.nanmean(sp_reduced[:, step_slice], axis=1)
+        mean_miss = np.nanmean(t2m_miss[:, step_slice], axis=1)
         if has_tp24:
           p_tp = tp_reduced[:, lt_day * 4]
         else:
@@ -662,6 +746,7 @@ class HRESExtractor(BaseExtractor):
         data_dict["hres_total_precipitation"][:, d_pos, lt_pos] = np.maximum(
             0.0, p_tp
         )
+        missing_fraction[:, d_pos, lt_pos] = mean_miss
 
       del t2m_reduced, sp_reduced, tp_reduced
       gc.collect()
@@ -687,6 +772,10 @@ class HRESExtractor(BaseExtractor):
           data_dict[band],
           var_attrs,
       )
+    data_vars["hres_missing_fraction"] = (
+        ["basin", "date", "lead_time"],
+        missing_fraction,
+    )
 
     ds = xr.Dataset(
         data_vars=data_vars,
@@ -706,18 +795,18 @@ class HRESExtractor(BaseExtractor):
       end_date: Optional[Union[str, pd.Timestamp]] = None,
   ) -> xr.Dataset:
     """Extracts 10-day HRES forecast from local or archived Zarr store."""
+    if start_date is None or end_date is None:
+      raise ValueError(
+          "HRESExtractor.extract_for_basins_zarr requires both start_date and "
+          "end_date to be explicitly provided."
+      )
+    start_dt = pd.to_datetime(start_date)
+    end_dt = pd.to_datetime(end_date)
+    if end_dt < start_dt:
+      raise ValueError(
+          f"end_date ({end_dt}) must be >= start_date ({start_dt})."
+      )
     basin_ids = list(basins_gdf.index)
-
-    if start_date is not None:
-      start_dt = pd.to_datetime(start_date)
-    else:
-      start_dt = pd.to_datetime("2016-01-01")
-
-    if end_date is not None:
-      end_dt = pd.to_datetime(end_date)
-    else:
-      end_dt = pd.to_datetime("today")
-
     date_idx = pd.date_range(start_dt, end_dt, freq="D")
     lead_steps = FORECAST_LEAD_DAYS[Product.HRES]  # 10 days
     lead_time_idx = pd.to_timedelta(range(1, lead_steps + 1), unit="D")
@@ -758,6 +847,10 @@ class HRESExtractor(BaseExtractor):
         band: (["basin", "date", "lead_time"], data_dict[band])
         for band in expected_bands
     }
+    data_vars["hres_missing_fraction"] = (
+        ["basin", "date", "lead_time"],
+        np.isnan(data_dict["hres_temperature_2m"]).astype(np.float32),
+    )
 
     ds = xr.Dataset(
         data_vars=data_vars,

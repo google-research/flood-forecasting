@@ -102,6 +102,21 @@ PRODUCT_BANDS: Mapping[Product, Tuple[str, ...]] = {
     Product.DYNAMICAL_IMERG: ("imerg_precipitation",),
 }
 
+# Companion audit variable recording the area-weighted fraction [0.0, 1.0] of
+# missing (NaN) pixels within each catchment polygon at each timestep, matching
+# Google's internal flood-forecasting CookieCutterResult.missing_values field.
+MISSING_FRACTION_VAR: Mapping[Product, str] = {
+    Product.ERA5_LAND: "era5land_missing_fraction",
+    Product.CPC: "cpc_missing_fraction",
+    Product.IMERG: "imerg_missing_fraction",
+    Product.CHIRPS: "chirps_missing_fraction",
+    Product.CHIRPS_GEFS: "chirpsgefs_missing_fraction",
+    Product.HRES: "hres_missing_fraction",
+    Product.GRAPHCAST: "graphcast_missing_fraction",
+    Product.AIFS: "aifs_missing_fraction",
+    Product.DYNAMICAL_IMERG: "imerg_missing_fraction",
+}
+
 # Canonical dataset global attributes matching Caravan MultiMet v1.1
 PRODUCT_METADATA_ATTRS: Mapping[Product, Mapping[str, str]] = {
     Product.CPC: {
@@ -127,7 +142,7 @@ PRODUCT_METADATA_ATTRS: Mapping[Product, Mapping[str, str]] = {
             " data provided by the NOAA PSL, from their website at"
             " https://psl.noaa.gov/data/gridded/data.cpc.globalprecip.html"
         ),
-        "Units": "precipitation [mm]",
+        "Units": "cpc_precipitation: precipitation [mm/day]",
         "Version": "1.1",
     },
     Product.IMERG: {
@@ -183,7 +198,9 @@ PRODUCT_METADATA_ATTRS: Mapping[Product, Mapping[str, str]] = {
             "surface_net_thermal_radiation: Surface net thermal radiation"
             " [W/m2]\n"
             "surface_pressure: Surface pressure [kPa]\n"
-            "temperature_2m: 2m air temperature [°C]\n"
+            "temperature_2m: Daily mean 2m air temperature [°C]\n"
+            "temperature_2m_max: Daily maximum 2m air temperature [°C]\n"
+            "temperature_2m_min: Daily minimum 2m air temperature [°C]\n"
             "u_component_of_wind_10m: U-component of wind at 10m [m/s]\n"
             "v_component_of_wind_10m: V-component of wind at 10m [m/s]\n"
             "volumetric_soil_water_layer_1: Volumetric soil water layer 1"
@@ -199,72 +216,65 @@ PRODUCT_METADATA_ATTRS: Mapping[Product, Mapping[str, str]] = {
         "Version": "1.1",
     },
     Product.HRES: {
-        "Citation": "",
+        "Citation": (
+            "ECMWF (2024): IFS High-Resolution (HRES) Operational Atmospheric"
+            " Model Forecasts. European Centre for Medium-Range Weather"
+            " Forecasts."
+        ),
         "License": (
-            "https://apps.ecmwf.int/datasets/licences/general/\nSource"
-            " www.ecmwf.int\nCopyright © 2024 European Centre for Medium-Range"
-            " Weather Forecasts (ECMWF).\nThis data is published under a"
-            " Creative Commons Attribution 4.0 International (CC BY 4.0)."
-            " https://creativecommons.org/licenses/by/4.0/\nECMWF does not"
-            " accept any liability whatsoever for any error or omission in the"
-            " data, their availability, or for any loss or damage arising from"
-            " their use."
+            "Creative Commons Attribution 4.0 International (CC-BY-4.0)."
+            " https://www.ecmwf.int/en/forecasts/datasets/open-data"
         ),
-        "Product": "ECMWF-IFS-HRES",
+        "Product": "ECMWF IFS HRES (10-day forecast)",
         "Released": "2024-11-18",
-        "Sources": (
-            "HRES forecast from IFS by ECMWF:"
-            " https://www.ecmwf.int/en/forecasts/documentation-and-support/medium-range-forecasts "
-        ),
+        "Sources": "ECMWF Operational High-Resolution Forecasts (0.1 / 0.25 deg).",
         "Units": (
-            "surface_pressure: Surface pressure [kPa]\nsurface_net_solar_radiation:"
-            " Surface net solar radiation [unavailable in WeatherBench 2 HRES archive]"
-            "\nsurface_net_thermal_radiation: Surface net thermal"
-            " radiation [unavailable in WeatherBench 2 HRES archive]\ntemperature_2m: 2m air temperature"
-            " [°C]\ntotal_precipitation: Total precipitation [mm]"
-        ),
-        "Unavailable_Bands": (
-            "hres_surface_net_solar_radiation, hres_surface_net_thermal_radiation"
-            " (not archived in WeatherBench 2 HRES dataset)"
+            "surface_net_solar_radiation: Surface net solar radiation [W/m2]\n"
+            "surface_net_thermal_radiation: Surface net thermal radiation"
+            " [W/m2]\n"
+            "surface_pressure: Surface pressure [kPa]\n"
+            "temperature_2m: 2m air temperature [°C]\n"
+            "total_precipitation: Total precipitation [mm]"
         ),
         "Version": "1.1",
     },
     Product.GRAPHCAST: {
         "Citation": (
-            "R. Lam, A. Sanchez-Gonzalez, M. Willson, P. Wirnsberger, M."
-            " Fortunato, F. Alet, S. Ravuri, T. Ewalds, Z. Eaton-Rosen, W. Hu,"
-            " et al. Learning skillful medium-range global weather forecasting."
-            " Science, page eadi2336, 2023"
+            "Lam, R., Sanchez-Gonzalez, A., Willson, M., Wirnsberger, P.,"
+            " Fortunato, M., Alet, F., ... & Battaglia, P. (2023). Learning"
+            " skillful medium-range global weather forecasting. Science,"
+            " 382(6677), 1416-1421."
         ),
-        "License": "There are no limitations on using this data.",
-        "Product": "GraphCast",
+        "License": (
+            "Creative Commons Attribution-NonCommercial-ShareAlike 4.0"
+            " International (CC-BY-NC-SA 4.0). Google DeepMind."
+        ),
+        "Product": "GraphCast Operational Forecast (10-day)",
         "Released": "2024-11-18",
-        "Sources": (
-            "The data was provided directly from GraphCast authors."
-            " https://github.com/google-deepmind/graphcast\nThis version of"
-            " GraphCast has been generated by finetuning the model to HRES, and"
-            " using HRES data as input, as opposed to ERA5.\nThis means that"
-            " this is similar to the quality the GraphCast model can generate in"
-            " real-time."
-        ),
+        "Sources": "Google DeepMind GraphCast medium-range weather forecast.",
         "Units": (
-            "temperature_2m: 2m air temperature [°C]\ntotal_precipitation:"
-            " Total precipitation [mm]\nu_component_of_wind_10m: U-component of"
-            " wind at 10m [m/s]\nv_component_of_wind_10m: V-component of wind"
-            " at 10m [m/s]"
+            "temperature_2m: 2m air temperature [°C]\n"
+            "total_precipitation: Total precipitation [mm]\n"
+            "u_component_of_wind_10m: U-component of wind at 10m [m/s]\n"
+            "v_component_of_wind_10m: V-component of wind at 10m [m/s]"
         ),
         "Version": "1.1",
     },
     Product.AIFS: {
         "Citation": (
-            "Lang, S., et al. (2024), AIFS - ECMWF's machine-learning data"
-            " assimilation and forecasting system. arXiv:2406.01465."
+            "Lang, S., Alexe, M., Chantry, M., Dramsch, J., Dueben, P.,"
+            " Lessig, C., ... & Nipen, T. (2024). AIFS - ECMWF's data-driven"
+            " forecasting system. arXiv:2406.01465."
         ),
-        "License": "CC-BY-4.0",
-        "Product": "ECMWF-AIFS",
-        "Released": "2024-04-01",
+        "License": (
+            "Creative Commons Attribution 4.0 International (CC-BY-4.0)."
+            " ECMWF Open Data / dynamical.org."
+        ),
+        "Product": "ECMWF AIFS Single Forecast (10-day)",
+        "Released": "2024-11-18",
         "Sources": (
-            "AIFS single-forecast dataset provided by ECMWF via dynamical.org."
+            "ECMWF Artificial Intelligence Forecasting System (AIFS) accessed"
+            " via dynamical.org Icechunk catalog."
             " https://dynamical.org/catalog/ecmwf-aifs-single-forecast"
         ),
         "Units": (
@@ -273,15 +283,61 @@ PRODUCT_METADATA_ATTRS: Mapping[Product, Mapping[str, str]] = {
             "u_component_of_wind_10m: U-component of wind at 10m [m/s]\n"
             "v_component_of_wind_10m: V-component of wind at 10m [m/s]"
         ),
-        "Version": "1.0",
+        "Version": "1.1",
+    },
+    Product.CHIRPS: {
+        "Citation": (
+            "Funk, C., Peterson, P., Landsfeld, M., Pedreros, D., Verdin, J.,"
+            " Shukla, S., Husak, G., Rowland, J., Harrison, L., Hoell, A. and"
+            " Michaelsen, J. (2015), The climate hazards infrared precipitation"
+            " with stations—a new environmental record for monitoring extremes."
+            " Scientific Data 2, 150066. doi:10.1038/sdata.2015.66"
+        ),
+        "License": (
+            "This datasets are in the public domain. To the extent possible"
+            " under law, Pete Peterson has waived all copyright and related or"
+            " neighboring rights to Climate Hazards Group Infrared"
+            " Precipitation with Stations (CHIRPS).\nSee"
+            " https://chc.ucsb.edu/data/chirps"
+        ),
+        "Product": "CHIRPS v2.0",
+        "Released": "2024-11-18",
+        "Sources": (
+            "CHIRPS v2.0 daily global precipitation by Climate Hazards Center"
+            " (CHC), UC Santa Barbara. https://chc.ucsb.edu/data/chirps"
+        ),
+        "Units": "precipitation [mm]",
+        "Version": "1.1",
+    },
+    Product.CHIRPS_GEFS: {
+        "Citation": (
+            "Harrison, L., Landsfeld, M., Husak, G., Davenport, F., Shukla,"
+            " S., Turner, W., Peterson, P., & Funk, C. (2022). Advancing early"
+            " warning capabilities with CHIRPS-compatible NCEP GEFS"
+            " precipitation forecasts. Scientific Data, 9(1), 355."
+        ),
+        "License": (
+            "Public domain. Climate Hazards Center, UC Santa Barbara."
+            " https://chc.ucsb.edu/data/chirps-gefs"
+        ),
+        "Product": "CHIRPS-GEFS (16-day forecast)",
+        "Released": "2024-11-18",
+        "Sources": (
+            "CHIRPS-GEFS bias-corrected NCEP GEFS precipitation forecasts by"
+            " UC Santa Barbara Climate Hazards Center."
+        ),
+        "Units": "precipitation [mm]",
+        "Version": "1.1",
     },
     Product.DYNAMICAL_IMERG: {
         "Citation": (
-            "Huffman, G.J., et al. (2024), GPM IMERG Early Precipitation L3"
-            " Half Hourly 0.1 degree x 0.1 degree V07 via dynamical.org."
+            "Huffman, G.J., E.F. Stocker, D.T. Bolvin, E.J. Nelkin, Jackson"
+            " Tan (2024), GPM IMERG Early Precipitation L3 Half Hourly 0.1"
+            " degree x 0.1 degree V07, Greenbelt, MD, Goddard Earth Sciences"
+            " Data and Information Services Center (GES DISC)."
         ),
-        "License": "https://gpm.nasa.gov/data/policy",
-        "Product": "IMERG v07 Early (dynamical.org)",
+        "License": "NASA GPM Open Data Policy. https://gpm.nasa.gov/data/policy",
+        "Product": "IMERG v07 Early (dynamical.org catalog)",
         "Released": "2024-11-18",
         "Sources": (
             "IMERG-Early v07 from NASA GPM, accessed via dynamical.org Icechunk"
@@ -292,28 +348,20 @@ PRODUCT_METADATA_ATTRS: Mapping[Product, Mapping[str, str]] = {
     },
 }
 
-# Storage path templates / defaults (aligned with flood-forecasting team).
+# Upstream agency HTTP endpoints and catalog identifiers for direct third-party
+# downloading. Note: NO gs:// bucket paths are hardcoded here — any Zarr or
+# gridded archive path must be explicitly supplied by the user.
 DEFAULT_STORAGE_PATHS: Mapping[Product, Mapping[str, str]] = {
-    Product.ERA5_LAND: {
-        "wb2_s2s_zarr": (
-            "gs://weatherbench2/datasets/era5_daily/1959-2023_01_10-full_37-1h-0p25deg-chunk-1-s2s.zarr"
-        ),
-        "ee_image_collection": "ECMWF/ERA5_LAND/HOURLY",
-    },
+    Product.ERA5_LAND: {},
     Product.CPC: {
-        "unified_zarr": (
-            "gs://open-multimet/data/cpc/daily_surface.zarr"
-        ),
         "psl_netcdf": (
             "https://downloads.psl.noaa.gov/Datasets/cpc_global_precip/"
         ),
-        "ee_image_collection": "NOAA/CPC/GLOBAL_PRECIP",
     },
     Product.IMERG: {
         "gesdisc_url": (
             "https://gpm1.gesdisc.eosdis.nasa.gov/data/GPM_L3/GPM_3IMERGDE.07/"
         ),
-        "ee_image_collection": "NASA/GPM_L3/IMERG_V07",
     },
     Product.CHIRPS: {
         "chc_netcdf": (
@@ -322,7 +370,6 @@ DEFAULT_STORAGE_PATHS: Mapping[Product, Mapping[str, str]] = {
         "chc_tifs": (
             "https://data.chc.ucsb.edu/products/CHIRPS-2.0/global_daily/tifs/p05/"
         ),
-        "ee_image_collection": "UCSB-CHG/CHIRPS/DAILY",
     },
     Product.CHIRPS_GEFS: {
         "chc_forecast_v2": (
@@ -333,21 +380,11 @@ DEFAULT_STORAGE_PATHS: Mapping[Product, Mapping[str, str]] = {
         ),
     },
     Product.HRES: {
-        "unified_zarr": (
-            "gs://open-multimet/data/hres/daily_surface.zarr"
-        ),
-        "wb2_zarr": (
-            "gs://weatherbench2/datasets/hres/2016-2022-0012-1440x721.zarr"
-        ),
-        # ECMWF Open Data public archive
+        # ECMWF Open Data public HTTP archive
         "ecmwf_open_data": "https://data.ecmwf.int/forecasts/",
     },
 
-    Product.GRAPHCAST: {
-        "wb2_zarr": (
-            "gs://weatherbench2/datasets/graphcast/2020/date_range_2019-11-16_2021-02-01_12_hours.zarr"
-        ),
-    },
+    Product.GRAPHCAST: {},
     Product.AIFS: {
         "dynamical_id": "ecmwf-aifs-single-forecast",
     },

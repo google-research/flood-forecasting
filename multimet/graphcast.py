@@ -223,19 +223,17 @@ class GraphCastExtractor(BaseExtractor):
         self.source = "wb2"
     elif source_lower in ("wb2", "public", "gcs"):
       self.source = "wb2"
-    elif source_lower in ("local", "zarr", "archive"):
+    elif source_lower in ("archive", "gridded_archive"):
+      raise ValueError(
+          "GraphCastExtractor does not have a gridded archive specification. "
+          "Supported gridded archive products are CPC, ERA5_LAND, IMERG, and HRES."
+      )
+    elif source_lower in ("local", "zarr"):
       self.source = "zarr"
     else:
       self.source = source_lower
 
-    if self.source == "wb2":
-      self.data_dir = (
-          data_dir
-          if data_dir is not None
-          else DEFAULT_STORAGE_PATHS[Product.GRAPHCAST]["wb2_zarr"]
-      )
-    else:
-      self.data_dir = data_dir if data_dir is not None else ""
+    self.data_dir = str(data_dir) if data_dir is not None else ""
 
     # Standard GraphCast 0.25 deg grid in [-180, 180] longitude convention
     self.lats = np.linspace(90.0, -90.0, 721, dtype=np.float64)
@@ -259,6 +257,17 @@ class GraphCastExtractor(BaseExtractor):
       **kwargs,
   ) -> xr.Dataset:
     """Extracts 10-day GraphCast forecasts for given basin geometries."""
+    del kwargs
+    if start_date is None or end_date is None:
+      raise ValueError(
+          "GraphCastExtractor.extract_for_basins requires both start_date and "
+          "end_date to be explicitly provided."
+      )
+    if not self.data_dir:
+      raise ValueError(
+          "GraphCastExtractor requires an explicit data_dir Zarr URI or path; "
+          "hardcoded default bucket paths are not permitted."
+      )
     if self.source == "wb2":
       return self.extract_for_basins_wb2(
           basins_gdf,

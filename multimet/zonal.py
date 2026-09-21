@@ -121,13 +121,32 @@ class ZonalWeightCalculator:
     if len(weights) > 0 and weights.sum() > 0:
       weights /= weights.sum()
     else:
-      # Fallback to nearest representative point (guaranteed inside polygon)
+      # Only assign to a single grid cell if the geometry's representative
+      # point genuinely lies inside that cell. Out-of-bounds basins outside
+      # the grid domain must NEVER snap to a distant edge cell.
       rep_point = polygon.representative_point()
-      nearest_lat_idx = int(np.argmin(np.abs(self.lats - rep_point.y)))
-      nearest_lon_idx = int(np.argmin(np.abs(self.lons - rep_point.x)))
-      lat_list = [nearest_lat_idx]
-      lon_list = [nearest_lon_idx]
-      weights = np.array([1.0], dtype=np.float32)
+      if (
+          len(self.lats) > 0
+          and len(self.lons) > 0
+          and not rep_point.is_empty
+      ):
+        nearest_lat_idx = int(np.argmin(np.abs(self.lats - rep_point.y)))
+        nearest_lon_idx = int(np.argmin(np.abs(self.lons - rep_point.x)))
+        if (
+            abs(float(self.lats[nearest_lat_idx] - rep_point.y)) <= half_lat
+            and abs(float(self.lons[nearest_lon_idx] - rep_point.x)) <= half_lon
+        ):
+          lat_list = [nearest_lat_idx]
+          lon_list = [nearest_lon_idx]
+          weights = np.array([1.0], dtype=np.float32)
+        else:
+          lat_list = []
+          lon_list = []
+          weights = np.array([], dtype=np.float32)
+      else:
+        lat_list = []
+        lon_list = []
+        weights = np.array([], dtype=np.float32)
 
     res = (
         np.array(lat_list, dtype=np.int32),
@@ -137,6 +156,31 @@ class ZonalWeightCalculator:
     self._weights_cache[basin_id] = res
     return res
 
+  def reduce_grid_with_coverage(
+      self,
+      grid_data: np.ndarray,
+      basin_id: str,
+      polygon: shapely.geometry.base.BaseGeometry,
+  ) -> Tuple[float, float]:
+    """Reduces a 2D (lat, lon) slice and returns (weighted_mean, missing_fraction)."""
+    lat_idx, lon_idx, weights = self.compute_weights(basin_id, polygon)
+    if len(weights) == 0:
+      return np.nan, 1.0
+    total_w = float(weights.sum())
+    if total_w <= 0.0:
+      return np.nan, 1.0
+    vals = grid_data[lat_idx, lon_idx]
+    valid = ~np.isnan(vals)
+    if not np.any(valid):
+      return np.nan, 1.0
+    valid_weights = weights[valid]
+    valid_w = float(valid_weights.sum())
+    if valid_w <= 0.0:
+      return np.nan, 1.0
+    missing_frac = float(np.clip((total_w - valid_w) / total_w, 0.0, 1.0))
+    mean_val = float(np.sum(vals[valid] * valid_weights) / valid_w)
+    return mean_val, missing_frac
+
   def reduce_grid(
       self,
       grid_data: np.ndarray,
@@ -144,16 +188,8 @@ class ZonalWeightCalculator:
       polygon: shapely.geometry.base.BaseGeometry,
   ) -> float:
     """Reduces a 2D (lat, lon) slice over the polygon using weighted areal mean."""
-    lat_idx, lon_idx, weights = self.compute_weights(basin_id, polygon)
-    vals = grid_data[lat_idx, lon_idx]
-    # Filter out NaNs if partial coverage
-    valid = ~np.isnan(vals)
-    if not np.any(valid):
-      return np.nan
-    valid_weights = weights[valid]
-    if valid_weights.sum() == 0:
-      return np.nan
-    return float(np.sum(vals[valid] * valid_weights) / valid_weights.sum())
+    mean_val, _ = self.reduce_grid_with_coverage(grid_data, basin_id, polygon)
+    return mean_val
 
 
 class ZonalWeightMatrix:
@@ -188,9 +224,10 @@ class ZonalWeightMatrix:
     self.basin_id_to_row: Dict[str, int] = {
         b_id: i for i, b_id in enumerate(self.basin_ids)
     }
-    self.has_weights: np.ndarray = (
-        np.asarray(self.matrix.sum(axis=1)).ravel() > 0.0
+    self.total_weights: np.ndarray = (
+        np.asarray(self.matrix.sum(axis=1)).ravel().astype(np.float32)
     )
+    self.has_weights: np.ndarray = self.total_weights > 0.0
 
   @property
   def num_basins(self) -> int:
@@ -276,6 +313,42 @@ class ZonalWeightMatrix:
     lon_idx = col_idx % n_lons
     return lat_idx, lon_idx, weights
 
+  def reduce_2d_with_coverage(
+      self, grid_2d: np.ndarray
+  ) -> Tuple[np.ndarray, np.ndarray]:
+    """Reduces a 2D (lat, lon) grid across all basins and returns missing fraction.
+
+    Args:
+      grid_2d: Array of shape (H, W).
+
+    Returns:
+      Tuple of ``(values, missing_fraction)``, each a 1D float32 array of shape
+      ``(N_basins,)``, where ``missing_fraction`` is ``weights_not_used /
+      weights_total`` in ``[0.0, 1.0]`` matching ``cookie_cutter.py``.
+    """
+    if grid_2d.shape != self.grid_shape:
+      raise ValueError(
+          f"Grid shape {grid_2d.shape} does not match expected {self.grid_shape}"
+      )
+    flat = grid_2d.reshape(-1)
+    W = self.total_weights
+    if not np.isnan(flat).any():
+      res = self.matrix.dot(flat).astype(np.float32)
+      res[~self.has_weights] = np.nan
+      missing = np.where(self.has_weights, 0.0, 1.0).astype(np.float32)
+      return res, missing
+
+    valid = ~np.isnan(flat)
+    val_0 = np.nan_to_num(flat, nan=0.0)
+    S = self.matrix.dot(val_0)
+    V = self.matrix.dot(valid.astype(np.float32))
+    with np.errstate(divide="ignore", invalid="ignore"):
+      res = np.where(V > 0, S / V, np.nan).astype(np.float32)
+      missing = np.where(
+          W > 0, np.clip((W - V) / W, 0.0, 1.0), 1.0
+      ).astype(np.float32)
+    return res, missing
+
   def reduce_2d(self, grid_2d: np.ndarray) -> np.ndarray:
     """Reduces a 2D (lat, lon) grid across all basins.
 
@@ -285,23 +358,48 @@ class ZonalWeightMatrix:
     Returns:
       1D array of shape (N_basins,) with areal weighted means.
     """
-    if grid_2d.shape != self.grid_shape:
-      raise ValueError(
-          f"Grid shape {grid_2d.shape} does not match expected {self.grid_shape}"
-      )
-    flat = grid_2d.reshape(-1)
-    if not np.isnan(flat).any():
-      res = self.matrix.dot(flat).astype(np.float32)
-      res[~self.has_weights] = np.nan
-      return res
+    res, _ = self.reduce_2d_with_coverage(grid_2d)
+    return res
 
-    valid = ~np.isnan(flat)
-    val_0 = np.nan_to_num(flat, nan=0.0)
-    S = self.matrix.dot(val_0)
-    V = self.matrix.dot(valid.astype(np.float32))
+  def reduce_3d_with_coverage(
+      self, grid_3d: np.ndarray
+  ) -> Tuple[np.ndarray, np.ndarray]:
+    """Reduces a 3D (time, lat, lon) grid across all basins and returns missing fraction.
+
+    Args:
+      grid_3d: Array of shape (T, H, W).
+
+    Returns:
+      Tuple of ``(values, missing_fraction)``, each a 2D float32 array of shape
+      ``(N_basins, T)``.
+    """
+    T, H, W_dim = grid_3d.shape
+    if (H, W_dim) != self.grid_shape:
+      raise ValueError(
+          f"Grid spatial shape ({H}, {W_dim}) does not match expected"
+          f" {self.grid_shape}"
+      )
+    X = grid_3d.reshape(T, -1)
+    W = self.total_weights[:, np.newaxis]
+    if not np.isnan(X).any():
+      res = self.matrix.dot(X.T).astype(np.float32)
+      res[~self.has_weights, :] = np.nan
+      missing = np.broadcast_to(
+          np.where(self.has_weights[:, np.newaxis], 0.0, 1.0),
+          (len(self.basin_ids), T),
+      ).astype(np.float32).copy()
+      return res, missing
+
+    valid = ~np.isnan(X)
+    X0 = np.nan_to_num(X, nan=0.0)
+    S = self.matrix.dot(X0.T)
+    V = self.matrix.dot(valid.astype(np.float32).T)
     with np.errstate(divide="ignore", invalid="ignore"):
-      res = np.where(V > 0, S / V, np.nan)
-    return res.astype(np.float32)
+      res = np.where(V > 0, S / V, np.nan).astype(np.float32)
+      missing = np.where(
+          W > 0, np.clip((W - V) / W, 0.0, 1.0), 1.0
+      ).astype(np.float32)
+    return res, missing
 
   def reduce_3d(self, grid_3d: np.ndarray) -> np.ndarray:
     """Reduces a 3D (time, lat, lon) grid across all basins.
@@ -312,25 +410,29 @@ class ZonalWeightMatrix:
     Returns:
       2D array of shape (N_basins, T) with areal weighted means.
     """
-    T, H, W = grid_3d.shape
-    if (H, W) != self.grid_shape:
-      raise ValueError(
-          f"Grid spatial shape ({H}, {W}) does not match expected {self.grid_shape}"
-      )
-    X = grid_3d.reshape(T, -1)
-    if not np.isnan(X).any():
-      # (N, C) @ (C, T) -> (N, T)
-      res = self.matrix.dot(X.T).astype(np.float32)
-      res[~self.has_weights, :] = np.nan
-      return res
+    res, _ = self.reduce_3d_with_coverage(grid_3d)
+    return res
 
-    valid = ~np.isnan(X)
-    X0 = np.nan_to_num(X, nan=0.0)
-    S = self.matrix.dot(X0.T)
-    V = self.matrix.dot(valid.astype(np.float32).T)
-    with np.errstate(divide="ignore", invalid="ignore"):
-      res = np.where(V > 0, S / V, np.nan)
-    return res.astype(np.float32)
+  def reduce_4d_with_coverage(
+      self, grid_4d: np.ndarray
+  ) -> Tuple[np.ndarray, np.ndarray]:
+    """Reduces a 4D (time, lead_time/member, lat, lon) grid and returns missing fraction.
+
+    Args:
+      grid_4d: Array of shape (T, K, H, W).
+
+    Returns:
+      Tuple of ``(values, missing_fraction)``, each a 3D float32 array of shape
+      ``(N_basins, T, K)``.
+    """
+    T, K, H, W_dim = grid_4d.shape
+    flat_3d = grid_4d.reshape(T * K, H, W_dim)
+    res_2d, miss_2d = self.reduce_3d_with_coverage(flat_3d)
+    n_b = len(self.basin_ids)
+    return (
+        res_2d.reshape(n_b, T, K).astype(np.float32),
+        miss_2d.reshape(n_b, T, K).astype(np.float32),
+    )
 
   def reduce_4d(self, grid_4d: np.ndarray) -> np.ndarray:
     """Reduces a 4D (time, lead_time/member, lat, lon) grid across all basins.
@@ -341,10 +443,8 @@ class ZonalWeightMatrix:
     Returns:
       3D array of shape (N_basins, T, K) with areal weighted means.
     """
-    T, K, H, W = grid_4d.shape
-    flat_3d = grid_4d.reshape(T * K, H, W)
-    res_2d = self.reduce_3d(flat_3d)  # (N_basins, T * K)
-    return res_2d.reshape(len(self.basin_ids), T, K).astype(np.float32)
+    res, _ = self.reduce_4d_with_coverage(grid_4d)
+    return res
 
   def subset(self, basin_ids: Sequence[str]) -> ZonalWeightMatrix:
     """Returns a new ZonalWeightMatrix containing only the requested basins."""

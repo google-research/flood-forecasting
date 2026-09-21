@@ -222,71 +222,86 @@ series standardized to the **Caravan benchmark specification**
 
 ## Supported Meteorological Products
 
-In this initial release, the extractor supports local serial extraction for **5 core products**:
+The extractor supports **5 core products**, operating either against user-supplied **Open-MultiMet Gridded Zarr Archives** (`--source archive --archive-store PRODUCT=URI`) or directly against **third-party agency upstream feeds** (`--source public`, for CPC, IMERG, and HRES):
 
-| Product | Type | Native Grid | Forecast Lead | Variables Extracted | Public Source |
+| Product | Type | Native Grid | Forecast Lead | Variables Extracted | Supported Sources |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **ERA5-Land** | Hourly Reanalysis | $0.1^\circ$ (1801 $\times$ 3600) | N/A | 15 variables (Precipitation, Temp, Dewpoint, Pressure, Radiations, Wind, Soil Moisture layers 1–4, Snow, FAO-56 PET) | WeatherBench 2 on public GCS (`gs://weatherbench2/datasets/era5_daily/...`) or local hourly GRIB |
-| **CPC Global Precip** | Daily Gauge | $0.5^\circ$ (360 $\times$ 720) | N/A | Daily precipitation ($\text{mm/day}$) | NOAA PSL NetCDF archive (`https://downloads.psl.noaa.gov/Datasets/cpc_global_precip/`) or binary grids |
-| **IMERG Early V07** | Daily / Half-Hourly Satellite | $0.1^\circ$ (1800 $\times$ 3600) | N/A | Daily precipitation ($\text{mm/day}$) | NASA GES DISC / Earthdata Login (`GPM_3IMERGDE.07`) |
-| **ECMWF IFS HRES** | Operational NWP Forecast | $0.25^\circ$ (721 $\times$ 1440) | 10 days ($1 \dots 10$) | 5 variables (Incremental daily precipitation, Mean 2m temperature, Surface pressure, Radiation fluxes) | WeatherBench 2 public Zarr (`gs://weatherbench2/datasets/hres/...`) or ECMWF Open Data |
-| **DeepMind GraphCast** | AI Weather Forecast | $0.25^\circ$ (721 $\times$ 1440) | 10 days ($1 \dots 10$) | 4 variables (Daily accumulated precipitation from 6h steps, Mean 2m temp, 10m U/V wind components) | WeatherBench 2 public Zarr (`gs://weatherbench2/datasets/graphcast/...`) |
+| **ERA5-Land** (`ERA5_LAND`) | Daily Reanalysis | $0.1^\circ$ (1801 $\times$ 3600) | N/A | **15 variables** (`era5land_temperature_2m`, `era5land_dewpoint_temperature_2m`, `era5land_surface_pressure`, `era5land_total_precipitation`, solar/thermal radiation, 10m U/V wind, soil moisture layers 1–4, snow depth water equivalent, FAO-56 & ERA5-Land PET) + `era5land_missing_fraction` | **Gridded Zarr archive only** (explicit user-supplied `gs://` or local `.zarr` URI; third-party sources are disabled to prevent 0.25° ERA5 substitution) |
+| **CPC Global Precip** (`CPC`) | Daily Gauge | $0.5^\circ$ (360 $\times$ 720) | N/A | `cpc_precipitation` ($\text{mm/day}$) + `cpc_missing_fraction` | User-supplied gridded Zarr archive (`--source archive`), NOAA PSL NetCDF (`https://downloads.psl.noaa.gov/Datasets/cpc_global_precip/`), or local CPC binary grids |
+| **IMERG Early V07** (`IMERG`) | Daily / Half-Hourly Satellite | $0.1^\circ$ (1800 $\times$ 3600) | N/A | `imerg_precipitation` ($\text{mm/day}$) + `imerg_missing_fraction` | User-supplied gridded Zarr archive (`--source archive`), NASA GES DISC (`GPM_3IMERGDE.07`), or dynamical.org Icechunk catalog |
+| **ECMWF IFS HRES** (`HRES`) | Operational NWP Forecast | $0.25^\circ$ (721 $\times$ 1440) | 10 days ($1 \dots 10$) | **5 variables** (`hres_total_precipitation`, `hres_temperature_2m`, `hres_surface_pressure`, `hres_surface_net_solar_radiation`, `hres_surface_net_thermal_radiation`) + `hres_missing_fraction` | User-supplied gridded Zarr archive (`--source archive`) or explicit Zarr/GRIB store (`data_dir`) |
+| **DeepMind GraphCast** (`GRAPHCAST`) | AI Weather Forecast | $0.25^\circ$ (721 $\times$ 1440) | 10 days ($1 \dots 10$) | **4 variables** (`graphcast_total_precipitation`, `graphcast_temperature_2m`, `graphcast_u_component_of_wind_10m`, `graphcast_v_component_of_wind_10m`) + `graphcast_missing_fraction` | Explicit Zarr store (`data_dir`) |
 
 ---
 
-## Architecture & Capabilities
+## Architecture & Data-Quality Invariants
 
-### A. Exact Fractional Zonal Averaging & BLAS Vectorization
-- **Fractional Polygon Intersection**: Computes exact fractional overlap between basin boundaries (Shapely polygons from GeoJSON or Shapefiles) and raster grid cells, with latitude cosine weighting to account for spherical surface distortion.
-- **Sparse BLAS Matrix (`ZonalWeightMatrix`)**: Formulates spatial averaging across $N$ basins and $(H \times W)$ raster cells into a SciPy CSR sparse matrix $W \in \mathbb{R}^{N \times (H \cdot W)}$. Zonal reduction for any 2D, 3D, or 4D meteorology grid is performed via sparse matrix multiplication ($Y = W \cdot X$), evaluating thousands of basins in milliseconds.
-- **Weight Caching**: Weights can be exported to and imported from compressed `.npz` files (`weights_cache.npz`), skipping redundant polygon intersections on subsequent runs.
+### A. Exact Fractional Zonal Averaging & Coverage Auditing
+- **Fractional Polygon Intersection**: Computes exact fractional overlap between basin boundaries (Shapely polygons from GeoJSON or Shapefiles) and raster grid cells, with latitude cosine weighting ($\cos(\phi)$) to account for spherical surface distortion.
+- **No Out-of-Domain Nearest-Cell Snapping**: Sub-grid-scale polygons receive weight on a single cell **only** when the polygon genuinely lies inside that grid cell. Basins outside the grid domain receive zero weight and evaluate to `NaN` (`missing_fraction = 1.0`), never snapping to a distant edge pixel.
+- **Companion Coverage Variable (`<prefix>_missing_fraction`)**: Every extracted dataset records the area-weighted fraction $[0.0, 1.0]$ of missing (`NaN`) pixels within each catchment at each timestep (`cpc_missing_fraction`, `era5land_missing_fraction`, `imerg_missing_fraction`, `hres_missing_fraction`, `graphcast_missing_fraction`), matching the `CookieCutterResult.missing_values` audit trail in Google's internal flood-forecasting ingestion pipeline.
+- **No Hardcoded Bucket Paths or Placeholder Dates**: All `gs://` archive URIs, `start_date`, and `end_date` arguments must be explicitly supplied by the user.
 
 ### B. Caravan Harmonization & Unit Standardization
-- Converts cumulative energy fluxes ($\text{J/m}^2$) to mean rates ($\text{W/m}^2$).
+- Converts cumulative energy fluxes ($\text{J/m}^2$) to daily-mean rates ($\text{W/m}^2$).
 - Converts Kelvin temperatures to Celsius ($^\circ\text{C}$).
 - Converts surface pressure from Pascals to $\text{kPa}$.
 - Implements the **FAO-56 Penman-Monteith** formulation for reference evapotranspiration (PET).
 - Converts HRES continuous accumulations into daily increments ($P_d = P_{24d} - P_{24(d-1)}$).
-- Sums 6-hour GraphCast intervals into 24-hour daily forecast totals.
 
 ### C. Consolidated Zarr Storage
 - Outputs are stored in standardized **Zarr v2** hierarchies with consolidated metadata (`.zmetadata`).
 - **Nowcast products** are indexed by `(basin, date)`.
 - **Forecast products** are indexed by `(basin, date, lead_time)` with daily lead times ($1 \dots 10$ days).
-- Compatible with OpenHydroNet's `Multimet` dataset loader (`googlehydrology.datasetzoo.multimet.Multimet`).
 
 ---
 
-## Quickstart: Local Serial Extraction
+## Quickstart: Extracting from Gridded Archives & Upstream Feeds
 
-### Python API
+### Python API — Gridded Zarr Archives (`source="archive"`)
 
 ```python
 from multimet import extract_multimet_serial
 
-# Run serial extraction for all 5 products
 output_stores = extract_multimet_serial(
-    basins="test/test_data/shapefiles/us/us_basin_shapes.geojson",
-    output_dir="/path/to/output_zarrs",
-    products=["CPC", "ERA5_LAND", "IMERG", "HRES", "GRAPHCAST"],
-    start_date="2020-01-01",
-    end_date="2020-01-05",
-    source="public",
+    basins="multimet/test/test_data/shapefiles/us/us_basin_shapes.geojson",
+    output_dir="/tmp/multimet_extracted",
+    products=["CPC", "ERA5_LAND", "IMERG", "HRES"],
+    start_date="2022-01-01",
+    end_date="2022-01-05",
+    source="archive",
+    archive_stores={
+        "CPC": "gs://<your-bucket>/gridded-data-archives/CPC/daily_surface.zarr",
+        "ERA5_LAND": "gs://<your-bucket>/data/era5_land/daily_surface.zarr",
+        "IMERG": "gs://<your-bucket>/gridded-data-archives/IMERG/daily_surface.zarr",
+        "HRES": "gs://<your-bucket>/gridded-data-archives/HRES/daily_surface.zarr",
+    },
 )
-
-for product, store_path in output_stores.items():
-  print(f"Product {product} written to {store_path}")
 ```
 
 ### Command-Line Interface (CLI)
 
 ```bash
+# Extract from GCS gridded archives (user-supplied URIs required)
 python -m multimet.runner \
-  --basins_path test/test_data/shapefiles/us/us_basin_shapes.geojson \
+  --basins_path multimet/test/test_data/shapefiles/us/us_basin_shapes.geojson \
   --output_dir /tmp/multimet_extracted \
-  --products CPC,ERA5_LAND,IMERG,HRES,GRAPHCAST \
-  --start_date 2020-01-01 \
-  --end_date 2020-01-02 \
+  --products CPC,ERA5_LAND,IMERG,HRES \
+  --start_date 2022-01-01 \
+  --end_date 2022-01-05 \
+  --source archive \
+  --archive-store CPC=gs://<your-bucket>/gridded-data-archives/CPC/daily_surface.zarr \
+  --archive-store ERA5_LAND=gs://<your-bucket>/data/era5_land/daily_surface.zarr \
+  --archive-store IMERG=gs://<your-bucket>/gridded-data-archives/IMERG/daily_surface.zarr \
+  --archive-store HRES=gs://<your-bucket>/gridded-data-archives/HRES/daily_surface.zarr
+
+# Extract CPC and IMERG directly from upstream agency HTTP feeds
+python -m multimet.runner \
+  --basins_path multimet/test/test_data/shapefiles/us/us_basin_shapes.geojson \
+  --output_dir /tmp/multimet_upstream \
+  --products CPC,IMERG \
+  --start_date 2022-01-01 \
+  --end_date 2022-01-02 \
   --source public
 ```
 
