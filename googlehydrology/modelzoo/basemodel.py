@@ -40,6 +40,13 @@ class BaseModel(nn.Module):
     # specify submodules of the model that can later be used for finetuning. Names must match class attributes
     module_parts = []
 
+    # Specify components that this model exposes for Data Assimilation
+    supported_assimilation_components: list[str] = []
+
+    def get_supported_assimilation_components(self) -> list[str]:
+        """Returns list of component names this model supports for Data Assimilation."""
+        return getattr(self, 'supported_assimilation_components', [])
+
     def __init__(self, cfg: Config):
         super(BaseModel, self).__init__()
         self.cfg = cfg
