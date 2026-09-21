@@ -20,6 +20,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+import more_itertools
 import numpy as np
 import torch
 import torch.optim.lr_scheduler
@@ -57,6 +58,8 @@ class BaseTrainer(object):
 
     def __init__(self, cfg: Config):
         super(BaseTrainer, self).__init__()
+
+        self.ds: Dataset | None = None
         self.cfg = cfg
         self.model = None
         self.optimizer = None
@@ -103,10 +106,13 @@ class BaseTrainer(object):
         self._set_random_seeds()
         self._set_device()
 
-    def _get_dataset(self, compute_scaler: bool) -> Dataset:
+    def _get_dataset(
+        self, *, compute_scaler: bool, basins: list[str] | None = None
+    ) -> Dataset:
         return get_dataset(
             cfg=self.cfg,
             period='train',
+            basins=basins,
             is_train=True,
             compute_scaler=compute_scaler,
         )
@@ -179,6 +185,54 @@ class BaseTrainer(object):
                 f'Could not resolve the following module parts for finetuning: {unresolved_modules}'
             )
 
+    def init_loader(
+        self,
+        *,
+        max_random_basins: int = 0,
+        first_epoc: bool = False,
+        ds: Dataset | None = None,
+    ) -> Dataset:
+        compute_scaler = (
+            (not self.cfg.is_finetuning)
+            and max_random_basins < 1
+            and ds is None
+        )
+
+        if ds is None:
+            ds = self._get_dataset(compute_scaler=compute_scaler)
+            if compute_scaler:  # Break early from loading basins next
+                return ds
+
+        assert ds is not None
+        assert not compute_scaler
+
+        if max_random_basins > 0:
+            # Take random sequential basins, it's faster to extract
+            start = random.randrange(len(self.basins))
+            indices = range(start, start + max_random_basins)
+            basins = np.take(self.basins, indices, mode='wrap').tolist()
+            ds.load_basins(basins)
+        elif first_epoc:
+            ds.load_basins()
+
+        if (not compute_scaler) and len(ds) == 0:
+            raise ValueError('Dataset contains no samples.')
+        if not compute_scaler:
+            self.loader = self._get_data_loader(ds=ds)
+
+        if first_epoc:
+            self.experiment_logger = Logger(cfg=self.cfg)
+            if self.cfg.log_tensorboard:
+                self.experiment_logger.start_tb()
+
+            if self.cfg.is_continue_training:
+                # set epoch and iteration step counter to continue from the selected checkpoint
+                self.experiment_logger.epoch = self._epoch
+                self.experiment_logger.update = len(self.loader) * self._epoch
+
+        LOGGER.debug('init_loader for %d (%s)', max_random_basins, ds._period)
+        return ds
+
     def initialize_training(self):
         """Initialize the training class.
 
@@ -187,10 +241,7 @@ class BaseTrainer(object):
         If called in a ``continue_training`` context, this model will also restore the model and optimizer state.
         """
         # Initialize dataset before the model is loaded.
-        ds = self._get_dataset(compute_scaler=(not self.cfg.is_finetuning))
-        if len(ds) == 0:
-            raise ValueError('Dataset contains no samples.')
-        self.loader = self._get_data_loader(ds=ds)
+        self.ds = self.init_loader()  # Compute full scaler
 
         LOGGER.debug('init model')
         self.model = self._get_model().to(self.device)
@@ -238,15 +289,6 @@ class BaseTrainer(object):
         if self.cfg.is_continue_training:
             self._restore_training_state()
 
-        self.experiment_logger = Logger(cfg=self.cfg)
-        if self.cfg.log_tensorboard:
-            self.experiment_logger.start_tb()
-
-        if self.cfg.is_continue_training:
-            # set epoch and iteration step counter to continue from the selected checkpoint
-            self.experiment_logger.epoch = self._epoch
-            self.experiment_logger.update = len(self.loader) * self._epoch
-
         if self.cfg.validate_every is not None:
             if self.cfg.validate_n_random_basins < 1:
                 warn_msg = [
@@ -262,12 +304,12 @@ class BaseTrainer(object):
                 loc=0, scale=self.cfg.target_noise_std
             )
             target_means = [
-                ds.scaler.scaler.sel(parameter='mean')[feature].item()
+                self.ds.scaler.scaler.sel(parameter='mean')[feature].item()
                 for feature in self.cfg.target_variables
             ]
             self._target_mean = torch.tensor(target_means).to(self.device)
             target_stds = [
-                ds.scaler.scaler.sel(parameter='std')[feature].item()
+                self.ds.scaler.scaler.sel(parameter='std')[feature].item()
                 for feature in self.cfg.target_variables
             ]
             self._target_std = torch.tensor(target_stds).to(self.device)
@@ -319,10 +361,18 @@ class BaseTrainer(object):
         """
         lr_scheduler, lr_step = self._create_lr_scheduler()
 
-        for epoch in range(self._epoch + 1, self._epoch + self.cfg.epochs + 1):
+        epoc_range = range(self._epoch + 1, self._epoch + self.cfg.epochs + 1)
+        for is_first, _, epoch in more_itertools.mark_ends(epoc_range):
+            self.ds = self.init_loader(
+                max_random_basins=self.cfg.limit_n_basins,
+                first_epoc=is_first,
+                ds=self.ds,
+            )
             LOGGER.info(f'learning rate is {lr_scheduler.get_last_lr()}')
-
             self._train_epoch(epoch=epoch)
+            if self.cfg.limit_n_basins > 0:
+                self.ds.unload_basins()
+
             avg_losses = self.experiment_logger.summarise()
             lr_step(avg_losses['avg_loss'])
 

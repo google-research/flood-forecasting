@@ -121,6 +121,7 @@ Data settings
 -  ``nan_handling_method``: ``masked_mean``, ``input_replacing``, or ``attention``. Strategy for handling missing input data.
 -  ``nan_handling_pos_encoding_size``: Size of positional encoding for NaN handling methods.
 -  ``lazy_load``: Whether to access data lazily rather than load all in-memory. Each batch is loaded dynamically. Default: `False`.
+-  ``limit_n_basins``: How many basins at most to load at a given time. A value of `0` (default) turns this setting off. Currently affects `train`. During `validation`, frees up memory when validation is done and loads only needed basins when starting. `evaluate` and `infer` load all data at this time even if this setting is set.
 
 Finetune settings
 -----------------
