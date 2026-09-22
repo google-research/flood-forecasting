@@ -177,53 +177,29 @@ PRODUCT_METADATA_ATTRS: Mapping[Product, Mapping[str, Any]] = {
         "Product": "CPC",
         "Released": "2024-11-18",
         "Sources": (
-            "1979-01-01 to 2005-12-31: NOAA Physical Sciences Laboratory (PSL)"
-            " CPC Global Unified Gauge-Based Analysis of Daily Precipitation"
-            " v1.0 Retrospective Archive"
-            " (https://downloads.psl.noaa.gov/Datasets/cpc_global_precip/precip.{year}.nc)"
-            " and NOAA CPC FTP Retrospective Binary Grids"
-            " (https://ftp.cpc.ncep.noaa.gov/precip/CPC_UNI_PRCP/GAUGE_GLB/V1.0/{year}/PRCP_CU_GAUGE_V1.0GLB_0.50deg.lnx.{YYYYMMDD}.gz).\n"
-            "2006-01-01 to present: NOAA PSL / NOAA CPC Real-Time (RT)"
-            " Operational Archive"
-            " (https://downloads.psl.noaa.gov/Datasets/cpc_global_precip/precip.{year}.nc"
-            " and"
-            " https://ftp.cpc.ncep.noaa.gov/precip/CPC_UNI_PRCP/GAUGE_GLB/RT/{year}/PRCP_CU_GAUGE_V1.0GLB_0.50deg.lnx.{YYYYMMDD}.RT)."
+            "1979-01-01 to present (Single Source): NOAA Physical Sciences"
+            " Laboratory (PSL) CPC Global Unified Gauge-Based Analysis of Daily"
+            " Precipitation yearly NetCDF archive"
+            " (https://downloads.psl.noaa.gov/Datasets/cpc_global_precip/precip.{year}.nc;"
+            " landing page:"
+            " https://psl.noaa.gov/data/gridded/data.cpc.globalprecip.html)."
         ),
         "Upstream_Sources_By_Date_Range": [
             {
                 "start_date": "1979-01-01",
-                "end_date": "2005-12-31",
-                "provider": (
-                    "NOAA Physical Sciences Laboratory (PSL) & NOAA Climate"
-                    " Prediction Center (CPC)"
-                ),
-                "dataset_name": (
-                    "CPC Global Unified Gauge-Based Analysis of Daily"
-                    " Precipitation v1.0 (Retrospective)"
-                ),
-                "urls": [
-                    "https://downloads.psl.noaa.gov/Datasets/cpc_global_precip/precip.{year}.nc",
-                    "https://ftp.cpc.ncep.noaa.gov/precip/CPC_UNI_PRCP/GAUGE_GLB/V1.0/{year}/PRCP_CU_GAUGE_V1.0GLB_0.50deg.lnx.{YYYYMMDD}.gz",
-                ],
-                "variables": ["cpc_precipitation", "cpc_num_stations"],
-                "spatial_resolution": "0.50 degree x 0.50 degree (360 x 720)",
-            },
-            {
-                "start_date": "2006-01-01",
                 "end_date": "present",
-                "provider": (
-                    "NOAA Physical Sciences Laboratory (PSL) & NOAA Climate"
+                "canonical_provider": (
+                    "NOAA Physical Sciences Laboratory (PSL) / NOAA Climate"
                     " Prediction Center (CPC)"
                 ),
                 "dataset_name": (
                     "CPC Global Unified Gauge-Based Analysis of Daily"
-                    " Precipitation v1.0 Real-Time (RT)"
+                    " Precipitation"
                 ),
-                "urls": [
-                    "https://downloads.psl.noaa.gov/Datasets/cpc_global_precip/precip.{year}.nc",
-                    "https://ftp.cpc.ncep.noaa.gov/precip/CPC_UNI_PRCP/GAUGE_GLB/RT/{year}/PRCP_CU_GAUGE_V1.0GLB_0.50deg.lnx.{YYYYMMDD}.RT",
-                ],
-                "variables": ["cpc_precipitation", "cpc_num_stations"],
+                "ingested_from": (
+                    "https://downloads.psl.noaa.gov/Datasets/cpc_global_precip/precip.{year}.nc"
+                ),
+                "variables": ["cpc_precipitation"],
                 "spatial_resolution": "0.50 degree x 0.50 degree (360 x 720)",
             },
         ],
@@ -264,20 +240,23 @@ PRODUCT_METADATA_ATTRS: Mapping[Product, Mapping[str, Any]] = {
         "Product": "IMERG v07 Early",
         "Released": "2024-11-18",
         "Sources": (
-            "2000-06-01 to present: NASA Goddard Earth Sciences Data and"
-            " Information Services Center (GES DISC) GPM IMERG Early Run V07"
-            " Level 3 Daily 0.1 degree x 0.1 degree (GPM_3IMERGDE.07,"
+            "2000-06-01 to present: Canonical upstream source is NASA Goddard"
+            " Earth Sciences Data and Information Services Center (GES DISC)"
+            " GPM IMERG Early Run V07 Level 3 Daily 0.1 degree x 0.1 degree"
+            " (GPM_3IMERGDE.07,"
             " https://gpm1.gesdisc.eosdis.nasa.gov/data/GPM_L3/GPM_3IMERGDE.07/,"
             " DOI: 10.5067/GPM/IMERGDE/DAY/07) and Level 3 Half-Hourly 0.1"
-            " degree x 0.1 degree (GPM_3IMERGHHE.07 via"
-            " https://cmr.earthdata.nasa.gov/search/granules.json,"
-            " DOI: 10.5067/GPM/IMERG/3B-HH-E/07)."
+            " degree x 0.1 degree (GPM_3IMERGHHE.07, DOI:"
+            " 10.5067/GPM/IMERG/3B-HH-E/07). Ingested from NASA GES DISC"
+            " GPM_3IMERGDE.07 daily NetCDF-4 files and Google's internal"
+            " mirror of the 48 daily GPM_3IMERGHHE.07 half-hourly HDF5"
+            " granules (/cns/jn-d/home/floods/hydro_model/datasets/external/IMERG/V07_Early/)."
         ),
         "Upstream_Sources_By_Date_Range": [
             {
                 "start_date": "2000-06-01",
                 "end_date": "present",
-                "provider": (
+                "canonical_provider": (
                     "NASA Goddard Earth Sciences Data and Information Services"
                     " Center (GES DISC)"
                 ),
@@ -290,9 +269,13 @@ PRODUCT_METADATA_ATTRS: Mapping[Product, Mapping[str, Any]] = {
                     "10.5067/GPM/IMERGDE/DAY/07",
                     "10.5067/GPM/IMERG/3B-HH-E/07",
                 ],
-                "urls": [
+                "canonical_urls": [
                     "https://gpm1.gesdisc.eosdis.nasa.gov/data/GPM_L3/GPM_3IMERGDE.07/",
                     "https://cmr.earthdata.nasa.gov/search/granules.json",
+                ],
+                "ingested_from": [
+                    "https://gpm1.gesdisc.eosdis.nasa.gov/data/GPM_L3/GPM_3IMERGDE.07/",
+                    "/cns/jn-d/home/floods/hydro_model/datasets/external/IMERG/V07_Early/",
                 ],
                 "variables": ["imerg_precipitation"],
                 "spatial_resolution": "0.10 degree x 0.10 degree (1800 x 3600)",
@@ -332,19 +315,25 @@ PRODUCT_METADATA_ATTRS: Mapping[Product, Mapping[str, Any]] = {
         "Product": "ERA5-Land",
         "Released": "2024-11-18",
         "Sources": (
-            "1980-01-01 to present: ECMWF / Copernicus Climate Change Service"
-            " (C3S) Climate Data Store (CDS) ERA5-Land Hourly 0.1 degree x 0.1"
-            " degree Global Reanalysis"
-            " (https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land,"
-            " DOI: 10.24381/cds.e2161bac), aggregated from native hourly"
-            " GRIB1/GRIB2 steps (00:00..23:00 UTC) into daily UTC means,"
-            " minimums, maximums, and daily accumulations."
+            "1980-01-01 to present: Canonical upstream source is ECMWF /"
+            " Copernicus Climate Change Service (C3S) Climate Data Store (CDS)"
+            " ERA5-Land Hourly 0.1 degree x 0.1 degree Global Reanalysis"
+            " (reanalysis-era5-land,"
+            " https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land,"
+            " DOI: 10.24381/cds.e2161bac). In reality, raw hourly GRIB files"
+            " (ERA5_Land_Hourly_{YYYYMMDD}_default_{HH}.grib) were read"
+            " directly (bypassing the Earth Engine API) from Google's internal"
+            " Earth Engine (gestalt-ingest) backend storage archive"
+            " (/namespace/gestalt-ingest/data/ECMWF/ERA5_LAND/HOURLY/,"
+            " backing the Earth Engine ECMWF/ERA5_LAND/HOURLY catalog) and"
+            " aggregated to daily UTC means, minimums, maximums, and daily"
+            " accumulations."
         ),
         "Upstream_Sources_By_Date_Range": [
             {
                 "start_date": "1980-01-01",
                 "end_date": "present",
-                "provider": (
+                "canonical_provider": (
                     "ECMWF / Copernicus Climate Change Service (C3S) Climate"
                     " Data Store (CDS)"
                 ),
@@ -353,10 +342,18 @@ PRODUCT_METADATA_ATTRS: Mapping[Product, Mapping[str, Any]] = {
                     " (reanalysis-era5-land)"
                 ),
                 "dois": ["10.24381/cds.e2161bac"],
-                "urls": [
+                "canonical_urls": [
                     "https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land",
                     "https://doi.org/10.24381/cds.e2161bac",
                 ],
+                "ingested_from": (
+                    "Google Earth Engine (gestalt-ingest) raw hourly GRIB"
+                    " backend storage archive"
+                    " (/namespace/gestalt-ingest/data/ECMWF/ERA5_LAND/HOURLY/{YYYY}/{MM}/{DD}/ERA5_Land_Hourly_{YYYYMMDD}_default_{HH}.grib,"
+                    " backing Earth Engine catalog collection"
+                    " ECMWF/ERA5_LAND/HOURLY, read directly from storage"
+                    " without Earth Engine API processing)"
+                ),
                 "spatial_resolution": "0.10 degree x 0.10 degree (1801 x 3600)",
             },
         ],
@@ -425,36 +422,44 @@ PRODUCT_METADATA_ATTRS: Mapping[Product, Mapping[str, Any]] = {
         "Product": "ECMWF IFS HRES (10-day forecast)",
         "Released": "2024-11-18",
         "Sources": (
-            "2016-01-01 to 2023-01-10: WeatherBench 2 ECMWF IFS HRES 0.25"
+            "Canonical upstream source is European Centre for Medium-Range"
+            " Weather Forecasts (ECMWF) Operational IFS High-Resolution (HRES)"
+            " 00Z Forecasts (0.25 degree, lead days 1..10). Ingested from three"
+            " contiguous archives with no date gaps:\n"
+            "1. 2016-01-01 to 2023-01-10: WeatherBench 2 ECMWF IFS HRES 0.25"
             " degree Public Zarr Archive"
-            " (gs://weatherbench2/datasets/hres/2016-2022-0012-1440x721.zarr,"
-            " 00Z initialization, lead steps 24h..240h; provides"
-            " temperature_2m, surface_pressure, and total_precipitation;"
-            " surface_net_solar_radiation and surface_net_thermal_radiation are"
-            " not present in WeatherBench 2 and are NaN in this period).\n"
-            "2023-01-11 to 2023-07-12: Intermediate gap window between end of"
-            " WeatherBench 2 archive and start of ECMWF Open Data 0.25 degree"
-            " archive (populated with NaN across all variables).\n"
-            "2023-07-13 to present: ECMWF Open Data Operational IFS HRES"
-            " 0.25 degree GRIB2 Archive"
-            " (gs://ecmwf-open-data/<YYYYMMDD>/00z/ifs/0p25/oper/,"
-            " https://www.ecmwf.int/en/forecasts/datasets/open-data, 00Z"
-            " initialization, lead steps 24h..240h; provides all 5 variables:"
-            " temperature_2m, surface_pressure, total_precipitation,"
+            " (gs://weatherbench2/datasets/hres/2016-2022-0012-1440x721.zarr;"
+            " provides temperature_2m, surface_pressure, and"
+            " total_precipitation; surface_net_solar_radiation and"
+            " surface_net_thermal_radiation are not included in WeatherBench 2"
+            " and are NaN only during 2016-01-01 to 2023-01-10).\n"
+            "2. 2023-01-11 to 2023-07-11: Google Flood Forecasting internal"
+            " ECMWF IFS HRES 00Z daily surface NetCDF archive"
+            " (gs://ecmwf-downloads/flood-forecasting/single-levels/daily-surface-regridded/{YYYY-MM-DD}-tp-2t-sp-ssr-str-sf.nc;"
+            " provides all 5 variables: temperature_2m, surface_pressure,"
+            " total_precipitation, surface_net_solar_radiation, and"
+            " surface_net_thermal_radiation).\n"
+            "3. 2023-07-12 to present: ECMWF Open Data Operational IFS HRES"
+            " GRIB2 Archive (gs://ecmwf-open-data/<YYYYMMDD>/00z/,"
+            " https://www.ecmwf.int/en/forecasts/datasets/open-data,"
+            " 0p4-beta/oper on 2023-07-12 and ifs/0p25/oper from 2023-07-13"
+            " onward; provides all 5 variables: temperature_2m,"
+            " surface_pressure, total_precipitation,"
             " surface_net_solar_radiation, and surface_net_thermal_radiation)."
         ),
         "Upstream_Sources_By_Date_Range": [
             {
                 "start_date": "2016-01-01",
                 "end_date": "2023-01-10",
-                "provider": "WeatherBench 2 / ECMWF",
+                "canonical_provider": "European Centre for Medium-Range Weather Forecasts (ECMWF)",
+                "archive_provider": "WeatherBench 2 (Google Research / ECMWF)",
                 "dataset_name": (
                     "WeatherBench 2 ECMWF IFS HRES 0.25-degree Archive (00Z"
                     " initialization, lead days 1..10)"
                 ),
-                "urls": [
+                "ingested_from": (
                     "gs://weatherbench2/datasets/hres/2016-2022-0012-1440x721.zarr"
-                ],
+                ),
                 "variables_present": [
                     "temperature_2m",
                     "surface_pressure",
@@ -468,39 +473,40 @@ PRODUCT_METADATA_ATTRS: Mapping[Product, Mapping[str, Any]] = {
             },
             {
                 "start_date": "2023-01-11",
-                "end_date": "2023-07-12",
-                "provider": "N/A (Inter-archive Gap Window)",
+                "end_date": "2023-07-11",
+                "canonical_provider": "European Centre for Medium-Range Weather Forecasts (ECMWF)",
+                "archive_provider": "Google Flood Forecasting Internal ECMWF HRES Archive",
                 "dataset_name": (
-                    "Unpublished gap window between WeatherBench 2 cutoff"
-                    " (2023-01-10) and ECMWF Open Data 0.25-degree launch"
-                    " (2023-07-13)"
+                    "ECMWF IFS HRES 00Z Daily Surface Regridded NetCDF Archive"
+                    " (lead days 1..10)"
                 ),
-                "urls": [],
-                "variables_present": [],
-                "variables_unavailable_nan": [
+                "ingested_from": (
+                    "gs://ecmwf-downloads/flood-forecasting/single-levels/daily-surface-regridded/{YYYY-MM-DD}-tp-2t-sp-ssr-str-sf.nc"
+                ),
+                "variables_present": [
                     "temperature_2m",
                     "surface_pressure",
                     "total_precipitation",
                     "surface_net_solar_radiation",
                     "surface_net_thermal_radiation",
                 ],
-                "notes": (
-                    "Populated with NaN slices to preserve a contiguous daily"
-                    " initialization time coordinate."
-                ),
+                "variables_unavailable_nan": [],
+                "spatial_resolution": "0.25 degree x 0.25 degree (721 x 1440)",
             },
             {
-                "start_date": "2023-07-13",
+                "start_date": "2023-07-12",
                 "end_date": "present",
-                "provider": (
+                "canonical_provider": (
                     "European Centre for Medium-Range Weather Forecasts (ECMWF)"
                 ),
+                "archive_provider": "ECMWF Open Data on Google Cloud Storage",
                 "dataset_name": (
-                    "ECMWF Open Data Operational IFS HRES 0.25-degree GRIB2"
-                    " Forecasts (00Z initialization, lead days 1..10)"
+                    "ECMWF Open Data Operational IFS HRES GRIB2 Forecasts (00Z"
+                    " initialization, lead days 1..10)"
                 ),
-                "urls": [
-                    "gs://ecmwf-open-data/<YYYYMMDD>/00z/ifs/0p25/oper/",
+                "ingested_from": [
+                    "gs://ecmwf-open-data/20230712/00z/0p4-beta/oper/ (2023-07-12)",
+                    "gs://ecmwf-open-data/<YYYYMMDD>/00z/ifs/0p25/oper/ (2023-07-13 to present)",
                     "https://www.ecmwf.int/en/forecasts/datasets/open-data",
                 ],
                 "variables_present": [

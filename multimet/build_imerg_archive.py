@@ -96,14 +96,17 @@ IMERG_ATTRS = {
     "license": "CC-BY-4.0",
     "institution": "NASA GSFC / Open-MultiMet",
     "Sources": (
-        "2000-06-01 to present: NASA Goddard Earth Sciences Data and"
-        " Information Services Center (GES DISC) GPM IMERG Early Run V07"
-        " Level 3 Daily 0.1 degree x 0.1 degree (GPM_3IMERGDE.07,"
+        "2000-06-01 to present: Canonical upstream source is NASA Goddard"
+        " Earth Sciences Data and Information Services Center (GES DISC)"
+        " GPM IMERG Early Run V07 Level 3 Daily 0.1 degree x 0.1 degree"
+        " (GPM_3IMERGDE.07,"
         " https://gpm1.gesdisc.eosdis.nasa.gov/data/GPM_L3/GPM_3IMERGDE.07/,"
         " DOI: 10.5067/GPM/IMERGDE/DAY/07) and Level 3 Half-Hourly 0.1 degree"
-        " x 0.1 degree (GPM_3IMERGHHE.07 via"
-        " https://cmr.earthdata.nasa.gov/search/granules.json,"
-        " DOI: 10.5067/GPM/IMERG/3B-HH-E/07)."
+        " x 0.1 degree (GPM_3IMERGHHE.07, DOI: 10.5067/GPM/IMERG/3B-HH-E/07)."
+        " Ingested from NASA GES DISC GPM_3IMERGDE.07 daily NetCDF-4 files and"
+        " Google's internal mirror of the 48 daily GPM_3IMERGHHE.07"
+        " half-hourly HDF5 granules"
+        " (/cns/jn-d/home/floods/hydro_model/datasets/external/IMERG/V07_Early/)."
     ),
     "Code_Repository": "https://github.com/google-research/flood-forecasting",
     "Code_Package": (
