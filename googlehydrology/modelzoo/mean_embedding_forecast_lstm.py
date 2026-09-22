@@ -163,7 +163,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         self.head = get_head(
             self.cfg,
             n_in=self.config_data.hidden_size,
-            n_out=3 * 4,
+            n_out=self.output_size,
             n_hidden=100,
         )
 
