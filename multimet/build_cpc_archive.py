@@ -284,6 +284,26 @@ def process_cpc_netcdf_to_dataset(
               "Chen et al. (2008) J. Geophys. Res. 113, D04110; Xie et al."
               " (2007) J. Hydrometeorol. 8, 607-626."
           ),
+          "Sources": (
+              "1979-01-01 to 2005-12-31: NOAA Physical Sciences Laboratory"
+              " (PSL) CPC Global Unified Gauge-Based Analysis of Daily"
+              " Precipitation v1.0 Retrospective Archive"
+              " (https://downloads.psl.noaa.gov/Datasets/cpc_global_precip/precip.{year}.nc)"
+              " and NOAA CPC FTP Retrospective Binary Grids"
+              " (https://ftp.cpc.ncep.noaa.gov/precip/CPC_UNI_PRCP/GAUGE_GLB/V1.0/{year}/PRCP_CU_GAUGE_V1.0GLB_0.50deg.lnx.{YYYYMMDD}.gz).\n"
+              "2006-01-01 to present: NOAA PSL / NOAA CPC Real-Time (RT)"
+              " Operational Archive"
+              " (https://downloads.psl.noaa.gov/Datasets/cpc_global_precip/precip.{year}.nc"
+              " and"
+              " https://ftp.cpc.ncep.noaa.gov/precip/CPC_UNI_PRCP/GAUGE_GLB/RT/{year}/PRCP_CU_GAUGE_V1.0GLB_0.50deg.lnx.{YYYYMMDD}.RT)."
+          ),
+          "Code_Repository": (
+              "https://github.com/google-research/flood-forecasting"
+          ),
+          "Code_Package": (
+              "https://github.com/google-research/flood-forecasting/tree/main/multimet"
+          ),
+          "Generated_By": "multimet.build_cpc_archive",
           "product": "CPC",
           "version": "1.1",
       },

@@ -95,6 +95,21 @@ IMERG_ATTRS = {
     ),
     "license": "CC-BY-4.0",
     "institution": "NASA GSFC / Open-MultiMet",
+    "Sources": (
+        "2000-06-01 to present: NASA Goddard Earth Sciences Data and"
+        " Information Services Center (GES DISC) GPM IMERG Early Run V07"
+        " Level 3 Daily 0.1 degree x 0.1 degree (GPM_3IMERGDE.07,"
+        " https://gpm1.gesdisc.eosdis.nasa.gov/data/GPM_L3/GPM_3IMERGDE.07/,"
+        " DOI: 10.5067/GPM/IMERGDE/DAY/07) and Level 3 Half-Hourly 0.1 degree"
+        " x 0.1 degree (GPM_3IMERGHHE.07 via"
+        " https://cmr.earthdata.nasa.gov/search/granules.json,"
+        " DOI: 10.5067/GPM/IMERG/3B-HH-E/07)."
+    ),
+    "Code_Repository": "https://github.com/google-research/flood-forecasting",
+    "Code_Package": (
+        "https://github.com/google-research/flood-forecasting/tree/main/multimet"
+    ),
+    "Generated_By": "multimet.build_imerg_archive",
 }
 
 _netcdf_lock = threading.Lock()

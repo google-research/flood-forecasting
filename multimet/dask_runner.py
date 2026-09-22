@@ -452,9 +452,33 @@ def extract_product_dask(
     _remove_store(store_path)
     store_already_exists = False
 
+  provenance_attrs: Dict[str, Any] = {
+      "Code_Repository": "https://github.com/google-research/flood-forecasting",
+      "Code_Package": (
+          "https://github.com/google-research/flood-forecasting/tree/main/multimet"
+      ),
+      "Generated_By": "multimet.dask_runner",
+      "Extracted_Date_Range": (
+          f"{all_dates[0].strftime('%Y-%m-%d')} to"
+          f" {all_dates[-1].strftime('%Y-%m-%d')}"
+      ),
+  }
+  if source == "archive" and "data_dir" in extractor_extra_kwargs:
+    provenance_attrs["Extracted_From_Gridded_Archive"] = str(
+        extractor_extra_kwargs["data_dir"]
+    )
+  if isinstance(basins, (str, os.PathLike)):
+    provenance_attrs["Extracted_From_Catchment_Shapefiles"] = str(basins)
+  elif isinstance(basins, (list, tuple, set)):
+    provenance_attrs["Extracted_From_Catchment_Shapefiles"] = [
+        str(b) for b in basins
+    ]
+
   if not store_already_exists:
     logger.info("Initializing skeleton Zarr store for %s at %s...", prod_name, store_path)
-    writer.initialize_zarr_store(prod_enum, basin_ids, all_dates)
+    writer.initialize_zarr_store(
+        prod_enum, basin_ids, all_dates, extra_attrs=provenance_attrs
+    )
     missing_indices = list(range(total_days))
   else:
     # Store already exists and overwrite is False: update/append mode
@@ -561,7 +585,9 @@ def extract_product_dask(
               prod_name,
           )
     else:
-      writer.initialize_zarr_store(prod_enum, basin_ids, all_dates)
+      writer.initialize_zarr_store(
+          prod_enum, basin_ids, all_dates, extra_attrs=provenance_attrs
+      )
       missing_indices = list(range(total_days))
 
   if not missing_indices:

@@ -92,6 +92,29 @@ HRES_ATTRS = {
     ),
     "license": "CC-BY-4.0",
     "institution": "ECMWF / Open-MultiMet",
+    "Sources": (
+        "2016-01-01 to 2023-01-10: WeatherBench 2 ECMWF IFS HRES 0.25 degree"
+        " Public Zarr Archive"
+        " (gs://weatherbench2/datasets/hres/2016-2022-0012-1440x721.zarr, 00Z"
+        " initialization, lead steps 24h..240h; provides temperature_2m,"
+        " surface_pressure, and total_precipitation;"
+        " surface_net_solar_radiation and surface_net_thermal_radiation are not"
+        " present in WeatherBench 2 and are NaN in this period).\n"
+        "2023-01-11 to 2023-07-12: Intermediate gap window between end of"
+        " WeatherBench 2 archive and start of ECMWF Open Data 0.25 degree"
+        " archive (populated with NaN across all variables).\n"
+        "2023-07-13 to present: ECMWF Open Data Operational IFS HRES 0.25"
+        " degree GRIB2 Archive (gs://ecmwf-open-data/<YYYYMMDD>/00z/ifs/0p25/oper/,"
+        " https://www.ecmwf.int/en/forecasts/datasets/open-data, 00Z"
+        " initialization, lead steps 24h..240h; provides all 5 variables:"
+        " temperature_2m, surface_pressure, total_precipitation,"
+        " surface_net_solar_radiation, and surface_net_thermal_radiation)."
+    ),
+    "Code_Repository": "https://github.com/google-research/flood-forecasting",
+    "Code_Package": (
+        "https://github.com/google-research/flood-forecasting/tree/main/multimet"
+    ),
+    "Generated_By": "multimet.build_hres_archive",
 }
 
 

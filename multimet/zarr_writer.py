@@ -316,6 +316,7 @@ class MultiMetZarrWriter:
       product: Product,
       basin_ids: List[str],
       dates: List[pd.Timestamp],
+      extra_attrs: Optional[Mapping[str, Any]] = None,
   ) -> str:
     """Initializes the skeleton of a Zarr store on CNS or local disk.
 
@@ -327,6 +328,8 @@ class MultiMetZarrWriter:
       product: MultiMet Product enum.
       basin_ids: List of basin ID strings.
       dates: List of pandas Timestamps or date strings.
+      extra_attrs: Optional additional global attributes (e.g. upstream archive
+        store URI, shapefile path, extracted date range).
 
     Returns:
       Store path initialized.
@@ -370,7 +373,7 @@ class MultiMetZarrWriter:
             "status": "unavailable",
             "comment": (
                 "Surface radiation flux variables are unavailable in"
-                " WeatherBench 2 HRES archive."
+                " WeatherBench 2 HRES archive (2016-01-01 to 2023-01-10)."
             ),
         }
       data_vars[band] = (
@@ -380,6 +383,8 @@ class MultiMetZarrWriter:
       )
 
     global_attrs = dict(PRODUCT_METADATA_ATTRS.get(product, {}))
+    if extra_attrs:
+      global_attrs.update(extra_attrs)
     ds = xr.Dataset(data_vars=data_vars, coords=coords, attrs=global_attrs)
     ds = ds.chunk(chunk_spec)
 
