@@ -409,7 +409,8 @@ def fdc_fms(
     Returns
     -------
     float
-        Slope of the middle section of the flow duration curve.
+        Slope of the middle section of the flow duration curve. Returns NaN
+        if the rounded bounds do not select two distinct, valid ranks.
 
     References
     ----------
@@ -434,6 +435,11 @@ def fdc_fms(
             'The lower threshold has to be smaller than the upper.'
         )
 
+    lower_index = int(np.round(lower * len(obs)))
+    upper_index = int(np.round(upper * len(obs)))
+    if lower_index == upper_index or upper_index >= len(obs):
+        return np.nan
+
     # get arrays of sorted (descending) discharges
     obs = _get_fdc(obs)
     sim = _get_fdc(sim)
@@ -443,10 +449,10 @@ def fdc_fms(
     obs[obs == 0] = 1e-6
 
     # calculate fms part by part
-    qsm_lower = np.log(sim[np.round(lower * len(sim)).astype(int)])
-    qsm_upper = np.log(sim[np.round(upper * len(sim)).astype(int)])
-    qom_lower = np.log(obs[np.round(lower * len(obs)).astype(int)])
-    qom_upper = np.log(obs[np.round(upper * len(obs)).astype(int)])
+    qsm_lower = np.log(sim[lower_index])
+    qsm_upper = np.log(sim[upper_index])
+    qom_lower = np.log(obs[lower_index])
+    qom_upper = np.log(obs[upper_index])
 
     fms = ((qsm_lower - qsm_upper) - (qom_lower - qom_upper)) / (
         qom_lower - qom_upper + 1e-6
@@ -475,7 +481,7 @@ def fdc_fhv(obs: DataArray, sim: DataArray, h: float = 0.02) -> float:
     Returns
     -------
     float
-        Peak flow bias.
+        Peak flow bias. Returns NaN if the selected high-flow tail is empty.
 
     References
     ----------
@@ -497,13 +503,17 @@ def fdc_fhv(obs: DataArray, sim: DataArray, h: float = 0.02) -> float:
             'h has to be in range ]0,1[. Consider small values, e.g. 0.02 for 2% peak flows'
         )
 
+    n_high = int(np.round(h * len(obs)))
+    if n_high == 0:
+        return np.nan
+
     # get arrays of sorted (descending) discharges
     obs = _get_fdc(obs)
     sim = _get_fdc(sim)
 
     # subset data to only top h flow values
-    obs = obs[: np.round(h * len(obs)).astype(int)]
-    sim = sim[: np.round(h * len(sim)).astype(int)]
+    obs = obs[:n_high]
+    sim = sim[:n_high]
 
     fhv = np.sum(sim - obs) / np.sum(obs)
 
@@ -532,7 +542,8 @@ def fdc_flv(obs: DataArray, sim: DataArray, l: float = 0.3) -> float:
     Returns
     -------
     float
-        Low flow bias.
+        Low flow bias. Returns NaN if fewer than two valid samples fall in
+        the selected low-flow tail.
 
     References
     ----------
@@ -554,6 +565,10 @@ def fdc_flv(obs: DataArray, sim: DataArray, l: float = 0.3) -> float:
             'l has to be in range ]0,1[. Consider small values, e.g. 0.3 for 30% low flows'
         )
 
+    n_low = int(np.round(l * len(obs)))
+    if n_low < 2:
+        return np.nan
+
     # get arrays of sorted (descending) discharges
     obs = _get_fdc(obs)
     sim = _get_fdc(sim)
@@ -562,8 +577,8 @@ def fdc_flv(obs: DataArray, sim: DataArray, l: float = 0.3) -> float:
     sim[sim <= 0] = 1e-6
     obs[obs == 0] = 1e-6
 
-    obs = obs[-np.round(l * len(obs)).astype(int) :]
-    sim = sim[-np.round(l * len(sim)).astype(int) :]
+    obs = obs[-n_low:]
+    sim = sim[-n_low:]
 
     # transform values to log scale
     obs = np.log(obs)
