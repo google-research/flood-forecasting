@@ -745,7 +745,7 @@ class BaseTester(object):
                 if (
                     getattr(self.cfg, 'save_state', False)
                     and last_data is not None
-                    and not self.cfg.is_train
+                    and self.period != 'train'
                 ):
                     save_dir = self.run_dir / 'hot_start_states'
                     save_dir.mkdir(parents=True, exist_ok=True)
