@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
@@ -33,23 +34,7 @@ def get_available_metrics() -> list[str]:
     list[str]
         List of implemented metric names.
     """
-    metrics = [
-        'NSE',
-        'MSE',
-        'RMSE',
-        'KGE',
-        'Alpha-NSE',
-        'Pearson-r',
-        'Beta-KGE',
-        'Beta-NSE',
-        'FHV',
-        'FMS',
-        'FLV',
-        'Peak-Timing',
-        'Missed-Peaks',
-        'Peak-MAPE',
-    ]
-    return metrics
+    return list(_METRIC_FUNCTIONS)
 
 
 def _validate_inputs(obs: DataArray, sim: DataArray):
@@ -848,6 +833,25 @@ def mean_absolute_percentage_peak_error(
     return peak_mape
 
 
+# Keep discovery, explicit selection, and the all-metrics path in sync.
+_METRIC_FUNCTIONS: dict[str, Callable[..., float]] = {
+    'NSE': nse,
+    'MSE': mse,
+    'RMSE': rmse,
+    'KGE': kge,
+    'Alpha-NSE': alpha_nse,
+    'Pearson-r': pearsonr,
+    'Beta-KGE': beta_kge,
+    'Beta-NSE': beta_nse,
+    'FHV': fdc_fhv,
+    'FMS': fdc_fms,
+    'FLV': fdc_flv,
+    'Peak-Timing': mean_peak_timing,
+    'Missed-Peaks': missed_peaks,
+    'Peak-MAPE': mean_absolute_percentage_peak_error,
+}
+
+
 def calculate_all_metrics(
     obs: DataArray,
     sim: DataArray,
@@ -877,27 +881,13 @@ def calculate_all_metrics(
     AllNaNError
         If all observations or all simulations are NaN.
     """
-    _check_all_nan(obs, sim)
-
-    results = {
-        'NSE': nse(obs, sim),
-        'MSE': mse(obs, sim),
-        'RMSE': rmse(obs, sim),
-        'KGE': kge(obs, sim),
-        'Alpha-NSE': alpha_nse(obs, sim),
-        'Beta-KGE': beta_kge(obs, sim),
-        'Beta-NSE': beta_nse(obs, sim),
-        'Pearson-r': pearsonr(obs, sim),
-        'FHV': fdc_fhv(obs, sim),
-        'FMS': fdc_fms(obs, sim),
-        'FLV': fdc_flv(obs, sim),
-        'Peak-Timing': mean_peak_timing(
-            obs, sim, resolution=resolution, datetime_coord=datetime_coord
-        ),
-        'Peak-MAPE': mean_absolute_percentage_peak_error(obs, sim),
-    }
-
-    return results
+    return calculate_metrics(
+        obs,
+        sim,
+        get_available_metrics(),
+        resolution=resolution,
+        datetime_coord=datetime_coord,
+    )
 
 
 def calculate_metrics(
@@ -933,46 +923,23 @@ def calculate_metrics(
         If all observations or all simulations are NaN.
     """
     if 'all' in metrics:
-        return calculate_all_metrics(obs, sim, resolution=resolution)
+        metrics = get_available_metrics()
 
     _check_all_nan(obs, sim)
 
+    canonical_names = {name.lower(): name for name in _METRIC_FUNCTIONS}
     values = {}
     for metric in metrics:
-        if metric.lower() == 'nse':
-            values['NSE'] = nse(obs, sim)
-        elif metric.lower() == 'mse':
-            values['MSE'] = mse(obs, sim)
-        elif metric.lower() == 'rmse':
-            values['RMSE'] = rmse(obs, sim)
-        elif metric.lower() == 'kge':
-            values['KGE'] = kge(obs, sim)
-        elif metric.lower() == 'alpha-nse':
-            values['Alpha-NSE'] = alpha_nse(obs, sim)
-        elif metric.lower() == 'beta-kge':
-            values['Beta-KGE'] = beta_kge(obs, sim)
-        elif metric.lower() == 'beta-nse':
-            values['Beta-NSE'] = beta_nse(obs, sim)
-        elif metric.lower() == 'pearson-r':
-            values['Pearson-r'] = pearsonr(obs, sim)
-        elif metric.lower() == 'fhv':
-            values['FHV'] = fdc_fhv(obs, sim)
-        elif metric.lower() == 'fms':
-            values['FMS'] = fdc_fms(obs, sim)
-        elif metric.lower() == 'flv':
-            values['FLV'] = fdc_flv(obs, sim)
-        elif metric.lower() == 'peak-timing':
-            values['Peak-Timing'] = mean_peak_timing(
-                obs, sim, resolution=resolution, datetime_coord=datetime_coord
-            )
-        elif metric.lower() == 'missed-peaks':
-            values['Missed-Peaks'] = missed_peaks(
-                obs, sim, resolution=resolution, datetime_coord=datetime_coord
-            )
-        elif metric.lower() == 'peak-mape':
-            values['Peak-MAPE'] = mean_absolute_percentage_peak_error(obs, sim)
-        else:
+        name = canonical_names.get(metric.lower())
+        if name is None:
             raise RuntimeError(f'Unknown metric {metric}')
+        function = _METRIC_FUNCTIONS[name]
+        if function in (mean_peak_timing, missed_peaks):
+            values[name] = function(
+                obs, sim, resolution=resolution, datetime_coord=datetime_coord
+            )
+        else:
+            values[name] = function(obs, sim)
 
     return values
 
