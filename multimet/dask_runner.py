@@ -668,8 +668,22 @@ def extract_product_dask(
   )
 
   try:
-    # Scatter large immutable objects to cluster workers
-    gdf_future = dask_client.scatter(basins_gdf, broadcast=True)
+    # When weights_matrix is precomputed on the driver, workers only need
+    # basins_gdf.index and basins_gdf.total_bounds — never scatter hundreds of
+    # megabytes of raw polygon vertices across all workers.
+    if weights_matrix is not None and len(basins_gdf) > 0:
+      import shapely.geometry
+      tb = basins_gdf.total_bounds
+      bbox_geom = shapely.geometry.box(tb[0], tb[1], tb[2], tb[3])
+      worker_gdf = gpd.GeoDataFrame(
+          index=basins_gdf.index,
+          geometry=[bbox_geom] + [None] * (len(basins_gdf) - 1),
+          crs=basins_gdf.crs,
+      )
+    else:
+      worker_gdf = basins_gdf
+
+    gdf_future = dask_client.scatter(worker_gdf, broadcast=True)
     matrix_future = (
         dask_client.scatter(weights_matrix, broadcast=True)
         if weights_matrix is not None
