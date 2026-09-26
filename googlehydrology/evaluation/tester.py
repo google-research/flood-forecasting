@@ -128,7 +128,7 @@ class BaseTester(object):
         if self.cfg.device is not None:
             if self.cfg.device.startswith('cuda'):
                 gpu_id = int(self.cfg.device.split(':')[-1])
-                if gpu_id > torch.cuda.device_count():
+                if gpu_id >= torch.cuda.device_count():
                     raise RuntimeError(
                         f'This machine does not have GPU #{gpu_id} '
                     )
