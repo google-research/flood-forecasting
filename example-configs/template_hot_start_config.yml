@@ -304,8 +304,8 @@ loss: cmalloss
 # Number of times the model sees the entire training dataset.
 epochs: 50
 
-# Number of samples processed at once before updating weights.
-batch_size: 256
+# Hot-start inference requires a single sample per basin.
+batch_size: 1
 
 # Maximum number of weight updates per epoch (useful for very large datasets).
 max_updates_per_epoch: 2000
