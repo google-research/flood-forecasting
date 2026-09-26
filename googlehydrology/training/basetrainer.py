@@ -197,15 +197,10 @@ class BaseTrainer(object):
 
         if self.cfg.checkpoint_path is not None:
             LOGGER.info(
-                f'Starting training from Checkpoint {self.cfg.checkpoint_path}'
+                'Starting training from Checkpoint %s',
+                self.cfg.checkpoint_path,
             )
-            self.model.load_state_dict(
-                torch.load(
-                    str(self.cfg.checkpoint_path),
-                    map_location=self.device,
-                    weights_only=True,
-                )
-            )
+            self._load_model_weights(self.cfg.checkpoint_path)
         elif self.cfg.checkpoint_path is None and self.cfg.is_finetuning:
             # the default for finetuning is the last model state
             checkpoint_path = [
@@ -214,14 +209,8 @@ class BaseTrainer(object):
                     list(self.cfg.base_run_dir.glob('model_epoch*.pt'))
                 )
             ][-1]
-            LOGGER.info(f'Starting training from checkpoint {checkpoint_path}')
-            self.model.load_state_dict(
-                torch.load(
-                    str(checkpoint_path),
-                    map_location=self.device,
-                    weights_only=True,
-                )
-            )
+            LOGGER.info('Starting training from checkpoint %s', checkpoint_path)
+            self._load_model_weights(checkpoint_path)
 
         # Freeze model parts from pre-trained model.
         if self.cfg.is_finetuning:
@@ -397,15 +386,24 @@ class BaseTrainer(object):
             self.cfg.base_run_dir / f'optimizer_state_epoch{epoch}.pt'
         )
 
-        LOGGER.info(f'Continue training from epoch {int(epoch)}')
-        self.model.load_state_dict(
-            torch.load(weight_path, map_location=self.device, weights_only=True)
-        )
+        LOGGER.info('Continue training from epoch %d', int(epoch))
+        self._load_model_weights(weight_path)
         self.optimizer.load_state_dict(
             torch.load(
                 str(optimizer_path), map_location=self.device, weights_only=True
             )
         )
+
+    def _load_model_weights(self, checkpoint_path: Path | str) -> None:
+        """Loads model state_dict while handling torch.compile prefixes."""
+        state_dict = torch.load(
+            str(checkpoint_path), map_location=self.device, weights_only=True
+        )
+        state_dict = {
+            k.removeprefix('_orig_mod.'): v for k, v in state_dict.items()
+        }
+        target_model = getattr(self.model, '_orig_mod', self.model)
+        target_model.load_state_dict(state_dict)
 
     def _save_weights_and_optimizer(self, epoch: int):
         weight_path = self.cfg.run_dir / f'model_epoch{epoch:03d}.pt'
