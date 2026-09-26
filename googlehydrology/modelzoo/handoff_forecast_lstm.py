@@ -94,7 +94,10 @@ class HandoffForecastLSTM(BaseModel):
         super(HandoffForecastLSTM, self).__init__(cfg=cfg)
 
         self.overlap_output = False
-        if 'forecast_overlap' in cfg.regularization:
+        if any(
+            (item if isinstance(item, str) else item[0]) == 'forecast_overlap'
+            for item in cfg.regularization
+        ):
             self.overlap_output = True
             if cfg.head not in ['regression']:
                 raise ValueError('Forecast overlap regularization only works with a regression head.')
