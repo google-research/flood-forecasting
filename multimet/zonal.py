@@ -88,34 +88,69 @@ class ZonalWeightCalculator:
 
     half_lat = self.dlat / 2.0
     half_lon = self.dlon / 2.0
+    cell_area = self.dlat * self.dlon
 
-    poly_area = polygon.area
-    if poly_area <= 0.0:
-      poly_area = 1.0
+    from shapely.prepared import prep
+    prep_poly = prep(polygon)
 
-    for li in lat_indices:
-      lat_val = self.lats[li]
-      cell_miny = lat_val - half_lat
-      cell_maxy = lat_val + half_lat
+    # Vectorized fast-path when shapely 2.x ufuncs are available
+    if hasattr(shapely, "box") and len(lat_indices) * len(lon_indices) > 64:
+      lat_vals = self.lats[lat_indices]
+      lon_vals = self.lons[lon_indices]
+      lat_grid, lon_grid = np.meshgrid(lat_vals, lon_vals, indexing="ij")
+      li_grid, lj_grid = np.meshgrid(lat_indices, lon_indices, indexing="ij")
+      boxes = shapely.box(
+          lon_grid - half_lon,
+          lat_grid - half_lat,
+          lon_grid + half_lon,
+          lat_grid + half_lat,
+      )
+      inter_mask = prep_poly.intersects(boxes)
+      if np.any(inter_mask):
+        contain_mask = np.zeros_like(inter_mask, dtype=bool)
+        contain_mask[inter_mask] = prep_poly.contains(boxes[inter_mask])
+        boundary_mask = inter_mask & (~contain_mask)
 
-      # Cosine weighting for latitude cell area distortion
-      lat_cos = np.cos(np.radians(lat_val))
+        areas = np.zeros(lat_grid.shape, dtype=np.float64)
+        areas[contain_mask] = cell_area
+        if np.any(boundary_mask):
+          b_boxes = boxes[boundary_mask]
+          b_inter = shapely.intersection(polygon, b_boxes)
+          areas[boundary_mask] = shapely.area(b_inter)
 
-      for lj in lon_indices:
-        lon_val = self.lons[lj]
-        cell_minx = lon_val - half_lon
-        cell_maxx = lon_val + half_lon
+        cos_weights = np.cos(np.radians(lat_grid))
+        weighted_areas = areas * cos_weights
+        valid_mask = weighted_areas > 0.0
+        lat_list = li_grid[valid_mask].tolist()
+        lon_list = lj_grid[valid_mask].tolist()
+        w_list = weighted_areas[valid_mask].tolist()
+    else:
+      for li in lat_indices:
+        lat_val = self.lats[li]
+        cell_miny = lat_val - half_lat
+        cell_maxy = lat_val + half_lat
 
-        cell_box = shapely.geometry.box(
-            cell_minx, cell_miny, cell_maxx, cell_maxy
-        )
-        if polygon.intersects(cell_box):
-          inter = polygon.intersection(cell_box)
-          inter_area = inter.area * lat_cos
-          if inter_area > 0.0:
-            lat_list.append(li)
-            lon_list.append(lj)
-            w_list.append(inter_area)
+        # Cosine weighting for latitude cell area distortion
+        lat_cos = np.cos(np.radians(lat_val))
+
+        for lj in lon_indices:
+          lon_val = self.lons[lj]
+          cell_minx = lon_val - half_lon
+          cell_maxx = lon_val + half_lon
+
+          cell_box = shapely.geometry.box(
+              cell_minx, cell_miny, cell_maxx, cell_maxy
+          )
+          if prep_poly.intersects(cell_box):
+            if prep_poly.contains(cell_box):
+              inter_area = cell_area * lat_cos
+            else:
+              inter = polygon.intersection(cell_box)
+              inter_area = inter.area * lat_cos
+            if inter_area > 0.0:
+              lat_list.append(li)
+              lon_list.append(lj)
+              w_list.append(inter_area)
 
     weights = np.array(w_list, dtype=np.float32)
     if len(weights) > 0 and weights.sum() > 0:

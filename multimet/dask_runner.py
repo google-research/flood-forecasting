@@ -603,6 +603,7 @@ def extract_product_dask(
 
   sample_extractor = extractor_cls(**extractor_kwargs)
   if weights_matrix is None and hasattr(sample_extractor, "lats") and sample_extractor.lats is not None:
+    w_workers = max(16, int(num_workers or 16))
     if use_bounding_box:
       sub_lats, sub_lons, _, _ = slice_coordinates_by_bounds(
           sample_extractor.lats, sample_extractor.lons, bounds=basins_gdf, buffer_degrees=0.5
@@ -610,14 +611,27 @@ def extract_product_dask(
       res_lat = float(abs(sample_extractor.lats[1] - sample_extractor.lats[0]))
       res_lon = float(abs(sample_extractor.lons[1] - sample_extractor.lons[0]))
       weights_matrix = ZonalWeightMatrix.from_geodataframe(
-          basins_gdf, sub_lats, sub_lons, cell_res_lat=res_lat, cell_res_lon=res_lon
+          basins_gdf,
+          sub_lats,
+          sub_lons,
+          cell_res_lat=res_lat,
+          cell_res_lon=res_lon,
+          num_workers=w_workers,
       )
     else:
       res_lat = float(abs(sample_extractor.lats[1] - sample_extractor.lats[0]))
       res_lon = float(abs(sample_extractor.lons[1] - sample_extractor.lons[0]))
       weights_matrix = ZonalWeightMatrix.from_geodataframe(
-          basins_gdf, sample_extractor.lats, sample_extractor.lons, cell_res_lat=res_lat, cell_res_lon=res_lon
+          basins_gdf,
+          sample_extractor.lats,
+          sample_extractor.lons,
+          cell_res_lat=res_lat,
+          cell_res_lon=res_lon,
+          num_workers=w_workers,
       )
+    if weights_cache:
+      weights_matrix.save(weights_cache)
+      logger.info("Saved computed weights matrix to %s", weights_cache)
 
   # Partition missing dates into contiguous tasks
   batches: List[Tuple[int, int]] = []
