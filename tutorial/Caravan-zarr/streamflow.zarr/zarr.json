@@ -1,0 +1,150 @@
+{
+  "attributes": {
+    "Units": "dewpoint_temperature_2m: Dew point temperature [\u00b0C]\npotential_evaporation_sum_ERA5_LAND: Potential Evaporation [mm] (original potential_evaporation from ERA5-Land)\npotential_evaporation_sum_FAO_PENMAN_MONTEITH: Potential Evaporation [mm] (FAO Penman-Monteith computed from ERA5-Land inputs)\nsnow_depth_water_equivalent: Snow-Water-Equivalent [mm]\nsurface_net_solar_radiation: Surface net solar radiation [W/m2]\nsurface_net_thermal_radiation: Surface net thermal radiation [W/m2]\nsurface_pressure: Surface pressure [kPa]\ntemperature_2m: 2m air temperature [\u00b0C]\nu_component_of_wind_10m: U-component of wind at 10m [m/s]\nv_component_of_wind_10m: V-component of wind at 10m [m/s]\nvolumetric_soil_water_layer_1: Volumetric soil water layer 1 (0-7cm) [m3/m3]\nvolumetric_soil_water_layer_2: Volumetric soil water layer 2 (7-28cm) [m3/m3]\nvolumetric_soil_water_layer_3: Volumetric soil water layer 3 (28-100cm) [m3/m3]\nvolumetric_soil_water_layer_4: Volumetric soil water layer 4 (100-289cm) [m3/m3]\ntotal_precipitation: Total precipitation [mm]",
+    "Timezone": "America/Detroit",
+    "Source": "All forcing and state variables are derived from ERA5-Land hourly by ECMWF. Streamflow data was taken from the CAMELS (US) dataset by Newman et al. (2014)."
+  },
+  "zarr_format": 3,
+  "consolidated_metadata": {
+    "kind": "inline",
+    "must_understand": false,
+    "metadata": {
+      "basin": {
+        "shape": [
+          8
+        ],
+        "data_type": "string",
+        "chunk_grid": {
+          "name": "regular",
+          "configuration": {
+            "chunk_shape": [
+              8
+            ]
+          }
+        },
+        "chunk_key_encoding": {
+          "name": "default",
+          "configuration": {
+            "separator": "/"
+          }
+        },
+        "fill_value": "",
+        "codecs": [
+          {
+            "name": "vlen-utf8",
+            "configuration": {}
+          },
+          {
+            "name": "zstd",
+            "configuration": {
+              "level": 0,
+              "checksum": false
+            }
+          }
+        ],
+        "attributes": {},
+        "dimension_names": [
+          "basin"
+        ],
+        "zarr_format": 3,
+        "node_type": "array",
+        "storage_transformers": []
+      },
+      "date": {
+        "shape": [
+          26662
+        ],
+        "data_type": "int64",
+        "chunk_grid": {
+          "name": "regular",
+          "configuration": {
+            "chunk_shape": [
+              26662
+            ]
+          }
+        },
+        "chunk_key_encoding": {
+          "name": "default",
+          "configuration": {
+            "separator": "/"
+          }
+        },
+        "fill_value": 0,
+        "codecs": [
+          {
+            "name": "bytes",
+            "configuration": {
+              "endian": "little"
+            }
+          },
+          {
+            "name": "zstd",
+            "configuration": {
+              "level": 0,
+              "checksum": false
+            }
+          }
+        ],
+        "attributes": {
+          "units": "days since 1951-01-01",
+          "calendar": "proleptic_gregorian"
+        },
+        "dimension_names": [
+          "date"
+        ],
+        "zarr_format": 3,
+        "node_type": "array",
+        "storage_transformers": []
+      },
+      "streamflow": {
+        "shape": [
+          8,
+          26662
+        ],
+        "data_type": "float32",
+        "chunk_grid": {
+          "name": "regular",
+          "configuration": {
+            "chunk_shape": [
+              8,
+              26662
+            ]
+          }
+        },
+        "chunk_key_encoding": {
+          "name": "default",
+          "configuration": {
+            "separator": "/"
+          }
+        },
+        "fill_value": "NaN",
+        "codecs": [
+          {
+            "name": "bytes",
+            "configuration": {
+              "endian": "little"
+            }
+          },
+          {
+            "name": "zstd",
+            "configuration": {
+              "level": 0,
+              "checksum": false
+            }
+          }
+        ],
+        "attributes": {
+          "_FillValue": "AAAAAAAA+H8="
+        },
+        "dimension_names": [
+          "basin",
+          "date"
+        ],
+        "zarr_format": 3,
+        "node_type": "array",
+        "storage_transformers": []
+      }
+    }
+  },
+  "node_type": "group"
+}
