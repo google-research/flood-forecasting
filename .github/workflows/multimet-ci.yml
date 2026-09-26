@@ -35,7 +35,7 @@ permissions:
 
 jobs:
   test:
-    name: MultiMet archive builders (${{ matrix.os }}, py${{ matrix.python-version }})
+    name: MultiMet builders + extractors (${{ matrix.os }}, py${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     # The suite runs in well under a minute. Anything approaching this limit is
     # a hang, and should fail fast rather than occupy a runner for hours.
@@ -78,6 +78,11 @@ jobs:
             "requests" \
             "scipy" \
             "tqdm" \
+            "geopandas" \
+            "shapely" \
+            "pyproj" \
+            "dask[distributed]" \
+            "psutil" \
             "pytest" \
             "pytest-cov" \
             "pytest-timeout"
@@ -88,6 +93,7 @@ jobs:
           python -m multimet.build_cpc_archive --help
           python -m multimet.build_hres_archive --help
           python -m multimet.build_imerg_archive --help
+          python -m multimet.runner --help
 
       # --timeout-method=thread dumps the stack of every thread when a test
       # overruns, which names the offending test instead of leaving a silent

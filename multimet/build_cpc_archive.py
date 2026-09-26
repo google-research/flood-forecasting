@@ -284,6 +284,21 @@ def process_cpc_netcdf_to_dataset(
               "Chen et al. (2008) J. Geophys. Res. 113, D04110; Xie et al."
               " (2007) J. Hydrometeorol. 8, 607-626."
           ),
+          "Sources": (
+              "1979-01-01 to present (Single Source): NOAA Physical Sciences"
+              " Laboratory (PSL) CPC Global Unified Gauge-Based Analysis of"
+              " Daily Precipitation yearly NetCDF archive"
+              " (https://downloads.psl.noaa.gov/Datasets/cpc_global_precip/precip.{year}.nc;"
+              " landing page:"
+              " https://psl.noaa.gov/data/gridded/data.cpc.globalprecip.html)."
+          ),
+          "Code_Repository": (
+              "https://github.com/google-research/flood-forecasting"
+          ),
+          "Code_Package": (
+              "https://github.com/google-research/flood-forecasting/tree/main/multimet"
+          ),
+          "Generated_By": "multimet.build_cpc_archive",
           "product": "CPC",
           "version": "1.1",
       },

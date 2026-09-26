@@ -13,6 +13,7 @@ On this documentation page, you'll find a :doc:`quickstart guide <usage/quicksta
 There is also a :doc:`tutorial <tutorial/tutorial>` that walks you through training your first model.
 The :doc:`modelzoo <usage/models>` lists the models avaialble in this repository.
 The :doc:`gridded weather archives <usage/gridded_archives>` guide explains how to download and build daily gridded weather archives from NOAA CPC, ECMWF HRES, and NASA GPM IMERG.
+The :doc:`MultiMet catchment extractor <usage/multimet_extractor>` guide explains how to reduce those gridded archives -- or the upstream third-party feeds directly -- to per-basin daily forcing timeseries.
 Finally, the :doc:`API docs <api/googlehydrology>` show in-depth information on all modules, classes, and functions within OpenHydroNet.
 
 You might also be interested in our `team's webpage <https://sites.research.google/gr/floodforecasting/>`_.
@@ -24,6 +25,7 @@ You might also be interested in our `team's webpage <https://sites.research.goog
    usage/quickstart
    usage/models
    usage/gridded_archives
+   usage/multimet_extractor
    tutorial/tutorial
    usage/config
    api/modules
