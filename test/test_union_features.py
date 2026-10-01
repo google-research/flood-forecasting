@@ -118,27 +118,27 @@ def test_expand_lead_times_basic_expansion(
     expected_shape = (len(sample_basins), len(sample_dates), 2)
     assert sorted(expanded_da.shape) == sorted(expected_shape)
 
-    # original_da.shift(date=-1) should shift dates by 1, introducing NaN at the end
-    expected_shifted_1 = original_da.shift(date=-1)
+    # lead_time=1D has shift 0 (same date), so no NaNs introduced
+    expected_shifted_1 = original_da.shift(date=0)
     lead_time_1 = np.timedelta64(1, 'D')
     xr.testing.assert_equal(
         expanded_da.sel(lead_time=lead_time_1).drop_vars('lead_time'),
         expected_shifted_1,
     )
-    assert np.isnan(
+    assert not np.isnan(
         expanded_da.isel(date=-1, lead_time=0)
-    ).all()  # Last date should be NaN for lt=1
+    ).any()
 
-    # original_da.shift(date=-2) should shift dates by 2, introducing NaNs at the end
-    expected_shifted_2 = original_da.shift(date=-2)
+    # lead_time=2D shifts dates by -1, introducing NaN at the last date
+    expected_shifted_2 = original_da.shift(date=-1)
     lead_time_2 = np.timedelta64(2, 'D')
     xr.testing.assert_equal(
         expanded_da.sel(lead_time=lead_time_2).drop_vars('lead_time'),
         expected_shifted_2,
     )
     assert np.isnan(
-        expanded_da.isel(date=[-1, -2], lead_time=1)
-    ).all()  # Last two dates should be NaN for lt=2
+        expanded_da.isel(date=-1, lead_time=1)
+    ).all()
 
 
 def test_expand_lead_times_raises_error_if_lead_time_exists(
@@ -171,7 +171,7 @@ def test_expand_lead_times_single_date(sample_basins, sample_lead_times):
     """Test expansion with a single date, checking NaN propagation."""
     single_date = pd.to_datetime(['2000-01-01'])
     original_da = xr.DataArray(
-        [[10], [20]],
+        [[10.0], [20.0]],
         coords={'basin': sample_basins, 'date': single_date},
         dims=['basin', 'date'],
     )
@@ -187,18 +187,25 @@ def test_expand_lead_times_single_date(sample_basins, sample_lead_times):
     )
     assert np.array_equal(expanded_da['lead_time'].values, expected_lead_times)
 
-    # lead_time=1: should be all NaN as there's no next date
-    expected_shifted_1 = xr.DataArray(
+    # lead_time=1D: same date (shift=0), so retains original values
+    lead_time_1 = np.timedelta64(1, 'D')
+    xr.testing.assert_equal(
+        expanded_da.sel(lead_time=lead_time_1).drop_vars('lead_time'),
+        original_da,
+    )
+
+    # lead_time=2D: should be all NaN as there's no next date
+    expected_shifted_2 = xr.DataArray(
         [[np.nan], [np.nan]],
         coords={'basin': sample_basins, 'date': single_date},
         dims=['basin', 'date'],
     )
-    lead_time_1 = np.timedelta64(1, 'D')
+    lead_time_2 = np.timedelta64(2, 'D')
     xr.testing.assert_equal(
-        expanded_da.sel(lead_time=lead_time_1).drop_vars('lead_time'),
-        expected_shifted_1,
+        expanded_da.sel(lead_time=lead_time_2).drop_vars('lead_time'),
+        expected_shifted_2,
     )
-    assert np.isnan(expanded_da.sel(lead_time=lead_time_1)).all()
+    assert np.isnan(expanded_da.sel(lead_time=lead_time_2)).all()
 
 
 # --- Tests for helper functions ---
@@ -258,10 +265,10 @@ def test_union_lead_time_feature_with_non_lead_time_feature(
         coords={'date': sample_dates[:2], 'basin': sample_basins[:1]},
         dims=['date', 'basin'],
     )
-    # Expected: np.nan at lead_time=1 should be filled with the value from one date in the future.
+    # Expected: np.nan at lead_time=1D on date 0 should be filled with the value from the same date (1).
     expected_data = [
-        [[2, 20, 30], [40, 50, 60]]
-    ]  # The mask_feature_da is broadcasted across lead_time
+        [[1, 20, 30], [40, 50, 60]]
+    ]
     expected = xr.DataArray(
         expected_data,
         coords={
@@ -296,9 +303,9 @@ def test_union_non_lead_time_feature_with_lead_time_feature(
     )
 
     # Select mask for min lead (1 day) = [100, 200, 300],
-    # shift mask by a day to align issue date with valid date = [nan, 100, 200],
-    # use the shifted mask to fill nan in the original [10, nan, 20] with 100.
-    expected_data = [[10, 100, 20]]
+    # since lead_time=1D covers [date 00:00, date+1 00:00], shift_days=0 -> [100, 200, 300],
+    # filling nan at index 1 in [10, nan, 20] with 200.
+    expected_data = [[10, 200, 20]]
 
     expected = xr.DataArray(
         expected_data,
@@ -347,14 +354,15 @@ def test_union_features_mixed_dimensions(base_dataset):
         'feature_2d_hindcast': 'mask_3d',  # 2D feature masked by 3D feature
     }
     # Set specific values in masks to fill NaNs
-    base_dataset['mask_2d'].loc[{'basin': 'basin_B', 'date': '2000-01-04'}] = (
+    # NaN in feature_3d_forecast is at basin_B, 2000-01-03, lead_time=1D (valid on 2000-01-03)
+    base_dataset['mask_2d'].loc[{'basin': 'basin_B', 'date': '2000-01-03'}] = (
         1000.0
     )
-    # Target date is 2000-01-02 so shift by 1 day prior since lead time is 1
+    # NaN in feature_2d_hindcast is at basin_A, 2000-01-02 (matched by lead_time=1D on 2000-01-02)
     base_dataset['mask_3d'].loc[
         {
             'basin': 'basin_A',
-            'date': '2000-01-01',
+            'date': '2000-01-02',
             'lead_time': np.timedelta64(1, 'D'),
         }
     ] = 2000.0
@@ -362,10 +370,9 @@ def test_union_features_mixed_dimensions(base_dataset):
     result_ds = union_features(base_dataset, union_mapping)
 
     # Verify feature_3d_forecast (masked by mask_2d)
-    # NaN at basin_B, 2000-01-03, lead_time=1 should be filled by mask_2d at basin_B, 2000-01-03 (1000.0)
+    # NaN at basin_B, 2000-01-03, lead_time=1D should be filled by mask_2d at basin_B, 2000-01-03 (1000.0)
     expected_3d_data = base_dataset['feature_3d_forecast'].values.copy()
-    # The _union_lead_time_feature_with_non_lead_time_feature will broadcast the mask value across lead_time
-    expected_3d_data[1, 2, 0] = 1000.0  # basin_B, 2000-01-03, all lead_times
+    expected_3d_data[1, 2, 0] = 1000.0  # basin_B, 2000-01-03, lead_time=1D
     expected_feature_3d_forecast = xr.DataArray(
         expected_3d_data,
         coords=base_dataset['feature_3d_forecast'].coords,
@@ -376,7 +383,7 @@ def test_union_features_mixed_dimensions(base_dataset):
     )
 
     # Verify feature_2d_hindcast (masked by mask_3d)
-    # NaN at basin_A, 2000-01-02 should be filled by mask_3d at basin_A, 2000-01-02, lead_time=0 (2000.0)
+    # NaN at basin_A, 2000-01-02 should be filled by mask_3d at basin_A, 2000-01-02, lead_time=1D (2000.0)
     expected_2d_data = base_dataset['feature_2d_hindcast'].values.copy()
     expected_2d_data[0, 1] = 2000.0  # basin_A, 2000-01-02
     expected_feature_2d_hindcast = xr.DataArray(

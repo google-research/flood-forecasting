@@ -435,7 +435,7 @@ class Multimet(Dataset):
         duration = self._seq_length - 1
         if not lead and not self._lead_times:
             return range(date - duration, date + 1)
-        end = date + self.lead_time
+        end = date + self.lead_time - self._min_lead_time
         return range(end - duration, end + 1)
 
     def _extract_dates(self, sample_index: dict[str, int]) -> np.ndarray:
@@ -455,26 +455,31 @@ class Multimet(Dataset):
     def _extract_hindcasts(
         self, sample_index: dict[str, int]
     ) -> dict[str, np.ndarray]:
+        # In Caravan-MultiMet, forecast issue date D has 1st lead_time (lead_time=1D)
+        # covering [D 00:00, D+1 00:00], so completed hindcast days prior to D 00:00
+        # cover [D - seq_length, ..., D - 1] when forecasting (_min_lead_time = 1),
+        # and [D - seq_length + 1, ..., D] when hindcast-only (_min_lead_time = 0).
+        hindcast_end = sample_index['date'] + 1 - self._min_lead_time
+        hindcast_date_range = range(
+            hindcast_end - self._seq_length,
+            hindcast_end,
+        )
+
         # Extract hindcast features without lead_time.
         dim_indexes_without_lead_time = sample_index.copy()
-        dim_indexes_without_lead_time['date'] = range(
-            dim_indexes_without_lead_time['date'] - self._seq_length + 1,
-            dim_indexes_without_lead_time['date'] + 1,
-        )
+        dim_indexes_without_lead_time['date'] = hindcast_date_range
         features = self._extract_dataset(
             self._dataset,
             self._hindcast_features_without_lead_time,
             dim_indexes_without_lead_time,
         )
 
-        # Forecast features with lead_time may be used as hindcast features. In that case, we select
-        # only the first lead_time value, and move selection period one day backwards.
+        # Forecast features with lead_time may be used as hindcast features. Since
+        # lead_time=1D (index 0) on date t covers [t 00:00, t+1 00:00], it shares
+        # the exact same valid date range as 2D hindcast features.
         dim_indexes_with_lead_time = sample_index.copy()
         dim_indexes_with_lead_time['lead_time'] = 0
-        dim_indexes_with_lead_time['date'] = range(
-            dim_indexes_with_lead_time['date'] - self._seq_length,
-            dim_indexes_with_lead_time['date'],
-        )
+        dim_indexes_with_lead_time['date'] = hindcast_date_range
         features |= self._extract_dataset(
             self._dataset,
             self._hindcast_features_with_lead_time,
