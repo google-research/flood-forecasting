@@ -14,15 +14,22 @@
 
 import gc
 import logging
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Callable
 
 import matplotlib.pyplot as plt
 import pytest
+import torch
 import torch._dynamo
+import xarray as xr
 
+from googlehydrology.modelzoo.mean_embedding_forecast_lstm import (
+    MeanEmbeddingForecastLSTM,
+)
 from googlehydrology.utils.config import Config
+from googlehydrology.utils.configutils import group_features_list
 from test import Fixture
+from test.test_hot_start import get_base_cfg
 
 torch._dynamo.config.suppress_errors = True
 
@@ -205,3 +212,178 @@ def daily_dataset(request) -> dict[str, list[str]]:
     ):
         pytest.skip('--smoke-test skips this test.')
     return {'dataset': request.param[0], 'target': request.param[1]}
+
+
+@pytest.fixture
+def tiny_mean_embedding_model(
+    tmp_path: Fixture[Path],
+) -> Fixture[Callable[..., MeanEmbeddingForecastLSTM]]:
+    """Return a factory for a tiny, deterministic MeanEmbeddingForecastLSTM.
+
+    The default inputs give one shared group (``pr``, ``tmmn``), one
+    hindcast-only group (``streamflow``) and one forecast-only group
+    (``hres``). The model is seeded (without touching the global RNG state)
+    and in eval mode.
+
+    Parameters
+    ----------
+    tmp_path : Fixture[Path]
+        Tmp directory used as run directory (a dummy scaler is written there).
+
+    Returns
+    -------
+    Fixture[Callable[..., MeanEmbeddingForecastLSTM]]
+        Factory ``(seq_length=6, lead_time=3, hindcast_inputs=...,
+        forecast_inputs=..., head='regression', n_distributions=3)
+        -> MeanEmbeddingForecastLSTM``. ``n_distributions`` is only used by
+        the ``'cmal'`` head.
+    """
+
+    def _build(  # noqa: PLR0913
+        *,
+        seq_length: int = 6,
+        lead_time: int = 3,
+        hindcast_inputs: tuple[str, ...] = ('pr_a', 'tmmn_a', 'streamflow_lag'),
+        forecast_inputs: tuple[str, ...] = ('pr_a', 'tmmn_a', 'hres_precip'),
+        head: str = 'regression',
+        n_distributions: int = 3,
+    ) -> MeanEmbeddingForecastLSTM:
+        options = get_base_cfg(tmp_path)
+        embedding = {
+            'type': 'fc',
+            'hiddens': [8],
+            'activation': ['tanh'],
+            'dropout': 0.0,
+        }
+        options.update(
+            {
+                'model': 'MeanEmbeddingForecastLSTM',
+                'seq_length': seq_length,
+                'lead_time': lead_time,
+                'forecast_overlap': seq_length,
+                'hidden_size': 8,
+                'output_dropout': 0.0,
+                'head': head,
+                'n_distributions': n_distributions,
+                'hindcast_inputs': list(hindcast_inputs),
+                'forecast_inputs': list(forecast_inputs),
+                'hindcast_embedding': embedding,
+                'forecast_embedding': embedding,
+                'statics_embedding': {**embedding, 'hiddens': [4]},
+            }
+        )
+        cfg = Config(options)
+        xr.Dataset(
+            {'streamflow': ('parameter', [0.0, 1.0, 0.0, 1.0])},
+            coords={'parameter': ['center', 'scale', 'mean', 'std']},
+        ).to_netcdf(tmp_path / 'scaler.nc', engine='scipy')
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(0)
+            model = MeanEmbeddingForecastLSTM(cfg)
+        model.eval()
+        return model
+
+    return _build
+
+
+@pytest.fixture
+def tiny_mean_embedding_data() -> Fixture[Callable[..., dict]]:
+    """Return a factory for random inputs of a tiny MeanEmbeddingForecastLSTM.
+
+    Returns
+    -------
+    Fixture[Callable[..., dict]]
+        Factory ``(cfg, batch_size=2, nan_at=None) -> data`` where hindcast
+        inputs cover ``cfg.seq_length`` steps and forecast inputs the full
+        ``cfg.seq_length + cfg.lead_time`` span. Values are seeded from a
+        private generator. ``nan_at`` maps an input group (e.g. ``'pr'``) or
+        a single feature (e.g. ``'pr_a'``) to the time indices that are set
+        to NaN in every matching hindcast and forecast feature; indices
+        beyond a feature's length are ignored.
+    """
+
+    def _make(
+        cfg: Config,
+        *,
+        batch_size: int = 2,
+        nan_at: dict[str, list[int]] | None = None,
+    ) -> dict:
+        generator = torch.Generator().manual_seed(1)
+        data = {
+            'x_d_hindcast': {
+                name: torch.rand(
+                    batch_size, cfg.seq_length, 1, generator=generator
+                )
+                for name in cfg.hindcast_inputs
+            },
+            'x_d_forecast': {
+                name: torch.rand(
+                    batch_size,
+                    cfg.seq_length + cfg.lead_time,
+                    1,
+                    generator=generator,
+                )
+                for name in cfg.forecast_inputs
+            },
+            'x_s': torch.rand(
+                batch_size, len(cfg.static_attributes), generator=generator
+            ),
+        }
+        for key, steps in (nan_at or {}).items():
+            matched = False
+            for inputs, features in (
+                (cfg.hindcast_inputs, data['x_d_hindcast']),
+                (cfg.forecast_inputs, data['x_d_forecast']),
+            ):
+                names = group_features_list(inputs).get(key, [])
+                names = names or [name for name in inputs if name == key]
+                for name in names:
+                    matched = True
+                    tensor = features[name]
+                    for step in steps:
+                        if step < tensor.shape[1]:
+                            tensor[:, step] = float('nan')
+            if not matched:
+                msg = f'nan_at: {key!r} is neither an input group nor feature'
+                raise ValueError(msg)
+        return data
+
+    return _make
+
+
+def assert_finite_grads(
+    tensors_or_module: torch.nn.Module | Iterable[torch.Tensor],
+) -> None:
+    """Assert every (populated) gradient is finite and at least one exists."""
+    if isinstance(tensors_or_module, torch.nn.Module):
+        tensors = list(tensors_or_module.parameters())
+    else:
+        tensors = list(tensors_or_module)
+    grads = [t.grad for t in tensors if t.grad is not None]
+    assert grads, 'no gradients were populated'
+    for grad in grads:
+        assert torch.isfinite(grad).all()
+
+
+def assert_grad_matches_finite_difference(
+    loss_fn: Callable[[], torch.Tensor],
+    tensor: torch.Tensor,
+    index: tuple[int, ...],
+    eps: float = 1e-6,
+    atol: float = 1e-5,
+) -> None:
+    """Assert ``tensor.grad[index]`` equals a central finite difference.
+
+    ``tensor.grad`` must already be populated by a backward pass of the same
+    loss. Use double precision for the default tolerances.
+    """
+    assert tensor.grad is not None, 'tensor has no gradient'
+    with torch.no_grad():
+        original = tensor[index].item()
+        tensor[index] = original + eps
+        plus = loss_fn().item()
+        tensor[index] = original - eps
+        minus = loss_fn().item()
+        tensor[index] = original
+    expected = (plus - minus) / (2 * eps)
+    assert tensor.grad[index].item() == pytest.approx(expected, abs=atol)

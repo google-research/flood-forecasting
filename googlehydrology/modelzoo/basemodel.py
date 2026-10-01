@@ -13,7 +13,9 @@
 # limitations under the License.
 
 
+from collections.abc import Iterable
 from pathlib import Path
+from typing import ClassVar
 
 import numpy as np
 import torch
@@ -39,6 +41,12 @@ class BaseModel(nn.Module):
 
     # specify submodules of the model that can later be used for finetuning. Names must match class attributes
     module_parts = []
+
+    # Names of internal tensors that a data assimilation (DA) procedure may
+    # read from the forward output dict and override via the keyword argument
+    # `assimilation_overrides={name: tensor}` of `forward`.
+    # Models that do not support DA leave this empty.
+    supported_assimilation_components: ClassVar[tuple[str, ...]] = ()
 
     def __init__(self, cfg: Config):
         super(BaseModel, self).__init__()
@@ -85,7 +93,12 @@ class BaseModel(nn.Module):
         )
 
     def forward(
-        self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]
+        self,
+        data: dict[str, torch.Tensor | dict[str, torch.Tensor]],
+        *,
+        assimilation_overrides: dict[str, torch.Tensor] | None = None,
+        assimilation_slice: tuple[int, int] | None = None,
+        return_embeddings: bool = False,
     ) -> dict[str, torch.Tensor]:
         """Perform a forward pass.
 
@@ -93,11 +106,62 @@ class BaseModel(nn.Module):
         ----------
         data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
             Dictionary, containing input features as key-value pairs.
+        assimilation_overrides : dict[str, torch.Tensor] | None, optional
+            Optional data assimilation (DA) hook: tensors replacing the
+            internal components named in `supported_assimilation_components`.
+            Models that do not support DA may ignore this argument.
+        assimilation_slice : tuple[int, int] | None, optional
+            Optional DA hook: ``(start, end)`` time indices on the model time
+            axis where a partial-length dynamic override is spliced in. Models
+            that do not support DA may ignore this argument.
+        return_embeddings : bool, optional
+            Optional DA hook: if True, models that support DA additionally
+            return their assimilable components in the output dict.
 
         Returns
         -------
         dict[str, torch.Tensor]
             Model output and potentially any intermediate states and activations as a dictionary.
+        """
+        raise NotImplementedError
+
+    def validate_assimilation_components(self, names: Iterable[str]) -> None:
+        """Raise ValueError for names not in supported_assimilation_components.
+
+        Parameters
+        ----------
+        names : Iterable[str]
+            Names of the components a data assimilation procedure intends to
+            override via ``forward(assimilation_overrides=...)``.
+        """
+        unknown = sorted(
+            set(names).difference(self.supported_assimilation_components)
+        )
+        if unknown:
+            msg = (
+                f'Unsupported assimilation components {unknown}; '
+                f'supported: {list(self.supported_assimilation_components)}'
+            )
+            raise ValueError(msg)
+
+    def point_prediction(
+        self, outputs: dict[str, torch.Tensor]
+    ) -> torch.Tensor:
+        """Deterministic prediction ``[B, T, n_targets]`` from forward outputs.
+
+        Models delegate to their head (see ``BaseHead.point_prediction``).
+        Used by data assimilation and other consumers that need a single value
+        per time step irrespective of the head type.
+
+        Parameters
+        ----------
+        outputs : dict[str, torch.Tensor]
+            Output dict of ``forward``.
+
+        Returns
+        -------
+        torch.Tensor
+            Point prediction of shape ``[B, T, n_targets]``.
         """
         raise NotImplementedError
 
