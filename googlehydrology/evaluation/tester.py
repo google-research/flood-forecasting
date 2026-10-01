@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import contextlib
 import itertools
 import logging
 import random
@@ -38,6 +39,7 @@ from googlehydrology.datautils.utils import (
     sort_frequencies,
 )
 from googlehydrology.evaluation import plots
+from googlehydrology.evaluation.assimilation import Assimilation
 from googlehydrology.evaluation.metrics import (
     calculate_metrics,
     get_available_metrics,
@@ -117,6 +119,13 @@ class BaseTester(object):
             get_regularization_obj(cfg=self.cfg)
         )
 
+        # data assimilation engine, only built if the run config defines one
+        assimilation_config = cfg.assimilation_config
+        self.assimilation = (
+            Assimilation(assimilation_config)
+            if assimilation_config is not None
+            else None
+        )
         self._load_run_data()  # Sets self.basins
 
         self.dataset = self._get_dataset_all()
@@ -198,6 +207,7 @@ class BaseTester(object):
         metrics: list | dict = [],
         model: torch.nn.Module = None,
         experiment_logger: Logger = None,
+        data_assimilation: bool | None = None,
     ) -> dict:
         """Evaluate the model.
 
@@ -213,7 +223,22 @@ class BaseTester(object):
             If a model is passed, this is used for validation.
         experiment_logger : Logger, optional
             Logger can be passed during training to log metrics
+        data_assimilation : bool, optional
+            If True, the model outputs are corrected by data assimilation
+            before they are evaluated, and the output files get the suffix
+            `_data_assimilation`. By default, the `assimilate` config value
+            is used.
         """
+        if data_assimilation is None:
+            data_assimilation = self.cfg.assimilate
+        if data_assimilation and self.assimilation is None:
+            raise ValueError(
+                'data assimilation requested but no assimilation_config is '
+                'defined in the run config.'
+            )
+        # DA outputs never overwrite the regular evaluation outputs.
+        suffix = '_data_assimilation' if data_assimilation else ''
+
         if model is None:
             if self.init_model:
                 self._load_weights(epoch=epoch)
@@ -262,7 +287,12 @@ class BaseTester(object):
         basins_for_figures = random.sample(list(basins), k=max_figures)
 
         eval_data_it = self._evaluate(
-            model, loader, self.dataset.frequencies, basins
+            model,
+            loader,
+            self.dataset.frequencies,
+            basins,
+            data_assimilation=data_assimilation,
+            suffix=suffix,
         )
         pbar = tqdm(
             eval_data_it,
@@ -277,7 +307,7 @@ class BaseTester(object):
                 '# Inference' if self.cfg.inference_mode else '# Evaluation'
             )
 
-        self._ensure_no_previous_results_saved(epoch)
+        self._ensure_no_previous_results_saved(epoch, suffix=suffix)
 
         metrics_results = {}
 
@@ -479,7 +509,7 @@ class BaseTester(object):
 
             if basin in basins_for_figures:
                 self._create_and_log_figures(
-                    basin, results, experiment_logger, epoch or -1
+                    basin, results, experiment_logger, epoch or -1, suffix
                 )
 
             self._save_incremental_results(
@@ -488,6 +518,8 @@ class BaseTester(object):
                 states={},
                 save_results=save_results,
                 epoch=epoch,
+                suffix=suffix,
+                data_assimilation=data_assimilation,
             )
 
             if metrics and not experiment_logger:
@@ -506,9 +538,15 @@ class BaseTester(object):
                     LOGGER.info('%s %s median=%f', freq, name, median)
 
         # Consolidate metadata for the output Zarr store if one was created
-        if self.cfg.inference_mode and self.period == 'test' and save_results:
+        if (
+            (self.cfg.inference_mode or data_assimilation)
+            and self.period == 'test'
+            and save_results
+        ):
             parent_directory = self._parent_directory_for_results(epoch)
-            result_file = parent_directory / f'{self.period}_results.zarr'
+            result_file = (
+                parent_directory / f'{self.period}_results{suffix}.zarr'
+            )
             if result_file.exists():
                 try:
                     zarr.consolidate_metadata(str(result_file))
@@ -557,7 +595,9 @@ class BaseTester(object):
         results: dict,
         experiment_logger: Logger | None,
         epoch: int,
+        suffix: str = '',
     ):
+        """Plot obs vs. sim; `suffix` keeps DA figures apart from others."""
         for target_var in self.cfg.target_variables:
             for freq in results:
                 xr = results[freq]['xr']
@@ -574,7 +614,9 @@ class BaseTester(object):
                     )[0],
                 ]
                 # make sure the preamble is a valid file name
-                preamble = re.sub(r'[^A-Za-z0-9\._\-]+', '', target_var)
+                preamble = re.sub(
+                    r'[^A-Za-z0-9\._\-]+', '', f'{target_var}{suffix}'
+                )
                 if experiment_logger:
                     experiment_logger.log_figures(
                         figures, freq, preamble, self.period, basin
@@ -591,16 +633,20 @@ class BaseTester(object):
                         basin,
                     )
 
-    def _ensure_no_previous_results_saved(self, epoch: int | None = None):
+    def _ensure_no_previous_results_saved(
+        self, epoch: int | None = None, suffix: str = ''
+    ):
         parent_directory = self._parent_directory_for_results(epoch)
 
         zarr_stores_to_remove = [
-            parent_directory / f'{self.period}_results.zarr',
+            parent_directory / f'{self.period}_results{suffix}.zarr',
         ]
         for zarr_store in zarr_stores_to_remove:
             shutil.rmtree(zarr_store, ignore_errors=True)
 
-        metrics_csv_path = parent_directory / f'{self.period}_metrics.csv'
+        metrics_csv_path = (
+            parent_directory / f'{self.period}_metrics{suffix}.csv'
+        )
         if metrics_csv_path.exists():
             metrics_csv_path.unlink()
 
@@ -612,8 +658,16 @@ class BaseTester(object):
         states: dict,
         save_results: bool,
         epoch: int | None,
+        suffix: str = '',
+        data_assimilation: bool = False,
     ):
         """Store results in various formats to disk.
+
+        `suffix` is appended to the file stems (e.g. `_data_assimilation`).
+        The results zarr store is written in inference mode and, whatever the
+        mode, when `data_assimilation` is set: assimilation exists to produce
+        updated forecasts, so its results are always persisted. The metrics
+        csv is unaffected.
 
         Developer note: We cannot store the time series data (the xarray objects) as netCDF file but have to use
         pickle as a wrapper. The reason is that netCDF files have special constraints on the characters/symbols that can
@@ -631,17 +685,21 @@ class BaseTester(object):
             df = metrics_to_dataframe(
                 {basin: results}, metrics_list, self.cfg.target_variables
             )
-            metrics_file = parent_directory / f'{self.period}_metrics.csv'
+            metrics_file = (
+                parent_directory / f'{self.period}_metrics{suffix}.csv'
+            )
             df.to_csv(metrics_file, mode='a', header=not metrics_file.exists())
 
         # store all results in a zarr store
         if (
             results
             and save_results
-            and self.cfg.inference_mode
+            and (self.cfg.inference_mode or data_assimilation)
             and self.period == 'test'
         ):
-            result_file = parent_directory / f'{self.period}_results.zarr'
+            result_file = (
+                parent_directory / f'{self.period}_results{suffix}.zarr'
+            )
 
             dss = (
                 freq_results['xr'].assign_coords(freq=freq)
@@ -668,6 +726,8 @@ class BaseTester(object):
         loader: MultimetDataLoader,
         frequencies: list[str],
         basins: set[str] = set(),
+        data_assimilation: bool = False,
+        suffix: str = '',
     ):
         predict_last_n = self.cfg.predict_last_n
         if isinstance(predict_last_n, int):
@@ -675,7 +735,13 @@ class BaseTester(object):
                 frequencies[0]: predict_last_n
             }  # if predict_last_n is int, there's only one frequency
 
-        with torch.inference_mode():
+        # Data assimilation optimizes model components with autograd and thus
+        # cannot run in inference mode.
+        with (
+            contextlib.nullcontext()
+            if data_assimilation
+            else torch.inference_mode()
+        ):
             basin_samples = itertools.groupby(
                 loader, lambda data: data['basin_index'][0].item()
             )
@@ -720,7 +786,7 @@ class BaseTester(object):
                     ):
                         data = model.pre_model_hook(data, is_train=False)
                         predictions, loss = self._get_predictions_and_loss(
-                            model, data
+                            model, data, data_assimilation=data_assimilation
                         )
 
                     for freq in frequencies:
@@ -760,7 +826,9 @@ class BaseTester(object):
                 ):
                     save_dir = self.run_dir / 'hot_start_states'
                     save_dir.mkdir(parents=True, exist_ok=True)
-                    state_save_path = save_dir / f'state_{basin}.npz'
+                    # `save_state` runs an unassimilated forward pass; the
+                    # suffix keeps a DA run from overwriting the regular state.
+                    state_save_path = save_dir / f'state_{basin}{suffix}.npz'
                     model.save_state(last_data, state_save_path)
 
                 # set to NaN explicitly if all losses are NaN to avoid RuntimeWarning
@@ -788,10 +856,19 @@ class BaseTester(object):
                 yield res
 
     def _get_predictions_and_loss(
-        self, model: BaseModel, data: dict[str, torch.Tensor]
+        self,
+        model: BaseModel,
+        data: dict[str, torch.Tensor],
+        data_assimilation: bool = False,
     ) -> tuple[torch.Tensor, float]:
-        predictions = model(data)
-        _, all_losses = self.loss_obj(predictions, data)
+        predictions = (
+            self.assimilation.assimilate(model, data)
+            if data_assimilation
+            else model(data)
+        )
+        # Outside inference mode (DA path), grads are not needed for the loss.
+        with torch.no_grad() if data_assimilation else contextlib.nullcontext():
+            _, all_losses = self.loss_obj(predictions, data)
         return predictions, {k: v.item() for k, v in all_losses.items()}
 
     def _subset_targets(
@@ -889,13 +966,22 @@ class UncertaintyTester(BaseTester):
         )
 
     def _get_predictions_and_loss(
-        self, model: BaseModel, data: dict[str, torch.Tensor]
+        self,
+        model: BaseModel,
+        data: dict[str, torch.Tensor],
+        data_assimilation: bool = False,
     ) -> tuple[torch.Tensor, float]:
-        outputs = model(data)
-        _, all_losses = self.loss_obj(outputs, data)
-        predictions = model.sample(data, self.cfg.n_samples, outputs=outputs)
+        # With DA, the samples are drawn from the assimilated head outputs.
+        outputs, losses = super()._get_predictions_and_loss(
+            model, data, data_assimilation=data_assimilation
+        )
+        # Outside inference mode (DA path), grads are not needed for sampling.
+        with torch.no_grad() if data_assimilation else contextlib.nullcontext():
+            predictions = model.sample(
+                data, self.cfg.n_samples, outputs=outputs
+            )
         model.eval()
-        return predictions, {k: v.item() for k, v in all_losses.items()}
+        return predictions, losses
 
     def _subset_targets(
         self,
