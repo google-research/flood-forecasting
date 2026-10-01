@@ -218,29 +218,29 @@ def test_hres_open_data_extraction_and_spinup_1d_optimization(
   assert ds["hres_temperature_2m"].shape == (len(basins_gdf), 4, 10)
 
   # 1. Spin-up days (indices 0 and 1: 2026-09-25, 2026-09-26):
-  #    Only lead_time=1D (index 0) was downloaded and broadcast across leads 2D..10D
-  #    to satisfy googlehydrology validate_samples_all while hres_missing_fraction=1.0
-  #    on leads 2D..10D records that only lead_time=1D was fetched.
+  #    Only lead_time=1D (index 0) was downloaded; leads 2D..10D are strictly NaN.
   for d_idx in (0, 1):
     assert np.allclose(
-        ds["hres_temperature_2m"].values[:, d_idx, :], 20.0, atol=1e-2
+        ds["hres_temperature_2m"].values[:, d_idx, 0], 20.0, atol=1e-2
     )
     assert np.allclose(
-        ds["hres_surface_pressure"].values[:, d_idx, :], 101.325, atol=1e-2
+        ds["hres_surface_pressure"].values[:, d_idx, 0], 101.325, atol=1e-2
     )
     assert np.allclose(
-        ds["hres_total_precipitation"].values[:, d_idx, :], 5.0, atol=1e-2
+        ds["hres_total_precipitation"].values[:, d_idx, 0], 5.0, atol=1e-2
     )
     assert np.allclose(
-        ds["hres_surface_net_solar_radiation"].values[:, d_idx, :],
+        ds["hres_surface_net_solar_radiation"].values[:, d_idx, 0],
         200.0,
         atol=1e-2,
     )
     assert np.allclose(
-        ds["hres_surface_net_thermal_radiation"].values[:, d_idx, :],
+        ds["hres_surface_net_thermal_radiation"].values[:, d_idx, 0],
         -50.0,
         atol=1e-2,
     )
+    assert np.all(np.isnan(ds["hres_temperature_2m"].values[:, d_idx, 1:]))
+    assert np.all(np.isnan(ds["hres_total_precipitation"].values[:, d_idx, 1:]))
     assert np.allclose(
         ds["hres_missing_fraction"].values[:, d_idx, 0], 0.0, atol=1e-4
     )
@@ -399,8 +399,9 @@ def test_coldstart_and_hotstart_end_to_end_workflow(
   # Verify on-disk Zarr stores after Cold-Start
   with xr.open_zarr(cold_res["HRES"]) as ds_hres_1:
     assert len(ds_hres_1["date"]) == 5
-    # 2026-09-21..24 have lead 1D broadcast across leads and missing_fraction=1.0 on leads 2D..10D
-    assert np.all(~np.isnan(ds_hres_1["hres_temperature_2m"].values[:, :4, :]))
+    # 2026-09-21..24 have lead 1D valid and leads 2D..10D strictly NaN
+    assert np.all(~np.isnan(ds_hres_1["hres_temperature_2m"].values[:, :4, 0]))
+    assert np.all(np.isnan(ds_hres_1["hres_temperature_2m"].values[:, :4, 1:]))
     assert np.allclose(ds_hres_1["hres_missing_fraction"].values[:, :4, 0], 0.0)
     assert np.allclose(ds_hres_1["hres_missing_fraction"].values[:, :4, 1:], 1.0)
     # 2026-09-25 (index 4) has all 10 lead days valid with missing_fraction=0.0!
@@ -409,13 +410,13 @@ def test_coldstart_and_hotstart_end_to_end_workflow(
 
   with xr.open_zarr(cold_res["IMERG"]) as ds_imerg_1:
     assert len(ds_imerg_1["date"]) == 5
-    # 2026-09-25 (index 4) was trailing NaN due to simulated 1-day lag -> forward-filled with 4.0
-    # while imerg_missing_fraction[:, 4] == 1.0 records that it is latency-bridged!
-    assert np.allclose(ds_imerg_1["imerg_precipitation"].values[:, :5], 4.0)
+    # 2026-09-25 (index 4) is strictly NaN due to simulated 1-day lag
+    assert np.allclose(ds_imerg_1["imerg_precipitation"].values[:, :4], 4.0)
+    assert np.all(np.isnan(ds_imerg_1["imerg_precipitation"].values[:, 4]))
     assert np.allclose(ds_imerg_1["imerg_missing_fraction"].values[:, :4], 0.0)
     assert np.allclose(ds_imerg_1["imerg_missing_fraction"].values[:, 4], 1.0)
 
-  # Confirm inspect_store_last_valid_date backs up over the latency-bridged 2026-09-25 (missing_fraction==1.0)
+  # Confirm inspect_store_last_valid_date backs up over the trailing NaN on 2026-09-25
   writer = MultiMetZarrWriter(out_dir)
   assert inspect_store_last_valid_date(writer, Product.IMERG, basin_ids) == pd.Timestamp(
       "2026-09-24"
