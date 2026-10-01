@@ -19,12 +19,17 @@ import re
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 import pandas as pd
 import pydantic
 import pydantic.dataclasses
 from ruamel.yaml import YAML
+
+if TYPE_CHECKING:
+    # Only for typing; imported lazily at runtime to avoid an import cycle
+    # (AssimilationConfig subclasses Config).
+    from googlehydrology.utils.assimilationconfig import AssimilationConfig
 
 T = TypeVar('T')
 U = TypeVar('U')
@@ -129,7 +134,6 @@ class Config(object):
             new_name = re.sub(' ', '', new_name)
 
             self._cfg['experiment_name'] = new_name
-            
 
     def as_dict(self) -> dict:
         """Return run configuration as dictionary.
@@ -261,8 +265,7 @@ class Config(object):
         unknown_keys = [
             k
             for k in cfg.keys()
-            if k not in property_names
-            and k not in Config._metadata_keys
+            if k not in property_names and k not in Config._metadata_keys
         ]
         if unknown_keys:
             raise ValueError(f'{unknown_keys} are not recognized config keys.')
@@ -382,6 +385,34 @@ class Config(object):
     @property
     def allow_subsequent_nan_losses(self) -> int:
         return self._cfg.get('allow_subsequent_nan_losses', 0)
+
+    @property
+    def assimilate(self) -> bool:
+        """Whether to run data assimilation before each forecast."""
+        return self._cfg.get('assimilate', False)
+
+    @assimilate.setter
+    def assimilate(self, flag: bool) -> None:
+        self._cfg['assimilate'] = bool(flag)
+
+    @property
+    def assimilation_config(self) -> 'AssimilationConfig | None':
+        """The parsed and validated ``assimilation_config``, or None.
+
+        The returned object is a :py:class:`Config` built from this run config
+        overlaid with the nested dict, so it inherits all run-config keys. It
+        is rebuilt (and thereby validated) on every access, so it always
+        reflects the current config; read it once if it is needed repeatedly.
+        """
+        da_cfg = self._cfg.get('assimilation_config', None)
+        if da_cfg is None:
+            return None
+        # Imported here to avoid a cycle: AssimilationConfig subclasses Config.
+        from googlehydrology.utils.assimilationconfig import (  # noqa: PLC0415
+            AssimilationConfig,
+        )
+
+        return AssimilationConfig(da_cfg, parent_cfg=self._cfg)
 
     @property
     def base_run_dir(self) -> Path:
@@ -578,7 +609,7 @@ class Config(object):
     @property
     def load_as_csv(self) -> bool:
         return self._cfg.get('load_as_csv', False)
-        
+
     @property
     def log_interval(self) -> int:
         return self._cfg.get('log_interval', 10)
