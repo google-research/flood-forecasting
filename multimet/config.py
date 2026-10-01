@@ -34,6 +34,9 @@ class Product(enum.Enum):
   HRES = "HRES"
   GRAPHCAST = "GRAPHCAST"
   AIFS = "AIFS"
+  GFS = "GFS"
+  GEFS = "GEFS"
+  IFS_ENS = "IFS_ENS"
   DYNAMICAL_IMERG = "DYNAMICAL_IMERG"
 
 
@@ -46,6 +49,9 @@ PRODUCT_TYPES: Mapping[Product, ProductType] = {
     Product.HRES: ProductType.FORECAST,
     Product.GRAPHCAST: ProductType.FORECAST,
     Product.AIFS: ProductType.FORECAST,
+    Product.GFS: ProductType.FORECAST,
+    Product.GEFS: ProductType.FORECAST,
+    Product.IFS_ENS: ProductType.FORECAST,
     Product.DYNAMICAL_IMERG: ProductType.NOWCAST,
 }
 
@@ -54,6 +60,9 @@ FORECAST_LEAD_DAYS: Mapping[Product, int] = {
     Product.HRES: 10,
     Product.GRAPHCAST: 10,
     Product.AIFS: 10,
+    Product.GFS: 10,
+    Product.GEFS: 10,
+    Product.IFS_ENS: 10,
 }
 
 # Target bands / data variable names per product in Caravan-MultiMet.
@@ -126,6 +135,24 @@ PRODUCT_BANDS: Mapping[Product, Tuple[str, ...]] = {
         "aifs_u_component_of_wind_10m",
         "aifs_v_component_of_wind_10m",
     ),
+    Product.GFS: (
+        "gfs_temperature_2m",
+        "gfs_total_precipitation",
+        "gfs_u_component_of_wind_10m",
+        "gfs_v_component_of_wind_10m",
+    ),
+    Product.GEFS: (
+        "gefs_temperature_2m",
+        "gefs_total_precipitation",
+        "gefs_u_component_of_wind_10m",
+        "gefs_v_component_of_wind_10m",
+    ),
+    Product.IFS_ENS: (
+        "ifs_ens_temperature_2m",
+        "ifs_ens_total_precipitation",
+        "ifs_ens_u_component_of_wind_10m",
+        "ifs_ens_v_component_of_wind_10m",
+    ),
     Product.DYNAMICAL_IMERG: ("imerg_precipitation",),
 }
 
@@ -141,6 +168,9 @@ MISSING_FRACTION_VAR: Mapping[Product, str] = {
     Product.HRES: "hres_missing_fraction",
     Product.GRAPHCAST: "graphcast_missing_fraction",
     Product.AIFS: "aifs_missing_fraction",
+    Product.GFS: "gfs_missing_fraction",
+    Product.GEFS: "gefs_missing_fraction",
+    Product.IFS_ENS: "ifs_ens_missing_fraction",
     Product.DYNAMICAL_IMERG: "imerg_missing_fraction",
 }
 
@@ -579,6 +609,80 @@ PRODUCT_METADATA_ATTRS: Mapping[Product, Mapping[str, Any]] = {
         ),
         "Version": "1.1",
     },
+    Product.GFS: {
+        "Citation": (
+            "National Centers for Environmental Prediction (NCEP) / National"
+            " Weather Service / NOAA / U.S. Department of Commerce (2015):"
+            " NCEP GFS 0.25 Degree Global Forecast Grids Historical Archive."
+        ),
+        "License": (
+            "U.S. Government Public Domain Work (17 U.S.C. § 105) / CC-BY-4.0"
+            " via dynamical.org."
+        ),
+        "Product": "NOAA GFS Operational Forecast (10-day)",
+        "Released": "2024-11-18",
+        "Sources": (
+            "NOAA Global Forecast System (GFS) 0.25-degree operational"
+            " forecasts accessed via dynamical.org Icechunk catalog."
+            " https://dynamical.org/catalog/noaa-gfs-forecast"
+        ),
+        "Units": (
+            "temperature_2m: 2m air temperature [°C]\n"
+            "total_precipitation: Total precipitation [mm]\n"
+            "u_component_of_wind_10m: U-component of wind at 10m [m/s]\n"
+            "v_component_of_wind_10m: V-component of wind at 10m [m/s]"
+        ),
+        "Version": "1.1",
+    },
+    Product.GEFS: {
+        "Citation": (
+            "Zhou, X., Zhu, Y., Hou, D., et al. (2022): The development of"
+            " the NCEP Global Ensemble Forecast System version 12. Weather"
+            " and Forecasting, 37(6), 1069-1084."
+        ),
+        "License": (
+            "U.S. Government Public Domain Work (17 U.S.C. § 105) / CC-BY-4.0"
+            " via dynamical.org."
+        ),
+        "Product": "NOAA GEFS Operational Forecast (10-day)",
+        "Released": "2024-11-18",
+        "Sources": (
+            "NOAA Global Ensemble Forecast System (GEFS) 0.25-degree"
+            " operational forecasts accessed via dynamical.org Icechunk"
+            " catalog. https://dynamical.org/catalog/noaa-gefs-forecast-35-day"
+        ),
+        "Units": (
+            "temperature_2m: 2m air temperature [°C]\n"
+            "total_precipitation: Total precipitation [mm]\n"
+            "u_component_of_wind_10m: U-component of wind at 10m [m/s]\n"
+            "v_component_of_wind_10m: V-component of wind at 10m [m/s]"
+        ),
+        "Version": "1.1",
+    },
+    Product.IFS_ENS: {
+        "Citation": (
+            "ECMWF (2024): IFS Ensemble (ENS) Operational Atmospheric Model"
+            " Forecasts. European Centre for Medium-Range Weather Forecasts."
+        ),
+        "License": (
+            "Creative Commons Attribution 4.0 International (CC-BY-4.0)."
+            " ECMWF Open Data / dynamical.org."
+        ),
+        "Product": "ECMWF IFS Ensemble Forecast (10-day)",
+        "Released": "2024-11-18",
+        "Sources": (
+            "ECMWF IFS Ensemble (ENS) 0.25-degree operational forecasts"
+            " accessed via dynamical.org Icechunk catalog."
+            " https://dynamical.org/catalog/ecmwf-ifs-ens-forecast-15-day-0-25-degree"
+        ),
+        "Units": (
+            "temperature_2m: 2m air temperature [°C]\n"
+            "total_precipitation: Total precipitation [mm]\n"
+            "u_component_of_wind_10m: U-component of wind at 10m [m/s]\n"
+            "v_component_of_wind_10m: V-component of wind at 10m [m/s]"
+        ),
+        "Version": "1.1",
+    },
     Product.CHIRPS: {
         "Citation": (
             "Funk, C., Peterson, P., Landsfeld, M., Pedreros, D., Verdin, J.,"
@@ -681,6 +785,15 @@ DEFAULT_STORAGE_PATHS: Mapping[Product, Mapping[str, str]] = {
     Product.GRAPHCAST: {},
     Product.AIFS: {
         "dynamical_id": "ecmwf-aifs-single-forecast",
+    },
+    Product.GFS: {
+        "dynamical_id": "noaa-gfs-forecast",
+    },
+    Product.GEFS: {
+        "dynamical_id": "noaa-gefs-forecast-35-day",
+    },
+    Product.IFS_ENS: {
+        "dynamical_id": "ecmwf-ifs-ens-forecast-15-day-0-25-degree",
     },
     Product.DYNAMICAL_IMERG: {
         "dynamical_id": "nasa-imerg-analysis-early",

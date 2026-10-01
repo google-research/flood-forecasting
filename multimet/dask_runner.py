@@ -54,7 +54,13 @@ from multimet.config import (
     ProductType,
 )
 from multimet.cpc import CPCExtractor
-from multimet.dynamical import AIFSExtractor, DynamicalIMERGExtractor
+from multimet.dynamical import (
+    AIFSExtractor,
+    DynamicalIMERGExtractor,
+    GEFSExtractor,
+    GFSExtractor,
+    IFSEnsExtractor,
+)
 from multimet.era5_land import ERA5LandExtractor
 from multimet.geometry import load_basin_geometries
 from multimet.graphcast import GraphCastExtractor
@@ -74,6 +80,9 @@ PRODUCT_MAP: Dict[str, Tuple[Product, type[BaseExtractor]]] = {
     "HRES": (Product.HRES, HRESExtractor),
     "GRAPHCAST": (Product.GRAPHCAST, GraphCastExtractor),
     "AIFS": (Product.AIFS, AIFSExtractor),
+    "GFS": (Product.GFS, GFSExtractor),
+    "GEFS": (Product.GEFS, GEFSExtractor),
+    "IFS_ENS": (Product.IFS_ENS, IFSEnsExtractor),
     "DYNAMICAL_IMERG": (Product.DYNAMICAL_IMERG, DynamicalIMERGExtractor),
 }
 
@@ -419,7 +428,7 @@ def extract_product_dask(
         else ("local" if source_lower == "local" else source_lower)
     )
     extractor_kwargs["source"] = src
-  elif prod_name in ("AIFS", "DYNAMICAL_IMERG"):
+  elif prod_name in ("AIFS", "GFS", "GEFS", "IFS_ENS", "DYNAMICAL_IMERG"):
     extractor_kwargs["source"] = source_lower
 
   from multimet.zarr_writer import check_zarr_store_exists
