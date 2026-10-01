@@ -26,6 +26,11 @@ import pydantic
 import pydantic.dataclasses
 from ruamel.yaml import YAML
 
+from googlehydrology.utils.assimilationconfig import (
+    INHERITED_KEYS,
+    AssimilationConfig,
+)
+
 T = TypeVar('T')
 U = TypeVar('U')
 
@@ -382,6 +387,36 @@ class Config(object):
     @property
     def allow_subsequent_nan_losses(self) -> int:
         return self._cfg.get('allow_subsequent_nan_losses', 0)
+
+    @property
+    def assimilate(self) -> bool:
+        return self._cfg.get('assimilate', False)
+
+    @assimilate.setter
+    def assimilate(self, flag: bool):
+        self._cfg['assimilate'] = bool(flag)
+
+    @property
+    def assimilation_config(self) -> AssimilationConfig | None:
+        """The parsed and validated ``assimilation_config``, or None.
+
+        Keys listed in ``INHERITED_KEYS`` that are not given in the nested dict
+        are inherited from this run config. The object is rebuilt (and thereby
+        validated) on every access, so it always reflects the current config;
+        read it once if it is needed repeatedly.
+        """
+        da_cfg = self._cfg.get('assimilation_config', None)
+        if da_cfg is None:
+            return None
+        if not isinstance(da_cfg, dict):
+            raise ValueError(
+                f'assimilation_config must be a dict, got {type(da_cfg)}.'
+            )
+        da_cfg = dict(da_cfg)
+        for key in INHERITED_KEYS:
+            if da_cfg.get(key) is None and self._cfg.get(key) is not None:
+                da_cfg[key] = self._cfg[key]
+        return AssimilationConfig(da_cfg)
 
     @property
     def base_run_dir(self) -> Path:
