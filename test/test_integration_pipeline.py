@@ -762,3 +762,21 @@ def test_cmal_evaluation_with_data_assimilation(
         sim = ds['streamflow_sim']
         assert sim.sizes['samples'] == 5
         assert np.all(np.isfinite(sim.to_numpy()))
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_evaluation_assimilate_flag_overrides_config(
+    trained_regression_run: Path,
+) -> None:
+    """`--assimilate` runs DA despite the config saying `assimilate: false`."""
+    run_dir = trained_regression_run
+    _update_run_config(run_dir, assimilate=False)
+    run_cli(
+        ['evaluate', '--run-dir', str(run_dir), '--epoch', '1', '--assimilate']
+    )
+    eval_dir = run_dir / 'test' / 'model_epoch001'
+    assert (eval_dir / 'test_results_data_assimilation.zarr').is_dir()
+    assert (eval_dir / 'test_metrics_data_assimilation.csv').is_file()
+    # The flag must not be written back into the run config.
+    assert Config(run_dir / 'config.yml').assimilate is False

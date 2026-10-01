@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import argparse
+import copy
 import logging
 import sys
 from pathlib import Path
@@ -61,6 +62,12 @@ def _get_args() -> dict:
         type=int,
         help="GPU id to use. Overrides config argument 'device'. Use a value < 0 for CPU.",
     )
+    parser.add_argument(
+        '--assimilate',
+        action='store_true',
+        help='Run data assimilation during evaluate/infer. Overrides config '
+        "argument 'assimilate'; requires an 'assimilation_config'.",
+    )
     args = vars(parser.parse_args())
 
     if (args['mode'] in ['convert_caravan', 'convert-caravan']):
@@ -78,6 +85,11 @@ def _get_args() -> dict:
 
     if (args['mode'] in ['evaluate', 'infer']) and (args['run_dir'] is None):
         raise ValueError('Missing path to run directory')
+
+    if args['assimilate'] and args['mode'] not in ['evaluate', 'infer']:
+        raise ValueError(
+            '--assimilate is only supported in evaluate and infer modes'
+        )
 
     return args
 
@@ -152,6 +164,8 @@ def _main():
             period=args['period'],
             epoch=args['epoch'],
             gpu=args['gpu'],
+            # Without the flag, the config's `assimilate` setting applies.
+            assimilate=True if args['assimilate'] else None,
         )
     else:
         raise RuntimeError(f'Unknown mode {args["mode"]}')
@@ -256,6 +270,8 @@ def eval_run(
     period: str,
     epoch: int = None,
     gpu: int = None,
+    *,
+    assimilate: bool | None = None,
 ):
     """Start evaluating a trained model.
 
@@ -272,8 +288,21 @@ def eval_run(
     gpu : int, optional
         GPU id to use. Will override config argument 'device'. A value less than zero indicates CPU.
         Don't use this argument if you want to use the device as specified in the config file e.g. MPS.
+    assimilate : bool, optional
+        Whether to run data assimilation during evaluation. Overrides config
+        argument 'assimilate' (on a copy of `config`); None keeps the config
+        setting. Requires an 'assimilation_config' in the run config.
 
     """
+    if assimilate is not None:
+        if assimilate and config.assimilation_config is None:
+            raise ValueError(
+                'Data assimilation was requested (--assimilate) but the run '
+                'config has no assimilation_config.'
+            )
+        config = copy.deepcopy(config)
+        config.assimilate = assimilate
+
     # check if a GPU has been specified as command line argument. If yes, overwrite config
     if gpu is not None and gpu >= 0:
         config.device = f'cuda:{gpu}'
