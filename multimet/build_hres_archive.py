@@ -36,6 +36,7 @@ import json
 import logging
 import multiprocessing as mp
 import os
+import threading
 import time
 from collections.abc import Sequence
 
@@ -44,10 +45,21 @@ import pandas as pd
 import tqdm
 import xarray as xr
 
+_RASTERIO_LOCK = threading.Lock()
+
 try:
   import eccodes  # type: ignore[import-untyped]
 except ImportError:
   eccodes = None
+
+try:
+  import rasterio  # type: ignore[import-untyped]
+  from rasterio.io import MemoryFile  # type: ignore[import-untyped]
+
+  logging.getLogger("rasterio").setLevel(logging.CRITICAL)
+except ImportError:
+  rasterio = None
+  MemoryFile = None
 
 try:
   import gcsfs  # type: ignore[import-untyped]
@@ -222,6 +234,56 @@ class WeatherBench2Source:
     }
 
 
+def decode_grib2_message(
+    raw_bytes: bytes,
+    expected_shape: tuple[int, int],
+    *,
+    param: str = "",
+    context: str = "",
+) -> np.ndarray:
+  """Decodes a single GRIB2 message into a 2D float32 array in raw WMO units.
+
+  Uses ``eccodes`` when available and falls back to GDAL's GRIB2 driver via
+  ``rasterio.io.MemoryFile`` with ``GRIB_NORMALIZE_UNITS="NO"`` (so that ``2t``
+  remains in Kelvin rather than being converted to Celsius by GDAL).
+  """
+  if eccodes is not None:
+    gid = eccodes.codes_new_from_message(raw_bytes)
+    try:
+      vals = eccodes.codes_get_values(gid)
+    finally:
+      eccodes.codes_release(gid)
+
+    if vals.size != expected_shape[0] * expected_shape[1]:
+      label = f" for {param} at {context}" if (param or context) else ""
+      raise ValueError(
+          f"Grid size mismatch{label}: "
+          f"got {vals.size} values, expected {expected_shape}"
+      )
+    return vals.reshape(expected_shape).astype(np.float32)
+
+  if rasterio is not None and MemoryFile is not None:
+    with _RASTERIO_LOCK:
+      with MemoryFile(raw_bytes, ext=".grib2") as memfile:
+        with memfile.open() as dataset:
+          arr = dataset.read(1).astype(np.float32)
+          grib_unit = dataset.tags(1).get("GRIB_UNIT", "")
+    if grib_unit == "[C]":
+      arr = arr + np.float32(273.15)
+    if arr.size != expected_shape[0] * expected_shape[1]:
+      label = f" for {param} at {context}" if (param or context) else ""
+      raise ValueError(
+          f"Grid size mismatch{label}: "
+          f"got {arr.size} values, expected {expected_shape}"
+      )
+    return arr.reshape(expected_shape)
+
+  raise ImportError(
+      "eccodes or rasterio is required to decode ECMWF Open Data GRIB2 files. "
+      "Install python-eccodes or rasterio."
+  )
+
+
 class ECMWFOpenDataSource:
   """Extracts 0.25-degree daily surface aggregates from ECMWF Open Data GRIB2."""
 
@@ -243,10 +305,10 @@ class ECMWFOpenDataSource:
     Does not fall back to coarser grids (such as ``0p4-beta``) or interpolate.
     Raises if any GRIB message is corrupted or missing required parameters.
     """
-    if eccodes is None:
+    if eccodes is None and (rasterio is None or MemoryFile is None):
       raise ImportError(
-          "eccodes is required to decode ECMWF Open Data GRIB2 files. "
-          "Install python-eccodes / eccodes."
+          "eccodes or rasterio is required to decode ECMWF Open Data GRIB2 files. "
+          "Install python-eccodes / eccodes or rasterio."
       )
 
     date_str = date.strftime("%Y%m%d")
@@ -282,18 +344,14 @@ class ECMWFOpenDataSource:
           off, length = offsets[param]
           f.seek(off)
           raw_bytes = f.read(length)
-          gid = eccodes.codes_new_from_message(raw_bytes)
-          try:
-            vals = eccodes.codes_get_values(gid)
-          finally:
-            eccodes.codes_release(gid)
-
-          if vals.size != expected_shape[0] * expected_shape[1]:
-            raise ValueError(
-                f"Grid size mismatch for {param} at {date_str} +{step}h: "
-                f"got {vals.size} values, expected {expected_shape}"
-            )
-          param_steps.append(vals.reshape(expected_shape).astype(np.float32))
+          param_steps.append(
+              decode_grib2_message(
+                  raw_bytes,
+                  expected_shape,
+                  param=param,
+                  context=f"{date_str} +{step}h",
+              )
+          )
 
     return {
         "temperature_2m": np.stack(raw_steps["2t"], axis=0),

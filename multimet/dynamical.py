@@ -736,6 +736,7 @@ class DynamicalIMERGExtractor(BaseExtractor):
       end_date: Optional[Union[str, pd.Timestamp]] = None,
       weights_matrix: Optional[ZonalWeightMatrix] = None,
       use_bounding_box: bool = True,
+      require_complete_day: bool = True,
       **kwargs,
   ) -> xr.Dataset:
     """Extracts daily accumulated IMERG precipitation for given basins."""
@@ -748,6 +749,10 @@ class DynamicalIMERGExtractor(BaseExtractor):
     end_dt = pd.to_datetime(end_date) if end_date is not None else start_dt
     date_idx = pd.date_range(start_dt, end_dt, freq="D")
 
+    precip_matrix = np.full(
+        (len(basin_ids), len(date_idx)), np.nan, dtype=np.float32
+    )
+
     # Load geographically clipped half-hourly cube from Icechunk
     sub_ds = self.loader.load_spatial_subset(
         watersheds=basins_gdf,
@@ -758,44 +763,47 @@ class DynamicalIMERGExtractor(BaseExtractor):
         compute=True,
     )
 
-    sub_lats = sub_ds.latitude.values
-    sub_lons = sub_ds.longitude.values
+    if "time" in sub_ds.dims and len(sub_ds.time) > 0:
+      sub_lats = sub_ds.latitude.values
+      sub_lons = sub_ds.longitude.values
 
-    if (
-        weights_matrix is not None
-        and weights_matrix.grid_shape == (len(sub_lats), len(sub_lons))
-        and np.allclose(weights_matrix.lats, sub_lats)
-        and np.allclose(weights_matrix.lons, sub_lons)
-    ):
-      matrix = weights_matrix
-    else:
-      dlat = (
-          abs(float(sub_lats[1] - sub_lats[0])) if len(sub_lats) > 1 else 0.1
-      )
-      dlon = (
-          abs(float(sub_lons[1] - sub_lons[0])) if len(sub_lons) > 1 else 0.1
-      )
-      matrix = ZonalWeightMatrix.from_geodataframe(
-          basins_gdf, sub_lats, sub_lons, cell_res_lat=dlat, cell_res_lon=dlon
-      )
+      if (
+          weights_matrix is not None
+          and weights_matrix.grid_shape == (len(sub_lats), len(sub_lons))
+          and np.allclose(weights_matrix.lats, sub_lats)
+          and np.allclose(weights_matrix.lons, sub_lons)
+      ):
+        matrix = weights_matrix
+      else:
+        dlat = (
+            abs(float(sub_lats[1] - sub_lats[0])) if len(sub_lats) > 1 else 0.1
+        )
+        dlon = (
+            abs(float(sub_lons[1] - sub_lons[0])) if len(sub_lons) > 1 else 0.1
+        )
+        matrix = ZonalWeightMatrix.from_geodataframe(
+            basins_gdf, sub_lats, sub_lons, cell_res_lat=dlat, cell_res_lon=dlon
+        )
 
-    # Convert half-hourly flux (kg m-2 s-1) to 30-min depth (mm), then resample to daily sum
-    daily_depth = (
-        (sub_ds["precipitation_surface"] * 1800.0)
-        .resample(time="1D")
-        .sum(dim="time")
-    )
-    reduced = matrix.reduce_3d(daily_depth.values)
+      raw_times = pd.DatetimeIndex(pd.to_datetime(sub_ds.time.values))
+      day_step_counts = raw_times.floor("D").value_counts()
 
-    precip_matrix = np.full(
-        (len(basin_ids), len(date_idx)), np.nan, dtype=np.float32
-    )
-    daily_times = pd.to_datetime(daily_depth.time.values)
-    for t_idx, t_val in enumerate(daily_times):
-      dt_day = pd.to_datetime(t_val.strftime("%Y-%m-%d"))
-      if dt_day in date_idx:
-        d_pos = date_idx.get_loc(dt_day)
-        precip_matrix[:, d_pos] = reduced[:, t_idx]
+      # Convert half-hourly flux (kg m-2 s-1) to 30-min depth (mm), then resample to daily sum
+      daily_depth = (
+          (sub_ds["precipitation_surface"] * 1800.0)
+          .resample(time="1D")
+          .sum(dim="time", min_count=1)
+      )
+      reduced = matrix.reduce_3d(daily_depth.values)
+
+      daily_times = pd.to_datetime(daily_depth.time.values)
+      for t_idx, t_val in enumerate(daily_times):
+        dt_day = pd.to_datetime(t_val.strftime("%Y-%m-%d"))
+        if require_complete_day and day_step_counts.get(dt_day, 0) < 48:
+          continue
+        if dt_day in date_idx:
+          d_pos = date_idx.get_loc(dt_day)
+          precip_matrix[:, d_pos] = reduced[:, t_idx]
 
     ds = xr.Dataset(
         data_vars={

@@ -43,21 +43,58 @@ import urllib.request
 logger = logging.getLogger(__name__)
 
 
-def ensure_psl_cpc_netcdf(year: int, cache_dir: str = "/tmp/cpc_cache") -> str:
-  """Downloads and caches yearly NOAA PSL CPC NetCDF file if not already present."""
+def _netcdf_contains_date(nc_path: str, target_dt: pd.Timestamp) -> bool:
+  """Returns True if the cached CPC NetCDF file contains target_dt."""
+  target_day = pd.to_datetime(target_dt).floor("D")
+  try:
+    if netCDF4 is not None:
+      with netCDF4.Dataset(nc_path, "r") as nc:
+        t_var = nc.variables["time"]
+        if len(t_var) == 0:
+          return False
+        dates = netCDF4.num2date(t_var[:], units=t_var.units)
+        max_dt = max(pd.to_datetime(str(d)[:10]) for d in dates)
+        return bool(target_day <= max_dt)
+    with xr.open_dataset(nc_path) as ds:
+      if len(ds.time) == 0:
+        return False
+      max_dt = pd.to_datetime(ds.time.values).max().floor("D")
+      return bool(target_day <= max_dt)
+  except Exception:  # noqa: BLE001
+    return False
+
+
+def ensure_psl_cpc_netcdf(
+    year: int,
+    cache_dir: str = "/tmp/cpc_cache",
+    required_date: Optional[Union[str, pd.Timestamp]] = None,
+    max_cache_age_seconds: float = 21600.0,
+) -> str:
+  """Downloads and caches yearly NOAA PSL CPC NetCDF file if not already present or stale."""
   os.makedirs(cache_dir, exist_ok=True)
   local_path = os.path.join(cache_dir, f"precip.{year}.nc")
+  needs_refresh = False
   if os.path.exists(local_path) and os.path.getsize(local_path) > 1024 * 1024:
-    return local_path
+    if required_date is not None:
+      req_dt = pd.to_datetime(required_date).floor("D")
+      age_s = time.time() - os.path.getmtime(local_path)
+      if age_s > max_cache_age_seconds and not _netcdf_contains_date(
+          local_path, req_dt
+      ):
+        needs_refresh = True
+    if not needs_refresh:
+      return local_path
 
   url = f"https://downloads.psl.noaa.gov/Datasets/cpc_global_precip/precip.{year}.nc"
   temp_path = f"{local_path}.tmp.{os.getpid()}.{time.time_ns()}"
   try:
-    if not (os.path.exists(local_path) and os.path.getsize(local_path) > 1024 * 1024):
+    if needs_refresh or not (
+        os.path.exists(local_path) and os.path.getsize(local_path) > 1024 * 1024
+    ):
       logger.info("Downloading NOAA PSL CPC NetCDF for %d from %s...", year, url)
       with urllib.request.urlopen(url, timeout=120) as response, open(temp_path, "wb") as out_f:
         shutil.copyfileobj(response, out_f)
-      if not (os.path.exists(local_path) and os.path.getsize(local_path) > 1024 * 1024):
+      if os.path.exists(temp_path) and os.path.getsize(temp_path) > 1024 * 1024:
         os.replace(temp_path, local_path)
         logger.info("Cached %s (%.1f MB)", local_path, os.path.getsize(local_path) / 1e6)
   finally:
@@ -328,8 +365,15 @@ class CPCExtractor(BaseExtractor):
 
     years = sorted(list(set(d.year for d in date_idx)))
     for yr in years:
-      nc_path = ensure_psl_cpc_netcdf(yr, cache_dir=self.cache_dir)
       days_in_year = [d for d in date_idx if d.year == yr]
+      try:
+        nc_path = ensure_psl_cpc_netcdf(
+            yr,
+            cache_dir=self.cache_dir,
+            required_date=max(days_in_year) if days_in_year else None,
+        )
+      except TypeError:
+        nc_path = ensure_psl_cpc_netcdf(yr, cache_dir=self.cache_dir)
 
       if netCDF4 is not None:
         with netCDF4.Dataset(nc_path, "r") as nc:
@@ -412,7 +456,12 @@ class CPCExtractor(BaseExtractor):
     from multimet.gridded_archive import _warn_missing_variables_once
 
     dt = pd.to_datetime(dt)
-    nc_path = ensure_psl_cpc_netcdf(dt.year, cache_dir=self.cache_dir)
+    try:
+      nc_path = ensure_psl_cpc_netcdf(
+          dt.year, cache_dir=self.cache_dir, required_date=dt
+      )
+    except TypeError:
+      nc_path = ensure_psl_cpc_netcdf(dt.year, cache_dir=self.cache_dir)
     num_basins = matrix.matrix.shape[0]
     res = np.full(num_basins, np.nan, dtype=np.float32)
     stations = np.full(num_basins, np.nan, dtype=np.float32)

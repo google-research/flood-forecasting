@@ -232,7 +232,7 @@ def extract_multimet_serial(
     elif prod_name == "CPC":
       src = (
           "psl"
-          if source_lower in ("public", "auto", "upstream")
+          if source_lower in ("public", "auto", "upstream", "realtime", "open_data")
           else ("binary" if source_lower == "local" else source_lower)
       )
       extractor = CPCExtractor(
@@ -240,9 +240,13 @@ def extract_multimet_serial(
       )
     elif prod_name == "IMERG":
       src = (
-          "gesdisc"
-          if source_lower in ("public", "auto", "upstream")
-          else ("h5" if source_lower == "local" else source_lower)
+          "dynamical"
+          if source_lower == "realtime"
+          else (
+              "gesdisc"
+              if source_lower in ("public", "auto", "upstream", "open_data")
+              else ("h5" if source_lower == "local" else source_lower)
+          )
       )
       extractor = IMERGExtractor(
           data_dir=norm_data_dirs.get(prod_name),
@@ -254,9 +258,13 @@ def extract_multimet_serial(
       )
     elif prod_name == "HRES":
       src = (
-          "wb2"
-          if source_lower in ("public", "auto", "upstream")
-          else source_lower
+          "open_data"
+          if source_lower in ("realtime", "open_data", "ecmwf_open_data", "ecmwf")
+          else (
+              "wb2"
+              if source_lower in ("public", "auto", "upstream")
+              else source_lower
+          )
       )
       extractor = HRESExtractor(
           data_dir=norm_data_dirs.get(prod_name), source=src
