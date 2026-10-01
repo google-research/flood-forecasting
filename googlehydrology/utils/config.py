@@ -83,9 +83,9 @@ class Config(object):
         the config file or dict contain unrecognized keys.
     """
 
-    # Lists of deprecated config keys and purely informational metadata keys, needed when checking for unrecognized
-    # config keys since these keys are not properties of the Config class.
-    _metadata_keys = ['package_version', 'commit_hash']
+    # Configuration flags and informational metadata accepted by key validation
+    # even though they are not exposed as Config properties.
+    _metadata_keys = ['package_version', 'commit_hash', 'dev_mode']
 
     def __init__(self, yml_path_or_dict: Path | dict, dev_mode: bool = False):
         if isinstance(yml_path_or_dict, Path):
