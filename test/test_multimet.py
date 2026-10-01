@@ -717,7 +717,7 @@ def test_product_name_parsing_and_normalization():
 
 
 @patch('googlehydrology.datasetzoo.multimet.load_caravan_attributes')
-@patch('googlehydrology.datasetzoo.multimet.load_caravan_timeseries_together')
+@patch('googlehydrology.datasetzoo.multimet.load_caravan_timeseries')
 @patch('googlehydrology.datasetzoo.multimet._open_zarr')
 @patch('googlehydrology.datasetzoo.multimet.load_basin_file')
 def test_multimet_dict_inputs_and_missing_band_validation(
@@ -801,6 +801,7 @@ def test_multimet_dict_inputs_and_missing_band_validation(
     )
 
     dataset = Multimet(cfg=cfg, is_train=True, period='train')
+    mock_load_targets.assert_called_once()
     sample = dataset[0]
     assert 'chirps_gefs_precip' in sample['x_d_hindcast']
     assert 'era5_land_temp' in sample['x_d_hindcast']
