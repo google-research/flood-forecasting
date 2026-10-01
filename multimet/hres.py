@@ -814,7 +814,10 @@ class HRESExtractor(BaseExtractor):
             )
           else:
             for band, reduced_vals in reduced_by_band.items():
-              data_dict[band][:, d_pos, :n_leads_fetched] = reduced_vals
+              if n_leads_fetched == 1 and shape[2] > 1:
+                data_dict[band][:, d_pos, :] = reduced_vals[:, :1]
+              else:
+                data_dict[band][:, d_pos, :n_leads_fetched] = reduced_vals
             if day_miss is not None:
               missing_fraction[:, d_pos, :n_leads_fetched] = day_miss
           pbar.update(1)
@@ -835,7 +838,10 @@ class HRESExtractor(BaseExtractor):
               )
             else:
               for band, reduced_vals in reduced_by_band.items():
-                data_dict[band][:, d_pos, :n_leads_fetched] = reduced_vals
+                if n_leads_fetched == 1 and shape[2] > 1:
+                  data_dict[band][:, d_pos, :] = reduced_vals[:, :1]
+                else:
+                  data_dict[band][:, d_pos, :n_leads_fetched] = reduced_vals
               if day_miss is not None:
                 missing_fraction[:, d_pos, :n_leads_fetched] = day_miss
             pbar.update(1)

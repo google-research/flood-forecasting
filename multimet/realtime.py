@@ -62,6 +62,7 @@ if _REPO_ROOT not in sys.path:
 from multimet.build_hres_archive import ECMWF_OPEN_DATA_BUCKET
 from multimet.config import (
     FORECAST_LEAD_DAYS,
+    MISSING_FRACTION_VAR,
     PRODUCT_BANDS,
     PRODUCT_TYPES,
     Product,
@@ -80,6 +81,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_REALTIME_PRODUCTS: Tuple[str, ...] = ("HRES", "IMERG", "CPC")
 DEFAULT_COLDSTART_LOOKBACK_DAYS: int = 365
 DEFAULT_HOTSTART_LOOKBACK_DAYS: int = 7
+DEFAULT_FULL_FORECAST_DAYS: int = 2
+DEFAULT_MAX_TRAILING_LATENCY_DAYS: int = 3
 
 
 @dataclasses.dataclass
@@ -190,10 +193,11 @@ def inspect_store_last_valid_date(
     basin_ids: Optional[Sequence[str]] = None,
     require_all_leads_on_last_date: bool = False,
 ) -> Optional[pd.Timestamp]:
-  """Finds the latest date in a product's Zarr store that contains valid (non-NaN) data.
+  """Finds the latest date in a product's Zarr store that contains valid upstream data.
 
   Walks backwards from the end of the store's ``date`` coordinate so that any
-  trailing ``NaN`` slices (written when an upstream feed had not yet published
+  trailing ``NaN`` slices or latency-bridged slices (where
+  ``missing_fraction >= 1.0`` because the upstream feed had not yet published
   the latest day) are excluded, ensuring subsequent ``hotstart`` runs re-fetch
   and heal those dates automatically.
   """
@@ -222,6 +226,12 @@ def inspect_store_last_valid_date(
         return None
 
       vals = np.asarray(ds_sub[primary_band].values, dtype=np.float32)
+      missing_var = MISSING_FRACTION_VAR.get(product)
+      miss_vals = (
+          np.asarray(ds_sub[missing_var].values, dtype=np.float32)
+          if missing_var and missing_var in ds_sub.data_vars
+          else None
+      )
       dates = pd.DatetimeIndex(pd.to_datetime(ds_sub["date"].values).floor("D"))
       is_forecast = PRODUCT_TYPES[product] == ProductType.FORECAST
 
@@ -229,14 +239,20 @@ def inspect_store_last_valid_date(
         if is_forecast:
           day_slice = vals[:, d_idx, :]
           if require_all_leads_on_last_date:
-            # Check that all basins have valid values across all lead times
             valid = bool(np.all(np.any(~np.isnan(day_slice), axis=0)))
+            if valid and miss_vals is not None:
+              valid = bool(
+                  np.all(np.any(miss_vals[:, d_idx, :] < 1.0, axis=0))
+              )
           else:
-            # At least lead_time=1D (index 0) is valid across all basins
             valid = bool(np.all(~np.isnan(day_slice[:, 0])))
+            if valid and miss_vals is not None:
+              valid = bool(np.all(miss_vals[:, d_idx, 0] < 1.0))
         else:
           day_slice = vals[:, d_idx]
           valid = bool(np.all(~np.isnan(day_slice)))
+          if valid and miss_vals is not None:
+            valid = bool(np.all(miss_vals[:, d_idx] < 1.0))
 
         if valid:
           return dates[d_idx]
@@ -248,6 +264,78 @@ def inspect_store_last_valid_date(
         err,
     )
   return None
+
+
+def _fill_trailing_nowcast_latency_nans(
+    ds: xr.Dataset,
+    product: Product,
+    max_trailing_days: int = DEFAULT_MAX_TRAILING_LATENCY_DAYS,
+) -> xr.Dataset:
+  """Forward-fills trailing unpublished latency days at the tail of a NOWCAST dataset.
+
+  Operational nowcast products (``IMERG``, ``CPC``) publish UTC daily
+  precipitation with a 1-to-2 day latency behind the latest 00z ``HRES``
+  forecast initialization date ``t0``. Because ``googlehydrology``'s
+  ``validate_samples`` checks ``dataset[hindcast_features]`` through ``t0``,
+  leaving trailing latency days as ``NaN`` causes ``NoEvaluationDataError`` on
+  ``t0``. Forward-filling up to ``max_trailing_days`` trailing unpublished days
+  while keeping ``<product>_missing_fraction == 1.0`` allows immediate model
+  inference on ``t0`` while ensuring ``inspect_store_last_valid_date`` and
+  ``MultiMetZarrWriter.write_or_append`` automatically re-fetch and overwrite
+  those days once upstream observations are published.
+  """
+  if PRODUCT_TYPES.get(product) != ProductType.NOWCAST or max_trailing_days <= 0:
+    return ds
+  if "date" not in ds.dims or len(ds["date"]) < 2:
+    return ds
+
+  primary_band = next(
+      (b for b in PRODUCT_BANDS[product] if b in ds.data_vars),
+      None,
+  )
+  if primary_band is None:
+    return ds
+
+  vals = np.asarray(ds[primary_band].values, dtype=np.float32)
+  n_dates = vals.shape[1]
+  trailing_nan_indices: List[int] = []
+  for offset in range(1, min(int(max_trailing_days), n_dates - 1) + 1):
+    d_idx = n_dates - offset
+    if bool(np.any(np.isnan(vals[:, d_idx]))):
+      trailing_nan_indices.append(d_idx)
+    else:
+      break
+
+  if not trailing_nan_indices:
+    return ds
+
+  first_nan_idx = min(trailing_nan_indices)
+  if first_nan_idx <= 0:
+    return ds
+
+  out = ds.copy(deep=True)
+  arr = out[primary_band].values.astype(np.float32, copy=True)
+  missing_var = MISSING_FRACTION_VAR.get(product)
+  if missing_var:
+    if missing_var in out.data_vars:
+      miss_arr = out[missing_var].values.astype(np.float32, copy=True)
+    else:
+      miss_arr = np.isnan(arr).astype(np.float32)
+  else:
+    miss_arr = None
+
+  for d_idx in sorted(trailing_nan_indices):
+    prev_col = arr[:, d_idx - 1]
+    cur_col = arr[:, d_idx]
+    was_nan = np.isnan(cur_col)
+    arr[:, d_idx] = np.where(was_nan, prev_col, cur_col)
+    if miss_arr is not None:
+      miss_arr[:, d_idx] = np.where(was_nan, 1.0, miss_arr[:, d_idx])
+
+  out[primary_band].values = arr
+  if missing_var and miss_arr is not None:
+    out[missing_var] = (["basin", "date"], miss_arr)
+  return out
 
 
 class RealtimeForcingFetcher:
@@ -491,7 +579,8 @@ class RealtimeForcingFetcher:
       products: Optional[Sequence[Union[str, Product]]] = None,
       hot_start_state_path: Optional[Union[str, os.PathLike]] = None,
       spinup_only_lead_1d: bool = True,
-      full_forecast_days: int = 1,
+      full_forecast_days: int = DEFAULT_FULL_FORECAST_DAYS,
+      fill_trailing_latency_nans: bool = True,
       id_column: Optional[str] = None,
       overwrite: bool = False,
       weights_cache: Optional[str] = None,
@@ -519,7 +608,12 @@ class RealtimeForcingFetcher:
         all 10 lead days for every historical spin-up date.
       full_forecast_days: Number of trailing initialization dates up to and
         including ``reference_date`` for which all 10 HRES lead days are
-        fetched (default ``1``, i.e. ``reference_date`` itself).
+        fetched (default ``2``, i.e. ``reference_date - 1d`` and ``reference_date``).
+      fill_trailing_latency_nans: When ``True`` (default), forward-fills up to
+        3 trailing unpublished latency days at the tail of NOWCAST products
+        (``IMERG``, ``CPC``) while keeping ``<product>_missing_fraction == 1.0``
+        so ``googlehydrology`` can evaluate ``reference_date`` immediately and
+        subsequent ``hotstart`` runs automatically overwrite with real observations.
       id_column: Optional basin ID column name in ``basins``.
       overwrite: Whether to rebuild the destination Zarr stores from scratch.
       weights_cache: Optional path to precomputed ``.npz`` weights matrix.
@@ -599,6 +693,8 @@ class RealtimeForcingFetcher:
           full_forecast_days=full_forecast_days,
           weights_matrix=loaded_weights,
       )
+      if fill_trailing_latency_nans:
+        ds = _fill_trailing_nowcast_latency_nans(ds, prod_enum)
 
       store_path = self.writer.write_or_append(
           ds,
@@ -637,7 +733,8 @@ def fetch_realtime_multimet(
     hres_bucket: str = ECMWF_OPEN_DATA_BUCKET,
     cpc_cache_dir: str = "/tmp/cpc_cache",
     spinup_only_lead_1d: bool = True,
-    full_forecast_days: int = 1,
+    full_forecast_days: int = DEFAULT_FULL_FORECAST_DAYS,
+    fill_trailing_latency_nans: bool = True,
     id_column: Optional[str] = None,
     overwrite: bool = False,
     weights_cache: Optional[str] = None,
@@ -667,7 +764,10 @@ def fetch_realtime_multimet(
     spinup_only_lead_1d: Whether to fetch only ``lead_time=1D`` (``step=24h``)
       for historical HRES spin-up dates prior to the forecast issue window.
     full_forecast_days: Number of trailing initialization dates up to ``t0``
-      with full 10-day HRES lead extraction (default ``1``).
+      with full 10-day HRES lead extraction (default ``2``).
+    fill_trailing_latency_nans: Whether to forward-fill up to 3 trailing
+      unpublished latency days at the tail of NOWCAST products (``IMERG``,
+      ``CPC``) while keeping ``<product>_missing_fraction == 1.0``.
     id_column: Optional column name for basin identifiers in ``basins``.
     overwrite: Whether to overwrite existing Zarr stores from scratch.
     weights_cache: Optional path to cached ``.npz`` zonal weight matrix.
@@ -702,6 +802,7 @@ def fetch_realtime_multimet(
       hot_start_state_path=hot_start_state_path,
       spinup_only_lead_1d=spinup_only_lead_1d,
       full_forecast_days=full_forecast_days,
+      fill_trailing_latency_nans=fill_trailing_latency_nans,
       id_column=id_column,
       overwrite=overwrite,
       weights_cache=weights_cache,
@@ -800,7 +901,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
   parser.add_argument(
       "--full_forecast_days",
       type=int,
-      default=1,
+      default=DEFAULT_FULL_FORECAST_DAYS,
       help=(
           "Number of trailing initialization dates up to reference_date for "
           "which all 10 HRES lead days are fetched."

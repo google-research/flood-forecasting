@@ -925,14 +925,37 @@ class MultiMetZarrWriter:
             z_root = zarr.open_group(local_target, mode="r+")
             ds_aligned = ds_to_write.sel(basin=existing_basins_list)
             missing_var = MISSING_FRACTION_VAR.get(product)
+            has_missing_var = (
+                missing_var is not None
+                and missing_var in ds_aligned.data_vars
+                and missing_var in z_root
+            )
+            old_miss_cache: Dict[int, np.ndarray] = {}
+            new_miss_cache: Dict[int, np.ndarray] = {}
+            if preserve_existing_valid and has_missing_var:
+              new_miss_all = ds_aligned[missing_var].values.astype(np.float32)
+              z_miss = z_root[missing_var]
+              for local_idx, store_idx in enumerate(indices):
+                if is_forecast:
+                  old_miss_cache[store_idx] = np.asarray(
+                      z_miss[:, store_idx, :], dtype=np.float32
+                  )
+                  new_miss_cache[local_idx] = new_miss_all[:, local_idx, :]
+                else:
+                  old_miss_cache[store_idx] = np.asarray(
+                      z_miss[:, store_idx], dtype=np.float32
+                  )
+                  new_miss_cache[local_idx] = new_miss_all[:, local_idx]
+
             for var in ds_aligned.data_vars:
               vals = ds_aligned[var].values.astype(np.float32)
+              z_var = z_root[var]
               for local_idx, store_idx in enumerate(indices):
                 if is_forecast:
                   new_slice_arr = vals[:, local_idx, :]
                   if preserve_existing_valid:
                     old_slice_arr = np.asarray(
-                        z_root[var][:, store_idx, :], dtype=np.float32
+                        z_var[:, store_idx, :], dtype=np.float32
                     )
                     if var == missing_var:
                       new_slice_arr = np.where(
@@ -940,16 +963,26 @@ class MultiMetZarrWriter:
                           new_slice_arr,
                           np.minimum(old_slice_arr, new_slice_arr),
                       )
+                    elif has_missing_var:
+                      old_m = old_miss_cache[store_idx]
+                      new_m = new_miss_cache[local_idx]
+                      use_new = ~np.isnan(new_slice_arr) & (
+                          np.isnan(old_slice_arr)
+                          | ((old_m >= 1.0) & (new_m < 1.0))
+                      )
+                      new_slice_arr = np.where(
+                          use_new, new_slice_arr, old_slice_arr
+                      )
                     else:
                       new_slice_arr = np.where(
                           ~np.isnan(new_slice_arr), new_slice_arr, old_slice_arr
                       )
-                  z_root[var][:, store_idx, :] = new_slice_arr
+                  z_var[:, store_idx, :] = new_slice_arr
                 else:
                   new_slice_arr = vals[:, local_idx]
                   if preserve_existing_valid:
                     old_slice_arr = np.asarray(
-                        z_root[var][:, store_idx], dtype=np.float32
+                        z_var[:, store_idx], dtype=np.float32
                     )
                     if var == missing_var:
                       new_slice_arr = np.where(
@@ -957,11 +990,21 @@ class MultiMetZarrWriter:
                           new_slice_arr,
                           np.minimum(old_slice_arr, new_slice_arr),
                       )
+                    elif has_missing_var:
+                      old_m = old_miss_cache[store_idx]
+                      new_m = new_miss_cache[local_idx]
+                      use_new = ~np.isnan(new_slice_arr) & (
+                          np.isnan(old_slice_arr)
+                          | ((old_m >= 1.0) & (new_m < 1.0))
+                      )
+                      new_slice_arr = np.where(
+                          use_new, new_slice_arr, old_slice_arr
+                      )
                     else:
                       new_slice_arr = np.where(
                           ~np.isnan(new_slice_arr), new_slice_arr, old_slice_arr
                       )
-                  z_root[var][:, store_idx] = new_slice_arr
+                  z_var[:, store_idx] = new_slice_arr
             self.consolidate_metadata(product)
             return store_path
         elif overwrite_existing_basins:
