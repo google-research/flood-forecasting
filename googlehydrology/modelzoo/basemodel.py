@@ -14,6 +14,7 @@
 
 
 from pathlib import Path
+from typing import ClassVar
 
 import numpy as np
 import torch
@@ -39,6 +40,12 @@ class BaseModel(nn.Module):
 
     # specify submodules of the model that can later be used for finetuning. Names must match class attributes
     module_parts = []
+
+    # Names of internal tensors that a data assimilation (DA) procedure may
+    # read from the forward output dict and override by passing
+    # `data['assimilation_overrides'] = {name: tensor}` to `forward`.
+    # Models that do not support DA leave this empty.
+    supported_assimilation_components: ClassVar[list[str]] = []
 
     def __init__(self, cfg: Config):
         super(BaseModel, self).__init__()
