@@ -30,8 +30,10 @@ def _expand_lead_times(
             'Trying to expand a dataarray that already has a lead time.'
         )
     # TODO (future) :: This assumes daily data.
+    # Caravan-MultiMet 1-indexed lead_time=1D covers [date 00:00, date+1 00:00] (0-day offset).
     lt_das = (
-        da.shift(date=-int(lt / np.timedelta64(1, 'D'))) for lt in lead_times
+        da.shift(date=-(int(lt / np.timedelta64(1, 'D')) - 1))
+        for lt in lead_times
     )
     lt_da = xr.concat(lt_das, dim=pd.Index(data=lead_times, name='lead_time'))
     return lt_da
@@ -68,17 +70,18 @@ def _union_non_lead_time_feature_with_lead_time_feature(
     via min lead time.
 
     Align forecast's "issue date" (when was made) with feature's "valid date" (when applied).
-    Shift forecast data forward by lead time to match dates.
+    In Caravan-MultiMet, lead_time=1D covers [date 00:00, date+1 00:00], so shift_days is
+    (min_lead_time_days - 1).
     """
     min_lead_time = mask_feature_da['lead_time'].min().item()  # Best forecast
     min_lead_time_mask_feature = mask_feature_da.sel(
         lead_time=min_lead_time, drop=True
     )  # 2d slice
-    shift_days = int(
-        min_lead_time / np.timedelta64(1, 'D')
+    shift_days = (
+        int(min_lead_time / np.timedelta64(1, 'D')) - 1
     )  # forecast time aligning
     # Align mask's "issue date" with target feature's "valid date", e.g. forecast issued
-    # on Jan 1 for Jan 2 (lead time 1 day) is shifted forward by 1 day to align with Jan 2.
+    # on Jan 1 with lead time 1 day ([Jan 1 00:00, Jan 2 00:00]) aligns with Jan 1 (shift 0).
     mask_values = min_lead_time_mask_feature.shift(date=shift_days)
     return _union_features_with_same_dimensions(feature_da, mask_values)
 

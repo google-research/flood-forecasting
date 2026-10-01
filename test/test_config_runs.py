@@ -141,7 +141,8 @@ def _check_results(config: Config, basin: str, discharge: pd.Series = None):
         discharge_ds.close()
 
     if hasattr(config, 'lead_time'):
-        results = results.isel(time_step=0).squeeze()
+        # time_step=1 (1-day lead time) covers [date 00:00, date+1 00:00], matching date
+        results = results.sel(time_step=1).squeeze()
     else:
         results = results.isel(time_step=-1)
 

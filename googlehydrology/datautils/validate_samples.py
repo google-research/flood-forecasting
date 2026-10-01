@@ -133,7 +133,9 @@ def validate_samples(
 
         masks.append(
             validate_sequence_all(
-                mask=mask, seq_length=seq_length, shift_right=0
+                mask=mask,
+                seq_length=seq_length,
+                shift_right=-(min_lead_time or 0),
             ).rename('hindcasts')
         )
 
@@ -191,7 +193,9 @@ def validate_samples(
         mask = validate_samples_any(dataset=dataset_targets)
         masks.append(
             validate_sequence_any(
-                mask=mask, seq_length=predict_last_n, shift_right=lead_time
+                mask=mask,
+                seq_length=predict_last_n,
+                shift_right=lead_time - (min_lead_time or 0),
             ).rename('targets')
         )
 

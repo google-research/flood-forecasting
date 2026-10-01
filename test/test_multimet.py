@@ -822,3 +822,100 @@ def test_multimet_dict_inputs_and_missing_band_validation(
         Multimet(cfg=cfg_missing, is_train=True, period='train')
 
 
+@patch('googlehydrology.datasetzoo.multimet.load_basin_file')
+@patch.object(Multimet, '_load_data')
+@patch('googlehydrology.datasetzoo.multimet.Scaler')
+def test_multimet_lead_time_temporal_alignment(
+    mock_scaler,
+    mock_load_data,
+    mock_load_basin_file,
+    get_config,
+):
+    """Verifies Caravan-MultiMet left-labeled temporal alignment for a sample on issue date D.
+
+    For a forecast issued on date D with seq_length=3, forecast_overlap=2, lead_time=2:
+    - 2D hindcast features and 3D hindcast features (at lead_time=1D) must both cover [D-3, D-2, D-1].
+    - Forecast overlap (at lead_time=1D) must cover [D-2, D-1] and forecast rollout must cover
+      date=D across lead_time=[1D, 2D] (valid on [D, D+1]).
+    - Target dates (`date` and `y` of length seq_length=3) must end at D + lead_time - 1 = D + 1,
+      covering [D-1, D, D+1] (last hindcast day D-1 plus the 2 forecast days [D, D+1]).
+    """
+    basins = ['basin_01']
+    dates = pd.date_range('1999-12-25', '2000-01-10', freq='D')
+    lead_times = [np.timedelta64(1, 'D'), np.timedelta64(2, 'D')]
+
+    # Encode each date as its day offset (0, 1, 2, ...) so values directly identify their valid date.
+    day_offsets = np.arange(len(dates), dtype=np.float32)
+    # In Caravan-MultiMet, forecast(date=t, lead_time=k days) is valid on date t + (k - 1).
+    forecast_vals = np.stack([day_offsets, day_offsets + 1.0], axis=-1)[
+        np.newaxis, :, :
+    ]
+
+    ds = xr.Dataset(
+        {
+            'static_f1': (('basin',), np.array([1.0], dtype=np.float32)),
+            'hindcast_2d': (
+                ('basin', 'date'),
+                day_offsets[np.newaxis, :].copy(),
+            ),
+            'forecast_3d': (
+                ('basin', 'date', 'lead_time'),
+                forecast_vals.astype(np.float32),
+            ),
+            'target_v1': (
+                ('basin', 'date'),
+                (day_offsets * 10.0)[np.newaxis, :].astype(np.float32),
+            ),
+        },
+        coords={'basin': basins, 'date': dates, 'lead_time': lead_times},
+    )
+
+    mock_load_basin_file.return_value = basins
+    mock_load_data.return_value = ds
+    mock_scaler_instance = MagicMock()
+    mock_scaler.return_value = mock_scaler_instance
+    mock_scaler_instance.scale.side_effect = lambda d: d
+    mock_scaler_instance.check_zero_scale.return_value = None
+    mock_scaler_instance.save.return_value = None
+
+    cfg = get_config('alignment')
+    cfg.update_config(
+        {
+            'seq_length': 3,
+            'lead_time': 2,
+            'forecast_overlap': 2,
+            'predict_last_n': 3,
+            'hindcast_inputs': ['hindcast_2d', 'forecast_3d'],
+            'forecast_inputs': ['forecast_3d'],
+            'train_start_date': ['01/01/2000'],
+            'train_end_date': ['02/01/2000'],
+        }
+    )
+
+    dataset = Multimet(cfg=cfg, is_train=True, period='train')
+    assert len(dataset) == 2
+    sample = dataset[0]
+
+    # Issue date D is 2000-01-01, which is day offset 7 in `dates` (since 1999-12-25 is 0).
+    # Hindcast window [D-3, D-2, D-1] -> day offsets [4, 5, 6] (1999-12-29, 1999-12-30, 1999-12-31).
+    expected_hindcast = np.array([[4.0], [5.0], [6.0]], dtype=np.float32)
+    np.testing.assert_array_equal(
+        sample['x_d_hindcast']['hindcast_2d'], expected_hindcast
+    )
+    np.testing.assert_array_equal(
+        sample['x_d_hindcast']['forecast_3d'], expected_hindcast
+    )
+
+    # Forecast overlap [D-2, D-1] -> [5, 6], followed by forecast rollout [D, D+1] -> [7, 8].
+    expected_forecast = np.array(
+        [[5.0], [6.0], [7.0], [8.0]], dtype=np.float32
+    )
+    np.testing.assert_array_equal(
+        sample['x_d_forecast']['forecast_3d'], expected_forecast
+    )
+
+    # Target sequence of length seq_length=3 ending at D + lead_time - 1 = D + 1 -> [D-1, D, D+1] = [6, 7, 8].
+    expected_dates = pd.date_range('1999-12-31', '2000-01-02', freq='D').values
+    np.testing.assert_array_equal(sample['date'], expected_dates)
+    expected_targets = np.array([[60.0], [70.0], [80.0]], dtype=np.float32)
+    np.testing.assert_array_equal(sample['y'], expected_targets)
