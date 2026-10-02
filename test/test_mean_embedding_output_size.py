@@ -102,8 +102,9 @@ def test_configured_output_size_and_backward(
                 'pi',
             }
         )
-        assert set(predictions) == expected_keys
-        for value in predictions.values():
+        assimilation_keys = set(model.supported_assimilation_components)
+        assert set(predictions) == expected_keys | assimilation_keys
+        for value in (predictions[key] for key in expected_keys):
             assert value.shape == (
                 2,
                 cfg.seq_length + cfg.lead_time,
