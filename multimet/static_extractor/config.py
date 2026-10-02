@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping
+from typing import Any, Dict, List, Mapping, Tuple
 
 # -------------------------------------------------------------------------
 # Caravan HydroATLAS Property Definitions & Classifications
@@ -98,6 +98,19 @@ CONTINENT_MAP: Mapping[int, str] = {
     7: "na",  # North America
     8: "ar",  # Arctic
     9: "gr",  # Greenland
+}
+
+# Bounding boxes (minx, miny, maxx, maxy) of each continental Level 12 GeoParquet file
+CONTINENT_BBOXES: Mapping[str, Tuple[float, float, float, float]] = {
+    "af": (-18.2, -34.9, 54.6, 37.6),
+    "ar": (-180.0, 51.2, -61.0, 83.3),
+    "as": (57.6, 1.1, 151.0, 56.0),
+    "au": (94.9, -55.2, 180.1, 24.4),
+    "eu": (-24.6, 12.5, 69.6, 81.9),
+    "gr": (-73.1, 59.7, -11.3, 83.7),
+    "na": (-138.0, 5.4, -52.6, 62.8),
+    "sa": (-92.1, -56.0, -32.3, 14.9),
+    "si": (58.9, 45.5, 180.0, 81.3),
 }
 
 # Curated Attribute Definitions with Metadata

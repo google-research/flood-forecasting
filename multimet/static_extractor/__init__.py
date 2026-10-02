@@ -28,6 +28,7 @@ from multimet.static_extractor.climate import (
 from multimet.static_extractor.config import (
     ADDITIONAL_PROPERTIES,
     ATTRIBUTE_DEFINITIONS,
+    CONTINENT_BBOXES,
     CONTINENT_MAP,
     IGNORE_PROPERTIES,
     MAJORITY_PROPERTIES,
@@ -60,6 +61,7 @@ __all__ = [
     "ADDITIONAL_PROPERTIES",
     "UPSTREAM_PROPERTIES",
     "CONTINENT_MAP",
+    "CONTINENT_BBOXES",
 ]
 
 

@@ -21,11 +21,13 @@ It calculates these attributes using the same community datasets and methods use
 
 ### 2. Reference Datasets
 You provide the paths where the HydroATLAS and ERA5-Land reference datasets are stored:
-- **HydroATLAS (`--gdb-path`):** Local path to `BasinATLAS_v10.gdb` (or `BasinATLAS_v10_lev12.shp`). If you do not already have it on disk, pass `--gcs-gdb-uri gs://open-multimet/ancillary-data/hydroatlas/BasinATLAS_v10.gdb` and the tool will download it into `--gdb-path` (~4.9 GB).
+- **HydroATLAS (`--gdb-path` or `--gcs-gdb-uri`):** Local path to `BasinATLAS_v10.gdb` (or `BasinATLAS_v10_lev12.shp`). If you do not already have it on disk, pass `--gcs-gdb-uri gs://open-multimet/ancillary-data/hydroatlas/BasinATLAS_v10.gdb` and the tool will download it into `--gdb-path` (~4.9 GB).
 - **ERA5-Land Climate Data:**
   - When using `--era5-source hybas`, pass `--era5-cache-dir /path/to/era5_climate`. If you do not already have the continental climate tables on disk, also pass `--gcs-era5-climate-uri gs://open-multimet/ancillary-data/hydroatlas/era5_climate` (~550 MB) to download them into `--era5-cache-dir`.
   - When using `--era5-source gridded`, pass `--gridded-era5-uri gs://open-multimet/gridded-data-archives/ERA5_LAND/daily_surface.zarr` (or a local Zarr path). This streams the daily grid slices directly from the Zarr store without downloading the archive to your machine.
-- If you want the tool to delete the local `--gdb-path` and `--era5-cache-dir` folders after the run finishes, add `--clean-cache`.
+- **Running Without Downloading Cloud Files (`--no-download`):**
+  - If you have limited local disk space and do not want to download the HydroATLAS or ERA5 files to your computer, pass `--no-download` along with `--gcs-gdb-uri gs://open-multimet/ancillary-data/hydroatlas` and `--gcs-era5-climate-uri gs://open-multimet/ancillary-data/hydroatlas/era5_climate` (or `--gridded-era5-uri`). The tool will stream the required HydroATLAS and ERA5 data directly from Google Cloud Storage in memory without saving reference files to disk.
+  - Alternatively, if you download the files to disk for a run and want them deleted automatically when the run finishes, add `--clean-cache`.
 
 ### 3. Choosing `--era5-source` (`hybas` vs. `gridded`)
 Every run requires the `--era5-source` flag to tell the tool how to calculate climate statistics:
@@ -62,6 +64,15 @@ extract-caravan-static \
     --era5-cache-dir /path/to/era5_climate \
     --gcs-era5-climate-uri gs://open-multimet/ancillary-data/hydroatlas/era5_climate
 
+# Streaming directly in memory from Google Cloud Storage without downloading to disk
+extract-caravan-static \
+    --input /path/to/watershed_polygons.geojson \
+    --output /path/to/extracted_caravan_attributes.csv \
+    --gcs-gdb-uri gs://open-multimet/ancillary-data/hydroatlas \
+    --era5-source hybas \
+    --gcs-era5-climate-uri gs://open-multimet/ancillary-data/hydroatlas/era5_climate \
+    --no-download
+
 # Streaming climate numbers directly from daily ERA5-Land grids on Google Cloud Storage
 extract-caravan-static \
     --input /path/to/watershed_polygons.geojson \
@@ -87,12 +98,13 @@ extract-caravan-static \
 | :--- | :--- | :--- | :--- |
 | `--input`, `-i` | **Yes** | — | Path to your input watershed boundary file (`.geojson`, `.shp`, `.gpkg`, or `.parquet`). |
 | `--output`, `-o` | **Yes** | — | Path where the output CSV file will be saved. |
-| `--gdb-path`, `-g` | **Yes** | — | Local path to `BasinATLAS_v10.gdb` or `BasinATLAS_v10_lev12.shp`. |
+| `--gdb-path`, `-g` | Required unless `--no-download` | `None` | Local path to `BasinATLAS_v10.gdb`, shapefile, or GeoParquet file. |
 | `--era5-source` | **Yes** | — | How to calculate ERA5 climate numbers: `hybas` (from pre-calculated sub-basin tables) or `gridded` (from daily ERA5-Land grids). |
-| `--era5-cache-dir` | Required if `hybas` | `None` | Local folder where continental ERA5 climate tables (`<continent>_climate_indices.txt`) are stored. |
+| `--era5-cache-dir` | Required if `hybas` (unless `--no-download`) | `None` | Local folder where continental ERA5 climate tables (`<continent>_climate_indices.txt`) are stored. |
 | `--gridded-era5-uri` | Required if `gridded` | `None` | Google Cloud Storage (`gs://...`) URI or local folder path for the daily ERA5-Land Zarr dataset. Can also be passed with `--era5-source hybas` to compute the four `*_ERA5_LAND` columns. |
-| `--gcs-gdb-uri` | No | `None` | Google Cloud Storage (`gs://...`) URI from which to download `BasinATLAS_v10.gdb` into `--gdb-path` if it is not already on disk. |
-| `--gcs-era5-climate-uri` | No | `None` | Google Cloud Storage (`gs://...`) URI from which to download continental ERA5 climate tables into `--era5-cache-dir` if they are not already on disk. |
+| `--gcs-gdb-uri` | Required if `--no-download` without `--gdb-path` | `None` | Google Cloud Storage (`gs://...`) URI for HydroATLAS data. Downloaded into `--gdb-path` by default, or streamed directly in memory when `--no-download` is set. |
+| `--gcs-era5-climate-uri` | Required if `hybas` with `--no-download` | `None` | Google Cloud Storage (`gs://...`) URI for continental ERA5 climate tables. Downloaded into `--era5-cache-dir` by default, or streamed directly in memory when `--no-download` is set. |
+| `--no-download` | No | Disabled | Stream HydroATLAS and ERA5 data directly from Google Cloud Storage in memory without downloading files to local disk. |
 | `--id-column` | No | `gauge_id` | Name of the column in your input file that holds the unique watershed ID. |
 | `--workers`, `-w` | No | `1` | Number of CPU processes to run in parallel. Increase this (for example, `-w 8`) when extracting many watersheds. |
 | `--min-overlap-threshold` | No | `0.0` | Minimum overlap area in $\text{km}^2$ required for a sub-basin fragment to be included (unless the watershed covers more than 50% of that sub-basin). Useful for ignoring tiny border slivers along the edge of a polygon. |
@@ -136,13 +148,14 @@ extract-caravan-static-batch \
 | `--input-dirs`, `-d` | One input flag required | — | Space-separated list of specific dataset folders to process. |
 | `--input-files`, `-f` | One input flag required | — | Space-separated list of specific polygon files (`.shp`, `.geojson`, `.gpkg`, `.parquet`) to process. |
 | `--output-dir`, `-o` | **Yes** | — | Local folder or Google Cloud Storage (`gs://...`) path where output files will be written. |
-| `--gdb-path`, `-g` | **Yes** | — | Local path to `BasinATLAS_v10.gdb` or `BasinATLAS_v10_lev12.shp`. |
+| `--gdb-path`, `-g` | Required unless `--no-download` | `None` | Local path to `BasinATLAS_v10.gdb`, shapefile, or GeoParquet file. |
 | `--era5-source` | **Yes** | — | How to calculate ERA5 climate numbers: `hybas` or `gridded`. |
-| `--era5-cache-dir` | Required if `hybas` | `None` | Local folder where continental ERA5 climate tables are stored. |
+| `--era5-cache-dir` | Required if `hybas` (unless `--no-download`) | `None` | Local folder where continental ERA5 climate tables are stored. |
 | `--gridded-era5-uri` | Required if `gridded` | `None` | Google Cloud Storage (`gs://...`) URI or local path for the daily ERA5-Land Zarr dataset. |
 | `--staging-dir` | Required for `gs://` inputs/outputs | `None` | Local folder used to stage downloaded input shapefiles or output CSVs when reading from or writing to `gs://` paths. |
-| `--gcs-gdb-uri` | No | `None` | Google Cloud Storage (`gs://...`) URI from which to download `BasinATLAS_v10.gdb` into `--gdb-path` if not already on disk. |
-| `--gcs-era5-climate-uri` | No | `None` | Google Cloud Storage (`gs://...`) URI from which to download continental ERA5 climate tables into `--era5-cache-dir` if not already on disk. |
+| `--gcs-gdb-uri` | Required if `--no-download` without `--gdb-path` | `None` | Google Cloud Storage (`gs://...`) URI for HydroATLAS data. Downloaded into `--gdb-path` by default, or streamed directly in memory when `--no-download` is set. |
+| `--gcs-era5-climate-uri` | Required if `hybas` with `--no-download` | `None` | Google Cloud Storage (`gs://...`) URI for continental ERA5 climate tables. Downloaded into `--era5-cache-dir` by default, or streamed directly in memory when `--no-download` is set. |
+| `--no-download` | No | Disabled | Stream HydroATLAS and ERA5 data directly from Google Cloud Storage in memory without downloading files to local disk. |
 | `--id-column` | No | `gauge_id` | Name of the column in your input files that holds the unique watershed ID. |
 | `--workers`, `-w` | No | `1` | Number of CPU processes to run in parallel. |
 | `--combine` | No | Disabled | In addition to per-dataset files, save a single merged table (`attributes_caravan_combined.csv`) containing all watersheds across all processed folders. |
@@ -164,6 +177,7 @@ extract-caravan-static-batch \
 ```python
 from multimet.static_extractor import StaticAttributesExtractor
 
+# Using local files on disk (or pass no_download=True with gcs_gdb_uri / gcs_era5_climate_uri to stream in memory)
 extractor = StaticAttributesExtractor(
     gdb_path="/path/to/BasinATLAS_v10.gdb",
     era5_source="hybas",
@@ -257,11 +271,14 @@ This writes three files into `--output-dir`:
 | Flag | Required? | Default | What It Does |
 | :--- | :--- | :--- | :--- |
 | `--dataset` | **Yes** | — | Path to the `.parquet` reference dataset file. |
-| `--gdb-path` | **Yes** | — | Local path to `BasinATLAS_v10.gdb` or shapefile. |
+| `--gdb-path` | Required unless `--no-download` | `None` | Local path to `BasinATLAS_v10.gdb`, shapefile, or GeoParquet file. |
 | `--era5-source` | **Yes** | — | How to calculate ERA5 climate numbers during the benchmark: `hybas` or `gridded`. |
 | `--output-dir`, `-o` | **Yes** | — | Folder where the benchmark report and CSV tables are saved. |
-| `--era5-cache-dir` | Required if `hybas` | `None` | Folder containing continental ERA5 climate tables. |
+| `--era5-cache-dir` | Required if `hybas` (unless `--no-download`) | `None` | Folder containing continental ERA5 climate tables. |
 | `--gridded-era5-uri` | Required if `gridded` | `None` | Google Cloud Storage (`gs://...`) URI or local path for the daily ERA5-Land Zarr dataset. |
+| `--gcs-gdb-uri` | Required if `--no-download` without `--gdb-path` | `None` | Google Cloud Storage (`gs://...`) URI for HydroATLAS data. |
+| `--gcs-era5-climate-uri` | Required if `hybas` with `--no-download` | `None` | Google Cloud Storage (`gs://...`) URI for continental ERA5 climate tables. |
+| `--no-download` | No | Disabled | Stream HydroATLAS and ERA5 data directly from Google Cloud Storage in memory without downloading files to local disk. |
 | `--samples` | No | All basins | Number of basins to sample if you want a quick check instead of running all basins in `--dataset`. |
 | `--regions`, `--datasets` | No | All datasets | Space-separated list of Caravan datasets to include (`camels`, `camelsaus`, `camelsbr`, `camelscl`, `camelsgb`, `hysets`, `lamah`). |
 | `--size-tiers` | No | All sizes | Space-separated list of basin size groups to include (`1_micro`, `2_small`, `3_medium`, `4_large`, `5_macro`). |

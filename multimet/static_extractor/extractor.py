@@ -27,6 +27,7 @@ watershed polygons following the Caravan aggregation methodology:
 from __future__ import annotations
 
 from collections import defaultdict
+import io
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -49,12 +50,13 @@ from multimet.static_extractor.climate import (
 from multimet.static_extractor.config import (
     ADDITIONAL_PROPERTIES,
     ATTRIBUTE_DEFINITIONS,
+    CONTINENT_BBOXES,
     IGNORE_PROPERTIES,
     MAJORITY_PROPERTIES,
     POUR_POINT_PROPERTIES,
     UPSTREAM_PROPERTIES,
 )
-from multimet.static_extractor.gcs import download_hydroatlas_from_gcs
+from multimet.static_extractor.gcs import download_hydroatlas_from_gcs, is_gcs_path
 
 shape = shapely.geometry.shape
 Point = shapely.geometry.Point
@@ -69,38 +71,91 @@ warnings.filterwarnings("ignore", category=UserWarning, module="google.auth.*")
 logger = logging.getLogger(__name__)
 
 _WORKER_EXTRACTOR: Optional[StaticAttributesExtractor] = None
-_WORKER_EXTRACTOR_KEY: Optional[Tuple[str, Optional[str], Optional[str]]] = None
+_WORKER_EXTRACTOR_KEY: Optional[Tuple[Any, ...]] = None
+
+
+def _normalize_hybas_id_series(s: pd.Series) -> pd.Series:
+  """Normalizes HYBAS_ID values (e.g. 'hybas_7120000010' or int) to int64."""
+  if s.dtype == object or pd.api.types.is_string_dtype(s):
+    return s.astype(str).str.replace("hybas_", "", regex=False).astype("int64")
+  return s.astype("int64")
+
+
+def _bboxes_intersect(
+    b1: Tuple[float, float, float, float],
+    b2: Tuple[float, float, float, float],
+) -> bool:
+  """Returns True if two (minx, miny, maxx, maxy) bounding boxes intersect."""
+  return not (b1[2] < b2[0] or b1[0] > b2[2] or b1[3] < b2[1] or b1[1] > b2[3])
 
 
 def _get_worker_extractor(
-    gdb_path: str,
+    gdb_path: Optional[str],
     era5_cache_dir: Optional[str],
     gridded_era5_uri: Optional[str],
+    gcs_gdb_uri: Optional[str] = None,
+    gcs_era5_climate_uri: Optional[str] = None,
+    no_download: bool = False,
 ) -> StaticAttributesExtractor:
   global _WORKER_EXTRACTOR, _WORKER_EXTRACTOR_KEY
-  key = (gdb_path, era5_cache_dir, gridded_era5_uri)
+  key = (
+      gdb_path,
+      era5_cache_dir,
+      gridded_era5_uri,
+      gcs_gdb_uri,
+      gcs_era5_climate_uri,
+      no_download,
+  )
   if _WORKER_EXTRACTOR is None or _WORKER_EXTRACTOR_KEY != key:
     _WORKER_EXTRACTOR = StaticAttributesExtractor(
         gdb_path=gdb_path,
         era5_cache_dir=era5_cache_dir,
         gridded_era5_uri=gridded_era5_uri,
+        gcs_gdb_uri=gcs_gdb_uri,
+        gcs_era5_climate_uri=gcs_era5_climate_uri,
+        no_download=no_download,
     )
     _WORKER_EXTRACTOR_KEY = key
   return _WORKER_EXTRACTOR
 
 
 def _worker_extract_polygon(args: tuple) -> Dict[str, Any]:
-  (
-      geom,
-      gid,
-      min_overlap_threshold,
-      era5_source,
+  if len(args) == 8:
+    (
+        geom,
+        gid,
+        min_overlap_threshold,
+        era5_source,
+        gdb_path,
+        era5_cache_dir,
+        gridded_era5_uri,
+        skip_climate,
+    ) = args
+    gcs_gdb_uri = None
+    gcs_era5_climate_uri = None
+    no_download = False
+  else:
+    (
+        geom,
+        gid,
+        min_overlap_threshold,
+        era5_source,
+        gdb_path,
+        era5_cache_dir,
+        gridded_era5_uri,
+        skip_climate,
+        gcs_gdb_uri,
+        gcs_era5_climate_uri,
+        no_download,
+    ) = args
+  ext = _get_worker_extractor(
       gdb_path,
       era5_cache_dir,
       gridded_era5_uri,
-      skip_climate,
-  ) = args
-  ext = _get_worker_extractor(gdb_path, era5_cache_dir, gridded_era5_uri)
+      gcs_gdb_uri=gcs_gdb_uri,
+      gcs_era5_climate_uri=gcs_era5_climate_uri,
+      no_download=no_download,
+  )
   return ext.extract_attributes_for_polygon(
       geom,
       catchment_id=gid,
@@ -172,66 +227,95 @@ class StaticAttributesExtractor:
 
   def __init__(
       self,
-      gdb_path: Union[str, Path],
+      gdb_path: Optional[Union[str, Path]] = None,
       era5_source: Optional[str] = None,
       era5_cache_dir: Optional[Union[str, Path]] = None,
       gridded_era5_uri: Optional[Union[str, Path]] = None,
       gcs_gdb_uri: Optional[str] = None,
       gcs_era5_climate_uri: Optional[str] = None,
+      no_download: bool = False,
   ):
     """Initializes the StaticAttributesExtractor.
 
     Args:
-      gdb_path: Path to local BasinATLAS_v10.gdb directory or BasinATLAS_v10_lev12.shp.
+      gdb_path: Path to local BasinATLAS_v10.gdb directory, shapefile, or
+        GeoParquet file (or GCS URI when streaming in memory).
       era5_source: Optional sourcing mode for ERA5 climate attributes ("hybas"
         or "gridded"). Must be provided either at initialization or when calling
         extraction methods (unless timeseries_df is passed).
       era5_cache_dir: Directory containing continental ERA5 climate index files
-        (required when era5_source="hybas").
+        (required when era5_source="hybas" unless no_download=True with
+        gcs_era5_climate_uri).
       gridded_era5_uri: GCS URI or local path to gridded daily ERA5 Zarr store
         (required when era5_source="gridded"; optional when era5_source="hybas"
         to compute *_ERA5_LAND attributes).
-      gcs_gdb_uri: Optional GCS URI from which to download BasinATLAS_v10.gdb
-        into gdb_path if gdb_path does not yet exist locally.
-      gcs_era5_climate_uri: Optional GCS URI from which to download continental
-        ERA5 climate tables into era5_cache_dir if not yet present locally.
+      gcs_gdb_uri: Optional GCS URI for HydroATLAS data. Downloaded to gdb_path
+        when no_download=False, or streamed directly in memory when
+        no_download=True.
+      gcs_era5_climate_uri: Optional GCS URI for continental ERA5 climate tables.
+        Downloaded to era5_cache_dir when no_download=False, or streamed
+        directly in memory when no_download=True.
+      no_download: If True, streams HydroATLAS and ERA5 data directly in memory
+        from Google Cloud Storage without writing files to local disk.
     """
-    if not gdb_path:
-      raise ValueError("gdb_path must be explicitly provided.")
     if era5_source is not None and era5_source.lower() not in {"hybas", "gridded"}:
       raise ValueError(
           f"Invalid era5_source {era5_source!r}; must be 'hybas' or 'gridded'."
       )
     self.era5_source = era5_source.lower() if era5_source else None
-    self.gdb_path = Path(gdb_path)
+    self.no_download = bool(no_download)
+    self.gcs_gdb_uri = gcs_gdb_uri
 
-    if (
-        not self.gdb_path.exists()
-        or (self.gdb_path.is_dir() and not any(self.gdb_path.iterdir()))
-    ):
+    self._hydroatlas_mode: str = "pyogrio"
+    self._in_memory_gdf: Optional[gpd.GeoDataFrame] = None
+    self._subpolygon_files: Dict[str, str] = {}
+    self._cloud_attr_pq_path: Optional[str] = None
+    self._cloud_attr_parquet_bytes: Optional[bytes] = None
+    self._cloud_continent_gdfs: Dict[str, gpd.GeoDataFrame] = {}
+    self.is_shapefile: bool = False
+    self.layer_name: Optional[str] = None
+
+    if self.no_download:
       if gcs_gdb_uri:
-        logger.info(
-            "BasinATLAS GDB not found at %s. Downloading from %s...",
-            self.gdb_path,
-            gcs_gdb_uri,
-        )
-        self.gdb_path = download_hydroatlas_from_gcs(
-            target_dir=self.gdb_path, source_uri=gcs_gdb_uri
-        )
+        active_source = str(gcs_gdb_uri)
+      elif gdb_path:
+        active_source = str(gdb_path)
       else:
-        raise FileNotFoundError(
-            f"BasinATLAS dataset not found at {self.gdb_path}."
+        raise ValueError(
+            "Either gdb_path or gcs_gdb_uri must be explicitly provided."
         )
-
-    # Determine if target is a FileGDB directory or shapefile
-    self.is_shapefile = str(self.gdb_path).endswith(".shp")
-    self.layer_name = None if self.is_shapefile else "BasinATLAS_v10_lev12"
-
-    if self.is_shapefile:
-      info = pyogrio.read_info(self.gdb_path)
+      self.gdb_path = (
+          Path(gdb_path) if (gdb_path and not is_gcs_path(gdb_path)) else None
+      )
     else:
-      info = pyogrio.read_info(self.gdb_path, layer=self.layer_name)
-    self.all_gdb_fields = list(info["fields"])
+      if not gdb_path:
+        raise ValueError("gdb_path must be explicitly provided.")
+      if is_gcs_path(gdb_path):
+        active_source = str(gdb_path)
+        self.gdb_path = None
+        self.no_download = True
+      else:
+        self.gdb_path = Path(gdb_path)
+        if (
+            not self.gdb_path.exists()
+            or (self.gdb_path.is_dir() and not any(self.gdb_path.iterdir()))
+        ):
+          if gcs_gdb_uri:
+            logger.info(
+                "BasinATLAS GDB not found at %s. Downloading from %s...",
+                self.gdb_path,
+                gcs_gdb_uri,
+            )
+            self.gdb_path = download_hydroatlas_from_gcs(
+                target_dir=self.gdb_path, source_uri=gcs_gdb_uri
+            )
+          else:
+            raise FileNotFoundError(
+                f"BasinATLAS dataset not found at {self.gdb_path}."
+            )
+        active_source = str(self.gdb_path)
+
+    self._init_hydroatlas_source(active_source)
 
     self.use_properties = [
         p
@@ -242,14 +326,28 @@ class StaticAttributesExtractor:
         p for p in self.use_properties if p not in ADDITIONAL_PROPERTIES
     ]
 
-    self.era5_cache_dir = Path(era5_cache_dir) if era5_cache_dir else None
-    self.gcs_era5_climate_uri = gcs_era5_climate_uri
+    self.era5_cache_dir = (
+        Path(era5_cache_dir)
+        if (era5_cache_dir and not is_gcs_path(era5_cache_dir))
+        else None
+    )
+    self.gcs_era5_climate_uri = (
+        str(era5_cache_dir)
+        if (era5_cache_dir and is_gcs_path(era5_cache_dir) and not gcs_era5_climate_uri)
+        else gcs_era5_climate_uri
+    )
+
+    has_era5_hybas_config = (
+        self.era5_cache_dir is not None
+        or (self.no_download and self.gcs_era5_climate_uri is not None)
+    )
     self.era5_loader = (
         ERA5ClimateLoader(
             cache_dir=self.era5_cache_dir,
             gcs_source_uri=self.gcs_era5_climate_uri,
+            no_download=self.no_download,
         )
-        if self.era5_cache_dir is not None
+        if has_era5_hybas_config
         else None
     )
 
@@ -261,9 +359,154 @@ class StaticAttributesExtractor:
     )
 
     if self.era5_source == "hybas" and self.era5_loader is None:
-      raise ValueError("era5_cache_dir must be provided when era5_source='hybas'.")
+      raise ValueError(
+          "era5_cache_dir (or gcs_era5_climate_uri with no_download=True) must be provided when era5_source='hybas'."
+      )
     if self.era5_source == "gridded" and self.gridded_extractor is None:
       raise ValueError("gridded_era5_uri must be provided when era5_source='gridded'.")
+
+  def _init_hydroatlas_source(self, active_source: str) -> None:
+    """Initializes HydroATLAS metadata from a local path or GCS URI."""
+    if is_gcs_path(active_source):
+      import gcsfs
+      import pyarrow.parquet as pq
+
+      fs = gcsfs.GCSFileSystem()
+      clean_src = active_source.replace("gs://", "").replace("gcs://", "").rstrip("/")
+      if clean_src.endswith((".parquet", ".geoparquet")):
+        if not fs.exists(clean_src):
+          raise FileNotFoundError(
+              f"Cloud HydroATLAS parquet file not found at {active_source}."
+          )
+        raw_bytes = fs.cat_file(clean_src)
+        gdf = gpd.read_parquet(io.BytesIO(raw_bytes))
+        gdf["HYBAS_ID"] = _normalize_hybas_id_series(gdf["HYBAS_ID"])
+        _ = gdf.sindex
+        self._in_memory_gdf = gdf
+        self._hydroatlas_mode = "in_memory_gdf"
+        self.all_gdb_fields = [c for c in gdf.columns if c != "geometry"]
+        return
+
+      clean_base = (
+          clean_src.rsplit("/", 1)[0]
+          if clean_src.endswith(".gdb")
+          else clean_src
+      )
+      attr_pq = f"{clean_base}/hydro_atlas_lev12.parquet"
+      subpoly_dir = f"{clean_base}/subpolygons"
+      if not fs.exists(attr_pq) or not fs.exists(subpoly_dir):
+        raise FileNotFoundError(
+            f"Cloud HydroATLAS parquet files not found under gs://{clean_base} "
+            "(expected hydro_atlas_lev12.parquet and subpolygons/)."
+        )
+      for fpath in sorted(fs.ls(subpoly_dir)):
+        fname = fpath.rsplit("/", 1)[-1]
+        if fname.startswith("hybas_") and fname.endswith("_lev12_v1c.geoparquet"):
+          cont = fname.split("_")[1]
+          self._subpolygon_files[cont] = fpath
+      if not self._subpolygon_files:
+        raise FileNotFoundError(
+            f"No hybas_*_lev12_v1c.geoparquet files found in gs://{subpoly_dir}."
+        )
+      with fs.open(attr_pq, "rb") as fp:
+        schema = pq.read_schema(fp)
+      self.all_gdb_fields = list(schema.names)
+      self._cloud_attr_pq_path = attr_pq
+      self._hydroatlas_mode = "gcs_partitioned"
+      return
+
+    local_src = Path(active_source)
+    if not local_src.exists():
+      raise FileNotFoundError(f"BasinATLAS dataset not found at {local_src}.")
+
+    if str(local_src).endswith((".parquet", ".geoparquet")):
+      gdf = gpd.read_parquet(local_src)
+      gdf["HYBAS_ID"] = _normalize_hybas_id_series(gdf["HYBAS_ID"])
+      _ = gdf.sindex
+      self._in_memory_gdf = gdf
+      self._hydroatlas_mode = "in_memory_gdf"
+      self.all_gdb_fields = [c for c in gdf.columns if c != "geometry"]
+      return
+
+    if (
+        local_src.is_dir()
+        and (local_src / "hydro_atlas_lev12.parquet").exists()
+        and (local_src / "subpolygons").is_dir()
+    ):
+      import pyarrow.parquet as pq
+
+      attr_pq_local = local_src / "hydro_atlas_lev12.parquet"
+      for fpath in sorted(
+          (local_src / "subpolygons").glob("hybas_*_lev12_v1c.geoparquet")
+      ):
+        cont = fpath.name.split("_")[1]
+        self._subpolygon_files[cont] = str(fpath)
+      if not self._subpolygon_files:
+        raise FileNotFoundError(
+            f"No hybas_*_lev12_v1c.geoparquet files found in {local_src / 'subpolygons'}."
+        )
+      schema = pq.read_schema(attr_pq_local)
+      self.all_gdb_fields = list(schema.names)
+      self._cloud_attr_pq_path = str(attr_pq_local)
+      self._hydroatlas_mode = "local_partitioned"
+      return
+
+    self._hydroatlas_mode = "pyogrio"
+    self.is_shapefile = str(local_src).endswith(".shp")
+    self.layer_name = None if self.is_shapefile else "BasinATLAS_v10_lev12"
+    if self.is_shapefile:
+      info = pyogrio.read_info(local_src)
+    else:
+      info = pyogrio.read_info(local_src, layer=self.layer_name)
+    self.all_gdb_fields = list(info["fields"])
+
+  def _get_partitioned_continent_gdf(self, cont: str) -> gpd.GeoDataFrame:
+    """Loads and merges a continental GeoParquet file with HydroATLAS attributes in memory."""
+    if cont in self._cloud_continent_gdfs:
+      return self._cloud_continent_gdfs[cont]
+
+    import pyarrow.parquet as pq
+
+    cols_to_read = ["HYBAS_ID"] + [
+        c for c in self.use_properties if c != "HYBAS_ID"
+    ]
+    subpoly_path = self._subpolygon_files[cont]
+
+    if self._hydroatlas_mode == "gcs_partitioned":
+      import gcsfs
+
+      fs = gcsfs.GCSFileSystem()
+      if self._cloud_attr_parquet_bytes is None:
+        logger.info(
+            "Streaming HydroATLAS attributes in memory from gs://%s...",
+            self._cloud_attr_pq_path,
+        )
+        self._cloud_attr_parquet_bytes = fs.cat_file(self._cloud_attr_pq_path)
+      attr_df = pq.read_table(
+          io.BytesIO(self._cloud_attr_parquet_bytes), columns=cols_to_read
+      ).to_pandas()
+      logger.info(
+          "Streaming HydroATLAS '%s' sub-basin geometries in memory from gs://%s...",
+          cont,
+          subpoly_path,
+      )
+      raw_sub = fs.cat_file(subpoly_path)
+      gdf_sub = gpd.read_parquet(io.BytesIO(raw_sub))
+    else:
+      attr_df = pq.read_table(
+          self._cloud_attr_pq_path, columns=cols_to_read
+      ).to_pandas()
+      gdf_sub = gpd.read_parquet(subpoly_path)
+
+    attr_df["HYBAS_ID"] = _normalize_hybas_id_series(attr_df["HYBAS_ID"])
+    gdf_sub["HYBAS_ID"] = _normalize_hybas_id_series(gdf_sub["HYBAS_ID"])
+    merged = gdf_sub[["HYBAS_ID", "geometry"]].merge(
+        attr_df, on="HYBAS_ID", how="inner"
+    )
+    gdf_merged = gpd.GeoDataFrame(merged, geometry="geometry", crs=gdf_sub.crs)
+    _ = gdf_merged.sindex
+    self._cloud_continent_gdfs[cont] = gdf_merged
+    return gdf_merged
 
   def _era5_land_variants_from_gridded(
       self,
@@ -287,8 +530,30 @@ class StaticAttributesExtractor:
   def _read_subbasins_in_bbox(
       self, bbox: Tuple[float, float, float, float]
   ) -> gpd.GeoDataFrame:
-    """Reads Level 12 sub-basins within bounding box from GDB or shapefile."""
-    if not self.gdb_path.exists():
+    """Reads Level 12 sub-basins within bounding box from local or in-memory cloud source."""
+    if self._hydroatlas_mode == "in_memory_gdf":
+      return self._in_memory_gdf.cx[bbox[0] : bbox[2], bbox[1] : bbox[3]].copy()
+
+    if self._hydroatlas_mode in ("gcs_partitioned", "local_partitioned"):
+      matched_gdfs = []
+      for cont in sorted(self._subpolygon_files.keys()):
+        if cont in CONTINENT_BBOXES and not _bboxes_intersect(
+            bbox, CONTINENT_BBOXES[cont]
+        ):
+          continue
+        gdf_cont = self._get_partitioned_continent_gdf(cont)
+        sub = gdf_cont.cx[bbox[0] : bbox[2], bbox[1] : bbox[3]].copy()
+        if len(sub) > 0:
+          matched_gdfs.append(sub)
+      if not matched_gdfs:
+        return gpd.GeoDataFrame()
+      if len(matched_gdfs) == 1:
+        return matched_gdfs[0]
+      return gpd.GeoDataFrame(
+          pd.concat(matched_gdfs, ignore_index=True), crs=matched_gdfs[0].crs
+      )
+
+    if self.gdb_path is None or not self.gdb_path.exists():
       raise FileNotFoundError(
           f"BasinATLAS dataset not found at {self.gdb_path}."
       )
@@ -306,7 +571,9 @@ class StaticAttributesExtractor:
           "era5_source must be explicitly specified as either 'hybas' or 'gridded'."
       )
     if source == "hybas" and self.era5_loader is None:
-      raise ValueError("era5_cache_dir must be provided when era5_source='hybas'.")
+      raise ValueError(
+          "era5_cache_dir (or gcs_era5_climate_uri with no_download=True) must be provided when era5_source='hybas'."
+      )
     if source == "gridded" and self.gridded_extractor is None:
       raise ValueError("gridded_era5_uri must be provided when era5_source='gridded'.")
     return source
@@ -828,10 +1095,13 @@ class StaticAttributesExtractor:
               gid,
               min_overlap_threshold,
               actual_era5_source,
-              str(self.gdb_path),
+              str(self.gdb_path) if self.gdb_path else None,
               str(self.era5_cache_dir) if self.era5_cache_dir else None,
               self.gridded_era5_uri,
               skip_climate,
+              self.gcs_gdb_uri,
+              self.gcs_era5_climate_uri,
+              self.no_download,
           )
           for geom, gid in tasks
       ]

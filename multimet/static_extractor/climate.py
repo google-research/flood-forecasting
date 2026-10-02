@@ -318,18 +318,35 @@ def compute_caravan_climate_metrics(
 
 
 class ERA5ClimateLoader:
-  """Loads and aggregates Level 12 precomputed ERA5 climate indices from a specified directory."""
+  """Loads and aggregates Level 12 precomputed ERA5 climate indices from a specified directory or GCS."""
 
   def __init__(
       self,
-      cache_dir: Union[str, Path],
+      cache_dir: Optional[Union[str, Path]] = None,
       gcs_source_uri: Optional[str] = None,
+      no_download: bool = False,
   ):
-    if not cache_dir:
-      raise ValueError("cache_dir must be explicitly provided.")
-    self.cache_dir = Path(cache_dir)
-    self.cache_dir.mkdir(parents=True, exist_ok=True)
+    self.no_download = bool(no_download)
+    if cache_dir is not None and str(cache_dir).startswith(("gs://", "gcs://")):
+      if not gcs_source_uri:
+        gcs_source_uri = str(cache_dir)
+      cache_dir = None
+
     self.gcs_source_uri = gcs_source_uri.rstrip("/") if gcs_source_uri else None
+
+    if self.no_download or (cache_dir is None and self.gcs_source_uri is not None):
+      self.no_download = True
+      self.cache_dir = Path(cache_dir) if cache_dir else None
+      if self.gcs_source_uri is None and (self.cache_dir is None or not self.cache_dir.exists()):
+        raise ValueError(
+            "gcs_source_uri (or an existing cache_dir) must be explicitly provided when no_download=True."
+        )
+    else:
+      if not cache_dir:
+        raise ValueError("cache_dir must be explicitly provided.")
+      self.cache_dir = Path(cache_dir)
+      self.cache_dir.mkdir(parents=True, exist_ok=True)
+
     self.loaded_continents: Set[str] = set()
     self.records: Dict[int, Dict[str, Any]] = {}
 
@@ -358,7 +375,7 @@ class ERA5ClimateLoader:
     import gcsfs
 
     fs = gcsfs.GCSFileSystem()
-    remote_path = gcs_src.replace("gs://", "")
+    remote_path = gcs_src.replace("gs://", "").replace("gcs://", "")
     if not fs.exists(remote_path):
       raise FileNotFoundError(f"Remote climate indices file does not exist: {gcs_src}")
     fs.get(remote_path, str(tmp_file))
@@ -369,6 +386,8 @@ class ERA5ClimateLoader:
     raise FileNotFoundError(f"Downloaded file from {gcs_src} is empty or missing.")
 
   def _ensure_file_on_disk(self, continent_code: str) -> Path:
+    if self.cache_dir is None:
+      raise ValueError("cache_dir is not configured for local disk storage.")
     txt_path = self.cache_dir / f"{continent_code}_climate_indices.txt"
     if txt_path.exists() and txt_path.stat().st_size > 0:
       return txt_path
@@ -387,28 +406,62 @@ class ERA5ClimateLoader:
     self._download_from_gcs(continent_code, txt_path)
     return txt_path
 
-  def ensure_continent(self, continent_code: str) -> None:
-    """Ensures continental climate index file is available on disk and loaded in memory."""
-    if continent_code in self.loaded_continents:
-      return
-
-    txt_path = self._ensure_file_on_disk(continent_code)
+  def _parse_climate_lines(self, lines, continent_code: str) -> None:
     count = 0
-    with open(txt_path, "r", encoding="utf-8") as f:
-      for line in f:
-        line = line.strip()
-        if not line:
-          continue
-        item = json.loads(line)
-        gid = item.get("gauge_id", "")
-        if gid.startswith("hybas_"):
-          hid = int(gid.split("_")[1])
-          self.records[hid] = item
-          count += 1
+    for line in lines:
+      line = line.strip()
+      if not line:
+        continue
+      item = json.loads(line)
+      gid = item.get("gauge_id", "")
+      if gid.startswith("hybas_"):
+        hid = int(gid.split("_")[1])
+        self.records[hid] = item
+        count += 1
     self.loaded_continents.add(continent_code)
     logger.debug(
         "Loaded %d Level 12 climate records for continent '%s'", count, continent_code
     )
+
+  def _stream_continent_from_gcs(self, continent_code: str) -> None:
+    """Streams a continental climate indices file directly from GCS into memory."""
+    if not self.gcs_source_uri:
+      raise FileNotFoundError(
+          f"Cannot stream climate indices for '{continent_code}': no gcs_source_uri was provided."
+      )
+    import gcsfs
+
+    fs = gcsfs.GCSFileSystem()
+    gcs_src = f"{self.gcs_source_uri}/{continent_code}_climate_indices.txt"
+    remote_path = gcs_src.replace("gs://", "").replace("gcs://", "")
+    if not fs.exists(remote_path):
+      raise FileNotFoundError(f"Remote climate indices file does not exist: {gcs_src}")
+    logger.info(
+        "Streaming ERA5 climate indices for '%s' in memory from %s...",
+        continent_code,
+        gcs_src,
+    )
+    raw_text = fs.cat_file(remote_path).decode("utf-8")
+    self._parse_climate_lines(raw_text.splitlines(), continent_code)
+
+  def ensure_continent(self, continent_code: str) -> None:
+    """Ensures continental climate index records are loaded in memory."""
+    if continent_code in self.loaded_continents:
+      return
+
+    if self.no_download:
+      if self.cache_dir is not None:
+        local_txt = self.cache_dir / f"{continent_code}_climate_indices.txt"
+        if local_txt.exists() and local_txt.stat().st_size > 0:
+          with open(local_txt, "r", encoding="utf-8") as f:
+            self._parse_climate_lines(f, continent_code)
+          return
+      self._stream_continent_from_gcs(continent_code)
+      return
+
+    txt_path = self._ensure_file_on_disk(continent_code)
+    with open(txt_path, "r", encoding="utf-8") as f:
+      self._parse_climate_lines(f, continent_code)
 
   def get_indices_for_subbasins(
       self, hybas_ids: List[int], weights: List[float]

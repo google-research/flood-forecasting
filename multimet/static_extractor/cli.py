@@ -53,9 +53,9 @@ def parse_args(args=None):
   parser.add_argument(
       "--gdb-path",
       "-g",
-      required=True,
+      default=None,
       type=str,
-      help="Local path to BasinATLAS_v10.gdb directory or BasinATLAS_v10_lev12.shp.",
+      help="Path to local BasinATLAS_v10.gdb directory, shapefile, or GeoParquet file (required unless --no-download is used with --gcs-gdb-uri).",
   )
   parser.add_argument(
       "--era5-source",
@@ -67,7 +67,7 @@ def parse_args(args=None):
       "--era5-cache-dir",
       default=None,
       type=str,
-      help="Local directory containing continental ERA5 climate index files (required when --era5-source=hybas).",
+      help="Local directory containing continental ERA5 climate index files (required when --era5-source=hybas unless --no-download is used with --gcs-era5-climate-uri).",
   )
   parser.add_argument(
       "--gridded-era5-uri",
@@ -79,13 +79,18 @@ def parse_args(args=None):
       "--gcs-gdb-uri",
       default=None,
       type=str,
-      help="Optional GCS URI from which to download BasinATLAS_v10.gdb into --gdb-path if not yet present locally.",
+      help="Optional GCS URI for HydroATLAS data (downloaded into --gdb-path by default, or streamed in memory when --no-download is set).",
   )
   parser.add_argument(
       "--gcs-era5-climate-uri",
       default=None,
       type=str,
-      help="Optional GCS URI from which to download continental ERA5 climate tables into --era5-cache-dir if not yet present locally.",
+      help="Optional GCS URI for continental ERA5 climate tables (downloaded into --era5-cache-dir by default, or streamed in memory when --no-download is set).",
+  )
+  parser.add_argument(
+      "--no-download",
+      action="store_true",
+      help="Stream HydroATLAS and ERA5 data directly from Google Cloud Storage in memory without downloading files to local disk.",
   )
   parser.add_argument(
       "--id-column",
@@ -118,8 +123,26 @@ def parse_args(args=None):
       help="Show detailed debug/info log messages.",
   )
   parsed = parser.parse_args(args)
-  if parsed.era5_source == "hybas" and not parsed.era5_cache_dir:
-    parser.error("--era5-cache-dir is required when --era5-source is 'hybas'.")
+  if parsed.no_download:
+    if not parsed.gdb_path and not parsed.gcs_gdb_uri:
+      parser.error(
+          "Either --gdb-path or --gcs-gdb-uri is required when --no-download is set."
+      )
+    if (
+        parsed.era5_source == "hybas"
+        and not parsed.era5_cache_dir
+        and not parsed.gcs_era5_climate_uri
+    ):
+      parser.error(
+          "Either --era5-cache-dir or --gcs-era5-climate-uri is required when --era5-source is 'hybas' with --no-download."
+      )
+  else:
+    if not parsed.gdb_path:
+      parser.error(
+          "--gdb-path is required unless --no-download is set with --gcs-gdb-uri."
+      )
+    if parsed.era5_source == "hybas" and not parsed.era5_cache_dir:
+      parser.error("--era5-cache-dir is required when --era5-source is 'hybas'.")
   if parsed.era5_source == "gridded" and not parsed.gridded_era5_uri:
     parser.error("--gridded-era5-uri is required when --era5-source is 'gridded'.")
   return parsed
@@ -154,6 +177,7 @@ def main(args=None):
       gridded_era5_uri=parsed.gridded_era5_uri,
       gcs_gdb_uri=parsed.gcs_gdb_uri,
       gcs_era5_climate_uri=parsed.gcs_era5_climate_uri,
+      no_download=parsed.no_download,
   )
 
   logger.debug(
@@ -174,14 +198,15 @@ def main(args=None):
       f"\n✓ Extracted {df.shape[1]} attributes for {df.shape[0]} catchments -> {parsed.output}"
   )
 
-  if parsed.clean_cache:
-    gdb_p = Path(parsed.gdb_path)
-    if gdb_p.exists():
-      if gdb_p.is_dir():
-        shutil.rmtree(gdb_p)
-      else:
-        gdb_p.unlink()
-    if parsed.era5_cache_dir:
+  if parsed.clean_cache and not parsed.no_download:
+    if parsed.gdb_path and not str(parsed.gdb_path).startswith(("gs://", "gcs://")):
+      gdb_p = Path(parsed.gdb_path)
+      if gdb_p.exists():
+        if gdb_p.is_dir():
+          shutil.rmtree(gdb_p)
+        else:
+          gdb_p.unlink()
+    if parsed.era5_cache_dir and not str(parsed.era5_cache_dir).startswith(("gs://", "gcs://")):
       era5_p = Path(parsed.era5_cache_dir)
       if era5_p.exists() and era5_p.is_dir():
         shutil.rmtree(era5_p)

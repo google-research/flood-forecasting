@@ -886,3 +886,120 @@ def test_no_silent_fallbacks_or_masked_errors(tmp_path):
   in_bounds_poly = shapely.geometry.box(20.0, 10.0, 21.0, 11.0)
   res_no_dates = gridded.extract_climate_metrics_for_polygon(in_bounds_poly, baseline_years=(1981, 2020))
   assert np.isnan(res_no_dates["p_mean"])
+
+
+def test_no_download_in_memory_cloud_streaming(tmp_path, monkeypatch):
+  """Verifies --no-download / no_download=True streams HydroATLAS and ERA5 in memory without local disk downloads."""
+  import io
+  import gcsfs
+
+  shp_path, era5_cache, _ = _build_synthetic_hydroatlas_env(tmp_path, include_native_pet=False)
+  gdf_full = gpd.read_file(shp_path)
+
+  # Build synthetic cloud byte payloads in memory (never written to local cache dir)
+  single_gpq_buf = io.BytesIO()
+  gdf_full.to_parquet(single_gpq_buf)
+  single_gpq_bytes = single_gpq_buf.getvalue()
+
+  subpoly_gdf = gdf_full[["HYBAS_ID", "NEXT_DOWN", "SUB_AREA", "UP_AREA", "geometry"]].copy()
+  subpoly_buf = io.BytesIO()
+  subpoly_gdf.to_parquet(subpoly_buf)
+  subpoly_bytes = subpoly_buf.getvalue()
+
+  attr_df = pd.DataFrame(gdf_full.drop(columns="geometry"))
+  attr_df["HYBAS_ID"] = [f"hybas_{int(h)}" for h in attr_df["HYBAS_ID"]]
+  attr_buf = io.BytesIO()
+  attr_df.to_parquet(attr_buf, index=False)
+  attr_bytes = attr_buf.getvalue()
+
+  climate_bytes = (era5_cache / "na_climate_indices.txt").read_bytes()
+
+  fake_objects = {
+      "test-bucket/hydroatlas/hydro_atlas_lev12.parquet": attr_bytes,
+      "test-bucket/hydroatlas/subpolygons/hybas_na_lev12_v1c.geoparquet": subpoly_bytes,
+      "test-bucket/hydroatlas/era5_climate/na_climate_indices.txt": climate_bytes,
+      "test-bucket/single/hydroatlas.geoparquet": single_gpq_bytes,
+  }
+
+  class FakeGCSFileSystem:
+    def exists(self, path: str) -> bool:
+      clean = path.replace("gs://", "").rstrip("/")
+      if clean in fake_objects:
+        return True
+      prefix = clean + "/"
+      return any(k.startswith(prefix) for k in fake_objects)
+
+    def ls(self, path: str):
+      clean = path.replace("gs://", "").rstrip("/") + "/"
+      return sorted([k for k in fake_objects if k.startswith(clean)])
+
+    def cat_file(self, path: str) -> bytes:
+      clean = path.replace("gs://", "").rstrip("/")
+      if clean not in fake_objects:
+        raise FileNotFoundError(clean)
+      return fake_objects[clean]
+
+    def open(self, path: str, mode: str = "rb", **kwargs):
+      data = self.cat_file(path)
+      if "r" in mode and "b" not in mode:
+        return io.StringIO(data.decode(kwargs.get("encoding", "utf-8")))
+      return io.BytesIO(data)
+
+  monkeypatch.setattr(gcsfs, "GCSFileSystem", FakeGCSFileSystem)
+
+  # Ensure no local cache directories are created when no_download=True
+  uncreated_gdb_dir = tmp_path / "should_not_be_created_gdb"
+  uncreated_era5_dir = tmp_path / "should_not_be_created_era5"
+
+  ext_cloud = StaticAttributesExtractor(
+      gdb_path=uncreated_gdb_dir,
+      era5_cache_dir=uncreated_era5_dir,
+      gcs_gdb_uri="gs://test-bucket/hydroatlas/BasinATLAS_v10.gdb",
+      gcs_era5_climate_uri="gs://test-bucket/hydroatlas/era5_climate",
+      era5_source="hybas",
+      no_download=True,
+  )
+  assert not uncreated_gdb_dir.exists()
+  assert not uncreated_era5_dir.exists()
+
+  query_poly = shapely.geometry.box(-86.25, 40.1, -85.25, 40.9)
+  res_cloud = ext_cloud.extract_attributes_for_polygon(query_poly, catchment_id="cloud_01")
+  attrs = res_cloud["caravan_attributes"]
+  assert np.isclose(attrs["ele_mt_sav"], 350.0, rtol=1e-3)
+  assert np.isclose(attrs["slp_dg_sav"], 25.0, rtol=1e-3)
+  assert attrs["glc_cl_smj"] == 12
+  assert np.isclose(attrs["dis_m3_pyr"], 45.0)
+  assert np.isclose(attrs["p_mean"], 4.5, rtol=1e-3)
+  assert np.isclose(attrs["pet_mean_FAO_PM"], 2.25, rtol=1e-3)
+  assert not uncreated_gdb_dir.exists()
+  assert not uncreated_era5_dir.exists()
+
+  # Also test single GeoParquet file on GCS with no local paths passed at all
+  ext_single_gpq = StaticAttributesExtractor(
+      gcs_gdb_uri="gs://test-bucket/single/hydroatlas.geoparquet",
+      gcs_era5_climate_uri="gs://test-bucket/hydroatlas/era5_climate",
+      era5_source="hybas",
+      no_download=True,
+  )
+  res_single = ext_single_gpq.extract_attributes_for_polygon(query_poly, catchment_id="cloud_02")
+  assert np.isclose(res_single["caravan_attributes"]["ele_mt_sav"], 350.0, rtol=1e-3)
+
+  # Test CLI with --no-download and no --gdb-path or --era5-cache-dir
+  in_geojson = tmp_path / "query.geojson"
+  out_csv = tmp_path / "cloud_out.csv"
+  gpd.GeoDataFrame({"gauge_id": ["cloud_cli"]}, geometry=[query_poly], crs="EPSG:4326").to_file(
+      in_geojson, driver="GeoJSON"
+  )
+  cli_main([
+      "--input", str(in_geojson),
+      "--output", str(out_csv),
+      "--era5-source", "hybas",
+      "--gcs-gdb-uri", "gs://test-bucket/hydroatlas",
+      "--gcs-era5-climate-uri", "gs://test-bucket/hydroatlas/era5_climate",
+      "--no-download",
+  ])
+  assert out_csv.exists()
+  df_out = pd.read_csv(out_csv, index_col=0)
+  assert np.isclose(df_out.loc["cloud_cli", "ele_mt_sav"], 350.0, rtol=1e-3)
+  assert np.isclose(df_out.loc["cloud_cli", "p_mean"], 4.5, rtol=1e-3)
+

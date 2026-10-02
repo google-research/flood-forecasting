@@ -197,7 +197,22 @@ def compute_categorical_metrics(
 
 def _worker_evaluate_basin(args: tuple) -> Dict[str, Any]:
   """ProcessPool worker evaluating a single basin geometry."""
-  row_dict, gdb_path, era5_cache_dir, gridded_era5_uri, era5_source = args
+  if len(args) == 5:
+    row_dict, gdb_path, era5_cache_dir, gridded_era5_uri, era5_source = args
+    gcs_gdb_uri = None
+    gcs_era5_climate_uri = None
+    no_download = False
+  else:
+    (
+        row_dict,
+        gdb_path,
+        era5_cache_dir,
+        gridded_era5_uri,
+        era5_source,
+        gcs_gdb_uri,
+        gcs_era5_climate_uri,
+        no_download,
+    ) = args
   gauge_id = row_dict["gauge_id"]
   geom_wkt = row_dict["geometry_wkt"]
   dataset = row_dict.get("dataset", "unknown")
@@ -210,6 +225,9 @@ def _worker_evaluate_basin(args: tuple) -> Dict[str, Any]:
       gdb_path=gdb_path,
       era5_cache_dir=era5_cache_dir,
       gridded_era5_uri=gridded_era5_uri,
+      gcs_gdb_uri=gcs_gdb_uri,
+      gcs_era5_climate_uri=gcs_era5_climate_uri,
+      no_download=no_download,
   )
   geom = shapely.wkt.loads(geom_wkt)
   res = ext.extract_attributes_for_polygon(
@@ -272,11 +290,14 @@ def print_table(headers: List[str], rows: List[List[Any]], title: str):
 
 def run_benchmark(
     dataset_path: Union[str, Path],
-    gdb_path: Union[str, Path],
-    era5_source: str,
-    output_dir: Union[str, Path],
+    gdb_path: Optional[Union[str, Path]] = None,
+    era5_source: str = "",
+    output_dir: Union[str, Path] = "",
     era5_cache_dir: Optional[Union[str, Path]] = None,
     gridded_era5_uri: Optional[str] = None,
+    gcs_gdb_uri: Optional[str] = None,
+    gcs_era5_climate_uri: Optional[str] = None,
+    no_download: bool = False,
     samples: Optional[int] = None,
     regions: Optional[List[str]] = None,
     size_tiers: Optional[List[str]] = None,
@@ -285,8 +306,8 @@ def run_benchmark(
   """Executes the Caravan static attributes extraction benchmark."""
   if not dataset_path:
     raise ValueError("dataset_path must be explicitly provided.")
-  if not gdb_path:
-    raise ValueError("gdb_path must be explicitly provided.")
+  if not gdb_path and not (no_download and gcs_gdb_uri):
+    raise ValueError("gdb_path (or gcs_gdb_uri with no_download=True) must be explicitly provided.")
   if not output_dir:
     raise ValueError("output_dir must be explicitly provided.")
   if not era5_source or era5_source.lower() not in {"hybas", "gridded"}:
@@ -323,29 +344,28 @@ def run_benchmark(
       f"using {workers} workers (era5_source='{era5_source}')..."
   )
 
-  effective_gdb = Path(gdb_path)
-  effective_cache_dir = Path(era5_cache_dir) if era5_cache_dir else None
-
-  print(f"Using BasinATLAS GDB: {effective_gdb}")
-  if effective_cache_dir:
-    print(f"Using ERA5 climate directory: {effective_cache_dir}")
-
   print("Initializing extractor...")
   StaticAttributesExtractor(
-      gdb_path=effective_gdb,
+      gdb_path=gdb_path,
       era5_source=era5_source,
-      era5_cache_dir=effective_cache_dir,
+      era5_cache_dir=era5_cache_dir,
       gridded_era5_uri=gridded_era5_uri,
+      gcs_gdb_uri=gcs_gdb_uri,
+      gcs_era5_climate_uri=gcs_era5_climate_uri,
+      no_download=no_download,
   )
 
   basin_records = df.to_dict(orient="records")
   worker_args = [
       (
           rec,
-          str(effective_gdb),
-          str(effective_cache_dir) if effective_cache_dir else None,
+          str(gdb_path) if gdb_path else None,
+          str(era5_cache_dir) if era5_cache_dir else None,
           gridded_era5_uri,
           era5_source,
+          gcs_gdb_uri,
+          gcs_era5_climate_uri,
+          no_download,
       )
       for rec in basin_records
   ]
@@ -808,8 +828,8 @@ def main(args=None):
   parser.add_argument(
       "--gdb-path",
       type=str,
-      required=True,
-      help="Local path to BasinATLAS_v10.gdb or shapefile.",
+      default=None,
+      help="Local path to BasinATLAS_v10.gdb, shapefile, or GeoParquet file (required unless --no-download is used with --gcs-gdb-uri).",
   )
   parser.add_argument(
       "--era5-source",
@@ -829,13 +849,30 @@ def main(args=None):
       "--era5-cache-dir",
       type=str,
       default=None,
-      help="Directory containing precomputed continental ERA5 tables (required when --era5-source=hybas).",
+      help="Directory containing precomputed continental ERA5 tables (required when --era5-source=hybas unless --no-download is used with --gcs-era5-climate-uri).",
   )
   parser.add_argument(
       "--gridded-era5-uri",
       type=str,
       default=None,
       help="GCS URI or local path to gridded daily ERA5 Zarr store (required when --era5-source=gridded; optional when --era5-source=hybas).",
+  )
+  parser.add_argument(
+      "--gcs-gdb-uri",
+      type=str,
+      default=None,
+      help="Optional GCS URI for HydroATLAS data.",
+  )
+  parser.add_argument(
+      "--gcs-era5-climate-uri",
+      type=str,
+      default=None,
+      help="Optional GCS URI for continental ERA5 climate tables.",
+  )
+  parser.add_argument(
+      "--no-download",
+      action="store_true",
+      help="Stream HydroATLAS and ERA5 data directly from Google Cloud Storage in memory without downloading files to local disk.",
   )
   parser.add_argument(
       "--samples",
@@ -865,8 +902,26 @@ def main(args=None):
   )
 
   parsed = parser.parse_args(args)
-  if parsed.era5_source == "hybas" and not parsed.era5_cache_dir:
-    parser.error("--era5-cache-dir is required when --era5-source is 'hybas'.")
+  if parsed.no_download:
+    if not parsed.gdb_path and not parsed.gcs_gdb_uri:
+      parser.error(
+          "Either --gdb-path or --gcs-gdb-uri is required when --no-download is set."
+      )
+    if (
+        parsed.era5_source == "hybas"
+        and not parsed.era5_cache_dir
+        and not parsed.gcs_era5_climate_uri
+    ):
+      parser.error(
+          "Either --era5-cache-dir or --gcs-era5-climate-uri is required when --era5-source is 'hybas' with --no-download."
+      )
+  else:
+    if not parsed.gdb_path:
+      parser.error(
+          "--gdb-path is required unless --no-download is set with --gcs-gdb-uri."
+      )
+    if parsed.era5_source == "hybas" and not parsed.era5_cache_dir:
+      parser.error("--era5-cache-dir is required when --era5-source is 'hybas'.")
   if parsed.era5_source == "gridded" and not parsed.gridded_era5_uri:
     parser.error("--gridded-era5-uri is required when --era5-source is 'gridded'.")
 
@@ -877,6 +932,9 @@ def main(args=None):
       output_dir=parsed.output_dir,
       era5_cache_dir=parsed.era5_cache_dir,
       gridded_era5_uri=parsed.gridded_era5_uri,
+      gcs_gdb_uri=parsed.gcs_gdb_uri,
+      gcs_era5_climate_uri=parsed.gcs_era5_climate_uri,
+      no_download=parsed.no_download,
       samples=parsed.samples,
       regions=parsed.regions,
       size_tiers=parsed.size_tiers,
