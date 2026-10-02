@@ -21,7 +21,7 @@ import logging
 import sys
 from pathlib import Path
 
-from static_extractor.extractor import StaticAttributesExtractor
+from multimet.static_extractor.extractor import StaticAttributesExtractor
 
 logging.basicConfig(
     level=logging.INFO,

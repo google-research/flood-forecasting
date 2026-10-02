@@ -4,7 +4,7 @@ Extracting Static Attributes for Custom Watersheds
 
 To predict river flow in a watershed, OpenHydroNet needs a table of static watershed characteristics—such as area, elevation, slope, soil type, land cover, and long-term average climate.
 
-If you are working with watersheds from the published `Caravan <https://www.nature.com/articles/s41597-023-01975-w>`_ dataset, those tables are already provided. If you want to run models on **your own watersheds**, the ``static_extractor`` package takes a map file of your watershed boundaries and creates a Caravan-compatible CSV table for you.
+If you are working with watersheds from the published `Caravan <https://www.nature.com/articles/s41597-023-01975-w>`_ dataset, those tables are already provided. If you want to run models on **your own watersheds**, the ``multimet.static_extractor`` package takes a map file of your watershed boundaries and creates a Caravan-compatible CSV table for you.
 
 It calculates these attributes using the same community datasets and methods used by Caravan:
 
@@ -275,7 +275,7 @@ Extract Attributes from a File to a DataFrame and CSV
 
 .. code-block:: python
 
-   from static_extractor import StaticAttributesExtractor
+   from multimet.static_extractor import StaticAttributesExtractor
 
    extractor = StaticAttributesExtractor(era5_source="hybas")
    df = extractor.extract_attributes_from_file(
@@ -291,7 +291,7 @@ Extract Attributes for a Single Polygon in Python
 .. code-block:: python
 
    import shapely.geometry
-   from static_extractor import StaticAttributesExtractor
+   from multimet.static_extractor import StaticAttributesExtractor
 
    extractor = StaticAttributesExtractor(era5_source="hybas")
 

@@ -1,4 +1,6 @@
-# Extracting Static Attributes for Watersheds (`static_extractor`)
+# Extracting Static Attributes for Watersheds (`multimet/static_extractor`)
+
+The `multimet` directory houses data workflows for preparing watershed inputs for OpenHydroNet. Its `multimet.static_extractor` submodule builds the static watershed attribute tables required by the models.
 
 To predict river flow in a watershed, OpenHydroNet needs a table of unchanging ("static") facts about that watershed—such as its area, elevation, slope, soil type, land cover, and long-term average weather.
 
@@ -135,7 +137,7 @@ extract-caravan-static-batch \
 ### 1. Extract Attributes from a File to a DataFrame and CSV
 
 ```python
-from static_extractor import StaticAttributesExtractor
+from multimet.static_extractor import StaticAttributesExtractor
 
 extractor = StaticAttributesExtractor(era5_source="hybas")
 df = extractor.extract_attributes_from_file(
@@ -150,7 +152,7 @@ print(df.head())
 
 ```python
 import shapely.geometry
-from static_extractor import StaticAttributesExtractor
+from multimet.static_extractor import StaticAttributesExtractor
 
 extractor = StaticAttributesExtractor(era5_source="hybas")
 

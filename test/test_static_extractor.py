@@ -21,7 +21,7 @@ import pandas as pd
 import pytest
 import shapely.geometry
 
-from static_extractor import (
+from multimet.static_extractor import (
     ATTRIBUTE_DEFINITIONS,
     MAJORITY_PROPERTIES,
     StaticAttributesExtractor,
@@ -31,8 +31,8 @@ from static_extractor import (
     compute_pour_point_properties,
     get_default_gdb_path,
 )
-from static_extractor.cli import main as cli_main, parse_args
-from static_extractor.extractor import _worker_extract_polygon
+from multimet.static_extractor.cli import main as cli_main, parse_args
+from multimet.static_extractor.extractor import _worker_extract_polygon
 
 
 def test_schema_definitions():
@@ -449,7 +449,7 @@ def test_era5_gridded_extractor_synthetic(tmp_path):
   """Tests ERA5GriddedExtractor with a synthetic local Zarr dataset."""
   import zarr
   import shapely.geometry
-  from static_extractor.climate import ERA5GriddedExtractor
+  from multimet.static_extractor.climate import ERA5GriddedExtractor
 
   zarr_dir = tmp_path / "synthetic_era5.zarr"
   root = zarr.open_group(str(zarr_dir), mode="w")
@@ -525,7 +525,7 @@ def test_era5_gridded_extractor_synthetic(tmp_path):
 
 def test_batch_runner_discovery(tmp_path):
   """Tests discover_datasets in batch_runner across multiple dataset folders."""
-  from static_extractor.batch_runner import discover_datasets
+  from multimet.static_extractor.batch_runner import discover_datasets
   
   parent = tmp_path / "caravan_root"
   ds1 = parent / "camels"
@@ -555,7 +555,7 @@ def test_batch_runner_discovery(tmp_path):
 
 def test_benchmark_metrics_continuous():
   """Tests continuous statistical validation metrics calculation."""
-  from static_extractor.benchmark import compute_continuous_metrics
+  from multimet.static_extractor.benchmark import compute_continuous_metrics
 
   y_true = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
   y_pred = np.array([10.1, 19.9, 30.2, 39.8, 50.1])
@@ -574,7 +574,7 @@ def test_benchmark_metrics_continuous():
 
 def test_benchmark_metrics_categorical():
   """Tests categorical classification accuracy calculation."""
-  from static_extractor.benchmark import compute_categorical_metrics
+  from multimet.static_extractor.benchmark import compute_categorical_metrics
 
   y_true = np.array([1, 2, 3, 4, 5, 2, 1, 3])
   y_pred = np.array([1, 2, 3, 4, 5, 2, 1, 4])  # 7 out of 8 match
@@ -587,7 +587,7 @@ def test_benchmark_metrics_categorical():
 
 def test_benchmark_attribute_categorization():
   """Tests categorization of all standard attribute names."""
-  from static_extractor.benchmark import get_attribute_category
+  from multimet.static_extractor.benchmark import get_attribute_category
 
   assert get_attribute_category("ele_mt_sav") == "Topography"
   assert get_attribute_category("tmp_dc_syr") == "Climate (HydroATLAS)"
@@ -603,7 +603,7 @@ def test_benchmark_attribute_categorization():
 
 def test_batch_runner_clean_cache_flag(tmp_path):
   """Verifies that --clean-cache removes cache_root after batch execution."""
-  from static_extractor.batch_runner import parse_args, main
+  from multimet.static_extractor.batch_runner import parse_args, main
   fake_cache = tmp_path / "cache_dir"
   fake_cache.mkdir(parents=True, exist_ok=True)
   (fake_cache / "staged_shapefiles").mkdir(parents=True, exist_ok=True)
@@ -622,7 +622,7 @@ def test_batch_runner_clean_cache_flag(tmp_path):
 def test_batch_runner_gcs_output_and_args(tmp_path, monkeypatch):
   """Verifies GCS output handling and multi parent-dir argument parsing."""
   from unittest.mock import MagicMock
-  from static_extractor.batch_runner import parse_args, run_batch_extraction
+  from multimet.static_extractor.batch_runner import parse_args, run_batch_extraction
 
   args = parse_args([
       "-p", "gs://open-multimet/data/caravan_shapefiles/caravan/",
@@ -648,8 +648,8 @@ def test_batch_runner_gcs_output_and_args(tmp_path, monkeypatch):
 
   # Test upload_to_gcs is called during run_batch_extraction when GCS output is set
   mock_upload = MagicMock()
-  monkeypatch.setattr("static_extractor.batch_runner.upload_to_gcs", mock_upload)
-  monkeypatch.setattr("static_extractor.batch_runner.gcs_path_exists", lambda uri: False)
+  monkeypatch.setattr("multimet.static_extractor.batch_runner.upload_to_gcs", mock_upload)
+  monkeypatch.setattr("multimet.static_extractor.batch_runner.gcs_path_exists", lambda uri: False)
 
   dummy_df = pd.DataFrame({"basin_id": ["b1"], "ele_mt_sav": [100.0]})
   dummy_shp = tmp_path / "test.shp"
@@ -658,7 +658,7 @@ def test_batch_runner_gcs_output_and_args(tmp_path, monkeypatch):
   mock_extractor = MagicMock()
   mock_extractor.extract_attributes_from_file.return_value = dummy_df
   monkeypatch.setattr(
-      "static_extractor.batch_runner.StaticAttributesExtractor",
+      "multimet.static_extractor.batch_runner.StaticAttributesExtractor",
       lambda **kwargs: mock_extractor,
   )
 
@@ -680,7 +680,7 @@ def test_batch_runner_gcs_output_and_args(tmp_path, monkeypatch):
 def test_batch_runner_progress_and_quiet_logging(tmp_path):
   """Verifies that --verbose and --no-progress flags are properly parsed and setup_logging configures root logger."""
   import logging
-  from static_extractor.batch_runner import parse_args, setup_logging
+  from multimet.static_extractor.batch_runner import parse_args, setup_logging
 
   # Test default parser flags
   args = parse_args(["-o", str(tmp_path / "out"), "--era5-source", "hybas"])
@@ -702,7 +702,7 @@ def test_batch_runner_progress_and_quiet_logging(tmp_path):
 
 def test_export_subdataset_partitioned_files(tmp_path):
   """Tests partitioning of extracted attributes into HydroATLAS, Caravan, and Parquet tables."""
-  from static_extractor.batch_runner import export_subdataset_partitioned_files
+  from multimet.static_extractor.batch_runner import export_subdataset_partitioned_files
 
   ds_dir = tmp_path / "camels"
   ds_dir.mkdir()
@@ -763,15 +763,15 @@ def test_export_subdataset_partitioned_files(tmp_path):
 def test_batch_runner_partitioned_caravan_new(tmp_path, monkeypatch):
   """Verifies that caravan-new paths automatically trigger subdataset partitioning and uploads."""
   from unittest.mock import MagicMock
-  from static_extractor.batch_runner import run_batch_extraction
+  from multimet.static_extractor.batch_runner import run_batch_extraction
 
   uploaded_uris = []
   def mock_upload(local_file, gcs_dest):
     uploaded_uris.append((Path(local_file).name, gcs_dest))
     return True
 
-  monkeypatch.setattr("static_extractor.batch_runner.upload_to_gcs", mock_upload)
-  monkeypatch.setattr("static_extractor.batch_runner.gcs_path_exists", lambda uri: False)
+  monkeypatch.setattr("multimet.static_extractor.batch_runner.upload_to_gcs", mock_upload)
+  monkeypatch.setattr("multimet.static_extractor.batch_runner.gcs_path_exists", lambda uri: False)
 
   ds_dir = tmp_path / "camels"
   ds_dir.mkdir()
@@ -788,7 +788,7 @@ def test_batch_runner_partitioned_caravan_new(tmp_path, monkeypatch):
   mock_extractor = MagicMock()
   mock_extractor.extract_attributes_from_file.return_value = dummy_df
   monkeypatch.setattr(
-      "static_extractor.batch_runner.StaticAttributesExtractor",
+      "multimet.static_extractor.batch_runner.StaticAttributesExtractor",
       lambda **kwargs: mock_extractor,
   )
 
@@ -828,7 +828,7 @@ def test_batch_runner_partitioned_caravan_new(tmp_path, monkeypatch):
 def test_batch_runner_preserve_caravan_dirs(tmp_path, monkeypatch):
   """Verifies that --preserve-caravan-dirs partitions output per the contract into <collection>/attributes/<subdataset>/."""
   from unittest.mock import MagicMock
-  from static_extractor.batch_runner import parse_args, run_batch_extraction
+  from multimet.static_extractor.batch_runner import parse_args, run_batch_extraction
 
   args = parse_args(["-o", "gs://open-multimet/caravan-new/", "--era5-source", "hybas", "--preserve-caravan-dirs"])
   assert args.preserve_caravan_dirs is True
@@ -838,8 +838,8 @@ def test_batch_runner_preserve_caravan_dirs(tmp_path, monkeypatch):
     uploaded_uris.append((Path(local_file).name, gcs_dest))
     return True
 
-  monkeypatch.setattr("static_extractor.batch_runner.upload_to_gcs", mock_upload)
-  monkeypatch.setattr("static_extractor.batch_runner.gcs_path_exists", lambda uri: False)
+  monkeypatch.setattr("multimet.static_extractor.batch_runner.upload_to_gcs", mock_upload)
+  monkeypatch.setattr("multimet.static_extractor.batch_runner.gcs_path_exists", lambda uri: False)
 
   # Setup 3 dummy datasets spanning all 3 collections
   # 1. camels (caravan-original)
@@ -866,7 +866,7 @@ def test_batch_runner_preserve_caravan_dirs(tmp_path, monkeypatch):
 
   mock_extractor.extract_attributes_from_file.side_effect = mock_extract
   monkeypatch.setattr(
-      "static_extractor.batch_runner.StaticAttributesExtractor",
+      "multimet.static_extractor.batch_runner.StaticAttributesExtractor",
       lambda **kwargs: mock_extractor,
   )
 
@@ -904,7 +904,7 @@ def test_batch_runner_preserve_caravan_dirs(tmp_path, monkeypatch):
 def test_no_silent_fallbacks_or_masked_errors(tmp_path):
   """Ensures out-of-bounds polygons, missing baseline years, and malformed inputs are not silently masked."""
   import zarr
-  from static_extractor.climate import ERA5GriddedExtractor
+  from multimet.static_extractor.climate import ERA5GriddedExtractor
 
   zarr_path = tmp_path / "synthetic_era5.zarr"
   root = zarr.open(str(zarr_path), mode="w")

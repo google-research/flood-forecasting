@@ -59,12 +59,12 @@ import warnings
 warnings.filterwarnings("ignore", category=FutureWarning, module="google.auth.*")
 warnings.filterwarnings("ignore", category=UserWarning, module="google.auth.*")
 
-from static_extractor.climate import (
+from multimet.static_extractor.climate import (
     ERA5ClimateLoader,
     ERA5GriddedExtractor,
     compute_caravan_climate_metrics,
 )
-from static_extractor.config import (
+from multimet.static_extractor.config import (
     ADDITIONAL_PROPERTIES,
     ATTRIBUTE_DEFINITIONS,
     CONTINENT_MAP,
@@ -77,7 +77,7 @@ from static_extractor.config import (
     get_default_era5_cache_dir,
     get_default_gdb_path,
 )
-from static_extractor.gcs import download_hydroatlas_from_gcs
+from multimet.static_extractor.gcs import download_hydroatlas_from_gcs
 
 logger = logging.getLogger(__name__)
 
@@ -321,7 +321,7 @@ class StaticAttributesExtractor:
     if not self.gdb_path.exists():
       raise FileNotFoundError(
           f"BasinATLAS dataset not found at {self.gdb_path}. "
-          "Please download it using static_extractor.gcs.download_hydroatlas_from_gcs() "
+          "Please download it using multimet.static_extractor.gcs.download_hydroatlas_from_gcs() "
           "or set HYDROATLAS_GDB_PATH environment variable."
       )
 

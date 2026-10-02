@@ -23,7 +23,7 @@ import shutil
 import subprocess
 from typing import Optional, Union
 
-from static_extractor.config import (
+from multimet.static_extractor.config import (
     GCS_HYDROATLAS_BUCKET,
     GCS_HYDROATLAS_GDB_URI,
     get_default_gdb_path,

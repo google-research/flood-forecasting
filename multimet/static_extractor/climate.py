@@ -33,7 +33,7 @@ import numpy as np
 import pandas as pd
 import shapely.geometry
 
-from static_extractor.config import (
+from multimet.static_extractor.config import (
     CONTINENT_MAP,
     GCS_ERA5_CLIMATE_URI,
     GCS_ERA5_GRIDDED_ZARR_URI,

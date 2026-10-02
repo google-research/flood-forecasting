@@ -152,7 +152,7 @@ The `~/flood-forecasting/example-configs` directory contains reference YAML file
 
 To run OpenHydroNet models on a watershed, the model needs a table of static watershed characteristics (such as area, elevation, slope, soil type, land cover, and long-term average climate). For basins in the published [Caravan](https://www.nature.com/articles/s41597-023-01975-w) dataset, these tables are already included.
 
-If you want to run models on **your own watersheds**, this repository includes a tool (`static_extractor`) that takes a map file of your watershed boundaries (`.geojson`, `.shp`, or `.gpkg`) and builds a Caravan-compatible CSV table of static attributes using the community [HydroATLAS](https://www.hydrosheds.org/hydroatlas) and [ERA5-Land](https://cds.climate.copernicus.eu/) datasets.
+If you want to run models on **your own watersheds**, this repository includes a static data workflow (`multimet/static_extractor`) that takes a map file of your watershed boundaries (`.geojson`, `.shp`, or `.gpkg`) and builds a Caravan-compatible CSV table of static attributes using the community [HydroATLAS](https://www.hydrosheds.org/hydroatlas) and [ERA5-Land](https://cds.climate.copernicus.eu/) datasets.
 
 ```bash
 extract-caravan-static \
@@ -161,7 +161,7 @@ extract-caravan-static \
     --era5-source hybas
 ```
 
-👉 **Full Usage Guide & Command-Line Flags:** See [`static_extractor/README.md`](static_extractor/README.md).
+👉 **Full Usage Guide & Command-Line Flags:** See [`multimet/README.md`](multimet/README.md).
 
 ## **Issue Reporting**
 

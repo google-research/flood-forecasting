@@ -33,8 +33,8 @@ warnings.filterwarnings("ignore", category=UserWarning, module="google.auth.*")
 import pandas as pd
 from tqdm.auto import tqdm
 
-from static_extractor.config import CARAVAN_SUBDIR_MAPPING
-from static_extractor.extractor import StaticAttributesExtractor
+from multimet.static_extractor.config import CARAVAN_SUBDIR_MAPPING
+from multimet.static_extractor.extractor import StaticAttributesExtractor
 
 logger = logging.getLogger("static_extractor.batch_runner")
 

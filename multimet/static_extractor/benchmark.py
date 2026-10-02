@@ -41,7 +41,7 @@ from scipy.stats import pearsonr, spearmanr
 import shapely.wkt
 from tqdm.auto import tqdm
 
-from static_extractor.config import (
+from multimet.static_extractor.config import (
     ATTRIBUTE_DEFINITIONS,
     GCS_BENCHMARK_URI,
     MAJORITY_PROPERTIES,
@@ -49,7 +49,7 @@ from static_extractor.config import (
     get_default_era5_cache_dir,
     get_default_gdb_path,
 )
-from static_extractor.extractor import (
+from multimet.static_extractor.extractor import (
     StaticAttributesExtractor,
     _get_worker_extractor,
 )

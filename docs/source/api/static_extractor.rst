@@ -1,55 +1,55 @@
-static_extractor package
-========================
+multimet.static_extractor package
+=================================
 
-.. automodule:: static_extractor
+.. automodule:: multimet.static_extractor
    :members:
    :show-inheritance:
    :undoc-members:
 
-static_extractor.extractor
---------------------------
+multimet.static_extractor.extractor
+-----------------------------------
 
-.. automodule:: static_extractor.extractor
+.. automodule:: multimet.static_extractor.extractor
    :members:
    :show-inheritance:
    :undoc-members:
 
-static_extractor.climate
-------------------------
+multimet.static_extractor.climate
+---------------------------------
 
-.. automodule:: static_extractor.climate
+.. automodule:: multimet.static_extractor.climate
    :members:
    :show-inheritance:
    :undoc-members:
 
-static_extractor.batch_runner
+multimet.static_extractor.batch_runner
+--------------------------------------
+
+.. automodule:: multimet.static_extractor.batch_runner
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+multimet.static_extractor.benchmark
+-----------------------------------
+
+.. automodule:: multimet.static_extractor.benchmark
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+multimet.static_extractor.cli
 -----------------------------
 
-.. automodule:: static_extractor.batch_runner
+.. automodule:: multimet.static_extractor.cli
    :members:
    :show-inheritance:
    :undoc-members:
 
-static_extractor.benchmark
---------------------------
+multimet.static_extractor.gcs
+-----------------------------
 
-.. automodule:: static_extractor.benchmark
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-static_extractor.cli
---------------------
-
-.. automodule:: static_extractor.cli
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-static_extractor.gcs
---------------------
-
-.. automodule:: static_extractor.gcs
+.. automodule:: multimet.static_extractor.gcs
    :members:
    :show-inheritance:
    :undoc-members:

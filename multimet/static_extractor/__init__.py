@@ -18,14 +18,14 @@ Computes Caravan-compatible static watershed attributes from HydroATLAS Level 12
 and ERA5-Land datasets for user-supplied watershed polygons.
 """
 
-from static_extractor.climate import (
+from multimet.static_extractor.climate import (
     ERA5ClimateLoader,
     ERA5GriddedExtractor,
     calculate_fao_pm_pet,
     calculate_knoben_moisture_and_seasonality,
     compute_caravan_climate_metrics,
 )
-from static_extractor.config import (
+from multimet.static_extractor.config import (
     ADDITIONAL_PROPERTIES,
     ATTRIBUTE_DEFINITIONS,
     CONTINENT_MAP,
@@ -40,11 +40,11 @@ from static_extractor.config import (
     get_default_era5_cache_dir,
     get_default_gdb_path,
 )
-from static_extractor.extractor import (
+from multimet.static_extractor.extractor import (
     StaticAttributesExtractor,
     compute_pour_point_properties,
 )
-from static_extractor.gcs import (
+from multimet.static_extractor.gcs import (
     download_hydroatlas_from_gcs,
 )
 
@@ -77,7 +77,7 @@ __all__ = [
 
 def __getattr__(name: str):
   if name in ("discover_datasets", "run_batch_extraction"):
-    from static_extractor import batch_runner
+    from multimet.static_extractor import batch_runner
     return getattr(batch_runner, name)
   raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
