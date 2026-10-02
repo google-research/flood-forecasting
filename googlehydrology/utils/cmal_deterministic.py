@@ -47,12 +47,33 @@ def generate_predictions(
         # https://www.tandfonline.com/doi/abs/10.1080/03610920500199018 (modified)
         quantiles = _mixture_params_to_quantiles(mu, b, tau, pi)
 
-        tau = torch.clamp(tau, min=1e-6, max=1.0 - 1e-6)
-        means = mu + b * (1 - 2 * tau) / (tau * (1 - tau))
-        mean = torch.unsqueeze(torch.sum(pi * means, dim=-1), dim=-1)
+        mean = mixture_mean(mu, b, tau, pi)
         # Returned tensor, in last dimension, has the distribution mean followed by
         # the calculated quantiles.
         return torch.concat([mean, quantiles], dim=-1)
+
+
+def mixture_mean(
+    mu: torch.Tensor, b: torch.Tensor, tau: torch.Tensor, pi: torch.Tensor
+) -> torch.Tensor:
+    """Compute the exact mean of a CMAL mixture.
+
+    Unlike the quantiles in `generate_predictions`, the mean has a closed form,
+    so it is cheap and differentiable without the Newton-Raphson quantile
+    search (e.g. for gradient-based data assimilation).
+
+    Args:
+        mu: location parameter
+        b: scale parameter
+        tau: asymmetry parameter
+        pi: mixture weights
+
+    Returns:
+        Mixture mean with the last (mixture) dimension reduced to size 1.
+    """
+    tau = torch.clamp(tau, min=1e-6, max=1.0 - 1e-6)
+    means = mu + b * (1 - 2 * tau) / (tau * (1 - tau))
+    return torch.sum(pi * means, dim=-1, keepdim=True)
 
 
 def _cdf_and_pdf(

@@ -96,7 +96,11 @@ class BaseLoss(torch.nn.Module):
         self._target_weights = weights
 
     def forward(
-        self, prediction: dict[str, torch.Tensor], data: dict[str, torch.Tensor]
+        self,
+        prediction: dict[str, torch.Tensor],
+        data: dict[str, torch.Tensor],
+        predict_last_n: int | dict[str, int] | None = None,
+        other_model_data: dict[str, torch.Tensor] | None = None,
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Calculate the loss.
 
@@ -110,6 +114,16 @@ class BaseLoss(torch.nn.Module):
             Dictionary of ground truth data for each frequency. If more than one frequency is predicted,
             the keys must have suffixes ``_{frequency}``. For the required keys, refer to the documentation
             of the concrete loss.
+        predict_last_n : int | dict[str, int] | None, optional
+            Overrides the config's ``predict_last_n`` for this call only. An
+            int applies to all frequencies; a dict maps frequencies to values
+            (missing frequencies keep the config value). This lets callers
+            outside training (e.g. gradient-based data assimilation) evaluate
+            the loss over a different window. None uses the config value.
+        other_model_data : dict[str, torch.Tensor] | None, optional
+            Extra entries merged into the dict passed as third argument to the
+            regularization modules, on top of the non-prediction entries of
+            `prediction` (entries here take precedence). None adds nothing.
 
         Returns
         -------
@@ -121,10 +135,12 @@ class BaseLoss(torch.nn.Module):
         # unpack loss-specific additional arguments
         kwargs = {key: data[key] for key in self._additional_data}
 
+        predict_last_n = self._resolve_predict_last_n(predict_last_n)
+
         losses = []
         prediction_sub, ground_truth_sub = {}, {}
         for freq in self._frequencies:
-            if self._predict_last_n[freq] == 0:
+            if predict_last_n[freq] == 0:
                 continue  # no predictions for this frequency
             freq_suffix = '' if freq == '' else f'_{freq}'
 
@@ -138,7 +154,7 @@ class BaseLoss(torch.nn.Module):
                     key: data[f'{key}{freq_suffix}']
                     for key in self._ground_truth_keys
                 },
-                self._predict_last_n[freq],
+                predict_last_n[freq],
             )
 
             # remember subsets for multi-frequency component
@@ -169,20 +185,41 @@ class BaseLoss(torch.nn.Module):
         all_losses = defaultdict(lambda: 0)
         all_losses['loss'] = loss
         for reg_module in self._regularization_terms:
-            reg_out = reg_module(
-                prediction_sub,
-                ground_truth_sub,
-                {
-                    k: v
-                    for k, v in prediction.items()
-                    if k not in self._prediction_keys
-                },
-            )
+            reg_other = {
+                k: v
+                for k, v in prediction.items()
+                if k not in self._prediction_keys
+            }
+            if other_model_data is not None:
+                reg_other.update(other_model_data)
+            reg_out = reg_module(prediction_sub, ground_truth_sub, reg_other)
             total_loss += reg_module.weight * reg_out
             # One name may appear multiple times. We add all regularizations of the same name for logging purposes.
             all_losses[reg_module.name] += reg_out
         all_losses['total_loss'] = total_loss
         return total_loss, all_losses
+
+    def _resolve_predict_last_n(
+        self, predict_last_n: int | dict[str, int] | None
+    ) -> dict[str, int]:
+        """Return the per-frequency predict_last_n, applying a call override."""
+        if predict_last_n is None:
+            return self._predict_last_n
+        if isinstance(predict_last_n, int):
+            return dict.fromkeys(self._predict_last_n, predict_last_n)
+        resolved = dict(self._predict_last_n)
+        if list(resolved) == [''] and len(predict_last_n) == 1:
+            # single-frequency runs omit the frequency identifier
+            resolved[''] = next(iter(predict_last_n.values()))
+            return resolved
+        for freq, value in predict_last_n.items():
+            if freq not in resolved:
+                raise ValueError(
+                    f'predict_last_n override for unknown frequency {freq!r}.'
+                    f' Known frequencies: {list(resolved)}.'
+                )
+            resolved[freq] = value
+        return resolved
 
     @staticmethod
     def _subset_in_time(

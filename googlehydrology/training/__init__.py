@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+from collections.abc import Iterable
 
 import torch
 
@@ -24,55 +25,58 @@ LOGGER = logging.getLogger(__name__)
 
 
 def get_optimizer(
-    model: torch.nn.Module, cfg: Config, *, is_gpu: bool = False
+    model: torch.nn.Module | Iterable[torch.Tensor] | Iterable[dict],
+    cfg: Config,
+    *,
+    is_gpu: bool = False,
 ) -> torch.optim.Optimizer:
     """Get specific optimizer object, depending on the run configuration.
 
     Parameters
     ----------
-    model : torch.nn.Module
-        The model to be optimized.
+    model : torch.nn.Module | Iterable[torch.Tensor] | Iterable[dict]
+        The model to be optimized, or the parameters to optimize directly: an
+        iterable of tensors or of torch param-group dicts (e.g. tensors
+        optimized during data assimilation). Param groups may set their own
+        ``lr``; otherwise ``cfg.initial_learning_rate`` is used.
     cfg : Config
         The run configuration.
+    is_gpu : bool, optional
+        Whether to use the fused implementation, where available.
 
     Returns
     -------
     torch.optim.Optimizer
         Optimizer object that can be used for model training.
     """
+    params = model.parameters() if isinstance(model, torch.nn.Module) else model
     if cfg.optimizer.lower() == 'adam':
         optimizer = torch.optim.Adam(
-            model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu
+            params, lr=cfg.initial_learning_rate, fused=is_gpu
         )
     elif cfg.optimizer.lower() == 'adamw':
         optimizer = torch.optim.AdamW(
-            model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu
+            params, lr=cfg.initial_learning_rate, fused=is_gpu
         )
     elif cfg.optimizer.lower() == 'sgd':
         optimizer = torch.optim.SGD(
-            model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu
+            params, lr=cfg.initial_learning_rate, fused=is_gpu
         )
     elif cfg.optimizer.lower() == 'asgd':
-        optimizer = torch.optim.ASGD(
-            model.parameters(), lr=cfg.initial_learning_rate
-        )
+        optimizer = torch.optim.ASGD(params, lr=cfg.initial_learning_rate)
     elif cfg.optimizer.lower() == 'rmsprop':
-        optimizer = torch.optim.RMSprop(
-            model.parameters(), lr=cfg.initial_learning_rate
-        )
+        optimizer = torch.optim.RMSprop(params, lr=cfg.initial_learning_rate)
     elif cfg.optimizer.lower() == 'adagrad':
         optimizer = torch.optim.Adagrad(
-            model.parameters(), lr=cfg.initial_learning_rate, fused=is_gpu
+            params, lr=cfg.initial_learning_rate, fused=is_gpu
         )
     elif cfg.optimizer.lower() == 'adadelta':
         optimizer = torch.optim.Adadelta(
-            model.parameters(),
+            params,
             lr=cfg.initial_learning_rate,
         )
     elif cfg.optimizer.lower() == 'adamax':
-        optimizer = torch.optim.Adamax(
-            model.parameters(), lr=cfg.initial_learning_rate
-        )
+        optimizer = torch.optim.Adamax(params, lr=cfg.initial_learning_rate)
     else:
         raise NotImplementedError(
             f'{cfg.optimizer} not implemented or not linked in `get_optimizer()`'
@@ -118,7 +122,7 @@ def get_regularization_obj(
 ) -> list[regularization.BaseRegularization]:
     """Get list of regularization objects.
 
-    Currently, only the 'tie_frequencies' regularization is implemented.
+    Currently supported are 'forecast_overlap' and 'bg_embedding'.
 
     Parameters
     ----------
@@ -140,6 +144,12 @@ def get_regularization_obj(
         if reg_name == 'forecast_overlap':
             regularization_modules.append(
                 regularization.ForecastOverlapMSERegularization(
+                    cfg=cfg, weight=reg_weight
+                )
+            )
+        elif reg_name == 'bg_embedding':
+            regularization_modules.append(
+                regularization.BackgroundEmbeddingRegularization(
                     cfg=cfg, weight=reg_weight
                 )
             )

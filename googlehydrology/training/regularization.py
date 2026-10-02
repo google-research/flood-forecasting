@@ -125,3 +125,79 @@ class ForecastOverlapMSERegularization(BaseRegularization):
         forecast = other_model_output['y_forecast_overlap']
         loss += torch.mean((hindcast - forecast) ** 2)
         return loss
+
+
+class BackgroundEmbeddingRegularization(BaseRegularization):
+    """Background (prior) term for variational data assimilation.
+
+    In gradient-based (variational) data assimilation, latent model components
+    (e.g. embeddings or initial states) are optimized so that the model better
+    fits recent observations. This term keeps the optimized components close to
+    the values the model produced without assimilation (the background), which
+    regularizes the otherwise ill-posed inversion:
+
+    ``sum_c w_c * mean((optimized_c - baseline_c) ** 2)``
+
+    The tensors are passed through the ``other_model_data`` argument of
+    `BaseLoss.forward`, which merges them into the third argument of this
+    module.
+
+    Parameters
+    ----------
+    cfg : Config
+        The run configuration.
+    weight : float, optional
+        Global weight of the regularization term. Default: 1.
+    name : str, optional
+        Name of the regularization term. Default: 'bg_embedding'.
+    """
+
+    def __init__(
+        self, cfg: Config, weight: float = 1.0, name: str = 'bg_embedding'
+    ):
+        super().__init__(cfg, name=name, weight=weight)
+
+    def forward(
+        self,
+        prediction: dict[str, torch.Tensor],
+        ground_truth: dict[str, torch.Tensor],
+        other_model_data: dict[str, dict[str, torch.Tensor]],
+    ) -> torch.Tensor:
+        """Calculate the weighted squared deviation from the background.
+
+        Parameters
+        ----------
+        prediction : dict[str, torch.Tensor]
+            Not used.
+        ground_truth : dict[str, torch.Tensor]
+            Not used.
+        other_model_data : dict[str, dict[str, torch.Tensor]]
+            Dictionary that may contain ``optimized_components`` (name -> tensor
+            being optimized), ``baseline_components`` (name -> unassimilated
+            tensor of the same shape) and ``component_weights`` (name -> float,
+            default 1). Components without a baseline are skipped.
+
+        Returns
+        -------
+        torch.Tensor
+            Sum over components of ``w * mean((optimized - baseline) ** 2)``, or
+            a zero tensor if there is nothing to regularize.
+        """
+        optimized = other_model_data.get('optimized_components') or {}
+        baseline = other_model_data.get('baseline_components') or {}
+        weights = other_model_data.get('component_weights') or {}
+
+        loss = None
+        device = None
+        for comp_name, opt in optimized.items():
+            device = opt.device
+            base = baseline.get(comp_name)
+            if base is None:
+                continue
+            term = float(weights.get(comp_name, 1.0)) * torch.mean(
+                (opt - base) ** 2
+            )
+            loss = term if loss is None else loss + term
+        if loss is None:
+            return torch.zeros((), dtype=torch.float32, device=device)
+        return loss
