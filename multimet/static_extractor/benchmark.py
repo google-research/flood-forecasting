@@ -31,9 +31,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import logging
 import multiprocessing as mp
 from pathlib import Path
-import sys
+from typing import Any, Dict, List, Optional, Tuple, Union
 import time
-from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -42,12 +41,7 @@ import shapely.wkt
 from tqdm.auto import tqdm
 
 from multimet.static_extractor.config import (
-    ATTRIBUTE_DEFINITIONS,
-    GCS_BENCHMARK_URI,
     MAJORITY_PROPERTIES,
-    POUR_POINT_PROPERTIES,
-    get_default_era5_cache_dir,
-    get_default_gdb_path,
 )
 from multimet.static_extractor.extractor import (
     StaticAttributesExtractor,
@@ -55,10 +49,6 @@ from multimet.static_extractor.extractor import (
 )
 
 logger = logging.getLogger("static_extractor.benchmark")
-
-DEFAULT_BENCHMARK_PATH = (
-    Path(__file__).parent / "data" / "benchmark_basins_500.parquet"
-)
 
 THEMATIC_DOMAINS = [
     "Topography",
@@ -207,7 +197,7 @@ def compute_categorical_metrics(
 
 def _worker_evaluate_basin(args: tuple) -> Dict[str, Any]:
   """ProcessPool worker evaluating a single basin geometry."""
-  row_dict, gdb_path, era5_cache_dir, era5_source = args
+  row_dict, gdb_path, era5_cache_dir, gridded_era5_uri, era5_source = args
   gauge_id = row_dict["gauge_id"]
   geom_wkt = row_dict["geometry_wkt"]
   dataset = row_dict.get("dataset", "unknown")
@@ -216,63 +206,45 @@ def _worker_evaluate_basin(args: tuple) -> Dict[str, Any]:
   ref_area_km2 = float(row_dict["ref_area_km2"])
 
   t0 = time.time()
-  try:
-    ext = _get_worker_extractor(
-        gdb_path=gdb_path,
-        era5_cache_dir=era5_cache_dir,
-        gridded_era5_uri=None,
-    )
-    geom = shapely.wkt.loads(geom_wkt)
-    res = ext.extract_attributes_for_polygon(
-        geom,
-        catchment_id=gauge_id,
-        era5_source=era5_source,
-    )
-    elapsed = time.time() - t0
+  ext = _get_worker_extractor(
+      gdb_path=gdb_path,
+      era5_cache_dir=era5_cache_dir,
+      gridded_era5_uri=gridded_era5_uri,
+  )
+  geom = shapely.wkt.loads(geom_wkt)
+  res = ext.extract_attributes_for_polygon(
+      geom,
+      catchment_id=gauge_id,
+      era5_source=era5_source,
+  )
+  elapsed = time.time() - t0
 
-    extracted_attrs = res.get("caravan_attributes", {})
-    calc_area = float(
-        extracted_attrs.get("basin_area", res.get("total_area_km2", np.nan))
-    )
-    subbasins_count = int(res.get("intersected_subbasins_count", 0))
+  extracted_attrs = res.get("caravan_attributes", {})
+  calc_area = float(
+      extracted_attrs.get("basin_area", res.get("total_area_km2", np.nan))
+  )
+  subbasins_count = int(res.get("intersected_subbasins_count", 0))
 
-    area_bias_pct = (
-        float((calc_area - ref_area_km2) / ref_area_km2 * 100.0)
-        if ref_area_km2 > 0
-        else np.nan
-    )
+  area_bias_pct = (
+      float((calc_area - ref_area_km2) / ref_area_km2 * 100.0)
+      if ref_area_km2 > 0
+      else np.nan
+  )
 
-    return {
-        "gauge_id": gauge_id,
-        "dataset": dataset,
-        "size_tier": size_tier,
-        "country": country,
-        "ref_area_km2": ref_area_km2,
-        "calc_area_km2": round(calc_area, 2),
-        "area_bias_pct": round(area_bias_pct, 2),
-        "abs_area_err_pct": round(abs(area_bias_pct), 2),
-        "subbasins_count": subbasins_count,
-        "elapsed_sec": round(elapsed, 3),
-        "extracted_attrs": extracted_attrs,
-        "status": "SUCCESS",
-    }
-  except Exception as e:
-    elapsed = time.time() - t0
-    logger.warning("Error evaluating basin %s: %s", gauge_id, e)
-    return {
-        "gauge_id": gauge_id,
-        "dataset": dataset,
-        "size_tier": size_tier,
-        "country": country,
-        "ref_area_km2": ref_area_km2,
-        "calc_area_km2": np.nan,
-        "area_bias_pct": np.nan,
-        "abs_area_err_pct": np.nan,
-        "subbasins_count": 0,
-        "elapsed_sec": round(elapsed, 3),
-        "extracted_attrs": {},
-        "status": f"ERROR: {e}",
-    }
+  return {
+      "gauge_id": gauge_id,
+      "dataset": dataset,
+      "size_tier": size_tier,
+      "country": country,
+      "ref_area_km2": ref_area_km2,
+      "calc_area_km2": round(calc_area, 2),
+      "area_bias_pct": round(area_bias_pct, 2),
+      "abs_area_err_pct": round(abs(area_bias_pct), 2),
+      "subbasins_count": subbasins_count,
+      "elapsed_sec": round(elapsed, 3),
+      "extracted_attrs": extracted_attrs,
+      "status": "SUCCESS",
+  }
 
 
 def print_table(headers: List[str], rows: List[List[Any]], title: str):
@@ -291,7 +263,6 @@ def print_table(headers: List[str], rows: List[List[Any]], title: str):
   for row in rows:
     row_strs = []
     for i, val in enumerate(row):
-      # Right-align numeric columns
       if isinstance(val, (int, float)) or (isinstance(val, str) and (val.endswith("%") or val.endswith("s"))):
         row_strs.append(f"{str(val):>{col_widths[i]}}")
       else:
@@ -300,61 +271,45 @@ def print_table(headers: List[str], rows: List[List[Any]], title: str):
 
 
 def run_benchmark(
-    dataset_path: Optional[Path] = None,
+    dataset_path: Union[str, Path],
+    gdb_path: Union[str, Path],
+    era5_source: str,
+    output_dir: Union[str, Path],
+    era5_cache_dir: Optional[Union[str, Path]] = None,
+    gridded_era5_uri: Optional[str] = None,
     samples: Optional[int] = None,
     regions: Optional[List[str]] = None,
     size_tiers: Optional[List[str]] = None,
     workers: int = 8,
-    gdb_path: Optional[str] = None,
-    era5_cache_dir: Optional[str] = None,
-    era5_source: Optional[str] = None,
-    output_dir: Optional[str] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-  """Executes the comprehensive Caravan static attributes extraction benchmark."""
+  """Executes the Caravan static attributes extraction benchmark."""
+  if not dataset_path:
+    raise ValueError("dataset_path must be explicitly provided.")
+  if not gdb_path:
+    raise ValueError("gdb_path must be explicitly provided.")
+  if not output_dir:
+    raise ValueError("output_dir must be explicitly provided.")
   if not era5_source or era5_source.lower() not in {"hybas", "gridded"}:
     raise ValueError(
-        "era5_source must be explicitly specified as either 'hybas' or 'gridded' "
-        "(no default is assumed)."
+        "era5_source must be explicitly specified as either 'hybas' or 'gridded'."
     )
   era5_source = era5_source.lower()
-  ds_path = (
-      Path(dataset_path) if dataset_path else DEFAULT_BENCHMARK_PATH
-  ).resolve()
+  ds_path = Path(dataset_path).resolve()
 
   if not ds_path.exists():
-    print(f"Benchmark dataset not found locally at {ds_path}. Downloading from GCS...")
-    ds_path.parent.mkdir(parents=True, exist_ok=True)
-    gcs_src = GCS_BENCHMARK_URI
-    try:
-      import shutil
-      import subprocess
-      if shutil.which("gcloud"):
-        subprocess.run(["gcloud", "storage", "cp", gcs_src, str(ds_path)], check=True)
-      else:
-        from google.cloud import storage
-        client = storage.Client()
-        bucket = client.bucket("open-multimet")
-        blob_path = gcs_src.replace("gs://open-multimet/", "")
-        blob = bucket.blob(blob_path)
-        blob.download_to_filename(str(ds_path))
-      print(f"Successfully downloaded benchmark dataset to {ds_path}")
-    except Exception as e:
-      raise FileNotFoundError(
-          f"Benchmark dataset not found at {ds_path} and failed to download from GCS: {e}. "
-          "Please generate it using 'python scripts/build_static_benchmark_dataset.py'."
-      )
+    raise FileNotFoundError(
+        f"Benchmark dataset not found at {ds_path}."
+    )
 
   df = pd.read_parquet(ds_path)
   print(f"Loaded benchmark dataset: {len(df)} reference basins from {ds_path.name}")
 
-  # Apply dataset and size tier filters
   if regions:
     df = df[df["dataset"].isin(regions)]
   if size_tiers:
     df = df[df["size_tier"].isin(size_tiers)]
 
   if samples and samples < len(df):
-    # Balanced stratified subsampling across dataset and size tier
     sampled_dfs = []
     for _, grp in df.groupby(["dataset", "size_tier"]):
       n = max(1, int(len(grp) * samples / len(df)))
@@ -368,31 +323,28 @@ def run_benchmark(
       f"using {workers} workers (era5_source='{era5_source}')..."
   )
 
-  # Pre-verify BasinATLAS GDB and pre-cache continental ERA5 tables
-  effective_gdb = Path(gdb_path) if gdb_path else get_default_gdb_path()
-  effective_cache_dir = (
-      Path(era5_cache_dir) if era5_cache_dir else get_default_era5_cache_dir()
-  )
+  effective_gdb = Path(gdb_path)
+  effective_cache_dir = Path(era5_cache_dir) if era5_cache_dir else None
 
   print(f"Using BasinATLAS GDB: {effective_gdb}")
-  print(f"Using ERA5 climate cache: {effective_cache_dir}")
+  if effective_cache_dir:
+    print(f"Using ERA5 climate directory: {effective_cache_dir}")
 
-  # Pre-initialize master extractor to ensure GDB and continent tables are present
-  print("Pre-initializing master extractor and checking caches...")
-  master_ext = StaticAttributesExtractor(
+  print("Initializing extractor...")
+  StaticAttributesExtractor(
       gdb_path=effective_gdb,
-      era5_cache_dir=effective_cache_dir,
       era5_source=era5_source,
-      auto_download=True,
+      era5_cache_dir=effective_cache_dir,
+      gridded_era5_uri=gridded_era5_uri,
   )
 
-  # Prepare task payloads
   basin_records = df.to_dict(orient="records")
   worker_args = [
       (
           rec,
           str(effective_gdb),
-          str(effective_cache_dir),
+          str(effective_cache_dir) if effective_cache_dir else None,
+          gridded_era5_uri,
           era5_source,
       )
       for rec in basin_records
@@ -426,14 +378,11 @@ def run_benchmark(
       ]
   )
 
-  # Construct extraction results map: {gauge_id: {attr: val}}
   extracted_map = {r["gauge_id"]: r.get("extracted_attrs", {}) for r in results}
 
-  # Identify reference attribute columns
   ref_cols = [c for c in df.columns if c.startswith("ref_") and c != "ref_area_km2"]
   attr_names = [c.replace("ref_", "") for c in ref_cols]
 
-  # Compute per-attribute statistical validation metrics
   attr_rows = []
   for attr in attr_names:
     ref_col = f"ref_{attr}"
@@ -491,7 +440,6 @@ def run_benchmark(
 
   attr_metrics_df = pd.DataFrame(attr_rows)
 
-  # Calculate per-basin mean relative error and categorical accuracy
   basin_mean_errs = []
   basin_max_errs = []
   basin_worst_attrs = []
@@ -504,7 +452,6 @@ def run_benchmark(
     ext_dict = r.get("extracted_attrs", {})
     row_ref = df[df["gauge_id"] == gid].iloc[0]
 
-    # Continuous relative errors
     rel_errs = []
     max_err_val = -1.0
     max_err_attr = None
@@ -526,7 +473,6 @@ def run_benchmark(
     )
     basin_worst_attrs.append(max_err_attr or "none")
 
-    # Categorical matches
     matches = 0
     total_cat = 0
     for a in cat_attr_names:
@@ -545,7 +491,6 @@ def run_benchmark(
   basin_metrics_df["worst_attribute"] = basin_worst_attrs
   basin_metrics_df["categorical_acc_pct"] = basin_cat_accs
 
-  # Summarize Overall Benchmark Performance
   successful = int((basin_metrics_df["status"] == "SUCCESS").sum())
   total_basins = len(basin_metrics_df)
   time_per_basin = total_wall_time / max(1, total_basins)
@@ -599,7 +544,6 @@ def run_benchmark(
   print(f"Maximum Attribute Rel Error  : {max_attr_err:.2f}% (Attribute: {worst_attr_name})")
   print(f"Maximum Absolute Error       : {max_abs_err_val:.4f} (Attribute: {worst_abs_attr_name})")
 
-  # 1. Performance by Thematic Domain Table
   cat_table_headers = [
       "Thematic Domain", "Attributes", "Mean r", "Median r", "r >= 0.99 %", "Med Rel Err %", "Max Rel Err %", "Max Abs Err"
   ]
@@ -632,7 +576,6 @@ def run_benchmark(
     ])
   print_table(cat_table_headers, cat_table_rows, "PERFORMANCE BY THEMATIC DOMAIN")
 
-  # 2. Performance by Dataset / Region Table
   ds_table_headers = [
       "Dataset", "Basins", "Med Area Err %", "Max Area Err %", "Med Attr Err %", "Max Attr Err %", "Cat Acc %", "Mean Time"
   ]
@@ -648,7 +591,6 @@ def run_benchmark(
     ds_table_rows.append([str(ds), n, med_area, max_area, med_attr_err_str, max_attr_err_str, cat_acc, mean_t])
   print_table(ds_table_headers, ds_table_rows, "PERFORMANCE BY DATASET / REGION")
 
-  # 3. Performance by Size Tier Table
   tier_table_headers = [
       "Size Tier", "Basins", "Med Area Err %", "Max Area Err %", "Med Attr Err %", "Max Attr Err %", "Cat Acc %", "Mean Time"
   ]
@@ -664,7 +606,6 @@ def run_benchmark(
     tier_table_rows.append([str(tier), n, med_area, max_area, med_attr_err_str, max_attr_err_str, cat_acc, mean_t])
   print_table(tier_table_headers, tier_table_rows, "PERFORMANCE BY BASIN SIZE TIER")
 
-  # 4. Discrete Majority Classification Accuracy Table
   maj_table_headers = ["Majority Attribute", "Domain", "Classes", "Exact Match Accuracy %"]
   maj_table_rows = []
   for _, row in cat_metrics.iterrows():
@@ -676,7 +617,6 @@ def run_benchmark(
     ])
   print_table(maj_table_headers, maj_table_rows, "DISCRETE CATEGORICAL CLASSIFICATION ACCURACY")
 
-  # 5. Top 10 Attributes by Maximum Relative Error
   max_err_headers = [
       "Attribute", "Thematic Domain", "Pearson r", "Med Rel Err %", "Max Rel Err %", "Max Abs Err", "MAE"
   ]
@@ -695,8 +635,7 @@ def run_benchmark(
   print_table(max_err_headers, max_err_rows, "TOP 10 ATTRIBUTES BY MAXIMUM RELATIVE ERROR")
   print("=" * 80)
 
-  # Output Reports and CSVs
-  out_dir = Path(output_dir).resolve() if output_dir else Path.cwd()
+  out_dir = Path(output_dir).resolve()
   out_dir.mkdir(parents=True, exist_ok=True)
 
   attr_csv_path = out_dir / "benchmark_attribute_metrics.csv"
@@ -707,7 +646,6 @@ def run_benchmark(
   basin_metrics_df.to_csv(basin_csv_path, index=False)
   print(f"Saved basin-level metrics to: {basin_csv_path}")
 
-  # Generate markdown report
   report_md_path = out_dir / "benchmark_report.md"
   _generate_markdown_report(
       report_path=report_md_path,
@@ -857,21 +795,53 @@ def _to_markdown_table(headers: List[str], rows: List[List[Any]]) -> str:
   return "\n".join([header_line, sep_line] + data_lines)
 
 
-def main():
+def main(args=None):
   parser = argparse.ArgumentParser(
-      description="Run global Caravan static attributes extraction benchmark."
+      description="Run Caravan static attributes extraction benchmark."
+  )
+  parser.add_argument(
+      "--dataset",
+      type=str,
+      required=True,
+      help="Path to benchmark dataset (.parquet).",
+  )
+  parser.add_argument(
+      "--gdb-path",
+      type=str,
+      required=True,
+      help="Local path to BasinATLAS_v10.gdb or shapefile.",
+  )
+  parser.add_argument(
+      "--era5-source",
+      type=str,
+      required=True,
+      choices=["hybas", "gridded"],
+      help="ERA5 data source: 'hybas' (precomputed subbasins) or 'gridded' (Zarr).",
+  )
+  parser.add_argument(
+      "-o",
+      "--output-dir",
+      type=str,
+      required=True,
+      help="Directory to save benchmark reports and CSV files.",
+  )
+  parser.add_argument(
+      "--era5-cache-dir",
+      type=str,
+      default=None,
+      help="Directory containing precomputed continental ERA5 tables (required when --era5-source=hybas).",
+  )
+  parser.add_argument(
+      "--gridded-era5-uri",
+      type=str,
+      default=None,
+      help="GCS URI or local path to gridded daily ERA5 Zarr store (required when --era5-source=gridded; optional when --era5-source=hybas).",
   )
   parser.add_argument(
       "--samples",
       type=int,
       default=None,
       help="Number of basins to benchmark (default: all basins in dataset).",
-  )
-  parser.add_argument(
-      "--dataset",
-      type=str,
-      default=None,
-      help="Path to custom benchmark dataset (.parquet).",
   )
   parser.add_argument(
       "--regions",
@@ -893,45 +863,24 @@ def main():
       default=8,
       help="Number of parallel worker processes (default: 8).",
   )
-  parser.add_argument(
-      "--gdb-path",
-      type=str,
-      default=None,
-      help="BasinATLAS GDB or shapefile path. Defaults to runtime cache.",
-  )
-  parser.add_argument(
-      "--era5-cache-dir",
-      type=str,
-      default=None,
-      help="Directory containing precomputed continental ERA5 tables.",
-  )
-  parser.add_argument(
-      "--era5-source",
-      type=str,
-      required=True,
-      choices=["hybas", "gridded"],
-      help="ERA5 data source (required): 'hybas' (precomputed subbasins) or 'gridded' (Zarr).",
-  )
-  parser.add_argument(
-      "-o",
-      "--output-dir",
-      type=str,
-      default="./benchmark_results",
-      help="Directory to save benchmark reports and CSV files.",
-  )
 
-  args = parser.parse_args()
+  parsed = parser.parse_args(args)
+  if parsed.era5_source == "hybas" and not parsed.era5_cache_dir:
+    parser.error("--era5-cache-dir is required when --era5-source is 'hybas'.")
+  if parsed.era5_source == "gridded" and not parsed.gridded_era5_uri:
+    parser.error("--gridded-era5-uri is required when --era5-source is 'gridded'.")
 
   run_benchmark(
-      dataset_path=args.dataset,
-      samples=args.samples,
-      regions=args.regions,
-      size_tiers=args.size_tiers,
-      workers=args.workers,
-      gdb_path=args.gdb_path,
-      era5_cache_dir=args.era5_cache_dir,
-      era5_source=args.era5_source,
-      output_dir=args.output_dir,
+      dataset_path=parsed.dataset,
+      gdb_path=parsed.gdb_path,
+      era5_source=parsed.era5_source,
+      output_dir=parsed.output_dir,
+      era5_cache_dir=parsed.era5_cache_dir,
+      gridded_era5_uri=parsed.gridded_era5_uri,
+      samples=parsed.samples,
+      regions=parsed.regions,
+      size_tiers=parsed.size_tiers,
+      workers=parsed.workers,
   )
 
 

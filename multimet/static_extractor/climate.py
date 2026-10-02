@@ -16,7 +16,7 @@
 
 Implements FAO-56 Penman-Monteith potential evapotranspiration, Knoben et al. (2018)
 climate indices, Addor et al. (2017) extreme precipitation indices, and
-area-weighted Level 12 continental ERA5 precomputed climate indices caching.
+area-weighted Level 12 continental ERA5 precomputed climate indices loading.
 """
 
 from __future__ import annotations
@@ -32,41 +32,12 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 import numpy as np
 import pandas as pd
 import shapely.geometry
+import zarr
 
-from multimet.static_extractor.config import (
-    CONTINENT_MAP,
-    GCS_ERA5_CLIMATE_URI,
-    GCS_ERA5_GRIDDED_ZARR_URI,
-    get_default_era5_cache_dir,
-)
+from multimet.static_extractor.config import CONTINENT_MAP
 
 logger = logging.getLogger(__name__)
 logging.getLogger("asyncio").setLevel(logging.CRITICAL)
-
-
-def _patch_gcsfs_close_session() -> None:
-  """Prevents gcsfs weakref finalizer from raising RuntimeError when zarr v3 uses a separate event loop."""
-  try:
-    import gcsfs.core
-
-    orig_close = gcsfs.core.GCSFileSystem.close_session
-
-    if getattr(orig_close, "_is_safe_wrapped", False):
-      return
-
-    def _safe_close_session(loop, session, asynchronous=False):
-      try:
-        orig_close(loop, session, asynchronous=asynchronous)
-      except Exception:
-        pass
-
-    _safe_close_session._is_safe_wrapped = True
-    gcsfs.core.GCSFileSystem.close_session = staticmethod(_safe_close_session)
-  except Exception:
-    pass
-
-
-_patch_gcsfs_close_session()
 
 
 def calculate_fao_pm_pet(
@@ -347,110 +318,97 @@ def compute_caravan_climate_metrics(
 
 
 class ERA5ClimateLoader:
-  """Loads and aggregates Level 12 precomputed ERA5 climate indices.
+  """Loads and aggregates Level 12 precomputed ERA5 climate indices from a specified directory."""
 
-  Checks local cache, then downloads from GCS (gs://open-multimet/ancillary-data/hydroatlas/era5_climate),
-  with internal fallback to CNS.
-  """
-
-  def __init__(self, cache_dir: Optional[Union[str, Path]] = None):
-    self.cache_dir = Path(cache_dir) if cache_dir else get_default_era5_cache_dir()
+  def __init__(
+      self,
+      cache_dir: Union[str, Path],
+      gcs_source_uri: Optional[str] = None,
+  ):
+    if not cache_dir:
+      raise ValueError("cache_dir must be explicitly provided.")
+    self.cache_dir = Path(cache_dir)
     self.cache_dir.mkdir(parents=True, exist_ok=True)
+    self.gcs_source_uri = gcs_source_uri.rstrip("/") if gcs_source_uri else None
     self.loaded_continents: Set[str] = set()
     self.records: Dict[int, Dict[str, Any]] = {}
-    self._warned_missing_era5_land_pet: bool = False
 
-  def _download_from_gcs(self, continent_code: str, target_file: Path) -> bool:
-    """Downloads continent file from the GCS bucket atomically."""
-    gcs_src = f"{GCS_ERA5_CLIMATE_URI}/{continent_code}_climate_indices.txt"
+  def _download_from_gcs(self, continent_code: str, target_file: Path) -> None:
+    """Downloads a continental climate indices file from GCS to target_file."""
+    if not self.gcs_source_uri:
+      raise FileNotFoundError(
+          f"Climate indices file not found at {target_file} and no gcs_source_uri was provided."
+      )
+
+    gcs_src = f"{self.gcs_source_uri}/{continent_code}_climate_indices.txt"
     target_file.parent.mkdir(parents=True, exist_ok=True)
     tmp_file = target_file.with_name(f".{target_file.name}.tmp.{os.getpid()}")
 
-    try:
-      if shutil.which("gcloud"):
-        cmd = ["gcloud", "storage", "cp", gcs_src, str(tmp_file)]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120, check=False)
-        if res.returncode == 0 and tmp_file.exists() and tmp_file.stat().st_size > 0:
-          os.replace(tmp_file, target_file)
-          return True
-        return False
+    if shutil.which("gcloud"):
+      cmd = ["gcloud", "storage", "cp", gcs_src, str(tmp_file)]
+      res = subprocess.run(cmd, capture_output=True, text=True, timeout=120, check=False)
+      if res.returncode == 0 and tmp_file.exists() and tmp_file.stat().st_size > 0:
+        os.replace(tmp_file, target_file)
+        return
+      tmp_file.unlink(missing_ok=True)
+      raise FileNotFoundError(
+          f"Failed to download {gcs_src} to {target_file}: {res.stderr.strip()}"
+      )
 
-      import gcsfs
+    import gcsfs
 
-      fs = gcsfs.GCSFileSystem()
-      remote_path = gcs_src.replace("gs://", "")
-      if fs.exists(remote_path):
-        fs.get(remote_path, str(tmp_file))
-        if tmp_file.exists() and tmp_file.stat().st_size > 0:
-          os.replace(tmp_file, target_file)
-          return True
-    finally:
-      if tmp_file.exists():
-        try:
-          tmp_file.unlink()
-        except OSError:
-          pass
-    return False
+    fs = gcsfs.GCSFileSystem()
+    remote_path = gcs_src.replace("gs://", "")
+    if not fs.exists(remote_path):
+      raise FileNotFoundError(f"Remote climate indices file does not exist: {gcs_src}")
+    fs.get(remote_path, str(tmp_file))
+    if tmp_file.exists() and tmp_file.stat().st_size > 0:
+      os.replace(tmp_file, target_file)
+      return
+    tmp_file.unlink(missing_ok=True)
+    raise FileNotFoundError(f"Downloaded file from {gcs_src} is empty or missing.")
 
-  def _ensure_file_on_disk(self, continent_code: str) -> bool:
+  def _ensure_file_on_disk(self, continent_code: str) -> Path:
     txt_path = self.cache_dir / f"{continent_code}_climate_indices.txt"
     if txt_path.exists() and txt_path.stat().st_size > 0:
-      return True
+      return txt_path
+
+    if not self.gcs_source_uri:
+      raise FileNotFoundError(
+          f"Continental climate indices file not found at {txt_path}. "
+          "Provide a directory containing the climate index files or specify --gcs-era5-climate-uri."
+      )
 
     logger.info(
         "Downloading ERA5 climate indices for '%s' from %s...",
         continent_code,
-        GCS_ERA5_CLIMATE_URI,
+        self.gcs_source_uri,
     )
-    if self._download_from_gcs(continent_code, txt_path):
-      return True
+    self._download_from_gcs(continent_code, txt_path)
+    return txt_path
 
-    raise FileNotFoundError(
-        f"Could not download {continent_code}_climate_indices.txt from GCS store "
-        f"{GCS_ERA5_CLIMATE_URI} to runtime staging cache {txt_path}."
-    )
-
-  def ensure_continent(
-      self, continent_code: str, target_ids: Optional[Set[int]] = None
-  ) -> None:
-    """Ensures continental climate index file is available and cached in memory."""
-    if target_ids is None and continent_code in self.loaded_continents:
+  def ensure_continent(self, continent_code: str) -> None:
+    """Ensures continental climate index file is available on disk and loaded in memory."""
+    if continent_code in self.loaded_continents:
       return
 
-    try:
-      self._ensure_file_on_disk(continent_code)
-    except FileNotFoundError as e:
-      logger.warning(
-          "Climate indices file for continent '%s' is unavailable (%s); "
-          "climate metrics for affected sub-basins will be NaN.",
-          continent_code,
-          e,
-      )
-      return
-
-    txt_path = self.cache_dir / f"{continent_code}_climate_indices.txt"
-    if txt_path.exists():
-      target_strs = {str(tid) for tid in target_ids} if target_ids else None
-      count = 0
-      with open(txt_path, "r", encoding="utf-8") as f:
-        for line in f:
-          line = line.strip()
-          if not line:
-            continue
-          if target_strs is not None and not any(ts in line for ts in target_strs):
-            continue
-          item = json.loads(line)
-          gid = item.get("gauge_id", "")
-          if gid.startswith("hybas_"):
-            hid = int(gid.split("_")[1])
-            if target_ids is None or hid in target_ids:
-              self.records[hid] = item
-              count += 1
-      if target_ids is None:
-        self.loaded_continents.add(continent_code)
-      logger.debug(
-          "Loaded %d Level 12 climate records for continent '%s'", count, continent_code
-      )
+    txt_path = self._ensure_file_on_disk(continent_code)
+    count = 0
+    with open(txt_path, "r", encoding="utf-8") as f:
+      for line in f:
+        line = line.strip()
+        if not line:
+          continue
+        item = json.loads(line)
+        gid = item.get("gauge_id", "")
+        if gid.startswith("hybas_"):
+          hid = int(gid.split("_")[1])
+          self.records[hid] = item
+          count += 1
+    self.loaded_continents.add(continent_code)
+    logger.debug(
+        "Loaded %d Level 12 climate records for continent '%s'", count, continent_code
+    )
 
   def get_indices_for_subbasins(
       self, hybas_ids: List[int], weights: List[float]
@@ -459,10 +417,13 @@ class ERA5ClimateLoader:
     needed_continents = set()
     for hid in hybas_ids:
       first_digit = int(str(int(hid))[0])
-      if first_digit in CONTINENT_MAP:
-        needed_continents.add(CONTINENT_MAP[first_digit])
+      if first_digit not in CONTINENT_MAP:
+        raise ValueError(
+            f"Unrecognized continent prefix {first_digit} in HYBAS_ID {hid}."
+        )
+      needed_continents.add(CONTINENT_MAP[first_digit])
 
-    for c in needed_continents:
+    for c in sorted(needed_continents):
       self.ensure_continent(c)
 
     keys = [
@@ -542,21 +503,21 @@ class ERA5ClimateLoader:
 
 
 class ERA5GriddedExtractor:
-  """Recalculates Caravan climate metrics directly from archived gridded ERA5 data on GCS."""
+  """Recalculates Caravan climate metrics directly from a gridded ERA5 Zarr dataset."""
 
   def __init__(
       self,
-      zarr_uri: Optional[str] = None,
+      zarr_uri: Union[str, Path],
   ):
     """Initializes the ERA5GriddedExtractor.
 
     Args:
-      zarr_uri: Optional GCS URI or local path to gridded daily surface ERA5 Zarr store.
-        Defaults to gs://open-multimet/gridded-data-archives/ERA5_LAND/daily_surface.zarr.
+      zarr_uri: GCS URI or local path to the gridded daily surface ERA5 Zarr store.
     """
-    self.zarr_uri = zarr_uri or GCS_ERA5_GRIDDED_ZARR_URI
+    if not zarr_uri:
+      raise ValueError("zarr_uri must be explicitly provided.")
+    self.zarr_uri = str(zarr_uri)
     self._ds = None
-    self._open_error: Optional[Exception] = None
     self._lats: Optional[np.ndarray] = None
     self._lons: Optional[np.ndarray] = None
     self._dlat: float = 0.1
@@ -565,28 +526,19 @@ class ERA5GriddedExtractor:
   def _open_dataset(self):
     if self._ds is not None:
       return self._ds
-    if self._open_error is not None:
-      raise self._open_error
 
-    import zarr
+    logger.info("Opening gridded ERA5 Zarr store at: %s", self.zarr_uri)
+    self._ds = zarr.open(self.zarr_uri, mode="r")
+    lat_keys = [k for k in ["latitude", "lat"] if k in self._ds]
+    lon_keys = [k for k in ["longitude", "lon"] if k in self._ds]
+    if not lat_keys or not lon_keys:
+      raise KeyError(f"Latitude/Longitude coordinates not found in {self.zarr_uri}")
 
-    logger.info("Opening archived gridded ERA5 Zarr store at: %s", self.zarr_uri)
-    try:
-      self._ds = zarr.open(self.zarr_uri, mode="r")
-      lat_keys = [k for k in ["latitude", "lat"] if k in self._ds]
-      lon_keys = [k for k in ["longitude", "lon"] if k in self._ds]
-      if not lat_keys or not lon_keys:
-        raise KeyError(f"Latitude/Longitude coordinates not found in {self.zarr_uri}")
-
-      self._lats = np.asarray(self._ds[lat_keys[0]][:], dtype=np.float64)
-      self._lons = np.asarray(self._ds[lon_keys[0]][:], dtype=np.float64)
-      self._dlat = abs(float(self._lats[1] - self._lats[0])) if len(self._lats) > 1 else 0.1
-      self._dlon = abs(float(self._lons[1] - self._lons[0])) if len(self._lons) > 1 else 0.1
-      return self._ds
-    except Exception as e:
-      self._open_error = e
-      logger.warning("Could not open gridded ERA5 Zarr store at %s: %s", self.zarr_uri, e)
-      raise
+    self._lats = np.asarray(self._ds[lat_keys[0]][:], dtype=np.float64)
+    self._lons = np.asarray(self._ds[lon_keys[0]][:], dtype=np.float64)
+    self._dlat = abs(float(self._lats[1] - self._lats[0])) if len(self._lats) > 1 else 0.1
+    self._dlon = abs(float(self._lons[1] - self._lons[0])) if len(self._lons) > 1 else 0.1
+    return self._ds
 
   def compute_zonal_weights(
       self, polygon: Any
@@ -598,7 +550,6 @@ class ERA5GriddedExtractor:
 
     minx, miny, maxx, maxy = polygon.bounds
 
-    # Allow buffer
     lat_mask = (self._lats >= miny - self._dlat) & (self._lats <= maxy + self._dlat)
     lon_mask = (self._lons >= minx - self._dlon) & (self._lons <= maxx + self._dlon)
 
@@ -856,7 +807,6 @@ class ERA5GriddedExtractor:
     t_start = int(t_indices[0])
     t_end = int(t_indices[-1]) + 1
     rel_t_indices = t_indices - t_start
-    num_days = len(t_indices)
 
     # 1. Compute spatial grid-cell weights for all polygons upfront
     results: Dict[str, Dict[str, float]] = {}
@@ -996,4 +946,3 @@ class ERA5GriddedExtractor:
       )
 
     return results
-

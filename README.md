@@ -158,7 +158,9 @@ If you want to run models on **your own watersheds**, this repository includes a
 extract-caravan-static \
     --input /path/to/watershed_polygons.geojson \
     --output /path/to/extracted_caravan_attributes.csv \
-    --era5-source hybas
+    --gdb-path /path/to/BasinATLAS_v10.gdb \
+    --era5-source hybas \
+    --era5-cache-dir /path/to/era5_climate
 ```
 
 👉 **Full Usage Guide & Command-Line Flags:** See [`multimet/README.md`](multimet/README.md).

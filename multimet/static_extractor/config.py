@@ -16,9 +16,7 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-from typing import Any, Dict, List, Mapping, Tuple
+from typing import Any, Dict, List, Mapping
 
 # -------------------------------------------------------------------------
 # Caravan HydroATLAS Property Definitions & Classifications
@@ -102,41 +100,6 @@ CONTINENT_MAP: Mapping[int, str] = {
     9: "gr",  # Greenland
 }
 
-# 7. Cloud Storage Data Stores
-GCS_HYDROATLAS_BUCKET: str = "gs://open-multimet/ancillary-data/hydroatlas"
-GCS_HYDROATLAS_GDB_URI: str = f"{GCS_HYDROATLAS_BUCKET}/BasinATLAS_v10.gdb"
-GCS_ERA5_CLIMATE_URI: str = f"{GCS_HYDROATLAS_BUCKET}/era5_climate"
-GCS_ERA5_GRIDDED_ZARR_URI: str = "gs://open-multimet/gridded-data-archives/ERA5_LAND/daily_surface.zarr"
-GCS_BENCHMARK_URI: str = "gs://open-multimet/ancillary-data/benchmarks/benchmark_basins_500.parquet"
-
-# Caravan Collection and Subdataset Subdirectory Mapping
-CARAVAN_SUBDIR_MAPPING: Dict[str, Tuple[str, str]] = {
-    # caravan-original/
-    "CAMELS": ("caravan-original", "camels"),
-    "CAMELSAUS": ("caravan-original", "camelsaus"),
-    "CAMELSBR": ("caravan-original", "camelsbr"),
-    "CAMELSCL": ("caravan-original", "camelscl"),
-    "CAMELSGB": ("caravan-original", "camelsgb"),
-    "HYSETS": ("caravan-original", "hysets"),
-    "LAMAH": ("caravan-original", "lamah"),
-    # caravan-extensions/
-    "CAMELSCH": ("caravan-extensions", "camelsch"),
-    "CAMELSCZ": ("caravan-extensions", "camelscz"),
-    "CAMELSDE": ("caravan-extensions", "camelsde"),
-    "CAMELSDK": ("caravan-extensions", "camelsdk"),
-    "CAMELSES": ("caravan-extensions", "camelses"),
-    "GRDC": ("caravan-extensions", "grdc"),
-    "IL": ("caravan-extensions", "il"),
-    "LAMAHICE": ("caravan-extensions", "lamahice"),
-    # google-internal/
-    "CAMELSCOL": ("google-internal", "camelscol"),
-    "CAMELSFR": ("google-internal", "camelsfr"),
-    "CAMELSIND": ("google-internal", "camelsind"),
-    "CAMELSLUX": ("google-internal", "camelslux"),
-    "CAMELSNZ": ("google-internal", "camelsnz"),
-    "CAMELSPE": ("google-internal", "camelspe"),
-}
-
 # Curated Attribute Definitions with Metadata
 ATTRIBUTE_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     # Topography & Physiography
@@ -211,29 +174,3 @@ ATTRIBUTE_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     "gdp_ud_sav": {"name": "Gross Domestic Product (GDP)", "category": "Anthropogenic", "unit": "USD/capita", "scale": 1.0, "desc": "Economic output per capita in the basin"},
     "hdi_ix_sav": {"name": "Human Development Index (HDI)", "category": "Anthropogenic", "unit": "index (0-1)", "scale": 0.001, "desc": "Socioeconomic human development index"},
 }
-
-
-def get_default_gdb_path() -> Path:
-  """Returns the local runtime staging path for BasinATLAS_v10.gdb.
-
-  The data store is gs://open-multimet/ancillary-data/hydroatlas/BasinATLAS_v10.gdb.
-  This local directory serves strictly as a temporary runtime staging cache.
-  """
-  return (
-      Path.home()
-      / ".cache"
-      / "googlehydrology"
-      / "hydroatlas"
-      / "BasinATLAS_v10.gdb"
-  )
-
-
-def get_default_era5_cache_dir() -> Path:
-  """Returns the local runtime staging directory for continental ERA5 climate index files.
-
-  The data store is gs://open-multimet/ancillary-data/hydroatlas/era5_climate/.
-  This local directory serves strictly as a temporary runtime staging cache.
-  """
-  target = Path.home() / ".cache" / "googlehydrology" / "era5_climate"
-  target.mkdir(parents=True, exist_ok=True)
-  return target

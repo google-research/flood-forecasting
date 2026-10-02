@@ -18,8 +18,9 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sys
 from pathlib import Path
+import shutil
+import sys
 
 from multimet.static_extractor.extractor import StaticAttributesExtractor
 
@@ -40,7 +41,7 @@ def parse_args(args=None):
       "-i",
       required=True,
       type=str,
-      help="Path to input vector watershed polygon file (GeoJSON, Shapefile, GPKG).",
+      help="Path to input vector watershed polygon file (GeoJSON, Shapefile, GPKG, Parquet).",
   )
   parser.add_argument(
       "--output",
@@ -52,21 +53,45 @@ def parse_args(args=None):
   parser.add_argument(
       "--gdb-path",
       "-g",
-      default=None,
+      required=True,
       type=str,
-      help="Path to BasinATLAS_v10.gdb directory or BasinATLAS_v10_lev12.shp. Defaults to cache or auto-discovery.",
+      help="Local path to BasinATLAS_v10.gdb directory or BasinATLAS_v10_lev12.shp.",
+  )
+  parser.add_argument(
+      "--era5-source",
+      choices=["hybas", "gridded"],
+      required=True,
+      help="Source for ERA5 climate metrics: 'hybas' (precalculated Level 12 sub-basin statistics) or 'gridded' (recalculated from daily ERA5 Zarr data).",
   )
   parser.add_argument(
       "--era5-cache-dir",
       default=None,
       type=str,
-      help="Directory where continental ERA5 climate index files are cached.",
+      help="Local directory containing continental ERA5 climate index files (required when --era5-source=hybas).",
+  )
+  parser.add_argument(
+      "--gridded-era5-uri",
+      default=None,
+      type=str,
+      help="GCS URI or local path to gridded daily ERA5 Zarr store (required when --era5-source=gridded; optional when --era5-source=hybas to compute *_ERA5_LAND columns).",
+  )
+  parser.add_argument(
+      "--gcs-gdb-uri",
+      default=None,
+      type=str,
+      help="Optional GCS URI from which to download BasinATLAS_v10.gdb into --gdb-path if not yet present locally.",
+  )
+  parser.add_argument(
+      "--gcs-era5-climate-uri",
+      default=None,
+      type=str,
+      help="Optional GCS URI from which to download continental ERA5 climate tables into --era5-cache-dir if not yet present locally.",
   )
   parser.add_argument(
       "--id-column",
-      default=None,
+      default="gauge_id",
       type=str,
-      help="Column name in vector file containing gauge or catchment ID.",
+      help="Column name in vector file containing the watershed or gauge ID.",
   )
   parser.add_argument(
       "--min-overlap-threshold",
@@ -75,55 +100,29 @@ def parse_args(args=None):
       help="Minimum sub-basin intersection area threshold in km².",
   )
   parser.add_argument(
-      "--auto-download",
-      action="store_true",
-      default=True,
-      help="Automatically download data from Google Cloud Storage if not staged locally.",
-  )
-  parser.add_argument(
-      "--era5-source",
-      choices=["hybas", "gridded"],
-      required=True,
-      help="Source for ERA5 climate metrics (required): 'hybas' (fast area-weighted aggregation of precalculated Level 12 sub-basin statistics) or 'gridded' (recalculated on the fly from archived gridded ERA5 daily surface data on GCS).",
-  )
-  parser.add_argument(
-      "--gridded-era5-uri",
-      default=None,
-      type=str,
-      help="GCS URI or path to gridded daily ERA5 Zarr store. Defaults to gs://open-multimet/gridded-data-archives/ERA5_LAND/daily_surface.zarr.",
-  )
-  parser.add_argument(
-      "--cache-dir",
-      default=None,
-      type=str,
-      help="Base directory for runtime cache (defaults to ~/.cache/googlehydrology).",
-  )
-  parser.add_argument(
-      "--no-download",
-      action="store_false",
-      dest="auto_download",
-      default=True,
-      help="Disable automatic GCS downloads. Requires local files to be present.",
-  )
-  parser.add_argument(
       "--clean-cache",
       action="store_true",
-      help="Automatically clean up the entire local cache directory (~/.cache/googlehydrology) after extraction finishes.",
+      help="Delete local --gdb-path and --era5-cache-dir directories after extraction finishes.",
   )
   parser.add_argument(
       "--workers",
       "-w",
       default=1,
       type=int,
-      help="Number of parallel worker processes to use (default: 1).",
+      help="Number of parallel worker processes to use.",
   )
   parser.add_argument(
       "--verbose",
       "-v",
       action="store_true",
-      help="Show detailed debug/info log messages (disabled by default for clean progress bars).",
+      help="Show detailed debug/info log messages.",
   )
-  return parser.parse_args(args)
+  parsed = parser.parse_args(args)
+  if parsed.era5_source == "hybas" and not parsed.era5_cache_dir:
+    parser.error("--era5-cache-dir is required when --era5-source is 'hybas'.")
+  if parsed.era5_source == "gridded" and not parsed.gridded_era5_uri:
+    parser.error("--gridded-era5-uri is required when --era5-source is 'gridded'.")
+  return parsed
 
 
 def main(args=None):
@@ -144,42 +143,48 @@ def main(args=None):
     logger.error("Input file '%s' does not exist.", input_path)
     sys.exit(1)
 
-  cache_root = Path(parsed.cache_dir) if parsed.cache_dir else Path.home() / ".cache" / "googlehydrology"
-  gdb_path = parsed.gdb_path or (cache_root / "hydroatlas" / "BasinATLAS_v10.gdb")
-  era5_cache_dir = parsed.era5_cache_dir or (cache_root / "era5_climate")
+  logger.debug(
+      "Initializing Caravan Static Attributes Extractor (ERA5 source: %s)...",
+      parsed.era5_source,
+  )
+  extractor = StaticAttributesExtractor(
+      gdb_path=parsed.gdb_path,
+      era5_source=parsed.era5_source,
+      era5_cache_dir=parsed.era5_cache_dir,
+      gridded_era5_uri=parsed.gridded_era5_uri,
+      gcs_gdb_uri=parsed.gcs_gdb_uri,
+      gcs_era5_climate_uri=parsed.gcs_era5_climate_uri,
+  )
 
-  try:
-    logger.debug("Initializing Caravan Static Attributes Extractor (ERA5 source: %s)...", parsed.era5_source)
-    extractor = StaticAttributesExtractor(
-        gdb_path=str(gdb_path),
-        era5_cache_dir=str(era5_cache_dir),
-        auto_download=parsed.auto_download,
-        era5_source=parsed.era5_source,
-        gridded_era5_uri=parsed.gridded_era5_uri,
-    )
+  logger.debug(
+      "Extracting static attributes from '%s' (workers=%d)...",
+      input_path,
+      parsed.workers,
+  )
+  df = extractor.extract_attributes_from_file(
+      input_path=input_path,
+      output_csv_path=parsed.output,
+      id_column=parsed.id_column,
+      min_overlap_threshold=parsed.min_overlap_threshold,
+      workers=parsed.workers,
+      show_progress=True,
+  )
 
-    logger.debug(
-        "Extracting static attributes from '%s' (workers=%d)...",
-        input_path,
-        parsed.workers,
-    )
-    df = extractor.extract_attributes_from_file(
-        input_path=input_path,
-        output_csv_path=parsed.output,
-        id_column=parsed.id_column,
-        min_overlap_threshold=parsed.min_overlap_threshold,
-        workers=parsed.workers,
-        show_progress=True,
-    )
+  print(
+      f"\n✓ Extracted {df.shape[1]} attributes for {df.shape[0]} catchments -> {parsed.output}"
+  )
 
-    print(
-        f"\n✓ Extracted {df.shape[1]} attributes for {df.shape[0]} catchments -> {parsed.output}"
-    )
-  finally:
-    if parsed.clean_cache and cache_root.exists():
-      import shutil
-      logger.debug("Cleaning up cache root directory %s...", cache_root)
-      shutil.rmtree(cache_root, ignore_errors=True)
+  if parsed.clean_cache:
+    gdb_p = Path(parsed.gdb_path)
+    if gdb_p.exists():
+      if gdb_p.is_dir():
+        shutil.rmtree(gdb_p)
+      else:
+        gdb_p.unlink()
+    if parsed.era5_cache_dir:
+      era5_p = Path(parsed.era5_cache_dir)
+      if era5_p.exists() and era5_p.is_dir():
+        shutil.rmtree(era5_p)
 
 
 if __name__ == "__main__":

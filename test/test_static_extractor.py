@@ -14,12 +14,14 @@
 
 """Unit and integration tests for Caravan Static Attributes Extractor."""
 
+import json
 from pathlib import Path
-import tempfile
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pytest
 import shapely.geometry
+import zarr
 
 from multimet.static_extractor import (
     ATTRIBUTE_DEFINITIONS,
@@ -29,7 +31,6 @@ from multimet.static_extractor import (
     calculate_knoben_moisture_and_seasonality,
     compute_caravan_climate_metrics,
     compute_pour_point_properties,
-    get_default_gdb_path,
 )
 from multimet.static_extractor.cli import main as cli_main, parse_args
 from multimet.static_extractor.extractor import _worker_extract_polygon
@@ -57,7 +58,6 @@ def test_fao_pm_pet_calculation():
   d2m = pd.Series([15.0, 18.0, 10.0, 20.0, 5.0], index=dates)
   u10 = pd.Series([2.0] * 5, index=dates)
   v10 = pd.Series([1.5] * 5, index=dates)
-  # Net radiation in J/m2/hr: 1e6 J/m2/hr * 24 / 1e6 = 24 MJ/m2/day
   ssr = pd.Series([800000.0] * 5, index=dates)
   str_s = pd.Series([200000.0] * 5, index=dates)
 
@@ -73,14 +73,12 @@ def test_fao_pm_pet_calculation():
 
   assert len(pet) == 5
   assert (pet >= 0.0).all()
-  # Typically daily summer PET is between 2 and 8 mm/day
   assert 2.0 <= pet.mean() <= 8.0
 
 
 def test_knoben_moisture_and_seasonality():
   """Tests Knoben et al. (2018) annual moisture and seasonality indices."""
   dates = pd.date_range("2020-01-01", periods=365, freq="D")
-  # Wet winter, dry summer
   day_of_year = dates.dayofyear
   p_vals = 3.0 + 2.0 * np.cos(2 * np.pi * day_of_year / 365.0)
   pet_vals = 3.0 - 2.0 * np.cos(2 * np.pi * day_of_year / 365.0)
@@ -97,9 +95,7 @@ def test_caravan_climate_metrics_extremes():
   """Tests extreme precipitation indices (high/low prec freq and duration)."""
   dates = pd.date_range("2020-01-01", periods=100, freq="D")
   p_vals = np.ones(100) * 2.0
-  # Add an extreme event: 3 consecutive days >= 5 * p_mean (10 mm/day)
   p_vals[10:13] = 12.0
-  # Add dry days: 5 consecutive days < 1 mm/day
   p_vals[20:25] = 0.5
 
   p = pd.Series(p_vals, index=dates)
@@ -113,7 +109,7 @@ def test_caravan_climate_metrics_extremes():
   assert metrics["high_prec_dur"] == 3.0
   assert metrics["low_prec_freq"] > 0
   assert metrics["low_prec_dur"] == 5.0
-  assert metrics["frac_snow"] == 0.0  # temp > 0
+  assert metrics["frac_snow"] == 0.0
 
 
 def test_pour_point_properties():
@@ -138,12 +134,6 @@ def test_pour_point_properties():
 
 def _build_synthetic_hydroatlas_env(tmp_path: Path, include_native_pet: bool = True):
   """Creates a self-contained synthetic BasinATLAS shapefile, ERA5 table, and Zarr store."""
-  import json
-  import geopandas as gpd
-  import zarr
-
-  # 1. Two adjacent 1° x 1° sub-basins:
-  #    712000001 (west: [-87, 40, -86, 41]) drains into 712000002 (east: [-86, 40, -85, 41]) -> 0 (ocean)
   poly1 = shapely.geometry.box(-87.0, 40.0, -86.0, 41.0)
   poly2 = shapely.geometry.box(-86.0, 40.0, -85.0, 41.0)
 
@@ -179,7 +169,6 @@ def _build_synthetic_hydroatlas_env(tmp_path: Path, include_native_pet: bool = T
   shp_path = tmp_path / "synthetic_hydroatlas.shp"
   gdf.to_file(shp_path)
 
-  # 2. Precomputed North America ('na') climate table (FAO-PM values)
   era5_cache = tmp_path / "era5_cache"
   era5_cache.mkdir(parents=True, exist_ok=True)
   rec1 = {
@@ -212,7 +201,6 @@ def _build_synthetic_hydroatlas_env(tmp_path: Path, include_native_pet: bool = T
       json.dumps(rec1) + "\n" + json.dumps(rec2) + "\n", encoding="utf-8"
   )
 
-  # 3. Gridded Zarr store with distinct FAO-PM (2.0 mm/day) and native ERA5-Land (4.0 mm/day) PET
   zarr_dir = tmp_path / "synthetic_era5.zarr"
   root = zarr.open_group(str(zarr_dir), mode="w")
   n_times = 60
@@ -247,10 +235,8 @@ def test_extract_attributes_for_polygon_end_to_end(tmp_path):
       gdb_path=shp_path,
       era5_cache_dir=era5_cache,
       gridded_era5_uri=str(zarr_dir),
-      auto_download=False,
   )
 
-  # Query polygon covering 25% width in sub-basin 1 ([-86.25, -86.0]) and 75% width in sub-basin 2 ([-86.0, -85.25])
   query_poly = shapely.geometry.box(-86.25, 40.1, -85.25, 40.9)
   feature = {
       "type": "Feature",
@@ -263,20 +249,16 @@ def test_extract_attributes_for_polygon_end_to_end(tmp_path):
   assert res["intersected_subbasins_count"] == 2
 
   attrs = res["caravan_attributes"]
-  # 1:3 area-weighted continuous mean: 0.25 * 200 + 0.75 * 400 = 350.0
   assert np.isclose(attrs["ele_mt_sav"], 350.0, rtol=1e-3)
   assert np.isclose(attrs["slp_dg_sav"], 25.0, rtol=1e-3)
   assert np.isclose(attrs["area_fraction_used_for_aggregation"], 1.0)
 
-  # Categorical majority vote picks sub-basin 2 (75% weight)
   assert attrs["glc_cl_smj"] == 12
   assert attrs["clz_cl_smj"] == 9
   assert attrs["lit_cl_smj"] == 3
 
-  # Pour-point NEXT_DOWN traversal selects sub-basin 2 (the terminal outlet)
   assert np.isclose(attrs["dis_m3_pyr"], 45.0)
 
-  # HYBAS mode: FAO-PM comes from table (0.25 * 1.5 + 0.75 * 2.5 = 2.25), ERA5-Land from gridded Zarr (4.0)
   assert np.isclose(attrs["p_mean"], 4.5, rtol=1e-3)
   assert np.isclose(attrs["pet_mean"], 2.25, rtol=1e-3)
   assert np.isclose(attrs["pet_mean_FAO_PM"], 2.25, rtol=1e-3)
@@ -303,7 +285,7 @@ def test_extract_attributes_for_polygon_end_to_end(tmp_path):
       },
       index=dates,
   )
-  res_ts = extractor.extract_attributes_for_polygon(query_poly, timeseries_df=ts_df)
+  res_ts = extractor.extract_attributes_for_polygon(query_poly, catchment_id="b_ts", timeseries_df=ts_df)
   ts_attrs = res_ts["caravan_attributes"]
   assert np.isclose(ts_attrs["pet_mean"], 2.5)
   assert np.isclose(ts_attrs["pet_mean_FAO_PM"], 2.5)
@@ -318,7 +300,7 @@ def test_extract_attributes_for_polygon_end_to_end(tmp_path):
   assert np.isnan(res_no_inter["caravan_attributes"]["ele_mt_sav"])
   assert np.isnan(res_no_inter["caravan_attributes"]["dis_m3_pyr"])
 
-  # High min_overlap_threshold filtering all slivers returns NaN (never falls back to iloc[0])
+  # High min_overlap_threshold filtering all slivers returns NaN
   res_filtered = extractor.extract_attributes_for_polygon(
       query_poly, catchment_id="filtered", min_overlap_threshold=1e6, era5_source="hybas"
   )
@@ -327,19 +309,20 @@ def test_extract_attributes_for_polygon_end_to_end(tmp_path):
 
   # Omitting era5_source when timeseries_df is not provided must raise ValueError
   with pytest.raises(ValueError, match="era5_source must be explicitly specified"):
-    extractor.extract_attributes_for_polygon(query_poly)
+    extractor.extract_attributes_for_polygon(query_poly, catchment_id="b_err")
+
+  # Omitting catchment_id when input is a bare geometry must raise ValueError
+  with pytest.raises(ValueError, match="catchment_id must be provided"):
+    extractor.extract_attributes_for_polygon(query_poly, era5_source="hybas")
 
 
 def test_extract_attributes_batch_and_file_io(tmp_path):
   """Tests extract_attributes_batch and extract_attributes_from_file with GeoJSON and Parquet inputs."""
-  import geopandas as gpd
-
   shp_path, era5_cache, zarr_dir = _build_synthetic_hydroatlas_env(tmp_path, include_native_pet=False)
   extractor = StaticAttributesExtractor(
       gdb_path=shp_path,
       era5_cache_dir=era5_cache,
       gridded_era5_uri=str(zarr_dir),
-      auto_download=False,
       era5_source="hybas",
   )
 
@@ -354,7 +337,6 @@ def test_extract_attributes_batch_and_file_io(tmp_path):
   assert len(batch_res) == 2
   assert np.isclose(batch_res[0]["caravan_attributes"]["ele_mt_sav"], 200.0)
   assert np.isclose(batch_res[1]["caravan_attributes"]["ele_mt_sav"], 400.0)
-  # Because include_native_pet=False in Zarr store, *_ERA5_LAND must be NaN
   assert np.isnan(batch_res[0]["caravan_attributes"]["pet_mean_ERA5_LAND"])
 
   basins_gdf = gpd.GeoDataFrame({"gauge_id": ["g1", "g2"]}, geometry=[b1, b2], crs="EPSG:4326")
@@ -382,31 +364,34 @@ def test_extract_attributes_batch_and_file_io(tmp_path):
   # GeoDataFrame and raw geometry dict inputs
   res_gdf = extractor.extract_attributes_for_polygon(basins_gdf.iloc[[0]])
   assert res_gdf["catchment_id"] == "g1"
-  res_geom_dict = extractor.extract_attributes_for_polygon(shapely.geometry.mapping(b1))
-  assert res_geom_dict["catchment_id"] == "custom_catchment"
+  res_geom_dict = extractor.extract_attributes_for_polygon(
+      shapely.geometry.mapping(b1), catchment_id="explicit_id"
+  )
+  assert res_geom_dict["catchment_id"] == "explicit_id"
 
   # Worker function and export_caravan_csv with DataFrame
   w_res = _worker_extract_polygon((b1, "w1", 0.0, "hybas", str(shp_path), str(era5_cache), str(zarr_dir), False))
   assert w_res["catchment_id"] == "w1"
   assert extractor.export_caravan_csv(df).shape == df.shape
 
-  # Missing/unreachable Zarr store returns NaNs rather than raising or aliasing
+  # Missing/unreachable Zarr store or GDB path must raise an error instead of returning silent NaNs
+  with pytest.raises(FileNotFoundError):
+    StaticAttributesExtractor(gdb_path=tmp_path / "nonexistent.shp")
+
   ext_missing_zarr = StaticAttributesExtractor(
       gdb_path=shp_path,
       era5_cache_dir=era5_cache,
       gridded_era5_uri=str(tmp_path / "does_not_exist.zarr"),
-      auto_download=False,
   )
-  res_missing_hybas = ext_missing_zarr.extract_attributes_for_polygon(b1, era5_source="hybas")
-  assert np.isclose(res_missing_hybas["caravan_attributes"]["pet_mean_FAO_PM"], 1.5)
-  assert np.isnan(res_missing_hybas["caravan_attributes"]["pet_mean_ERA5_LAND"])
-  res_missing_grid = ext_missing_zarr.extract_attributes_for_polygon(b1, era5_source="gridded")
-  assert np.isnan(res_missing_grid["caravan_attributes"]["p_mean"])
+  with pytest.raises(Exception):
+    ext_missing_zarr.extract_attributes_for_polygon(b1, catchment_id="b1", era5_source="gridded")
+
+  # Missing ID column in input file must raise ValueError instead of inventing basin_1, basin_2
+  with pytest.raises(ValueError, match="ID column 'nonexistent_col' not found"):
+    extractor.extract_attributes_from_file(geojson_path, id_column="nonexistent_col", show_progress=False)
 
   # CLI main end-to-end execution
   cli_out_csv = tmp_path / "cli_out.csv"
-  temp_cache = tmp_path / "temp_cli_cache"
-  temp_cache.mkdir()
   cli_main([
       "--input", str(geojson_path),
       "--output", str(cli_out_csv),
@@ -414,28 +399,52 @@ def test_extract_attributes_batch_and_file_io(tmp_path):
       "--gdb-path", str(shp_path),
       "--era5-cache-dir", str(era5_cache),
       "--gridded-era5-uri", str(zarr_dir),
-      "--cache-dir", str(temp_cache),
-      "--no-download",
-      "--clean-cache",
   ])
   assert cli_out_csv.exists()
-  assert not temp_cache.exists()
 
 
 def test_cli_parsing():
-  """Tests CLI argument parsing and verifies --era5-source is required."""
+  """Tests CLI argument parsing and verifies required path flags."""
+  # Missing --gdb-path or --era5-source must fail
   with pytest.raises(SystemExit):
     parse_args(["--input", "basins.geojson", "--output", "attrs.csv"])
 
-  args = parse_args(["--input", "basins.geojson", "--output", "attrs.csv", "--era5-source", "hybas"])
+  # Missing --era5-cache-dir when --era5-source=hybas must fail
+  with pytest.raises(SystemExit):
+    parse_args([
+        "--input", "basins.geojson",
+        "--output", "attrs.csv",
+        "--gdb-path", "/data/BasinATLAS_v10.gdb",
+        "--era5-source", "hybas",
+    ])
+
+  # Missing --gridded-era5-uri when --era5-source=gridded must fail
+  with pytest.raises(SystemExit):
+    parse_args([
+        "--input", "basins.geojson",
+        "--output", "attrs.csv",
+        "--gdb-path", "/data/BasinATLAS_v10.gdb",
+        "--era5-source", "gridded",
+    ])
+
+  args = parse_args([
+      "--input", "basins.geojson",
+      "--output", "attrs.csv",
+      "--gdb-path", "/data/BasinATLAS_v10.gdb",
+      "--era5-source", "hybas",
+      "--era5-cache-dir", "/data/era5_climate",
+  ])
   assert args.input == "basins.geojson"
   assert args.output == "attrs.csv"
+  assert args.gdb_path == "/data/BasinATLAS_v10.gdb"
+  assert args.era5_cache_dir == "/data/era5_climate"
   assert args.min_overlap_threshold == 0.0
   assert args.era5_source == "hybas"
 
   args_gridded = parse_args([
       "--input", "basins.geojson",
       "--output", "attrs.csv",
+      "--gdb-path", "/data/BasinATLAS_v10.gdb",
       "--era5-source", "gridded",
       "--gridded-era5-uri", "gs://my-bucket/era5.zarr",
       "--workers", "16",
@@ -447,8 +456,6 @@ def test_cli_parsing():
 
 def test_era5_gridded_extractor_synthetic(tmp_path):
   """Tests ERA5GriddedExtractor with a synthetic local Zarr dataset."""
-  import zarr
-  import shapely.geometry
   from multimet.static_extractor.climate import ERA5GriddedExtractor
 
   zarr_dir = tmp_path / "synthetic_era5.zarr"
@@ -458,19 +465,15 @@ def test_era5_gridded_extractor_synthetic(tmp_path):
   lats = np.linspace(40.0, 41.0, 11, dtype=np.float32)
   lons = np.linspace(-87.0, -86.0, 11, dtype=np.float32)
 
-  # Coordinates
   root.create_array("latitude", data=lats)
   root.create_array("longitude", data=lons)
   time_arr = root.create_array("time", data=np.arange(n_times, dtype=np.int64))
   time_arr.attrs["units"] = "days since 2000-01-01"
 
-  # Climate data arrays (time, lat, lon)
   p_data = np.full((n_times, len(lats), len(lons)), 4.0, dtype=np.float32)
   t_data = np.full((n_times, len(lats), len(lons)), 18.0, dtype=np.float32)
   pet_data = np.full((n_times, len(lats), len(lons)), 2.0, dtype=np.float32)
 
-  # Mask out a corner of the grid with NaNs (e.g., coastal water cells) to
-  # verify spatial weights are renormalized over valid land cells.
   p_data[:, :4, :4] = np.nan
   t_data[:, :4, :4] = np.nan
   pet_data[:, :4, :4] = np.nan
@@ -481,7 +484,6 @@ def test_era5_gridded_extractor_synthetic(tmp_path):
 
   extractor = ERA5GriddedExtractor(zarr_uri=str(zarr_dir))
 
-  # Test polygon covering central region
   poly = shapely.geometry.box(-86.8, 40.2, -86.2, 40.8)
   metrics = extractor.extract_climate_metrics_for_polygon(poly, baseline_years=None)
 
@@ -496,13 +498,11 @@ def test_era5_gridded_extractor_synthetic(tmp_path):
   assert np.isnan(metrics["seasonality_ERA5_LAND"])
   assert metrics["frac_snow"] == 0.0
 
-  # Out-of-bounds polygon returns NaN instead of snapping to nearest edge cell
   offshore_poly = shapely.geometry.box(-120.0, 10.0, -119.5, 10.5)
   offshore_metrics = extractor.extract_climate_metrics_for_polygon(offshore_poly, baseline_years=None)
   assert np.isnan(offshore_metrics["p_mean"])
   assert np.isnan(offshore_metrics["pet_mean_FAO_PM"])
 
-  # Explicit unit conversion (meters -> mm, Kelvin -> Celsius, hours since epoch)
   zarr_units_dir = tmp_path / "synthetic_era5_units.zarr"
   root_u = zarr.open_group(str(zarr_units_dir), mode="w")
   root_u.create_array("latitude", data=lats)
@@ -526,23 +526,22 @@ def test_era5_gridded_extractor_synthetic(tmp_path):
 def test_batch_runner_discovery(tmp_path):
   """Tests discover_datasets in batch_runner across multiple dataset folders."""
   from multimet.static_extractor.batch_runner import discover_datasets
-  
+
   parent = tmp_path / "caravan_root"
   ds1 = parent / "camels"
   ds2 = parent / "hysets"
   ds1.mkdir(parents=True)
   ds2.mkdir(parents=True)
-  
+
   (ds1 / "camels_basin_shapes.shp").touch()
   (ds2 / "hysets.geojson").touch()
-  
+
   datasets = discover_datasets(parent_dirs=[str(parent)])
   assert "camels" in datasets
   assert "hysets" in datasets
   assert datasets["camels"].name == "camels_basin_shapes.shp"
   assert datasets["hysets"].name == "hysets.geojson"
 
-  # Test nested staging directory structure (e.g. parent/parent/dataset)
   nested_parent = tmp_path / "staged" / "caravan" / "caravan"
   ds_nested = nested_parent / "lamah"
   ds_nested.mkdir(parents=True)
@@ -551,6 +550,10 @@ def test_batch_runner_discovery(tmp_path):
   datasets_nested = discover_datasets(parent_dirs=[str(tmp_path / "staged" / "caravan")])
   assert "lamah" in datasets_nested
   assert datasets_nested["lamah"].name == "lamah_basin_shapes.shp"
+
+  # Nonexistent input file must raise FileNotFoundError
+  with pytest.raises(FileNotFoundError):
+    discover_datasets(input_files=[str(tmp_path / "missing.shp")])
 
 
 def test_benchmark_metrics_continuous():
@@ -577,7 +580,7 @@ def test_benchmark_metrics_categorical():
   from multimet.static_extractor.benchmark import compute_categorical_metrics
 
   y_true = np.array([1, 2, 3, 4, 5, 2, 1, 3])
-  y_pred = np.array([1, 2, 3, 4, 5, 2, 1, 4])  # 7 out of 8 match
+  y_pred = np.array([1, 2, 3, 4, 5, 2, 1, 4])
 
   res = compute_categorical_metrics(y_true, y_pred)
   assert res["n"] == 8
@@ -601,24 +604,6 @@ def test_benchmark_attribute_categorization():
   assert get_attribute_category("wet_cl_smj") == "Hydrology"
 
 
-def test_batch_runner_clean_cache_flag(tmp_path):
-  """Verifies that --clean-cache removes cache_root after batch execution."""
-  from multimet.static_extractor.batch_runner import parse_args, main
-  fake_cache = tmp_path / "cache_dir"
-  fake_cache.mkdir(parents=True, exist_ok=True)
-  (fake_cache / "staged_shapefiles").mkdir(parents=True, exist_ok=True)
-  (fake_cache / "test.txt").write_text("hello")
-
-  # Test parser recognition
-  args = parse_args(["-o", str(tmp_path / "out"), "--era5-source", "hybas", "--clean-cache", "--cache-dir", str(fake_cache)])
-  assert args.clean_cache is True
-
-  # Verify cleanup behavior in main finally block
-  with pytest.raises(SystemExit):
-    main(["-o", str(tmp_path / "out"), "--era5-source", "hybas", "--clean-cache", "--cache-dir", str(fake_cache)])
-  assert not fake_cache.exists()
-
-
 def test_batch_runner_gcs_output_and_args(tmp_path, monkeypatch):
   """Verifies GCS output handling and multi parent-dir argument parsing."""
   from unittest.mock import MagicMock
@@ -628,7 +613,10 @@ def test_batch_runner_gcs_output_and_args(tmp_path, monkeypatch):
       "-p", "gs://open-multimet/data/caravan_shapefiles/caravan/",
       "-p", "gs://open-multimet/data/caravan_shapefiles/caravan_extensions/",
       "-o", "gs://open-multimet/data/caravan_static_attributes/",
+      "--gdb-path", "/data/BasinATLAS_v10.gdb",
       "--era5-source", "hybas",
+      "--era5-cache-dir", "/data/era5_climate",
+      "--staging-dir", "/data/staged",
       "--workers", "14",
       "--combine",
   ])
@@ -637,16 +625,16 @@ def test_batch_runner_gcs_output_and_args(tmp_path, monkeypatch):
   assert args.workers == 14
   assert args.combine is True
 
-  # Also test space-separated multi paths for a single -p flag
   args_multi = parse_args([
       "-p", "dir1", "dir2", "dir3",
       "-o", "/tmp/out",
+      "--gdb-path", "/data/BasinATLAS_v10.gdb",
       "--era5-source", "gridded",
+      "--gridded-era5-uri", "gs://my-bucket/era5.zarr",
   ])
   assert len(args_multi.parent_dirs) == 1
   assert len(args_multi.parent_dirs[0]) == 3
 
-  # Test upload_to_gcs is called during run_batch_extraction when GCS output is set
   mock_upload = MagicMock()
   monkeypatch.setattr("multimet.static_extractor.batch_runner.upload_to_gcs", mock_upload)
   monkeypatch.setattr("multimet.static_extractor.batch_runner.gcs_path_exists", lambda uri: False)
@@ -665,7 +653,9 @@ def test_batch_runner_gcs_output_and_args(tmp_path, monkeypatch):
   results = run_batch_extraction(
       dataset_map={"test_ds": dummy_shp},
       output_dir="gs://open-multimet/data/caravan_static_attributes/",
+      gdb_path=tmp_path / "BasinATLAS_v10.gdb",
       era5_source="hybas",
+      era5_cache_dir=tmp_path / "era5",
       workers=1,
       staging_cache_dir=tmp_path / "staged",
       combine=True,
@@ -673,7 +663,6 @@ def test_batch_runner_gcs_output_and_args(tmp_path, monkeypatch):
   )
 
   assert "test_ds" in results
-  # Should have uploaded dataset CSV and combined CSV
   assert mock_upload.call_count == 2
 
 
@@ -682,17 +671,26 @@ def test_batch_runner_progress_and_quiet_logging(tmp_path):
   import logging
   from multimet.static_extractor.batch_runner import parse_args, setup_logging
 
-  # Test default parser flags
-  args = parse_args(["-o", str(tmp_path / "out"), "--era5-source", "hybas"])
+  args = parse_args([
+      "-o", str(tmp_path / "out"),
+      "--gdb-path", "/data/BasinATLAS_v10.gdb",
+      "--era5-source", "hybas",
+      "--era5-cache-dir", "/data/era5_climate",
+  ])
   assert args.verbose is False
   assert args.show_progress is True
 
-  # Test verbose and no-progress flags
-  args_v = parse_args(["-o", str(tmp_path / "out"), "--era5-source", "hybas", "-v", "--no-progress"])
+  args_v = parse_args([
+      "-o", str(tmp_path / "out"),
+      "--gdb-path", "/data/BasinATLAS_v10.gdb",
+      "--era5-source", "hybas",
+      "--era5-cache-dir", "/data/era5_climate",
+      "-v",
+      "--no-progress",
+  ])
   assert args_v.verbose is True
   assert args_v.show_progress is False
 
-  # Test setup_logging suppresses info logs when verbose=False
   setup_logging(verbose=False)
   assert logging.getLogger("static_extractor").level == logging.WARNING
 
@@ -703,17 +701,6 @@ def test_batch_runner_progress_and_quiet_logging(tmp_path):
 def test_export_subdataset_partitioned_files(tmp_path):
   """Tests partitioning of extracted attributes into HydroATLAS, Caravan, and Parquet tables."""
   from multimet.static_extractor.batch_runner import export_subdataset_partitioned_files
-
-  ds_dir = tmp_path / "camels"
-  ds_dir.mkdir()
-  coords_file = ds_dir / "coordinates.csv"
-  coords_file.write_text(
-      "gauge_id,gauge_lat,gauge_lon,original_id\n"
-      "camels_01,45.0,-70.0,ORIG_01\n"
-      "camels_02,46.0,-71.0,ORIG_02\n"
-  )
-  dummy_shp = ds_dir / "camels_basin_shapes.shp"
-  dummy_shp.write_text("dummy")
 
   df = pd.DataFrame(
       {
@@ -732,7 +719,6 @@ def test_export_subdataset_partitioned_files(tmp_path):
       df=df,
       ds_name="camels",
       output_sub_dir=out_sub,
-      vector_path=dummy_shp,
   )
 
   assert res["hydroatlas"].exists()
@@ -743,39 +729,32 @@ def test_export_subdataset_partitioned_files(tmp_path):
   assert "basin_area" in df_hydro.columns
   assert "ele_mt_sav" in df_hydro.columns
   assert "p_mean" not in df_hydro.columns
-  assert "gauge_lat" not in df_hydro.columns
 
   df_caravan = pd.read_csv(res["caravan"], index_col=0)
   assert "p_mean" in df_caravan.columns
   assert "pet_mean" in df_caravan.columns
   assert "aridity" in df_caravan.columns
-  assert "gauge_lat" in df_caravan.columns
-  assert "gauge_lon" in df_caravan.columns
-  assert df_caravan.loc["camels_01", "gauge_lat"] == 45.0
 
   df_parquet = pd.read_parquet(res["parquet"])
   assert len(df_parquet) == 2
   assert "basin_area" in df_parquet.columns
   assert "p_mean" in df_parquet.columns
-  assert "gauge_lat" in df_parquet.columns
 
 
-def test_batch_runner_partitioned_caravan_new(tmp_path, monkeypatch):
-  """Verifies that caravan-new paths automatically trigger subdataset partitioning and uploads."""
+def test_batch_runner_partition_outputs(tmp_path, monkeypatch):
+  """Verifies that partition_outputs=True partitions output per dataset and supports resume."""
   from unittest.mock import MagicMock
   from multimet.static_extractor.batch_runner import run_batch_extraction
 
   uploaded_uris = []
   def mock_upload(local_file, gcs_dest):
     uploaded_uris.append((Path(local_file).name, gcs_dest))
-    return True
 
   monkeypatch.setattr("multimet.static_extractor.batch_runner.upload_to_gcs", mock_upload)
   monkeypatch.setattr("multimet.static_extractor.batch_runner.gcs_path_exists", lambda uri: False)
 
   ds_dir = tmp_path / "camels"
   ds_dir.mkdir()
-  (ds_dir / "coordinates.csv").write_text("gauge_id,gauge_lat,gauge_lon\ncamels_01,44.0,-68.0\n")
   dummy_shp = ds_dir / "camels_basin_shapes.shp"
   dummy_shp.write_text("dummy")
 
@@ -792,118 +771,89 @@ def test_batch_runner_partitioned_caravan_new(tmp_path, monkeypatch):
       lambda **kwargs: mock_extractor,
   )
 
-  # 1. Run extraction into caravan-new target GCS path
   results = run_batch_extraction(
       dataset_map={"camels": dummy_shp},
-      output_dir="gs://open-multimet/caravan-new/caravan-original/attributes/",
+      output_dir="gs://my-bucket/attributes/",
+      gdb_path=tmp_path / "BasinATLAS_v10.gdb",
       era5_source="hybas",
+      era5_cache_dir=tmp_path / "era5",
       workers=1,
       staging_cache_dir=tmp_path / "staged",
+      partition_outputs=True,
       resume=True,
   )
 
   assert "camels" in results
-  # Verify 3 files were uploaded to gs://open-multimet/caravan-new/caravan-original/attributes/camels/
   uploaded_filenames = [u[0] for u in uploaded_uris]
   assert "attributes_hydroatlas_camels.csv" in uploaded_filenames
   assert "attributes_caravan_camels.csv" in uploaded_filenames
   assert "attributes_camels.parquet" in uploaded_filenames
   for _, dest in uploaded_uris:
-    assert dest.endswith("attributes/camels/")
+    assert dest == "gs://my-bucket/attributes/camels/"
 
-  # 2. Re-running with resume=True should skip camels (parquet already exists locally)
+  # Re-running with resume=True should skip camels
   prev_upload_count = len(uploaded_uris)
   results_resume = run_batch_extraction(
       dataset_map={"camels": dummy_shp},
-      output_dir="gs://open-multimet/caravan-new/caravan-original/attributes/",
+      output_dir="gs://my-bucket/attributes/",
+      gdb_path=tmp_path / "BasinATLAS_v10.gdb",
       era5_source="hybas",
+      era5_cache_dir=tmp_path / "era5",
       workers=1,
       staging_cache_dir=tmp_path / "staged",
+      partition_outputs=True,
       resume=True,
   )
   assert "camels" in results_resume
   assert len(uploaded_uris) == prev_upload_count
 
 
-def test_batch_runner_preserve_caravan_dirs(tmp_path, monkeypatch):
-  """Verifies that --preserve-caravan-dirs partitions output per the contract into <collection>/attributes/<subdataset>/."""
-  from unittest.mock import MagicMock
-  from multimet.static_extractor.batch_runner import parse_args, run_batch_extraction
+def test_append_attributes_to_zarr_validation(tmp_path):
+  """Verifies append_attributes_to_zarr writes attributes and raises on missing store or basin."""
+  import xarray as xr
 
-  args = parse_args(["-o", "gs://open-multimet/caravan-new/", "--era5-source", "hybas", "--preserve-caravan-dirs"])
-  assert args.preserve_caravan_dirs is True
-
-  uploaded_uris = []
-  def mock_upload(local_file, gcs_dest):
-    uploaded_uris.append((Path(local_file).name, gcs_dest))
-    return True
-
-  monkeypatch.setattr("multimet.static_extractor.batch_runner.upload_to_gcs", mock_upload)
-  monkeypatch.setattr("multimet.static_extractor.batch_runner.gcs_path_exists", lambda uri: False)
-
-  # Setup 3 dummy datasets spanning all 3 collections
-  # 1. camels (caravan-original)
-  # 2. camelsde (caravan-extensions)
-  # 3. camelsfr (google-internal)
-  dataset_map = {}
-  for ds_name in ["camels", "camelsde", "camelsfr"]:
-    d = tmp_path / ds_name
-    d.mkdir()
-    (d / "coordinates.csv").write_text(f"gauge_id,gauge_lat,gauge_lon\n{ds_name}_01,45.0,-70.0\n")
-    shp = d / f"{ds_name}_basin_shapes.shp"
-    shp.write_text("dummy")
-    dataset_map[ds_name] = shp
-
-  mock_extractor = MagicMock()
-  def mock_extract(input_path, **kwargs):
-    ds = Path(input_path).stem.replace("_basin_shapes", "")
-    df = pd.DataFrame(
-        {"basin_area": [100.0], "ele_mt_sav": [400.0], "p_mean": [3.0]},
-        index=[f"{ds}_01"],
-    )
-    df.index.name = "gauge_id"
-    return df
-
-  mock_extractor.extract_attributes_from_file.side_effect = mock_extract
-  monkeypatch.setattr(
-      "multimet.static_extractor.batch_runner.StaticAttributesExtractor",
-      lambda **kwargs: mock_extractor,
-  )
-
-  results = run_batch_extraction(
-      dataset_map=dataset_map,
-      output_dir="gs://open-multimet/caravan-new/",
+  shp_path, era5_cache, _ = _build_synthetic_hydroatlas_env(tmp_path, include_native_pet=False)
+  extractor = StaticAttributesExtractor(
+      gdb_path=shp_path,
+      era5_cache_dir=era5_cache,
       era5_source="hybas",
-      preserve_caravan_dirs=True,
-      workers=1,
-      staging_cache_dir=tmp_path / "staged",
-      resume=False,
   )
 
-  assert len(results) == 3
-  # Check uploaded destinations
-  dest_map = {name: dest for name, dest in uploaded_uris}
+  # Nonexistent Zarr path must raise FileNotFoundError
+  with pytest.raises(FileNotFoundError):
+    extractor.append_attributes_to_zarr(
+        master_zarr_path=tmp_path / "missing.zarr",
+        basin_id="b1",
+        attributes={"ele_mt_sav": 250.0},
+    )
 
-  # camels -> caravan-original/attributes/camels/
-  assert any(
-      dest == "gs://open-multimet/caravan-new/caravan-original/attributes/camels/"
-      for _, dest in uploaded_uris
+  # Create valid Zarr store with 'basin' dimension
+  zarr_path = tmp_path / "master.zarr"
+  ds = xr.Dataset(coords={"basin": ["b1", "b2"]})
+  ds.to_zarr(str(zarr_path), mode="w")
+
+  # Unknown basin_id must raise KeyError
+  with pytest.raises(KeyError, match="not found in 'basin' coordinate"):
+    extractor.append_attributes_to_zarr(
+        master_zarr_path=zarr_path,
+        basin_id="unknown_basin",
+        attributes={"ele_mt_sav": 250.0},
+    )
+
+  # Valid flat attributes dict writes directly to Zarr store
+  extractor.append_attributes_to_zarr(
+      master_zarr_path=zarr_path,
+      basin_id="b1",
+      attributes={"ele_mt_sav": 250.0},
   )
-  # camelsde -> caravan-extensions/attributes/camelsde/
-  assert any(
-      dest == "gs://open-multimet/caravan-new/caravan-extensions/attributes/camelsde/"
-      for _, dest in uploaded_uris
-  )
-  # camelsfr -> google-internal/attributes/camelsfr/
-  assert any(
-      dest == "gs://open-multimet/caravan-new/google-internal/attributes/camelsfr/"
-      for _, dest in uploaded_uris
-  )
+  ds_reloaded = xr.open_zarr(str(zarr_path))
+  assert "caravan_ele_mt_sav" in ds_reloaded
+  assert np.isclose(float(ds_reloaded["caravan_ele_mt_sav"].values[0]), 250.0)
+  assert np.isnan(float(ds_reloaded["caravan_ele_mt_sav"].values[1]))
 
 
 def test_no_silent_fallbacks_or_masked_errors(tmp_path):
   """Ensures out-of-bounds polygons, missing baseline years, and malformed inputs are not silently masked."""
-  import zarr
   from multimet.static_extractor.climate import ERA5GriddedExtractor
 
   zarr_path = tmp_path / "synthetic_era5.zarr"
@@ -936,4 +886,3 @@ def test_no_silent_fallbacks_or_masked_errors(tmp_path):
   in_bounds_poly = shapely.geometry.box(20.0, 10.0, 21.0, 11.0)
   res_no_dates = gridded.extract_climate_metrics_for_polygon(in_bounds_poly, baseline_years=(1981, 2020))
   assert np.isnan(res_no_dates["p_mean"])
-

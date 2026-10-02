@@ -17,17 +17,10 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 import shutil
 import subprocess
-from typing import Optional, Union
-
-from multimet.static_extractor.config import (
-    GCS_HYDROATLAS_BUCKET,
-    GCS_HYDROATLAS_GDB_URI,
-    get_default_gdb_path,
-)
+from typing import Union
 
 logger = logging.getLogger(__name__)
 
@@ -38,28 +31,29 @@ def is_gcs_path(path: Union[str, Path]) -> bool:
 
 
 def download_hydroatlas_from_gcs(
-    target_dir: Optional[Union[str, Path]] = None,
-    source_uri: str = GCS_HYDROATLAS_GDB_URI,
+    target_dir: Union[str, Path],
+    source_uri: str,
 ) -> Path:
-  """Downloads BasinATLAS_v10.gdb from Google Cloud Storage to local cache.
+  """Downloads BasinATLAS_v10.gdb from Google Cloud Storage to a specified local path.
 
   Args:
-    target_dir: Optional local directory where BasinATLAS_v10.gdb will be saved.
-      Defaults to ~/.cache/googlehydrology/hydroatlas/BasinATLAS_v10.gdb.
-    source_uri: GCS source URI.
+    target_dir: Local directory path where BasinATLAS_v10.gdb will be saved.
+    source_uri: GCS source URI for BasinATLAS_v10.gdb.
 
   Returns:
-    Path to local BasinATLAS_v10.gdb directory.
+    Path to the local BasinATLAS_v10.gdb directory.
   """
-  if target_dir is None:
-    dest_path = get_default_gdb_path()
-  else:
-    target_path = Path(target_dir)
-    dest_path = (
-        target_path
-        if target_path.name.endswith(".gdb")
-        else target_path / "BasinATLAS_v10.gdb"
-    )
+  if not target_dir:
+    raise ValueError("target_dir must be explicitly provided.")
+  if not source_uri:
+    raise ValueError("source_uri must be explicitly provided.")
+
+  target_path = Path(target_dir)
+  dest_path = (
+      target_path
+      if target_path.name.endswith(".gdb")
+      else target_path / "BasinATLAS_v10.gdb"
+  )
 
   if dest_path.exists() and any(dest_path.iterdir()):
     logger.debug("BasinATLAS GDB already exists at: %s", dest_path)

@@ -29,16 +29,10 @@ from multimet.static_extractor.config import (
     ADDITIONAL_PROPERTIES,
     ATTRIBUTE_DEFINITIONS,
     CONTINENT_MAP,
-    GCS_ERA5_CLIMATE_URI,
-    GCS_ERA5_GRIDDED_ZARR_URI,
-    GCS_HYDROATLAS_BUCKET,
-    GCS_HYDROATLAS_GDB_URI,
     IGNORE_PROPERTIES,
     MAJORITY_PROPERTIES,
     POUR_POINT_PROPERTIES,
     UPSTREAM_PROPERTIES,
-    get_default_era5_cache_dir,
-    get_default_gdb_path,
 )
 from multimet.static_extractor.extractor import (
     StaticAttributesExtractor,
@@ -59,8 +53,6 @@ __all__ = [
     "calculate_knoben_moisture_and_seasonality",
     "compute_pour_point_properties",
     "download_hydroatlas_from_gcs",
-    "get_default_gdb_path",
-    "get_default_era5_cache_dir",
     "ATTRIBUTE_DEFINITIONS",
     "MAJORITY_PROPERTIES",
     "POUR_POINT_PROPERTIES",
@@ -68,10 +60,6 @@ __all__ = [
     "ADDITIONAL_PROPERTIES",
     "UPSTREAM_PROPERTIES",
     "CONTINENT_MAP",
-    "GCS_HYDROATLAS_BUCKET",
-    "GCS_HYDROATLAS_GDB_URI",
-    "GCS_ERA5_CLIMATE_URI",
-    "GCS_ERA5_GRIDDED_ZARR_URI",
 ]
 
 
@@ -80,4 +68,3 @@ def __getattr__(name: str):
     from multimet.static_extractor import batch_runner
     return getattr(batch_runner, name)
   raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
