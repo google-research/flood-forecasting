@@ -42,6 +42,7 @@ dependencies:
   - numpy=2.4.*
   - pandas=2.3.*
   - parso=0.8.5
+  - pyarrow
   - pydantic=2.12.*
   - pytest
   - pytest-cov
@@ -49,10 +50,12 @@ dependencies:
   - python=3.12.*
   - pytorch=2.5.1
   - pytorch-cuda=12.4
+  - rasterio=1.5.*
   - ruamel.yaml=0.18.17
   - ruff
   - scipy=1.16.*
   - seaborn
+  - shapely=2.1.*
   - sphinx=8.2.3
   - sphinx-rtd-theme=3.0.2
   - tensorboard=2.20.*

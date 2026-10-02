@@ -44,14 +44,17 @@ dependencies:
   - numpy=2.4.*
   - pandas=2.3.*
   - parso=0.8.*
+  - pyarrow
   - pydantic=2.12.*
   - pytest
   - pytest-cov
   - pytest-xdist
+  - rasterio=1.5.*
   - ruamel.yaml=0.18.*
   - ruff
   - scipy=1.16.*
   - seaborn
+  - shapely=2.1.*
   - sphinx=8.2.*
   - sphinx-rtd-theme=3.0.*
   - tensorboard=2.20.*

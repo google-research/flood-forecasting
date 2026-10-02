@@ -12,16 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from catchment_delineation import (
-    DemDelineator,
-    delineate_catchment,
-    delineate_coordinates,
-    delineate_dem,
-)
+"""CLI entry point for python -m catchment_delineation."""
 
-__all__ = [
-    'DemDelineator',
-    'delineate_catchment',
-    'delineate_coordinates',
-    'delineate_dem',
-]
+import sys
+
+from catchment_delineation.cli import main
+
+if __name__ == '__main__':
+    sys.exit(main())
