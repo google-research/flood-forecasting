@@ -28,8 +28,8 @@ Before running ``delineate-catchment``, you need a folder (local or on Google Cl
 .. code-block:: bash
 
    python scripts/slice_continental_dems.py \
-     --source-dir /path/to/raw_hydrosheds_tifs \
-     --output-dir /path/to/tiles_5deg
+     --input-tifs /path/to/raw_hydrosheds_tifs/*.tif \
+     --out-dir /path/to/tiles_5deg
 
 -----------
 Quick Start
