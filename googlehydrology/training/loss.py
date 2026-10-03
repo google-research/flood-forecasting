@@ -282,6 +282,8 @@ class MaskedMSELoss(BaseLoss):
 class MaskedRMSELoss(BaseLoss):
     """Root mean squared error loss.
 
+    Uses the zero subgradient when all observed residuals are zero.
+
     To use this loss in a forward pass, the passed `prediction` dict must contain
     the key ``y_hat``, and the `data` dict must contain ``y``.
 
@@ -303,12 +305,8 @@ class MaskedRMSELoss(BaseLoss):
         **kwargs,
     ):
         mask = ~torch.isnan(ground_truth['y'])
-        loss = torch.sqrt(
-            0.5
-            * torch.mean(
-                (prediction['y_hat'][mask] - ground_truth['y'][mask]) ** 2
-            )
-        )
+        residuals = prediction['y_hat'][mask] - ground_truth['y'][mask]
+        loss = torch.linalg.vector_norm(residuals) / (2 * residuals.numel()) ** 0.5
         return loss
 
 
