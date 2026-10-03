@@ -31,7 +31,9 @@ def test_forget_gate_slice():
 
 @pytest.mark.unit
 def test_lstm_init():
-    lstm = nn.LSTM(input_size=10, hidden_size=20)
+    lstm = nn.LSTM(
+        input_size=10, hidden_size=20, num_layers=3, bidirectional=True
+    )
     lstm_init(
         lstms=[lstm],
         forget_bias=1.5,
@@ -40,6 +42,14 @@ def test_lstm_init():
             WeightInitOpt.LSTM_HH_ORTHOGONAL,
         ],
     )
-    # Check forget bias initialized
+    # Check forget bias initialized for every layer and direction.
     sl = _forget_gate_slice(lstm)
-    assert torch.allclose(lstm.bias_hh_l0.data[sl], torch.tensor(1.5))
+    for name, param in lstm.named_parameters():
+        if name.startswith('bias_hh_'):
+            assert torch.allclose(param.data[sl], torch.tensor(1.5))
+
+
+@pytest.mark.unit
+def test_lstm_init_without_bias():
+    lstm = nn.LSTM(input_size=10, hidden_size=20, bias=False)
+    lstm_init(lstms=[lstm], forget_bias=1.5)

@@ -52,15 +52,12 @@ train_basin_file: ~/flood-forecasting/example-configs/camels-us-531-basins-list.
 validation_basin_file: ~/flood-forecasting/example-configs/camels-us-531-basins-list.txt
 test_basin_file: ~/flood-forecasting/example-configs/camels-us-531-basins-list.txt
 
-# Directory containing the target data (streamflow observations).
-targets_data_dir: ~/data/camels-updated-2025
-# Directory containing static catchment attributes (e.g., area, elevation).
-statics_data_dir: ~/data/camels-updated-2025
-# Directory containing dynamic meteorological forcing data (rain, temp, etc.).
-dynamics_data_dir: ~/data/camels-updated-2025
-
-# This allows loading the input and target data from CSV files instead of NetCDF files.
-load_as_csv: False
+# Root directory containing the unified Zarr stores (attributes.zarr, streamflow.zarr, dynamics/).
+data_dir: ~/data/camels-updated-2025
+# Alternatively, individual component paths can be specified:
+# statics_data_path: ~/data/camels-updated-2025/attributes.zarr
+# targets_data_path: ~/data/camels-updated-2025/streamflow.zarr
+# dynamics_data_path: ~/data/camels-updated-2025/dynamics
 
 # -- Time Periods --
 train_start_date: 01/01/2016

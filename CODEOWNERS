@@ -1,5 +1,6 @@
-* @kratzert
-* @gauchm
+# Default reviewer for every path in this repository.
+#
+# NOTE: GitHub applies only the LAST matching pattern in this file. Rules do
+# not accumulate, so several separate `*` lines would mean only the final one
+# takes effect. Keep all default owners on a single line.
 * @grey-nearing
-* @omrishefi
-* @amitmarkel

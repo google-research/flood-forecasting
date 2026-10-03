@@ -17,6 +17,44 @@ import itertools
 import more_itertools
 
 
+# Canonical aliases for multimet products with compound or inconsistent names.
+PRODUCT_ALIASES: dict[str, str] = {
+    'chirps': 'CHIRPS',
+    'chirpsgefs': 'CHIRPS_GEFS',
+    'cpc': 'CPC',
+    'era5land': 'ERA5_LAND',
+    'graphcast': 'GRAPHCAST',
+    'hres': 'HRES',
+    'imerg': 'IMERG',
+}
+
+
+def normalize_product_key(product: str) -> str:
+    """Normalizes a product key by lowercasing and stripping separators."""
+    return product.lower().replace('_', '').replace('-', '')
+
+
+def canonical_product_name(product: str) -> str:
+    """Returns the canonical uppercase product name for a given product key."""
+    return PRODUCT_ALIASES.get(normalize_product_key(product), product.upper())
+
+
+def product_name_from_feature(feature: str) -> str:
+    """Extracts the canonical product name from a '<product>_<band>' string.
+
+    Matches candidate prefix tokens from longest to shortest against
+    PRODUCT_ALIASES so compound names like 'chirps_gefs_precip' or
+    'era5_land_temp' resolve to 'CHIRPS_GEFS' and 'ERA5_LAND' without
+    causing false substring collisions across token boundaries.
+    """
+    tokens = feature.split('_')
+    for k in range(len(tokens) - 1, 0, -1):
+        candidate = normalize_product_key('_'.join(tokens[:k]))
+        if candidate in PRODUCT_ALIASES:
+            return PRODUCT_ALIASES[candidate]
+    return tokens[0].upper()
+
+
 def flatten_feature_list(
     data: list[str] | list[list[str]] | dict[str, list[str]],
 ) -> list[str]:
@@ -55,6 +93,13 @@ def group_features_list(
 
 
 def _prefix(feature: str) -> str:
+    if '_' not in feature:
+        return feature
+    tokens = feature.split('_')
+    for k in range(len(tokens) - 1, 0, -1):
+        candidate = normalize_product_key('_'.join(tokens[:k]))
+        if candidate in PRODUCT_ALIASES:
+            return PRODUCT_ALIASES[candidate].lower()
     return feature.partition('_')[0]
 
 
