@@ -36,6 +36,9 @@ setup(
         'googlehydrology.modelzoo',
         'googlehydrology.training',
         'googlehydrology.evaluation',
+        'multimet',
+        'multimet.utils',
+        'multimet.static_extractor',
     ],
     url='https://googlehydrology.readthedocs.io',
     project_urls={
@@ -52,6 +55,11 @@ setup(
         'console_scripts': [
             'schedule-runs=googlehydrology.run_scheduler:_main',
             'run=googlehydrology.run:_main',
+            'extract-caravan-static=multimet.static_extractor.cli:main',
+            'extract-static-attributes=multimet.static_extractor.cli:main',
+            'extract-caravan-static-batch=multimet.static_extractor.batch_runner:main',
+            'extract-static-attributes-batch=multimet.static_extractor.batch_runner:main',
+            'benchmark-static-extractor=multimet.static_extractor.benchmark:main',
         ]
     },
     python_requires='>=3.12',
