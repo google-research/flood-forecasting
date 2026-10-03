@@ -20,6 +20,8 @@ import numpy as np
 import pytest
 import torch
 
+from googlehydrology.utils.config import Config
+
 from googlehydrology.training.loss import (
     MaskedCMALLoss,
     MaskedMSELoss,
@@ -218,3 +220,86 @@ def test_multi_frequency_loss():
     # Only 1D considered: (2-1)^2 = 1, (3-3)^2 = 0 -> Mean = 0.5
     # Scaled loss: 0.5 * 0.5 = 0.25
     assert np.isclose(total_loss.item(), 0.25)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('dtype', [torch.float32, torch.float64])
+@pytest.mark.parametrize('missing', [False, True])
+def test_rmse_perfect_fit_has_finite_zero_gradient(dtype, missing):
+    """A perfect fit has a zero subgradient, including with missing targets."""
+    cfg = Config({'target_variables': ['q'], 'predict_last_n': 3}, dev_mode=True)
+    prediction = torch.tensor([[[1.0], [2.0], [3.0]]], dtype=dtype, requires_grad=True)
+    target = prediction.detach().clone()
+    if missing:
+        target[0, 1, 0] = torch.nan
+    loss, parts = MaskedRMSELoss(cfg)({'y_hat': prediction}, {'y': target})
+    loss.backward()
+    assert loss.item() == 0.0
+    assert parts['loss'].item() == 0.0
+    torch.testing.assert_close(prediction.grad, torch.zeros_like(prediction))
+
+
+@pytest.mark.unit
+def test_rmse_nonzero_loss_and_gradients_preserve_masking_and_target_weights():
+    """Nonzero residuals retain the existing loss and gradient formula."""
+    cfg = Config(
+        {
+            'target_variables': ['q', 'level'],
+            'predict_last_n': 2,
+            'target_loss_weights': [0.25, 0.75],
+        },
+        dev_mode=True,
+    )
+    prediction = torch.tensor(
+        [[[99.0, 88.0], [2.0, 8.0], [5.0, 6.0]]],
+        dtype=torch.float64,
+        requires_grad=True,
+    )
+    target = torch.tensor(
+        [[[0.0, 0.0], [1.0, torch.nan], [3.0, 4.0]]], dtype=torch.float64
+    )
+    loss, _ = MaskedRMSELoss(cfg)({'y_hat': prediction}, {'y': target})
+    reference = 0.25 * torch.sqrt(
+        0.5 * ((prediction[0, 1:, 0] - target[0, 1:, 0]) ** 2).mean()
+    )
+    reference = reference + 0.75 * torch.sqrt(
+        0.5 * (prediction[0, 2, 1] - target[0, 2, 1]) ** 2
+    )
+    (actual_grad,) = torch.autograd.grad(loss, prediction, retain_graph=True)
+    (expected_grad,) = torch.autograd.grad(reference, prediction)
+    torch.testing.assert_close(loss, reference, rtol=1e-12, atol=1e-12)
+    torch.testing.assert_close(actual_grad, expected_grad, rtol=1e-12, atol=1e-12)
+    assert torch.autograd.gradcheck(
+        lambda x: MaskedRMSELoss(cfg)({'y_hat': x}, {'y': target})[0], (prediction,)
+    )
+
+
+@pytest.mark.unit
+def test_rmse_perfect_fit_does_not_corrupt_a_linear_model_update():
+    """An optimizer step at a perfect fit leaves real model parameters unchanged."""
+    cfg = Config({'target_variables': ['q'], 'predict_last_n': 3}, dev_mode=True)
+    model = torch.nn.Linear(2, 1, dtype=torch.float64)
+    with torch.no_grad():
+        model.weight.copy_(torch.tensor([[1.0, 2.0]], dtype=torch.float64))
+        model.bias.fill_(3.0)
+    inputs = torch.tensor([[[1.0, 0.0], [0.0, 1.0], [2.0, 3.0]]], dtype=torch.float64)
+    target = model(inputs).detach().clone()
+    before = {name: value.clone() for name, value in model.state_dict().items()}
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    loss, _ = MaskedRMSELoss(cfg)({'y_hat': model(inputs)}, {'y': target})
+    loss.backward()
+    optimizer.step()
+    for name, value in model.state_dict().items():
+        torch.testing.assert_close(value, before[name], rtol=0, atol=0)
+    torch.testing.assert_close(model(inputs), target, rtol=0, atol=0)
+
+
+@pytest.mark.unit
+def test_rmse_all_missing_keeps_undefined_loss():
+    """The existing all-missing NaN result is outside the perfect-fit correction."""
+    cfg = Config({'target_variables': ['q'], 'predict_last_n': 2}, dev_mode=True)
+    prediction = torch.ones((1, 2, 1), requires_grad=True)
+    loss, _ = MaskedRMSELoss(cfg)(
+        {'y_hat': prediction}, {'y': torch.full_like(prediction, torch.nan)}
+    )
+    assert torch.isnan(loss)
