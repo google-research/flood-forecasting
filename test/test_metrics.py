@@ -277,3 +277,79 @@ def test_calculate_metrics_dispatcher(sample_timeseries):
     # Test unknown metric error
     with pytest.raises(RuntimeError, match='Unknown metric invalid_metric'):
         metrics.calculate_metrics(obs, sim, metrics=['invalid_metric'])
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('resolution', ['1D', '1h'])
+@pytest.mark.parametrize('missing', ['none', 'obs', 'sim', 'coordinate'])
+def test_missed_peaks_uses_only_complete_windows(resolution, missing):
+    """Skipped peaks must not be counted as successfully forecast events."""
+    dates = pd.date_range('2020-01-01', periods=220, freq=resolution)
+    values = np.zeros(220)
+    values[[1, 60, 120, 218]] = [10.0, 20.0, 30.0, 40.0]
+    obs = xr.DataArray(values, dims=['date'], coords={'date': dates})
+    sim = xr.zeros_like(obs)
+    if missing == 'obs':
+        obs[59] = np.nan
+    elif missing == 'sim':
+        sim[59] = np.nan
+    elif missing == 'coordinate':
+        keep = np.delete(np.arange(220), 59)
+        obs, sim = obs.isel(date=keep), sim.isel(date=keep)
+    obs_before, sim_before = obs.copy(deep=True), sim.copy(deep=True)
+    assert (
+        metrics.missed_peaks(obs, sim, window=3, resolution=resolution) == 1.0
+    )
+    xr.testing.assert_identical(obs, obs_before)
+    xr.testing.assert_identical(sim, sim_before)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('add_boundary_peaks', [False, True])
+@pytest.mark.parametrize('offset', [-3, 0, 3, 4])
+def test_missed_peak_fraction_is_invariant_to_excluded_boundary_peaks(
+    add_boundary_peaks, offset
+):
+    """One detected peak out of two evaluable peaks gives a missed fraction of 1/2."""
+    dates = pd.date_range('2020-01-01', periods=220)
+    values = np.zeros(220)
+    values[[60, 140]] = [10.0, 20.0]
+    if add_boundary_peaks:
+        values[[1, 218]] = [30.0, 40.0]
+    obs = xr.DataArray(values, dims=['time'], coords={'time': dates})
+    sim = xr.zeros_like(obs)
+    sim[60 + offset] = 10.0
+    expected = 0.5 if abs(offset) <= 3 else 1.0
+    actual = metrics.missed_peaks(obs, sim, window=3, datetime_coord='time')
+    assert actual == expected
+
+
+@pytest.mark.unit
+def test_missed_peaks_returns_nan_when_every_detected_peak_is_excluded():
+    """A nonempty set of unassessable events has no observed success rate."""
+    dates = pd.date_range('2020-01-01', periods=80)
+    values = np.zeros(80)
+    values[[1, 78]] = 10.0
+    obs = xr.DataArray(values, dims=['date'], coords={'date': dates})
+    sim = xr.zeros_like(obs)
+    assert np.isnan(metrics.missed_peaks(obs, sim, window=3))
+    assert metrics.missed_peaks(xr.zeros_like(obs), sim, window=3) == 0.0
+    assert metrics.missed_peaks(obs, sim, window=0) == 1.0
+
+
+@pytest.mark.unit
+def test_metric_dispatch_reports_the_same_eligible_event_fraction():
+    """Public metric selection must preserve the corrected denominator."""
+    dates = pd.date_range('2020-01-01', periods=160)
+    values = np.zeros(160)
+    values[[1, 80]] = [10.0, 20.0]
+    obs = xr.DataArray(values, dims=['date'], coords={'date': dates})
+    sim = xr.zeros_like(obs)
+    # The hourly default is a 12-sample half-window, excluding the first peak.
+    dates = pd.date_range('2020-01-01', periods=160, freq='1h')
+    obs = obs.assign_coords(date=dates)
+    sim = sim.assign_coords(date=dates)
+    selected = metrics.calculate_metrics(
+        obs, sim, ['Missed-Peaks'], resolution='1h'
+    )
+    assert selected['Missed-Peaks'] == 1.

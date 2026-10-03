@@ -695,6 +695,7 @@ def missed_peaks(
 
     Uses scipy.find_peaks to find peaks in the observed and simulated time series above a certain percentile. Counts
     the number of peaks in obs that do not exist in sim within the specified window.
+    Peaks without a complete window are excluded from both numerator and denominator.
 
     Parameters
     ----------
@@ -718,7 +719,9 @@ def missed_peaks(
     Returns
     -------
     float
-        Fraction of missed peaks.
+        Fraction of missed peaks among those with complete evaluation windows.
+        Returns NaN when peaks exist but none can be evaluated; no detected peaks
+        retains the value zero.
     """
     # verify inputs
     _validate_inputs(obs, sim)
@@ -751,6 +754,7 @@ def missed_peaks(
 
     # count missed peaks
     missed_events = 0
+    evaluated_events = 0
 
     for idx in peaks_obs_times:
         # skip peaks at the start and end of the sequence and peaks around missing observations
@@ -769,13 +773,14 @@ def missed_peaks(
         ):
             continue
 
+        evaluated_events += 1
         nearby_peak_sim_index = np.where(
             np.abs(peaks_sim_times - idx) <= window
         )[0]
         if len(nearby_peak_sim_index) == 0:
             missed_events += 1
 
-    return missed_events / len(peaks_obs_times)
+    return missed_events / evaluated_events if evaluated_events else np.nan
 
 
 def mean_absolute_percentage_peak_error(
