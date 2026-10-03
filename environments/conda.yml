@@ -28,6 +28,8 @@ dependencies:
   - cuda-toolkit=12.4.*
   - cuda-version=12.4
   - dask=2025.12.0
+  - eccodes
+  - fsspec
   - gcsfs=2025.12.*
   - geopandas=1.1.*
   - gh
@@ -47,8 +49,10 @@ dependencies:
   - pytest-cov
   - pytest-xdist
   - python=3.12.*
+  - python-eccodes
   - pytorch=2.5.1
   - pytorch-cuda=12.4
+  - requests
   - ruamel.yaml=0.18.17
   - ruff
   - scipy=1.16.*

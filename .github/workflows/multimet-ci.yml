@@ -1,0 +1,133 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# CI workflow for the multimet gridded archive builders.
+# Runs hermetic unit and integration tests using local synthetic fixtures
+# without requiring network access or cloud credentials.
+
+name: multimet CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+  push:
+    branches:
+      - main
+      - master
+
+# Both jobs only ever check out the repository, so the workflow token needs
+# nothing beyond read access to its contents.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: MultiMet archive builders (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    # The suite runs in well under a minute. Anything approaching this limit is
+    # a hang, and should fail fast rather than occupy a runner for hours.
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+        python-version: ["3.12"]
+    # Windows runners default to PowerShell, which does not understand the
+    # backslash line continuations used below. Git Bash ships on all three
+    # runner images, so pinning the shell keeps every step identical.
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # Neither job pushes anything, so there is no reason to leave the
+          # workflow token behind in .git/config.
+          persist-credentials: false
+
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            "numpy" \
+            "pandas" \
+            "xarray" \
+            "zarr>=3" \
+            "netcdf4" \
+            "h5netcdf" \
+            "h5py" \
+            "fsspec" \
+            "requests" \
+            "scipy" \
+            "tqdm" \
+            "pytest" \
+            "pytest-cov" \
+            "pytest-timeout"
+
+      - name: Verify the package imports without optional cloud dependencies
+        run: |
+          python -c "import multimet; print(sorted(dir(multimet)))"
+          python -m multimet.build_cpc_archive --help
+          python -m multimet.build_hres_archive --help
+          python -m multimet.build_imerg_archive --help
+
+      # --timeout-method=thread dumps the stack of every thread when a test
+      # overruns, which names the offending test instead of leaving a silent
+      # hang. The slowest test takes a couple of seconds.
+      - name: Run unit tests
+        run: pytest multimet/test -m unit -v -ra --tb=short --timeout=120 --timeout-method=thread
+
+      - name: Run integration tests
+        run: pytest multimet/test -m integration -v -ra --tb=short --timeout=300 --timeout-method=thread
+
+      - name: Report coverage
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          pytest multimet/test \
+            --cov=multimet \
+            --cov-report=term-missing \
+            --cov-report=xml
+
+  lint:
+    name: Ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # Neither job pushes anything, so there is no reason to leave the
+          # workflow token behind in .git/config.
+          persist-credentials: false
+
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install ruff
+        run: python -m pip install ruff
+
+      # Scoped to the rules that catch real defects (undefined names, unused
+      # imports, mutable default arguments, ...) rather than the full
+      # `select = ["ALL"]` style sweep configured in pyproject.toml, which the
+      # rest of the repository does not currently satisfy either.
+      - name: Lint the multimet package
+        run: ruff check multimet --select E9,F,B --no-cache
