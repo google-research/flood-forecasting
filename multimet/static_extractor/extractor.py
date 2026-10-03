@@ -56,7 +56,7 @@ from multimet.static_extractor.config import (
     POUR_POINT_PROPERTIES,
     UPSTREAM_PROPERTIES,
 )
-from multimet.static_extractor.gcs import download_hydroatlas_from_gcs, is_gcs_path
+from multimet.utils.gcs import download_hydroatlas_from_gcs, is_gcs_path
 
 shape = shapely.geometry.shape
 Point = shapely.geometry.Point

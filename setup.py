@@ -37,6 +37,7 @@ setup(
         'googlehydrology.training',
         'googlehydrology.evaluation',
         'multimet',
+        'multimet.utils',
         'multimet.static_extractor',
     ],
     url='https://googlehydrology.readthedocs.io',

@@ -135,83 +135,11 @@ def export_subdataset_partitioned_files(
   }
 
 
-def gcs_path_exists(gcs_uri: str) -> bool:
-  """Checks if a GCS URI exists or contains any objects."""
-  if shutil.which("gcloud"):
-    res = subprocess.run(
-        ["gcloud", "storage", "ls", gcs_uri],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return res.returncode == 0
-
-  import gcsfs
-
-  fs = gcsfs.GCSFileSystem()
-  clean_uri = gcs_uri.replace("gs://", "").rstrip("/")
-  return bool(fs.exists(clean_uri))
-
-
-def upload_to_gcs(local_path: Path, gcs_dest_uri: str) -> None:
-  """Uploads a local file or directory to a GCS destination."""
-  gcs_dest_clean = gcs_dest_uri if gcs_dest_uri.endswith("/") else gcs_dest_uri + "/"
-  target_uri = f"{gcs_dest_clean}{local_path.name}" if local_path.is_file() else gcs_dest_clean
-  logger.debug("Uploading %s to %s...", local_path, target_uri)
-
-  if shutil.which("gcloud"):
-    cmd = (
-        ["gcloud", "storage", "cp", str(local_path), target_uri]
-        if local_path.is_file()
-        else ["gcloud", "storage", "rsync", "-r", str(local_path), gcs_dest_clean]
-    )
-    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    if res.returncode == 0:
-      logger.debug("Successfully uploaded %s to %s via gcloud storage.", local_path.name, target_uri)
-      return
-    raise RuntimeError(
-        f"Failed to upload {local_path} to {target_uri}: {res.stderr.strip()}"
-    )
-
-  import gcsfs
-
-  fs = gcsfs.GCSFileSystem()
-  clean_target = target_uri.replace("gs://", "")
-  if local_path.is_file():
-    fs.put(str(local_path), clean_target)
-  else:
-    fs.put(str(local_path), clean_target, recursive=True)
-  logger.debug("Successfully uploaded %s to %s via gcsfs.", local_path.name, target_uri)
-
-
-def sync_gcs_directory(gcs_uri: str, local_dest: Path) -> Path:
-  """Syncs a GCS directory to a local directory."""
-  local_dest.mkdir(parents=True, exist_ok=True)
-  logger.debug("Syncing %s to local staging directory %s...", gcs_uri, local_dest)
-
-  gcs_uri_clean = gcs_uri if gcs_uri.endswith("/") else gcs_uri + "/"
-
-  if shutil.which("gcloud"):
-    res = subprocess.run(
-        ["gcloud", "storage", "rsync", "-r", gcs_uri_clean, str(local_dest)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if res.returncode == 0:
-      return local_dest
-    raise RuntimeError(
-        f"Failed to sync GCS URI {gcs_uri} to {local_dest}: {res.stderr.strip()}"
-    )
-
-  import gcsfs
-
-  fs = gcsfs.GCSFileSystem()
-  clean_src = gcs_uri_clean.replace("gs://", "").rstrip("/")
-  if not fs.exists(clean_src):
-    raise FileNotFoundError(f"GCS directory does not exist: {gcs_uri}")
-  fs.get(clean_src, str(local_dest), recursive=True)
-  return local_dest
+from multimet.utils.gcs import (
+    gcs_path_exists,
+    sync_gcs_directory,
+    upload_to_gcs,
+)
 
 
 def find_vector_file_in_dir(dataset_dir: Path) -> Optional[Path]:

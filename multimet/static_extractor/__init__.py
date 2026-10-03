@@ -39,7 +39,7 @@ from multimet.static_extractor.extractor import (
     StaticAttributesExtractor,
     compute_pour_point_properties,
 )
-from multimet.static_extractor.gcs import (
+from multimet.utils.gcs import (
     download_hydroatlas_from_gcs,
 )
 

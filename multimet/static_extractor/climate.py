@@ -356,34 +356,10 @@ class ERA5ClimateLoader:
       raise FileNotFoundError(
           f"Climate indices file not found at {target_file} and no gcs_source_uri was provided."
       )
+    from multimet.utils.gcs import download_file_from_gcs
 
     gcs_src = f"{self.gcs_source_uri}/{continent_code}_climate_indices.txt"
-    target_file.parent.mkdir(parents=True, exist_ok=True)
-    tmp_file = target_file.with_name(f".{target_file.name}.tmp.{os.getpid()}")
-
-    if shutil.which("gcloud"):
-      cmd = ["gcloud", "storage", "cp", gcs_src, str(tmp_file)]
-      res = subprocess.run(cmd, capture_output=True, text=True, timeout=120, check=False)
-      if res.returncode == 0 and tmp_file.exists() and tmp_file.stat().st_size > 0:
-        os.replace(tmp_file, target_file)
-        return
-      tmp_file.unlink(missing_ok=True)
-      raise FileNotFoundError(
-          f"Failed to download {gcs_src} to {target_file}: {res.stderr.strip()}"
-      )
-
-    import gcsfs
-
-    fs = gcsfs.GCSFileSystem()
-    remote_path = gcs_src.replace("gs://", "").replace("gcs://", "")
-    if not fs.exists(remote_path):
-      raise FileNotFoundError(f"Remote climate indices file does not exist: {gcs_src}")
-    fs.get(remote_path, str(tmp_file))
-    if tmp_file.exists() and tmp_file.stat().st_size > 0:
-      os.replace(tmp_file, target_file)
-      return
-    tmp_file.unlink(missing_ok=True)
-    raise FileNotFoundError(f"Downloaded file from {gcs_src} is empty or missing.")
+    download_file_from_gcs(source_uri=gcs_src, dest_path=target_file, timeout=120)
 
   def _ensure_file_on_disk(self, continent_code: str) -> Path:
     if self.cache_dir is None:
@@ -429,19 +405,15 @@ class ERA5ClimateLoader:
       raise FileNotFoundError(
           f"Cannot stream climate indices for '{continent_code}': no gcs_source_uri was provided."
       )
-    import gcsfs
+    from multimet.utils.gcs import read_bytes_from_gcs
 
-    fs = gcsfs.GCSFileSystem()
     gcs_src = f"{self.gcs_source_uri}/{continent_code}_climate_indices.txt"
-    remote_path = gcs_src.replace("gs://", "").replace("gcs://", "")
-    if not fs.exists(remote_path):
-      raise FileNotFoundError(f"Remote climate indices file does not exist: {gcs_src}")
     logger.info(
         "Streaming ERA5 climate indices for '%s' in memory from %s...",
         continent_code,
         gcs_src,
     )
-    raw_text = fs.cat_file(remote_path).decode("utf-8")
+    raw_text = read_bytes_from_gcs(gcs_src).decode("utf-8")
     self._parse_climate_lines(raw_text.splitlines(), continent_code)
 
   def ensure_continent(self, continent_code: str) -> None:

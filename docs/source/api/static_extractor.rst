@@ -46,10 +46,10 @@ multimet.static_extractor.cli
    :show-inheritance:
    :undoc-members:
 
-multimet.static_extractor.gcs
------------------------------
+multimet.utils.gcs
+------------------
 
-.. automodule:: multimet.static_extractor.gcs
+.. automodule:: multimet.utils.gcs
    :members:
    :show-inheritance:
    :undoc-members:
