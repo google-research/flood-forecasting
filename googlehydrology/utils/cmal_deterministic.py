@@ -115,7 +115,6 @@ def _search_quantile(
     pi: torch.Tensor,
     iterations: int = 10,
     epsilon: float = 1e-6,  # to avoid zero values
-    frac_confine: float = 0.8,  # to avoid overshooting
 ) -> torch.Tensor:
     """Search for the quantile of a mixture dist via newton-raphson (NR).
 
@@ -123,14 +122,14 @@ def _search_quantile(
     Need to find a root x for mixture_cdf(x) - quantile = 0
     So f(x)  = mixture_cdf(x) - quantile
        f'(x) = CDF(x) dx = PDF(x)
+
+    Because each component CDF F_i is strictly increasing and convex weights pi_i
+    sum to 1, F(min_i PPF_i(q)) <= q <= F(max_i PPF_i(q)), so the mixture quantile
+    is mathematically guaranteed to lie inside [min_i PPF_i(q), max_i PPF_i(q)].
     """
     ppfs = _ppf(quantile, mu, b, tau)
-    min_ppf = torch.min(ppfs, dim=2, keepdim=True).values
-    max_ppf = torch.max(ppfs, dim=2, keepdim=True).values
-    margin = 0.1 * (max_ppf - min_ppf + 1e-6)
-    
-    low = min_ppf - margin
-    high = max_ppf + margin
+    low = torch.min(ppfs, dim=2, keepdim=True).values
+    high = torch.max(ppfs, dim=2, keepdim=True).values
 
     k = torch.mean(ppfs, dim=2, keepdim=True)
     for _ in range(iterations):
