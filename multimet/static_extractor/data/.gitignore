@@ -1,0 +1,5 @@
+# Benchmark reference data is downloaded on demand from
+# GCS_BENCHMARK_URI (see static_extractor/config.py) and cached here.
+# It is deliberately not committed: it is ~12 MB and would be permanent
+# in git history.
+*.parquet
