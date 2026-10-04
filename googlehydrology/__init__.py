@@ -12,16 +12,3 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from catchment_delineation import (
-    DemDelineator,
-    delineate_catchment,
-    delineate_coordinates,
-    delineate_dem,
-)
-
-__all__ = [
-    'DemDelineator',
-    'delineate_catchment',
-    'delineate_coordinates',
-    'delineate_dem',
-]
