@@ -134,33 +134,35 @@ def test_generate_predictions(sample_cmal_params):
 @pytest.mark.parametrize('q_val', [0.05, 0.1, 0.5, 0.9, 0.95])
 def test_search_quantile_identical_kernels_unbiased(
     mu_val: float, tau_val: float, q_val: float
-):
-    """Degenerate (identical-component) mixtures must return exact PPF without bias."""
+) -> None:
+    """Identical-component mixtures return the exact PPF without bias."""
     batch_size, seq_len, n_kernels = 2, 3, 4
     mu = torch.full((batch_size, seq_len, n_kernels, 1), mu_val)
     b = torch.full((batch_size, seq_len, n_kernels, 1), 1.5)
     tau = torch.full((batch_size, seq_len, n_kernels, 1), tau_val)
     pi = torch.full((batch_size, seq_len, n_kernels, 1), 1.0 / n_kernels)
 
-    q = torch.tensor([q_val]).view(1, 1, 1, 1)
-    expected = cmal_deterministic._ppf(q, mu[:, :, :1, :], b[:, :, :1, :], tau[:, :, :1, :]).squeeze(2)
-    actual = cmal_deterministic._search_quantile(q, mu, b, tau, pi)
+    quantile = torch.tensor([q_val]).view(1, 1, 1, 1)
+    expected = cmal_deterministic._ppf(
+        quantile, mu[:, :, :1, :], b[:, :, :1, :], tau[:, :, :1, :]
+    ).squeeze(2)
+    actual = cmal_deterministic._search_quantile(quantile, mu, b, tau, pi)
 
     torch.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-5)
 
 
 @pytest.mark.unit
-def test_search_quantile_negative_and_asymmetric_mixtures_invert_cdf():
-    """Verify Newton-Raphson converges across negative and asymmetric mixtures and stays within [min_ppf, max_ppf]."""
+def test_search_quantile_negative_and_asymmetric_mixtures_invert_cdf() -> None:
+    """Default 10-step Newton-Raphson inverts the mixture CDF in [min, max]."""
     mu = torch.tensor([[[-12.0, -6.0, -2.0], [3.0, 8.0, 15.0]]]).unsqueeze(-1)
     b = torch.tensor([[[0.8, 1.5, 2.2], [1.0, 2.0, 1.2]]]).unsqueeze(-1)
     tau = torch.tensor([[[0.2, 0.5, 0.8], [0.3, 0.6, 0.7]]]).unsqueeze(-1)
     pi = torch.tensor([[[0.5, 0.3, 0.2], [0.2, 0.5, 0.3]]]).unsqueeze(-1)
 
-    quantiles = torch.tensor([0.01, 0.05, 0.1, 0.5, 0.9, 0.95, 0.99]).view(1, 1, 1, -1)
-    q_hat = cmal_deterministic._search_quantile(
-        quantiles, mu, b, tau, pi, iterations=25
+    quantiles = torch.tensor([0.01, 0.05, 0.1, 0.5, 0.9, 0.95, 0.99]).view(
+        1, 1, 1, -1
     )
+    q_hat = cmal_deterministic._search_quantile(quantiles, mu, b, tau, pi)
 
     ppfs = cmal_deterministic._ppf(quantiles, mu, b, tau)
     min_ppf = torch.min(ppfs, dim=2).values
@@ -168,14 +170,43 @@ def test_search_quantile_negative_and_asymmetric_mixtures_invert_cdf():
     assert torch.all(q_hat >= min_ppf - 1e-6)
     assert torch.all(q_hat <= max_ppf + 1e-6)
 
-    # Evaluating the mixture CDF at each estimated quantile should recover `quantiles`
     recovered_cdf, _ = cmal_deterministic._mixture_cdf_and_pdf(
         q_hat.unsqueeze(2), mu, b, tau, pi
     )
+    expected_cdf = quantiles.view(1, 1, -1).expand_as(recovered_cdf.squeeze(2))
     torch.testing.assert_close(
-        recovered_cdf.squeeze(2),
-        quantiles.view(1, 1, -1).expand_as(recovered_cdf.squeeze(2)),
-        rtol=1e-3,
-        atol=1e-3,
+        recovered_cdf.squeeze(2), expected_cdf, rtol=1e-5, atol=1e-5
     )
+
+
+@pytest.mark.unit
+def test_generate_predictions_recovers_mean_and_deciles() -> None:
+    """Public generate_predictions returns exact mixture mean and 9 deciles."""
+    mu = torch.tensor([[[-8.0, -4.0, -1.0], [2.0, 6.0, 12.0]]])
+    b = torch.tensor([[[0.7, 1.2, 1.8], [0.9, 1.5, 1.1]]])
+    tau = torch.tensor([[[0.3, 0.5, 0.7], [0.25, 0.5, 0.75]]])
+    pi = torch.tensor([[[0.4, 0.35, 0.25], [0.3, 0.4, 0.3]]])
+
+    preds = cmal_deterministic.generate_predictions(mu, b, tau, pi)
+    assert preds.shape == (1, 2, 10)
+
+    component_means = mu + b * (1.0 - 2.0 * tau) / (tau * (1.0 - tau))
+    expected_mean = torch.sum(pi * component_means, dim=-1)
+    torch.testing.assert_close(
+        preds[..., 0], expected_mean, rtol=1e-5, atol=1e-5
+    )
+
+    pred_quantiles = preds[..., 1:].unsqueeze(2)
+    recovered_cdf, _ = cmal_deterministic._mixture_cdf_and_pdf(
+        pred_quantiles,
+        mu.unsqueeze(-1),
+        b.unsqueeze(-1),
+        tau.unsqueeze(-1),
+        pi.unsqueeze(-1),
+    )
+    expected_deciles = torch.linspace(0.1, 0.9, 9).view(1, 1, 9).expand(1, 2, 9)
+    torch.testing.assert_close(
+        recovered_cdf.squeeze(2), expected_deciles, rtol=1e-4, atol=1e-4
+    )
+
 
