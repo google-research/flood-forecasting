@@ -52,11 +52,12 @@ dependencies:
   - pytest
   - pytest-cov
   - pytest-xdist
+  - rasterio=1.5.*
   - ruamel.yaml=0.18.*
   - ruff
   - scipy=1.16.*
   - seaborn
-  - shapely
+  - shapely=2.1.*
   - sphinx=8.2.*
   - sphinx-rtd-theme=3.0.*
   - tensorboard=2.20.*

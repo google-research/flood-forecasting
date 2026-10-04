@@ -36,6 +36,7 @@ setup(
         'googlehydrology.modelzoo',
         'googlehydrology.training',
         'googlehydrology.evaluation',
+        'catchment_delineation',
         'multimet',
         'multimet.utils',
         'multimet.static_extractor',
@@ -55,6 +56,8 @@ setup(
         'console_scripts': [
             'schedule-runs=googlehydrology.run_scheduler:_main',
             'run=googlehydrology.run:_main',
+            'delineate-catchment=catchment_delineation.cli:main',
+            'benchmark-catchment=catchment_delineation.benchmark:main',
             'extract-caravan-static=multimet.static_extractor.cli:main',
             'extract-static-attributes=multimet.static_extractor.cli:main',
             'extract-caravan-static-batch=multimet.static_extractor.batch_runner:main',
