@@ -152,20 +152,23 @@ class CMAL(nn.Module):
         dict[str, torch.Tensor]
             Dictionary, containing the mixture component parameters and weights; where the key 'mu'stores the means,
             the key 'b' the scale parameters, the key 'tau' the skewness parameters, and the key 'pi' the weights).
+            Component parameters use at least float32 precision, including under autocast.
         """
         h = torch.relu(self.fc1(x))
         h = self.fc2(h)
 
-        m_latent, b_latent, t_latent, p_latent = h.chunk(4, dim=-1)
+        # Keep the component transforms out of low precision while retaining
+        # float64 inputs. The linear layers can still run under autocast.
+        with torch.autocast(device_type=h.device.type, enabled=False):
+            h = h.to(dtype=torch.promote_types(h.dtype, torch.float32))
+            m_latent, b_latent, t_latent, p_latent = h.chunk(4, dim=-1)
 
-        # enforce properties on component parameters and weights:
-        m = m_latent  # no restrictions (depending on setting m>0 might be useful)
-        b = (
-            self._softplus(b_latent) + self._eps
-        )  # scale > 0 (softplus was working good in tests)
-        t = (1 - self._eps) * torch.sigmoid(t_latent) + self._eps  # 0 > tau > 1
-        p = (1 - self._eps) * torch.softmax(
-            p_latent, dim=-1
-        ) + self._eps  # sum(pi) = 1 & pi > 0
+            # enforce properties on component parameters and weights:
+            m = m_latent  # no restrictions
+            b = self._softplus(b_latent) + self._eps  # scale > 0
+            t = (1 - self._eps) * torch.sigmoid(t_latent) + self._eps
+            # A saturated sigmoid reaches 1 even in float32/float64.
+            t = t.clamp(max=1 - self._eps)  # 0 < tau < 1
+            p = (1 - self._eps) * torch.softmax(p_latent, dim=-1) + self._eps
 
         return {'mu': m, 'b': b, 'tau': t, 'pi': p}

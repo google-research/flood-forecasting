@@ -378,7 +378,8 @@ class MaskedCMALLoss(BaseLoss):
     """Average negative log-likelihood for a model that uses the CMAL head.
 
     The loss is averaged over observed timesteps. If all target timesteps are
-    missing, it returns a differentiable zero.
+    missing, it returns a differentiable zero. Likelihood arithmetic uses at
+    least float32 precision, including under autocast.
 
     Parameters
     ----------
@@ -404,27 +405,37 @@ class MaskedCMALLoss(BaseLoss):
         **kwargs,
     ):
         y = ground_truth['y'].squeeze(-1)
-        mask = ~torch.isnan(y)
-        if not torch.any(mask):
-            return prediction['mu'].sum() * 0.0
+        with torch.autocast(device_type=y.device.type, enabled=False):
+            # Promote before subtraction, division and the all-missing sum:
+            # each can overflow even when every low-precision input is finite.
+            y = y.to(dtype=torch.promote_types(y.dtype, torch.float32))
+            prediction = {
+                key: value.to(
+                    dtype=torch.promote_types(value.dtype, torch.float32)
+                )
+                for key, value in prediction.items()
+            }
+            mask = ~torch.isnan(y)
+            if not torch.any(mask):
+                return prediction['mu'].sum() * 0.0
 
-        y = y[mask].unsqueeze(-1)
-        m = prediction['mu'][mask]
-        b = prediction['b'][mask]
-        t = prediction['tau'][mask]
-        p = prediction['pi'][mask]
+            y = y[mask].unsqueeze(-1)
+            m = prediction['mu'][mask]
+            b = prediction['b'][mask]
+            t = prediction['tau'][mask]
+            p = prediction['pi'][mask]
 
-        error = y - m
-        log_like = (
-            torch.log(t)
-            + torch.log(1.0 - t)
-            - torch.log(b)
-            - torch.max(t * error, (t - 1.0) * error) / b
-        )
-        log_weights = torch.log(p + self.eps)
+            error = y - m
+            log_like = (
+                torch.log(t)
+                + torch.log(1.0 - t)
+                - torch.log(b)
+                - torch.max(t * error, (t - 1.0) * error) / b
+            )
+            log_weights = torch.log(p + self.eps)
 
-        result = torch.logsumexp(log_weights + log_like, dim=-1)
-        return -torch.mean(result)
+            result = torch.logsumexp(log_weights + log_like, dim=-1)
+            return -torch.mean(result)
 
 
 def _get_predict_last_n(cfg: Config) -> dict:
