@@ -6,3 +6,4 @@ Modules
 
    googlehydrology
    catchment_delineation
+   static_extractor
