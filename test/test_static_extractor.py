@@ -383,7 +383,7 @@ def test_extract_attributes_batch_and_file_io(tmp_path):
       era5_cache_dir=era5_cache,
       gridded_era5_uri=str(tmp_path / "does_not_exist.zarr"),
   )
-  with pytest.raises(Exception):
+  with pytest.raises((FileNotFoundError, OSError, RuntimeError, ValueError)):
     ext_missing_zarr.extract_attributes_for_polygon(b1, catchment_id="b1", era5_source="gridded")
 
   # Missing ID column in input file must raise ValueError instead of inventing basin_1, basin_2

@@ -23,10 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
-import shutil
-import subprocess
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
@@ -57,8 +54,8 @@ def calculate_fao_pm_pet(
     dewpoint_temperature_2m_c: Daily mean 2-meter dewpoint temperature in °C.
     u_component_of_wind_10m: Daily mean 10-meter eastward wind component in m/s.
     v_component_of_wind_10m: Daily mean 10-meter northward wind component in m/s.
-    surface_net_solar_radiation_mean: Mean surface net solar radiation (J/m²/hr or W/m²).
-    surface_net_thermal_radiation_mean: Mean surface net thermal radiation (J/m²/hr or W/m²).
+    surface_net_solar_radiation_mean: Mean hourly surface net solar radiation (J/m²/hr).
+    surface_net_thermal_radiation_mean: Mean hourly surface net thermal radiation (J/m²/hr).
 
   Returns:
     Daily potential evapotranspiration series in mm/day.
@@ -470,7 +467,7 @@ class ERA5ClimateLoader:
 
     valid_weights = []
     valid_records = []
-    for hid, w in zip(hybas_ids, weights):
+    for hid, w in zip(hybas_ids, weights, strict=True):
       if hid in self.records:
         valid_records.append(self.records[hid])
         valid_weights.append(float(w))
