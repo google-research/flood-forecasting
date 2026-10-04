@@ -97,6 +97,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             input_size=len(self.config_data.static_attributes),
         )
 
+        # Preserve config order so initialization is independent of hash seeds.
         # Hindcast embedding networks
         self.hindcast_embeddings_fc = nn.ModuleDict(
             {
@@ -107,9 +108,8 @@ class MeanEmbeddingForecastLSTM(BaseModel):
                         + self.static_embedding_fc.output_size
                     ),
                 )
-                for name in set(
-                    self.config_data.hindcast_inputs_grouped.keys()
-                ).difference(self.config_data.shared_groups)
+                for name in self.config_data.hindcast_inputs_grouped
+                if name not in self.config_data.shared_groups
             }
         )
         # Forecast embedding networks
@@ -122,9 +122,8 @@ class MeanEmbeddingForecastLSTM(BaseModel):
                         + self.static_embedding_fc.output_size
                     ),
                 )
-                for name in set(
-                    self.config_data.forecast_inputs_grouped.keys()
-                ).difference(self.config_data.shared_groups)
+                for name in self.config_data.forecast_inputs_grouped
+                if name not in self.config_data.shared_groups
             }
         )
         # Shared embedding networks (between hindcast and forecast LSTMs)
@@ -163,7 +162,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         self.head = get_head(
             self.cfg,
             n_in=self.config_data.hidden_size,
-            n_out=3 * 4,
+            n_out=self.output_size,
             n_hidden=100,
         )
 

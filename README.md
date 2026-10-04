@@ -10,7 +10,7 @@ This repository is a fork of [NeuralHydrology](https://github.com/neuralhydrolog
 
 ## 📖 Documentation
 
-Detailed instructions on how to configure, train, and evaluate OpenHydroNet models can be found on our official documentation page:
+Detailed instructions on how to configure, train, and evaluate OpenHydroNet models can be found on our documentation page:
 👉 **[openhydronet.readthedocs.io](https://openhydronet.readthedocs.io/)**
 
 Watch our high-level video introduction to the interactive tutorial on YouTube:
@@ -73,24 +73,31 @@ The most direct way to explore this repository is through our interactive tutori
 
 ## **Data Setup**
 
-OpenHydroNet uses the [Caravan](https://www.nature.com/articles/s41597-023-01975-w) dataset for streamflow observations and static catchment attributes.
+OpenHydroNet standardizes entirely on the high-performance, cloud-native **Zarr** format for streamflow targets, static attributes, meteorological forcings, and normalizer scalers.
 
-### **1\. Download Caravan (NetCDF Version)**
+### **1. Caravan Data (Zarr Format)**
 
-A small sample is provided in tutorial/data/Caravan-nc. For full runs:
+Caravan data is structured into modular Zarr stores:
+* `attributes.zarr`: Catchment static attributes (area, elevation, soil, geology).
+* `streamflow.zarr`: Gauge streamflow observations.
 
-1. Visit the [Zenodo repository](https://doi.org/10.5281/zenodo.6522634).  
-2. Download the **NetCDF version** (Caravan-nc.tar.gz).  
-3. Unpack it locally:  
+If you have downloaded the legacy Caravan NetCDF/CSV dataset from [Zenodo](https://doi.org/10.5281/zenodo.6522634), convert it to Zarr in a single step using the built-in CLI:
 
-   ```
-   mkdir -p ~/data/  
-   tar -xvzf Caravan-nc.tar.gz -C ~/data/
-   ```
+```bash
+run convert-caravan --caravan-dir ~/data/Caravan-nc --output-dir ~/data/Caravan-zarr
+```
 
-### **2\. MultiMet Data**
+### **2. MultiMet Dynamics Data**
 
-The MultiMet forcing data extension is accessed directly from **Google Cloud Storage**. Ensure your configuration points to: gs://caravan-multimet/v1.1
+The MultiMet meteorological forcing data extension is accessed directly from **Google Cloud Storage** or local disk. Point your configuration to: `gs://caravan-multimet/v1.1` (or your local dynamics directory).
+
+### **3\. Catchment Delineation (Creating Polygons for New Gauges)**
+
+If you have latitude and longitude coordinates for streamflow gauges and need their upstream watershed boundary polygons and drainage areas ($\text{km}^2$), use the `delineate-catchment` command-line tool included in this repository. It traces upstream drainage areas across 90-meter flow-direction map tiles and writes polygons in Caravan-compatible GeoParquet, GeoJSON, or Shapefile format for downstream MultiMet and static attribute extraction.
+
+* **Package Guide & CLI Reference:** [`catchment_delineation/README.md`](catchment_delineation/README.md)
+* **Official Documentation:** [`docs/source/usage/catchment_delineation.rst`](docs/source/usage/catchment_delineation.rst)
+* **MultiMet Forcing Data:** See **MultiMet Data** above (`gs://caravan-multimet/v1.1`).
 
 ## **Usage**
 
@@ -124,8 +131,9 @@ Experiments are defined by YAML files. Update the following paths in your config
 
 * run\_dir: Where weights and logs are saved.  
 * train\_basin\_file: Path to the list of basin IDs.  
-* targets\_data\_dir / statics\_data\_dir: Path to your local Caravan NetCDF data.  
-* dynamics\_data\_dir: Path to forcing data (e.g., gs://caravan-multimet/v1.1).
+* data\_dir: Path to your root directory containing `attributes.zarr`, `streamflow.zarr`, and dynamic meteorological data (e.g., `~/data/Caravan-zarr`).
+* statics\_data\_path / targets\_data\_path: Optional paths to individual component Zarr stores.
+* dynamics\_data\_path: Path to forcing data (e.g., `gs://caravan-multimet/v1.1` or local directory).
 
 ### **Example Configurations**
 
@@ -147,6 +155,23 @@ The `~/flood-forecasting/example-configs` directory contains reference YAML file
   * **Model Architecture:** `handoff_forecast_lstm`  
   * **Dataset:** CAMELS-US (531 basins)  
   * **Description:** A benchmarking configuration for the State Handoff model tailored for the CAMELS-US dataset, used to compare the handoff approach against other architectures on US-based basin data.
+
+## **Extracting Static Attributes for Your Own Watersheds**
+
+To run OpenHydroNet models on a watershed, the model needs a table of static watershed characteristics (such as area, elevation, slope, soil type, land cover, and long-term average climate). For basins in the published [Caravan](https://www.nature.com/articles/s41597-023-01975-w) dataset, these tables are already included.
+
+If you want to run models on **your own watersheds**, this repository includes a static data workflow (`multimet/static_extractor`) that takes a map file of your watershed boundaries (`.geojson`, `.shp`, or `.gpkg`) and builds a Caravan-compatible CSV table of static attributes using the community [HydroATLAS](https://www.hydrosheds.org/hydroatlas) and [ERA5-Land](https://cds.climate.copernicus.eu/) datasets.
+
+```bash
+extract-caravan-static \
+    --input /path/to/watershed_polygons.geojson \
+    --output /path/to/extracted_caravan_attributes.csv \
+    --gdb-path /path/to/BasinATLAS_v10.gdb \
+    --era5-source hybas \
+    --era5-cache-dir /path/to/era5_climate
+```
+
+👉 **Full Usage Guide & Command-Line Flags:** See [`multimet/README.md`](multimet/README.md).
 
 ## **Issue Reporting**
 

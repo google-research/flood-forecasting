@@ -33,6 +33,7 @@ dependencies:
   - gcsfs=2025.12.*
   - geopandas=1.1.*
   - gh
+  - google-cloud-storage
   - h5netcdf=1.7.*
   - h5py=3.15.*
   - ipython
@@ -44,17 +45,23 @@ dependencies:
   - numpy=2.4.*
   - pandas=2.3.*
   - parso=0.8.*
+  - pyarrow
   - pydantic=2.12.*
+  - pyogrio
+  - pyproj
   - pytest
   - pytest-cov
   - pytest-xdist
+  - rasterio=1.5.*
   - ruamel.yaml=0.18.*
   - ruff
   - scipy=1.16.*
   - seaborn
+  - shapely=2.1.*
   - sphinx=8.2.*
   - sphinx-rtd-theme=3.0.*
   - tensorboard=2.20.*
   - tqdm=4.67.*
   - xarray=2025.12.*
   - zarr=3.1.*
+
