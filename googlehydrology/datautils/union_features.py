@@ -18,21 +18,32 @@ import pandas as pd
 import xarray as xr
 
 
+def _valid_date_offset_days(lead_time: np.timedelta64) -> int:
+    """Returns the day offset from issue date to valid date for a lead time.
+
+    Caravan-MultiMet lead times are 1-indexed: a forecast issued on date D with
+    `lead_time = k days` is valid on calendar day D + (k - 1). In particular
+    the first lead time (1 day) covers [D 00:00, D+1 00:00], i.e. the issue
+    date itself.
+    """
+    # TODO (future) :: This assumes daily data.
+    return int(lead_time / np.timedelta64(1, 'D')) - 1
+
+
 def _expand_lead_times(
     da: xr.DataArray, lead_times: xr.DataArray | np.ndarray
 ) -> xr.DataArray:
-    """Expands `da` with a `lead_time` dimension via shifting days back by lead time.
+    """Expands `da` with a `lead_time` dimension.
 
-    The shifting generates nans from the end as much as the lead time value is.
+    Each lead time slice is `da` shifted back by the lead time's valid-date
+    offset, so that `da` indexed by valid date lines up with a forecast indexed
+    by issue date. The shift introduces NaNs at the end of the date range.
     """
     if 'lead_time' in da.dims:
         raise ValueError(
             'Trying to expand a dataarray that already has a lead time.'
         )
-    # TODO (future) :: This assumes daily data.
-    lt_das = (
-        da.shift(date=-int(lt / np.timedelta64(1, 'D'))) for lt in lead_times
-    )
+    lt_das = (da.shift(date=-_valid_date_offset_days(lt)) for lt in lead_times)
     lt_da = xr.concat(lt_das, dim=pd.Index(data=lead_times, name='lead_time'))
     return lt_da
 
@@ -64,21 +75,17 @@ def _union_non_lead_time_feature_with_lead_time_feature(
 ) -> xr.DataArray:
     """Mask the non-lead-time feature with the lead-time feature.
 
-    Fills nans in the 2d feature from the earliest forecast 3d (with lead time) feature
-    via min lead time.
+    Fills nans in the 2d feature from the earliest forecast 3d (with lead time)
+    feature via min lead time.
 
-    Align forecast's "issue date" (when was made) with feature's "valid date" (when applied).
-    Shift forecast data forward by lead time to match dates.
+    Aligns the forecast's issue date with the feature's valid date by shifting
+    the forecast forward by its valid-date offset (0 days for the 1-day lead).
     """
     min_lead_time = mask_feature_da['lead_time'].min().item()  # Best forecast
     min_lead_time_mask_feature = mask_feature_da.sel(
         lead_time=min_lead_time, drop=True
     )  # 2d slice
-    shift_days = int(
-        min_lead_time / np.timedelta64(1, 'D')
-    )  # forecast time aligning
-    # Align mask's "issue date" with target feature's "valid date", e.g. forecast issued
-    # on Jan 1 for Jan 2 (lead time 1 day) is shifted forward by 1 day to align with Jan 2.
+    shift_days = _valid_date_offset_days(min_lead_time)
     mask_values = min_lead_time_mask_feature.shift(date=shift_days)
     return _union_features_with_same_dimensions(feature_da, mask_values)
 

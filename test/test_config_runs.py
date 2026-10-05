@@ -21,7 +21,6 @@ import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
-from pandas.tseries.frequencies import to_offset
 from pytest import approx
 
 from googlehydrology.datasetzoo import caravan
@@ -133,19 +132,33 @@ def _check_results(config: Config, basin: str, discharge: pd.Series = None):
         'D'
     )
 
+    full_discharge = None
     if discharge is None:
         discharge_ds = caravan.load_caravan_timeseries_together(
             config.data_dir, [basin], config.target_variables, csv=False
         )
         discharge = discharge_ds.to_dataframe()
+        full_discharge = discharge.loc[basin, 'streamflow']
         discharge_ds.close()
 
+    target = config.target_variables[0]
+    if hasattr(config, 'lead_time') and full_discharge is not None:
+        issue_dates = pd.to_datetime(results['date'].values)
+        for ts in results['time_step'].values:
+            if ts < 1:
+                continue
+            obs_ts = results[f'{target}_obs'].sel(time_step=ts).squeeze().values
+            valid_dates = issue_dates + pd.Timedelta(days=int(ts) - 1)
+            expected_ts = full_discharge.reindex(valid_dates).values
+            assert obs_ts == approx(expected_ts, nan_ok=True)
+
     if hasattr(config, 'lead_time'):
-        results = results.isel(time_step=0).squeeze()
+        # time_step=1 is the first (1-day) lead time, valid on the issue date.
+        results = results.sel(time_step=1).squeeze()
     else:
         results = results.isel(time_step=-1)
 
-    results_array = results[f'{config.target_variables[0]}_obs'].values
+    results_array = results[f'{target}_obs'].values
     idx = pd.IndexSlice
     discharge_slice = discharge.loc[
         idx[basin, test_start_date:test_end_date], 'streamflow'
@@ -155,7 +168,50 @@ def _check_results(config: Config, basin: str, discharge: pd.Series = None):
     assert discharge_array == approx(results_array, nan_ok=True)
 
     # CAMELS forcings have no NaNs, so there should be no NaN predictions
-    assert not pd.isna(results[f'{config.target_variables[0]}_sim']).any()
+    assert not pd.isna(results[f'{target}_sim']).any()
+
+
+def test_forecast_short_predict_last_n(
+    get_config: Fixture[Callable[[str], dict]],
+    forecast_config_updates: Fixture[Callable[[str], dict]],
+):
+    """Evaluation works when fewer target steps than lead times are predicted.
+
+    Results must still be indexed by forecast issue date, with `time_step=k`
+    holding the observation valid `k - 1` days after the issue date.
+    """
+    config = get_config('forecast')
+    config.update_config(forecast_config_updates('handoff_forecast_lstm'))
+    config.update_config({'predict_last_n': 3, 'lead_time': 7})
+
+    start_training(config)
+    start_evaluation(cfg=config, run_dir=config.run_dir, epoch=1, period='test')
+
+    basin = 'lamah_1145'
+    test_start_date, test_end_date = get_test_start_end_dates(config)
+    results = get_basin_results(config.run_dir, 1).sel(basin=basin)
+    np.testing.assert_array_equal(results['time_step'].values, [5, 6, 7])
+    assert pd.to_datetime(results['date'].values[0]) == test_start_date.floor(
+        'D'
+    )
+    assert pd.to_datetime(results['date'].values[-1]) == test_end_date.floor(
+        'D'
+    )
+
+    discharge_ds = caravan.load_caravan_timeseries_together(
+        config.data_dir, [basin], config.target_variables, csv=False
+    )
+    discharge = discharge_ds.to_dataframe().loc[basin, 'streamflow']
+    discharge_ds.close()
+
+    target = config.target_variables[0]
+    for time_step in (5, 6, 7):
+        observed = results[f'{target}_obs'].sel(time_step=time_step).squeeze()
+        valid_dates = pd.to_datetime(results['date'].values) + pd.Timedelta(
+            days=time_step - 1
+        )
+        expected = discharge.reindex(valid_dates).values
+        assert observed.values == approx(expected, nan_ok=True)
 
 
 def get_test_start_end_dates(

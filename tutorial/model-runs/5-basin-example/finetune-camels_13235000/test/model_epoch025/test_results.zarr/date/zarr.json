@@ -1,13 +1,13 @@
 {
   "shape": [
-    1028
+    1029
   ],
   "data_type": "int64",
   "chunk_grid": {
     "name": "regular",
     "configuration": {
       "chunk_shape": [
-        1028
+        1029
       ]
     }
   },

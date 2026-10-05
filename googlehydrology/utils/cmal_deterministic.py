@@ -115,48 +115,26 @@ def _search_quantile(
     pi: torch.Tensor,
     iterations: int = 10,
     epsilon: float = 1e-6,  # to avoid zero values
-    frac_confine: float | None = None,  # deprecated; unused
+    frac_confine: float = 0.8,  # to avoid overshooting
 ) -> torch.Tensor:
-    """Searches for the quantile of a mixture distribution via Newton-Raphson.
+    """Search for the quantile of a mixture dist via newton-raphson (NR).
 
-    Newton-Raphson iterates x_{n+1} = x_n - f(x_n) / f'(x_n) to find a root x
-    for f(x) = mixture_cdf(x) - quantile = 0, with f'(x) = mixture_pdf(x).
-
-    Because each component CDF F_i is strictly increasing and the convex
-    weights pi_i sum to 1, F(min_i PPF_i(q)) <= q <= F(max_i PPF_i(q)). The
-    mixture quantile is therefore guaranteed to lie inside
-    [min_i PPF_i(q), max_i PPF_i(q)].
-
-    Args:
-        quantile: Target quantiles of shape [1, 1, 1, num_quantiles].
-        mu: Component location parameters of shape
-            [batch_size, seq_len, num_kernels, 1].
-        b: Component scale parameters of shape
-            [batch_size, seq_len, num_kernels, 1].
-        tau: Component asymmetry parameters of shape
-            [batch_size, seq_len, num_kernels, 1].
-        pi: Component mixture weights of shape
-            [batch_size, seq_len, num_kernels, 1].
-        iterations: Number of Newton-Raphson iterations to run.
-        epsilon: Small positive constant added to the PDF denominator.
-        frac_confine: Deprecated and ignored; retained for call compatibility.
-
-    Returns:
-        Estimated mixture quantiles of shape
-        [batch_size, seq_len, num_quantiles].
+    NR works by: x_{n+1} = x_n - f(x_n) / f'(x_n)
+    Need to find a root x for mixture_cdf(x) - quantile = 0
+    So f(x)  = mixture_cdf(x) - quantile
+       f'(x) = CDF(x) dx = PDF(x)
     """
-    del frac_confine
     ppfs = _ppf(quantile, mu, b, tau)
-    low = torch.min(ppfs, dim=2, keepdim=True).values
-    high = torch.max(ppfs, dim=2, keepdim=True).values
+    low = frac_confine * torch.min(ppfs, dim=2, keepdim=True).values
+    high = frac_confine * torch.max(ppfs, dim=2, keepdim=True).values
 
-    quantile_est = torch.mean(ppfs, dim=2, keepdim=True)
+    k = torch.mean(ppfs, dim=2, keepdim=True)
     for _ in range(iterations):
-        cdf_val, pdf_val = _mixture_cdf_and_pdf(quantile_est, mu, b, tau, pi)
-        quantile_est = quantile_est - (cdf_val - quantile) / (pdf_val + epsilon)
-        quantile_est = torch.clamp(quantile_est, low, high)
+        cdf_val, pdf_val = _mixture_cdf_and_pdf(k, mu, b, tau, pi)
+        k = k - (cdf_val - quantile) / (pdf_val + epsilon)
+        k = torch.clamp(k, low, high)
 
-    return torch.squeeze(quantile_est, dim=2)
+    return torch.squeeze(k, dim=2)
 
 
 def _mixture_params_to_quantiles(
@@ -176,6 +154,4 @@ def _mixture_params_to_quantiles(
         device=mu.device,
         dtype=mu.dtype,
     )
-    return _search_quantile(
-        quantiles.view(1, 1, 1, -1), mu_exp, b_exp, tau_exp, pi_exp
-    )
+    return _search_quantile(quantiles.view(1, 1, 1, -1), mu_exp, b_exp, tau_exp, pi_exp)
