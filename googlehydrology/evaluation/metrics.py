@@ -48,6 +48,11 @@ def _validate_inputs(obs: DataArray, sim: DataArray):
 
 
 def _mask_valid(obs: DataArray, sim: DataArray) -> tuple[DataArray, DataArray]:
+    # Validation also accepts (time, 1); keep time as the only indexing axis.
+    if obs.ndim == 2:
+        obs = obs.squeeze(axis=1, drop=True)
+        sim = sim.squeeze(axis=1, drop=True)
+
     # mask of invalid entries. NaNs in simulations can happen during validation/testing
     idx = (~sim.isnull()) & (~obs.isnull())
 
