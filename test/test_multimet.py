@@ -16,10 +16,9 @@ import pytest
 import numpy as np
 import pandas as pd
 import xarray as xr
-import torch
 import re
 from pathlib import Path
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 from typing import Callable
 
 from googlehydrology.datasetzoo.multimet import Multimet
@@ -823,3 +822,351 @@ def test_multimet_dict_inputs_and_missing_band_validation(
         Multimet(cfg=cfg_missing, is_train=True, period='train')
 
 
+def _day_offset_dataset(
+    basins: list[str],
+    dates: pd.DatetimeIndex,
+    lead_times: list[np.timedelta64],
+) -> xr.Dataset:
+    """Builds a dataset whose values encode the valid date of each entry.
+
+    Each value is the day offset of its valid date from `dates[0]`, so a
+    misaligned extraction window shows up as the wrong numbers. Following
+    Caravan-MultiMet, a forecast issued on date t with `lead_time = k days` is
+    valid on day t + (k - 1).
+    """
+    day_offsets = np.arange(len(dates), dtype=np.float32)
+    forecast_vals = np.stack(
+        [
+            day_offsets + (lt / np.timedelta64(1, 'D') - 1)
+            for lt in lead_times
+        ],
+        axis=-1,
+    )
+    n_basins = len(basins)
+    static_vals = np.arange(1, n_basins + 1, dtype=np.float32)
+    return xr.Dataset(
+        {
+            'static_f1': (('basin',), static_vals),
+            'era5land_2d': (
+                ('basin', 'date'),
+                np.tile(day_offsets, (n_basins, 1)),
+            ),
+            'hres_3d': (
+                ('basin', 'date', 'lead_time'),
+                np.tile(forecast_vals, (n_basins, 1, 1)).astype(np.float32),
+            ),
+            'target_v1': (
+                ('basin', 'date'),
+                np.tile(day_offsets * 10.0, (n_basins, 1)).astype(np.float32),
+            ),
+        },
+        coords={'basin': basins, 'date': dates, 'lead_time': lead_times},
+    )
+
+
+def _write_multimet_stores(
+    root: Path, cfg: Config, ds: xr.Dataset, basins: list[str]
+) -> None:
+    """Writes real basin and Zarr stores under `root` and updates `cfg`."""
+    statics_dir = root / 'statics'
+    targets_dir = root / 'targets'
+    dynamics_dir = root / 'dynamics'
+    ds[['static_f1']].to_zarr(statics_dir / 'attributes.zarr', mode='w')
+    ds[['target_v1']].to_zarr(targets_dir / 'targets.zarr', mode='w')
+    ds[['era5land_2d']].drop_vars('lead_time', errors='ignore').to_zarr(
+        dynamics_dir / 'ERA5_LAND' / 'timeseries.zarr', mode='w'
+    )
+    ds[['hres_3d']].to_zarr(
+        dynamics_dir / 'HRES' / 'timeseries.zarr', mode='w'
+    )
+    cfg.train_basin_file.write_text('\n'.join(basins) + '\n')
+    cfg.update_config(
+        {
+            'statics_data_dir': statics_dir,
+            'targets_data_dir': targets_dir,
+            'dynamics_data_dir': dynamics_dir,
+        }
+    )
+
+
+def test_multimet_lead_time_temporal_alignment(
+    tmp_path: Path,
+    get_config,
+):
+    """Verifies Caravan-MultiMet temporal alignment end-to-end without mocks.
+
+    With seq_length=3, forecast_overlap=2 and lead_time=2 for issue date D:
+    - 2D hindcasts and 3D hindcasts (first lead time) both cover [D-3, D-1].
+    - The forecast overlap (first lead time) covers [D-2, D-1], followed by
+      the forecast rollout issued on D, valid on [D, D+1].
+    - `date` and `y` end at D + lead_time - 1 = D + 1 and cover [D-1, D+1].
+    - `union_mapping` fills NaNs across 2D and 3D products using the same
+      valid-date alignment.
+    """
+    basins = ['basin_01', 'basin_02']
+    dates = pd.date_range('1999-12-25', '2000-01-10', freq='D')
+    lead_times = [np.timedelta64(1, 'D'), np.timedelta64(2, 'D')]
+    ds = _day_offset_dataset(basins, dates, lead_times)
+
+    # Inject a NaN into the 2D feature on 1999-12-30 (day offset 5) and into
+    # the 3D feature at issue date 2000-01-01 (offset 7), lead_time=2D (valid
+    # on 2000-01-02, offset 8). Bidirectional union_mapping must restore both.
+    ds['era5land_2d'].loc[{'basin': 'basin_01', 'date': '1999-12-30'}] = np.nan
+    ds['hres_3d'].loc[
+        {
+            'basin': 'basin_01',
+            'date': '2000-01-01',
+            'lead_time': np.timedelta64(2, 'D'),
+        }
+    ] = np.nan
+
+    cfg = get_config('default')
+    _write_multimet_stores(tmp_path / 'stores', cfg, ds, basins)
+    identity_norm = {'centering': 'none', 'scaling': 'none'}
+    cfg.update_config(
+        {
+            'seq_length': 3,
+            'lead_time': 2,
+            'forecast_overlap': 2,
+            'predict_last_n': 3,
+            'timestep_counter': True,
+            'hindcast_inputs': ['era5land_2d', 'hres_3d'],
+            'forecast_inputs': ['hres_3d'],
+            'union_mapping': {
+                'era5land_2d': 'hres_3d',
+                'hres_3d': 'era5land_2d',
+            },
+            'custom_normalization': {
+                'era5land_2d': identity_norm,
+                'hres_3d': identity_norm,
+                'target_v1': identity_norm,
+            },
+            'train_start_date': ['01/01/2000'],
+            'train_end_date': ['02/01/2000'],
+        }
+    )
+
+    dataset = Multimet(cfg=cfg, is_train=True, period='train')
+    assert len(dataset) == 4  # 2 basins x 2 issue dates
+    assert dataset.min_lead_time == 1
+
+    # Sample 0: basin_01, issue date D = 2000-01-01 (day offset 7).
+    # Sample 1: basin_01, issue date D = 2000-01-02 (day offset 8).
+    for sample_idx, d_offset in [(0, 7.0), (1, 8.0)]:
+        sample = dataset[sample_idx]
+        expected_hindcast = np.arange(
+            d_offset - 3.0, d_offset, dtype=np.float32
+        )[:, None]
+        np.testing.assert_array_equal(
+            sample['x_d_hindcast']['era5land_2d'], expected_hindcast
+        )
+        np.testing.assert_array_equal(
+            sample['x_d_hindcast']['hres_3d'], expected_hindcast
+        )
+        np.testing.assert_array_equal(
+            sample['x_d_hindcast']['hindcast_counter'],
+            np.zeros((3, 1), dtype=np.int64),
+        )
+
+        # Overlap [D-2, D-1] followed by rollout valid on [D, D+1].
+        expected_forecast = np.arange(
+            d_offset - 2.0, d_offset + 2.0, dtype=np.float32
+        )[:, None]
+        np.testing.assert_array_equal(
+            sample['x_d_forecast']['hres_3d'], expected_forecast
+        )
+        np.testing.assert_array_equal(
+            sample['x_d_forecast']['forecast_counter'],
+            np.array([[1], [1], [1], [2]], dtype=np.int64),
+        )
+
+        # Targets of length seq_length=3 ending at D + 1 -> [D-1, D, D+1].
+        expected_dates = pd.date_range(
+            dates[int(d_offset) - 1], dates[int(d_offset) + 1], freq='D'
+        ).values
+        np.testing.assert_array_equal(sample['date'], expected_dates)
+        expected_targets = (
+            np.arange(d_offset - 1.0, d_offset + 2.0, dtype=np.float32)[:, None]
+            * 10.0
+        )
+        np.testing.assert_array_equal(sample['y'], expected_targets)
+
+
+def test_multimet_hindcast_only_alignment(
+    tmp_path: Path,
+    get_config,
+):
+    """Without forecast inputs, 2D and 3D hindcasts end on the sample date.
+
+    In a hindcast-only run (`forecast_inputs: []`, `lead_time: 0`) a 3D
+    feature used as a hindcast input is loaded from Zarr via `_lead_time_slice`
+    and read at its first lead time, which is valid on the issue date, so it
+    must line up with the 2D features and with `date` / `y`.
+    """
+    basins = ['basin_01', 'basin_02']
+    dates = pd.date_range('1999-12-25', '2000-01-10', freq='D')
+    lead_times = [np.timedelta64(1, 'D'), np.timedelta64(2, 'D')]
+    ds = _day_offset_dataset(basins, dates, lead_times)
+
+    cfg = get_config('default')
+    _write_multimet_stores(tmp_path / 'stores', cfg, ds, basins)
+    identity_norm = {'centering': 'none', 'scaling': 'none'}
+    cfg.update_config(
+        {
+            'seq_length': 3,
+            'lead_time': 0,
+            'forecast_overlap': 0,
+            'predict_last_n': 1,
+            'hindcast_inputs': ['era5land_2d', 'hres_3d'],
+            'forecast_inputs': [],
+            'custom_normalization': {
+                'era5land_2d': identity_norm,
+                'hres_3d': identity_norm,
+                'target_v1': identity_norm,
+            },
+            'train_start_date': ['01/01/2000'],
+            'train_end_date': ['02/01/2000'],
+        }
+    )
+
+    dataset = Multimet(cfg=cfg, is_train=True, period='train')
+    assert len(dataset) == 4
+    assert dataset.min_lead_time == 0
+    sample = dataset[0]
+
+    # Sample date D is 2000-01-01 (day offset 7); window [D-2, D] -> [5, 6, 7].
+    expected = np.array([[5.0], [6.0], [7.0]], dtype=np.float32)
+    assert 'x_d' in sample
+    np.testing.assert_array_equal(sample['x_d']['era5land_2d'], expected)
+    np.testing.assert_array_equal(sample['x_d']['hres_3d'], expected)
+    np.testing.assert_array_equal(
+        sample['date'],
+        pd.date_range('1999-12-30', '2000-01-01', freq='D').values,
+    )
+    np.testing.assert_array_equal(sample['y'], expected * 10.0)
+
+
+@pytest.mark.parametrize('forecast_inputs', [['hres_3d'], []])
+def test_multimet_valid_samples_match_extracted_windows(
+    tmp_path: Path,
+    get_config,
+    forecast_inputs,
+):
+    """Accepted samples match the exact set of windows with valid data.
+
+    Runs the full unmocked Multimet pipeline (including Zarr loading and
+    Scaler) and checks both soundness (no accepted sample has NaN inputs or
+    all-NaN targets) and completeness (every (basin, issue_date) whose
+    extracted windows are valid is included in the dataset).
+    """
+    rng = np.random.default_rng(0)
+    basins = ['basin_01', 'basin_02']
+    dates = pd.date_range('1999-11-01', '2000-03-01', freq='D')
+    lead_times = [np.timedelta64(k, 'D') for k in (1, 2, 3)]
+    ds = _day_offset_dataset(basins, dates, lead_times)
+    for name, nan_fraction in [
+        ('era5land_2d', 0.03),
+        ('hres_3d', 0.01),
+        ('target_v1', 0.5),
+    ]:
+        values = ds[name].values
+        values[rng.random(values.shape) < nan_fraction] = np.nan
+
+    seq_length = 5
+    predict_last_n = 4
+    lead_time = 3 if forecast_inputs else 0
+    forecast_overlap = 2 if forecast_inputs else 0
+    min_lead = 1 if forecast_inputs else 0
+
+    cfg = get_config('default')
+    _write_multimet_stores(tmp_path / 'stores', cfg, ds, basins)
+    cfg.update_config(
+        {
+            'seq_length': seq_length,
+            'predict_last_n': predict_last_n,
+            'lead_time': lead_time,
+            'forecast_overlap': forecast_overlap,
+            'hindcast_inputs': ['era5land_2d', 'hres_3d'],
+            'forecast_inputs': forecast_inputs,
+            'nan_handling_method': 'none',
+            'train_start_date': ['01/12/1999'],
+            'train_end_date': ['15/02/2000'],
+        }
+    )
+
+    dataset = Multimet(cfg=cfg, is_train=True, period='train')
+
+    # Independently determine which (basin_idx, issue_date) pairs have valid
+    # windows in the raw dataset.
+    sample_dates = set(pd.date_range('1999-12-01', '2000-02-15', freq='D'))
+    hres_loaded = ds['hres_3d'].isel(lead_time=slice(0, max(lead_time, 1)))
+    era5_vals = ds['era5land_2d'].values
+    hres_vals = hres_loaded.values
+    target_vals = ds['target_v1'].values
+    expected_target_end_dates = []
+    for b_idx in range(len(basins)):
+        for d_idx, d_val in enumerate(dates):
+            if d_val not in sample_dates:
+                continue
+            h_end = d_idx - min_lead
+            h_start = h_end - (seq_length - 1)
+            if h_start < 0:
+                continue
+            if np.isnan(era5_vals[b_idx, h_start : h_end + 1]).any():
+                continue
+            if np.isnan(hres_vals[b_idx, h_start : h_end + 1, :]).any():
+                continue
+            if forecast_inputs:
+                if np.isnan(hres_vals[b_idx, d_idx, :]).any():
+                    continue
+                ov_start = d_idx - forecast_overlap
+                if np.isnan(hres_vals[b_idx, ov_start:d_idx, 0]).any():
+                    continue
+            t_end = d_idx + lead_time - min_lead
+            t_start = t_end - (predict_last_n - 1)
+            if np.isnan(target_vals[b_idx, t_start : t_end + 1]).all():
+                continue
+            expected_target_end_dates.append(
+                (b_idx, dates[t_end].to_datetime64())
+            )
+
+    assert len(expected_target_end_dates) > 0
+    assert len(dataset) == len(expected_target_end_dates)
+
+    actual_target_end_dates = []
+    for i in range(len(dataset)):
+        sample = dataset[i]
+        b_idx = int(dataset._sample_index[i]['basin'])
+        actual_target_end_dates.append((b_idx, sample['date'][-1]))
+        inputs = sample.get('x_d_hindcast', sample.get('x_d'))
+        for name, values in inputs.items():
+            assert not np.isnan(values).any(), (i, name)
+        for name, values in sample.get('x_d_forecast', {}).items():
+            assert not np.isnan(values).any(), (i, name)
+        assert not np.isnan(sample['y'][-cfg.predict_last_n :]).all(), i
+
+    assert actual_target_end_dates == expected_target_end_dates
+
+
+def test_multimet_rejects_unexpected_minimum_lead_time(
+    tmp_path: Path,
+    get_config,
+):
+    """The date arithmetic assumes the shortest loaded lead time is 1 day."""
+    basins = ['basin_01', 'basin_02']
+    dates = pd.date_range('1999-12-25', '2000-01-10', freq='D')
+    lead_times = [np.timedelta64(2, 'D'), np.timedelta64(3, 'D')]
+    ds = _day_offset_dataset(basins, dates, lead_times)
+
+    cfg = get_config('default')
+    _write_multimet_stores(tmp_path / 'stores', cfg, ds, basins)
+    cfg.update_config(
+        {
+            'lead_time': 3,
+            'hindcast_inputs': ['era5land_2d'],
+            'forecast_inputs': ['hres_3d'],
+        }
+    )
+
+    with pytest.raises(ValueError, match='minimum forecast lead time'):
+        Multimet(cfg=cfg, is_train=True, period='train')

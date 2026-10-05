@@ -1266,3 +1266,72 @@ def test_validate_samples_target_missing_predict_last_n_raises_error(
             target_features=['t1'],
             predict_last_n=None,  # Missing predict_last_n
         )
+
+
+def test_validate_samples_windows_account_for_min_lead_time():
+    """Hindcast, overlap and target windows follow the issue-date convention.
+
+    With `min_lead_time=1` a sample issued on date D uses hindcasts and
+    forecast overlap up to D-1 and targets up to D + lead_time - 1, so NaNs
+    must invalidate exactly the samples whose windows touch them.
+    """
+    basins = ['basin_A', 'basin_B']
+    dates = pd.date_range('2020-01-01', periods=12, freq='D')
+    lead_times = [1, 2]
+    hindcast = np.ones((2, 12))
+    hindcast[0, 3] = np.nan
+    forecast = np.ones((2, 12, 2))
+    forecast[0, 6, 0] = np.nan
+    targets = np.ones((2, 12))
+    targets[0, 10] = np.nan
+    dataset = xr.Dataset(
+        {
+            'h1': (('basin', 'date'), hindcast),
+            'f1': (('basin', 'date', 'lead_time'), forecast),
+            't1': (('basin', 'date'), targets),
+        },
+        coords={'basin': basins, 'date': dates, 'lead_time': lead_times},
+    )
+
+    valid_mask, masks = validate_samples(
+        is_train=True,
+        dataset=dataset,
+        sample_dates=dates,
+        nan_handling_method=None,
+        feature_groups=[['h1'], ['f1']],
+        hindcast_features=['h1'],
+        forecast_features=['f1'],
+        target_features=['t1'],
+        seq_length=2,
+        forecast_overlap=2,
+        predict_last_n=1,
+        lead_time=2,
+        min_lead_time=1,
+    )
+
+    masks_by_name = {m.name: m.sel(basin='basin_A').values for m in masks}
+    # Hindcast window [D-2, D-1]: incomplete at D=0,1; touches day 3 at D=4,5.
+    np.testing.assert_array_equal(
+        np.flatnonzero(~masks_by_name['hindcasts']), [0, 1, 4, 5]
+    )
+    # Overlap window [D-2, D-1] at lead_time=0: incomplete at D=0,1; touches
+    # day 6 at D=7,8.
+    np.testing.assert_array_equal(
+        np.flatnonzero(~masks_by_name['forecast_overlap']), [0, 1, 7, 8]
+    )
+    # Target day D+1: touches day 10 at D=9; out of range at D=11.
+    np.testing.assert_array_equal(
+        np.flatnonzero(~masks_by_name['targets']), [9, 11]
+    )
+    # Combined valid issue dates for basin_A: D=6 is also excluded by the
+    # forecast rollout on day 6, leaving [2, 3, 10].
+    np.testing.assert_array_equal(
+        np.flatnonzero(valid_mask.sel(basin='basin_A').values), [2, 3, 10]
+    )
+    # basin_B has no NaNs, so only boundary dates D=0,1 (incomplete hindcast/
+    # overlap lookback) and D=11 (target D+1 out of range) are invalid.
+    np.testing.assert_array_equal(
+        np.flatnonzero(valid_mask.sel(basin='basin_B').values),
+        list(range(2, 11)),
+    )
+

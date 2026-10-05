@@ -237,6 +237,15 @@ class Multimet(Dataset):
             self._min_lead_time = int(
                 (self._dataset.lead_time.min() / np.timedelta64(1, 'D')).item()
             )
+            # The date arithmetic in `_calc_date_range` and `_extract_hindcasts`
+            # relies on the shortest loaded lead time being the Caravan-MultiMet
+            # first lead (1 day, valid on the issue date itself).
+            if self._min_lead_time != MULTIMET_MINIMUM_LEAD_TIME:
+                raise ValueError(
+                    'Expected the minimum forecast lead time to be '
+                    f'{MULTIMET_MINIMUM_LEAD_TIME} day(s), got '
+                    f'{self._min_lead_time}.'
+                )
             self._lead_times = list(
                 range(self._min_lead_time, self.lead_time + 1)
             )
@@ -376,6 +385,11 @@ class Multimet(Dataset):
     def __len__(self) -> int:
         return self._num_samples
 
+    @property
+    def min_lead_time(self) -> int:
+        """Shortest forecast lead time in days, or 0 without forecast inputs."""
+        return self._min_lead_time
+
     def __getitem__(
         self, item: int
     ) -> dict[str, torch.Tensor | np.ndarray | dict[str, torch.Tensor]]:
@@ -435,7 +449,7 @@ class Multimet(Dataset):
         duration = self._seq_length - 1
         if not lead and not self._lead_times:
             return range(date - duration, date + 1)
-        end = date + self.lead_time
+        end = date + self.lead_time - self._min_lead_time
         return range(end - duration, end + 1)
 
     def _extract_dates(self, sample_index: dict[str, int]) -> np.ndarray:
@@ -455,26 +469,32 @@ class Multimet(Dataset):
     def _extract_hindcasts(
         self, sample_index: dict[str, int]
     ) -> dict[str, np.ndarray]:
+        # In Caravan-MultiMet the first lead time (1 day) of a forecast issued
+        # on date D covers [D 00:00, D+1 00:00]. The completed hindcast days
+        # before D 00:00 are therefore [D - seq_length, ..., D - 1] when
+        # forecasting (_min_lead_time = 1), and [D - seq_length + 1, ..., D]
+        # when hindcast-only (_min_lead_time = 0).
+        hindcast_end = sample_index['date'] + 1 - self._min_lead_time
+        hindcast_date_range = range(
+            hindcast_end - self._seq_length,
+            hindcast_end,
+        )
+
         # Extract hindcast features without lead_time.
         dim_indexes_without_lead_time = sample_index.copy()
-        dim_indexes_without_lead_time['date'] = range(
-            dim_indexes_without_lead_time['date'] - self._seq_length + 1,
-            dim_indexes_without_lead_time['date'] + 1,
-        )
+        dim_indexes_without_lead_time['date'] = hindcast_date_range
         features = self._extract_dataset(
             self._dataset,
             self._hindcast_features_without_lead_time,
             dim_indexes_without_lead_time,
         )
 
-        # Forecast features with lead_time may be used as hindcast features. In that case, we select
-        # only the first lead_time value, and move selection period one day backwards.
+        # Forecast features with lead_time may be used as hindcast features.
+        # The first lead time (index 0) on date t covers [t 00:00, t+1 00:00],
+        # so it shares the valid date range of the 2D hindcast features.
         dim_indexes_with_lead_time = sample_index.copy()
         dim_indexes_with_lead_time['lead_time'] = 0
-        dim_indexes_with_lead_time['date'] = range(
-            dim_indexes_with_lead_time['date'] - self._seq_length,
-            dim_indexes_with_lead_time['date'],
-        )
+        dim_indexes_with_lead_time['date'] = hindcast_date_range
         features |= self._extract_dataset(
             self._dataset,
             self._hindcast_features_with_lead_time,
@@ -904,9 +924,10 @@ class Multimet(Dataset):
 
     def _lead_time_slice(self) -> slice:
         # https://pandas.pydata.org/pandas-docs/stable/user_guide/advanced.html#endpoints-are-inclusive
+        max_lead_time = max(self.lead_time, MULTIMET_MINIMUM_LEAD_TIME)
         return slice(
             pd.Timedelta(days=MULTIMET_MINIMUM_LEAD_TIME),
-            pd.Timedelta(days=self.lead_time),
+            pd.Timedelta(days=max_lead_time),
         )
 
     @staticmethod

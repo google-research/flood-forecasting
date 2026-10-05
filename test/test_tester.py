@@ -171,3 +171,81 @@ def test_sampler_with_batch_size_larger_than_samples():
     assert len(sampler) == 1
     assert len(batches) == 1
     assert batches[0] == (0, 1)
+
+
+def test_evaluate_synchronizes_configured_cuda_device():
+    """_evaluate must synchronize `self.device`, not only the default GPU."""
+    from unittest.mock import MagicMock, patch
+    import torch
+    from googlehydrology.evaluation.tester import (
+        RegressionTester,
+        _values_to_cpu,
+    )
+
+    tensors = {'1D': torch.tensor([[1.5, 2.5]])}
+    cpu_tensors = _values_to_cpu(tensors)
+    assert cpu_tensors['1D'].device.type == 'cpu'
+    torch.testing.assert_close(cpu_tensors['1D'], tensors['1D'])
+
+    tester = object.__new__(RegressionTester)
+    tester.device = torch.device('cuda:2')
+    tester.cfg = MagicMock(
+        predict_last_n=2,
+        hot_start_path=None,
+        save_state=False,
+    )
+    tester.period = 'test'
+    tester.loss_obj = lambda preds, data: (
+        torch.tensor(0.25),
+        {'loss': torch.tensor(0.25)},
+    )
+
+    class _FakeDataset:
+        _basins = ['basin_A']
+
+    batch = {
+        'basin_index': torch.tensor([0, 0]),
+        'date': np.array(
+            [
+                ['2020-01-01', '2020-01-02'],
+                ['2020-01-02', '2020-01-03'],
+            ],
+            dtype='datetime64[D]',
+        ),
+        'x_d': {'f1': torch.ones((2, 2, 1))},
+        'y': torch.full((2, 2, 1), 3.0),
+    }
+
+    class _FakeLoader:
+        dataset = _FakeDataset()
+
+        def __iter__(self):
+            return iter([batch])
+
+    model = MagicMock()
+    model.pre_model_hook.side_effect = lambda d, is_train: d
+    model.return_value = {'y_hat': torch.full((2, 2, 1), 4.0)}
+
+    with (
+        patch.object(torch.Tensor, 'to', lambda self, *a, **kw: self),
+        patch('googlehydrology.evaluation.tester.autocast'),
+        patch('torch.cuda.synchronize') as mock_sync,
+    ):
+        results = list(
+            tester._evaluate(
+                model=model,
+                loader=_FakeLoader(),
+                basins=['basin_A'],
+                frequencies=['1D'],
+            )
+        )
+
+    mock_sync.assert_called_once_with(torch.device('cuda:2'))
+    assert len(results) == 1
+    assert results[0]['basin'] == 'basin_A'
+    torch.testing.assert_close(
+        results[0]['preds']['1D'], torch.full((2, 2, 1), 4.0)
+    )
+    torch.testing.assert_close(
+        results[0]['obs']['1D'], torch.full((2, 2, 1), 3.0)
+    )
