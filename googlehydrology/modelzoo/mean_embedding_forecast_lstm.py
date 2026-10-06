@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import dataclasses
+import logging
 from pathlib import Path
-from typing import Iterable
+from typing import ClassVar, Iterable
 
 import numpy as np
 import torch
@@ -28,6 +29,8 @@ from googlehydrology.utils.configutils import group_features_list
 from googlehydrology.utils.lstm_utils import lstm_init
 
 FC_XAVIER = WeightInitOpt.FC_XAVIER
+
+LOGGER = logging.getLogger(__name__)
 
 
 class MeanEmbeddingForecastLSTM(BaseModel):
@@ -60,6 +63,17 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
     This model is based on the approach described in [#]_.
 
+    **Data assimilation hooks:** ``forward`` accepts optional keyword arguments
+    (``assimilation_overrides``, ``assimilation_slice``, ``return_embeddings``)
+    that expose and override the embeddings listed in
+    ``supported_assimilation_components``. Dynamic embeddings are overridden
+    after the masked mean, i.e. at the point where each LSTM consumes them.
+    ``hindcast_embedding`` and ``forecast_embedding`` both include the
+    shared-group contribution, so select both to assimilate all dynamic
+    information. Overrides cannot cover the forecast horizon (the last
+    ``lead_time`` steps). When no keyword arguments are passed the forward
+    pass is unchanged.
+
     Parameters
     ----------
     cfg : Config
@@ -83,11 +97,21 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         'head',
     ]
 
+    # Embeddings returned by `forward(..., return_embeddings=True)` that may be
+    # overridden for data assimilation via the keyword argument
+    # `assimilation_overrides`.
+    supported_assimilation_components: ClassVar[tuple[str, ...]] = (
+        'static_embedding',
+        'hindcast_embedding',
+        'forecast_embedding',
+    )
+
     def __init__(self, cfg: Config):
         super(MeanEmbeddingForecastLSTM, self).__init__(cfg=cfg)
 
         self.seq_length = cfg.seq_length
         self.lead_time = cfg.lead_time
+        self._warned_single_dynamic_assimilation = False
 
         self.config_data = ConfigData.from_config(cfg)
 
@@ -197,7 +221,12 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         )
 
     def forward(
-        self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]
+        self,
+        data: dict[str, torch.Tensor | dict[str, torch.Tensor]],
+        *,
+        assimilation_overrides: dict[str, torch.Tensor] | None = None,
+        assimilation_slice: tuple[int, int] | None = None,
+        return_embeddings: bool = False,
     ) -> dict[str, torch.Tensor]:
         """Perform a forward pass on the MeanEmbeddingForecastLSTM model.
 
@@ -205,44 +234,56 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         ----------
         data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
             Dictionary, containing input features as key-value pairs.
+        assimilation_overrides : dict[str, torch.Tensor] | None, optional
+            Mapping from names in ``supported_assimilation_components`` to
+            tensors replacing the corresponding embeddings. A dynamic override
+            either covers the full sequence or, together with
+            ``assimilation_slice``, a slice of the observed period.
+        assimilation_slice : tuple[int, int] | None, optional
+            ``(start, end)`` time indices on the model time axis where a
+            partial-length dynamic embedding override is spliced in. Must
+            satisfy ``0 <= start < end <= T - lead_time`` where ``T`` is the
+            length of the dynamic embeddings, i.e. it cannot reach into the
+            forecast horizon (the last ``lead_time`` steps).
+        return_embeddings : bool, optional
+            If True, the output additionally contains ``'static_embedding'``
+            [B, E_s], ``'hindcast_embedding'`` [B, T, E_h] and
+            ``'forecast_embedding'`` [B, T, E_f]. The embeddings are also
+            returned whenever ``assimilation_overrides`` is non-empty.
 
         Returns
         -------
         dict[str, torch.Tensor]
-            Model outputs and intermediate states as a dictionary from CMAL head.
+            Model outputs from the head, plus the (possibly overridden)
+            embeddings if requested (see ``return_embeddings``).
         """
         forward_data = ForwardData.from_forward_data(data, self.config_data)
+        overrides = assimilation_overrides or {}
+        if overrides:
+            self.validate_assimilation_components(overrides)
 
-        static_embedding = self._calc_static_embedding(forward_data)
+        if 'static_embedding' in overrides:
+            static_embedding = self._validated_static_override(
+                forward_data, overrides['static_embedding']
+            )
+        else:
+            static_embedding = self._calc_static_embedding(forward_data)
 
-        hindcast_embeddings = [
-            self._calc_dynamic_embedding(
-                embedding_network=fc,
-                dynamic_data=forward_data.hindcast_features[name],
-                static_embedding=static_embedding,
-                append_nan=True,
-            )
-            for name, fc in self.hindcast_embeddings_fc.items()
-        ]
-        forecast_embeddings = [
-            self._calc_dynamic_embedding(
-                embedding_network=fc,
-                dynamic_data=forward_data.forecast_features[name],
-                static_embedding=static_embedding,
-                append_nan=False,
-            )
-            for name, fc in self.forecast_embeddings_fc.items()
-        ]
-        # Shared embeddings are using the forecast data
-        shared_embeddings = [
-            self._calc_dynamic_embedding(
-                embedding_network=fc,
-                dynamic_data=forward_data.forecast_features[name],
-                static_embedding=static_embedding,
-                append_nan=False,
-            )
-            for name, fc in self.shared_embeddings_fc.items()
-        ]
+        mean_hindcast_embedding, mean_forecast_embedding = (
+            self._calc_mean_embeddings(forward_data, static_embedding)
+        )
+        mean_hindcast_embedding = self._apply_embedding_override(
+            'hindcast_embedding',
+            mean_hindcast_embedding,
+            overrides,
+            assimilation_slice,
+        )
+        mean_forecast_embedding = self._apply_embedding_override(
+            'forecast_embedding',
+            mean_forecast_embedding,
+            overrides,
+            assimilation_slice,
+        )
 
         state = getattr(self, '_preloaded_state', None)
         h_hind_init = None
@@ -272,25 +313,209 @@ class MeanEmbeddingForecastLSTM(BaseModel):
                     _to_3d_tensor(c_fore_arr),
                 )
 
-
+        # Time steps where every group feeding a masked mean is NaN (e.g. the
+        # NaN-padded forecast horizon of the hindcast groups) have no valid
+        # LSTM input. The LSTMs run on zero-filled inputs and the head outputs
+        # from the first such step onwards are set to NaN afterwards; see
+        # `_missing_steps`.
+        hindcast_missing = self._missing_steps(mean_hindcast_embedding)
+        forecast_missing = hindcast_missing | self._missing_steps(
+            mean_forecast_embedding
+        )
         hindcast_state = self._calc_lstm(
             lstm=self.hindcast_lstm,
-            embeddings=hindcast_embeddings + shared_embeddings,
+            masked_mean_embeddings=mean_hindcast_embedding,
             static_embedding=static_embedding,
             initial_state=h_hind_init,
         )
         forecast_state = self._calc_lstm(
             lstm=self.forecast_lstm,
-            embeddings=forecast_embeddings + shared_embeddings,
+            masked_mean_embeddings=mean_forecast_embedding,
             static_embedding=static_embedding,
             other_inputs=hindcast_state,
             initial_state=h_fore_init,
         )
 
-        head = self._calc_head(forecast_state)
-        
-
+        head = {
+            key: value.masked_fill(forecast_missing, float('nan'))
+            for key, value in self._calc_head(forecast_state).items()
+        }
+        if return_embeddings or overrides:
+            head['static_embedding'] = static_embedding
+            head['hindcast_embedding'] = mean_hindcast_embedding
+            head['forecast_embedding'] = mean_forecast_embedding
         return head
+
+    def validate_assimilation_components(self, names: Iterable[str]) -> None:
+        """Raise ValueError for names not in supported_assimilation_components.
+
+        Additionally warns (once per model instance) when only one of the two
+        dynamic embeddings is selected: both ``hindcast_embedding`` and
+        ``forecast_embedding`` include the shared-input-group contribution, so
+        assimilating only one of them leaves the shared contribution of the
+        other un-assimilated.
+        """
+        names = set(names)
+        super().validate_assimilation_components(names)
+        dynamic = {'hindcast_embedding', 'forecast_embedding'}
+        selected = sorted(names & dynamic)
+        if len(selected) == 1 and not self._warned_single_dynamic_assimilation:
+            self._warned_single_dynamic_assimilation = True
+            (other,) = dynamic - set(selected)
+            LOGGER.warning(
+                'Assimilating only %s: both hindcast_embedding and '
+                'forecast_embedding include the shared-input-group '
+                'contribution, so the shared contribution of %s is left '
+                'un-assimilated. Select both to assimilate all dynamic '
+                'information.',
+                selected[0],
+                other,
+            )
+
+    def point_prediction(
+        self, outputs: dict[str, torch.Tensor]
+    ) -> torch.Tensor:
+        """Deterministic prediction ``[B, T, n_targets]`` via the head."""
+        return self.head.point_prediction(outputs)
+
+    def _calc_mean_embeddings(
+        self, forward_data: 'ForwardData', static_embedding: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Masked-mean hindcast and forecast embeddings, each [B, T, E].
+
+        Every dynamic input group is embedded by its own network; the hindcast
+        mean averages the hindcast-only and shared groups, the forecast mean
+        the forecast-only and shared groups (shared groups use the forecast
+        data). Missing groups (NaN) are skipped by the masked mean.
+        """
+
+        def embed(
+            networks: nn.ModuleDict,
+            features: dict[str, torch.Tensor],
+            *,
+            append_nan: bool,
+        ) -> list[torch.Tensor]:
+            return [
+                self._calc_dynamic_embedding(
+                    embedding_network=fc,
+                    dynamic_data=features[name],
+                    static_embedding=static_embedding,
+                    append_nan=append_nan,
+                )
+                for name, fc in networks.items()
+            ]
+
+        hindcast = embed(
+            self.hindcast_embeddings_fc,
+            forward_data.hindcast_features,
+            append_nan=True,
+        )
+        forecast = embed(
+            self.forecast_embeddings_fc,
+            forward_data.forecast_features,
+            append_nan=False,
+        )
+        # Shared embeddings are using the forecast data
+        shared = embed(
+            self.shared_embeddings_fc,
+            forward_data.forecast_features,
+            append_nan=False,
+        )
+        return (
+            self._masked_mean(hindcast + shared),
+            self._masked_mean(forecast + shared),
+        )
+
+    def _validated_static_override(
+        self, forward_data: 'ForwardData', override: torch.Tensor
+    ) -> torch.Tensor:
+        """Check that `override` [B, E_s] can replace the static embedding."""
+        if forward_data.static_features is None:
+            msg = (
+                'Cannot override static_embedding when the model has no '
+                'static inputs.'
+            )
+            raise ValueError(msg)
+        expected = (
+            forward_data.static_features.shape[0],
+            self.static_embedding_fc.output_size,
+        )
+        if tuple(override.shape) != expected:
+            msg = (
+                'static_embedding override has shape '
+                f'{tuple(override.shape)}, expected {expected}'
+            )
+            raise ValueError(msg)
+        expected_dtype = next(self.static_embedding_fc.parameters()).dtype
+        if override.dtype != expected_dtype:
+            msg = (
+                f'static_embedding override has dtype {override.dtype}, '
+                f'expected {expected_dtype}'
+            )
+            raise ValueError(msg)
+        return override
+
+    def _apply_embedding_override(
+        self,
+        name: str,
+        embedding: torch.Tensor,
+        overrides: dict[str, torch.Tensor],
+        assimilation_slice: tuple[int, int] | None,
+    ) -> torch.Tensor:
+        """Replace `embedding[:, start:end]` with the override, if given.
+
+        `(start, end) = assimilation_slice` and
+        `end - start == override.shape[1]`. A full-length override may omit
+        the slice, which then defaults to `(0, T)`. In every case the slice
+        must lie within the observed period: it cannot reach into the
+        forecast horizon (the last `lead_time` steps), so a full-length
+        override is only valid when `lead_time == 0`.
+        """
+        override = overrides.get(name)
+        if override is None:
+            return embedding
+        if override.dtype != embedding.dtype:
+            msg = (
+                f'{name} override has dtype {override.dtype}, '
+                f'expected {embedding.dtype}'
+            )
+            raise ValueError(msg)
+        if override.ndim != embedding.ndim or (
+            override.shape[0] != embedding.shape[0]
+            or override.shape[2] != embedding.shape[2]
+        ):
+            msg = (
+                f'{name} override has shape {tuple(override.shape)}, '
+                f'incompatible with {tuple(embedding.shape)}'
+            )
+            raise ValueError(msg)
+        length = embedding.shape[1]
+        if assimilation_slice is None:
+            if override.shape[1] != length:
+                msg = (
+                    f'{name} override covers {override.shape[1]} of {length} '
+                    'time steps; assimilation_slice=(start, end) is required'
+                )
+                raise ValueError(msg)
+            assimilation_slice = (0, length)
+        start, end = (int(e) for e in assimilation_slice)
+        last_observed = length - self.cfg.lead_time
+        if not 0 <= start < end <= last_observed:
+            msg = (
+                f'assimilation_slice {assimilation_slice} out of range: it '
+                f'must lie within the observed period [0, {last_observed}]; '
+                f'the last {self.cfg.lead_time} steps are the forecast horizon'
+            )
+            raise ValueError(msg)
+        if end - start != override.shape[1]:
+            msg = (
+                f'{name} override has {override.shape[1]} time steps but '
+                f'assimilation_slice {assimilation_slice} spans {end - start}'
+            )
+            raise ValueError(msg)
+        return torch.cat(
+            [embedding[:, :start], override, embedding[:, end:]], dim=1
+        )
 
     @torch.no_grad()
     def save_state(
@@ -311,43 +536,21 @@ class MeanEmbeddingForecastLSTM(BaseModel):
 
         static_embedding = self._calc_static_embedding(forward_data)
 
-        hindcast_embeddings = [
-            self._calc_dynamic_embedding(
-                embedding_network=fc,
-                dynamic_data=forward_data.hindcast_features[name],
-                static_embedding=static_embedding,
-                append_nan=True,
-            )[:, : self.seq_length, :]
-            for name, fc in self.hindcast_embeddings_fc.items()
-        ]
-        forecast_embeddings = [
-            self._calc_dynamic_embedding(
-                embedding_network=fc,
-                dynamic_data=forward_data.forecast_features[name],
-                static_embedding=static_embedding,
-                append_nan=False,
-            )[:, : self.seq_length, :]
-            for name, fc in self.forecast_embeddings_fc.items()
-        ]
-        shared_embeddings = [
-            self._calc_dynamic_embedding(
-                embedding_network=fc,
-                dynamic_data=forward_data.forecast_features[name],
-                static_embedding=static_embedding,
-                append_nan=False,
-            )[:, : self.seq_length, :]
-            for name, fc in self.shared_embeddings_fc.items()
-        ]
+        # Only the observed period feeds the saved state.
+        mean_hindcast_embedding, mean_forecast_embedding = (
+            e[:, : self.seq_length, :]
+            for e in self._calc_mean_embeddings(forward_data, static_embedding)
+        )
 
         hindcast_state, (h_hind, c_hind) = self._calc_lstm(
             lstm=self.hindcast_lstm,
-            embeddings=hindcast_embeddings + shared_embeddings,
+            masked_mean_embeddings=mean_hindcast_embedding,
             static_embedding=static_embedding,
             return_state=True,
         )
         forecast_state, (h_fore, c_fore) = self._calc_lstm(
             lstm=self.forecast_lstm,
-            embeddings=forecast_embeddings + shared_embeddings,
+            masked_mean_embeddings=mean_forecast_embedding,
             static_embedding=static_embedding,
             other_inputs=hindcast_state,
             return_state=True,
@@ -372,7 +575,6 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         self._preloaded_state = dict(np.load(path, allow_pickle=False))
 
     def _make_static_embedding_repeated(
-
         self, time_length: int, static_embedding: torch.Tensor
     ) -> torch.Tensor:
         """Returns the attributes repeated w.r.t the time length."""
@@ -436,24 +638,43 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         static_embedding: torch.Tensor,
         append_nan: bool,
     ) -> torch.Tensor:
+        # Zero out time steps with missing inputs before the network and set
+        # them back to NaN afterwards. Forward values are unchanged, but this
+        # keeps gradients w.r.t. parameters and static embedding finite.
+        nan_mask = torch.isnan(dynamic_data).any(dim=-1, keepdim=True)
+        dynamic_data = dynamic_data.masked_fill(nan_mask, 0.0)
         dynamic_data_concat = self._append_static_embedding(
             dynamic_data, static_embedding
         )
         output = embedding_network(dynamic_data_concat)
+        output = output.masked_fill(nan_mask, float('nan'))
         if append_nan:
             output = self._add_nan_padding(output)
         return output
 
+    @staticmethod
+    def _missing_steps(masked_mean_embedding: torch.Tensor) -> torch.Tensor:
+        """Mask [B, T, 1] of steps without valid input, and all steps after.
+
+        A step is missing when every group feeding the masked mean is NaN.
+        The LSTM state is undefined from the first missing step onwards, so
+        the mask is cumulative along time. Callers run the LSTMs on
+        zero-filled inputs and set the head outputs to NaN where this mask is
+        True, which reproduces the NaN pattern of feeding NaN to the LSTM
+        while keeping all gradients finite.
+        """
+        missing = torch.isnan(masked_mean_embedding).any(dim=-1, keepdim=True)
+        return torch.cummax(missing.to(torch.int8), dim=1).values.bool()
+
     def _calc_lstm(
         self,
         lstm: nn.LSTM,
-        embeddings: Iterable[torch.Tensor],
+        masked_mean_embeddings: torch.Tensor,
         static_embedding: torch.Tensor,
         other_inputs: torch.Tensor | None = None,
         initial_state: tuple[torch.Tensor, torch.Tensor] | None = None,
         return_state: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
-        masked_mean_embeddings = self._masked_mean(embeddings)
         if other_inputs is not None:
             masked_mean_embeddings = torch.cat(
                 [masked_mean_embeddings, other_inputs], dim=-1
@@ -461,6 +682,10 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         lstm_inputs = self._append_static_embedding(
             masked_mean_embeddings, static_embedding
         )
+        # Zero-fill missing time steps (see `_missing_steps`). Fed directly,
+        # a NaN input poisons the recurrent state from that step on and, in
+        # the backward pass, every earlier step as well (0 * NaN = NaN).
+        lstm_inputs = lstm_inputs.nan_to_num(nan=0.0)
         if initial_state is not None:
             output, hx = lstm(input=lstm_inputs, hx=initial_state)
         else:
@@ -468,7 +693,6 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         if return_state:
             return output, hx
         return output
-
 
     def _calc_head(
         self, forecast_state: torch.Tensor

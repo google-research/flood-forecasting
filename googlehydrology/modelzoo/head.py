@@ -48,7 +48,12 @@ def get_head(
             n_in=n_in, n_out=n_out, activation=cfg.output_activation
         )
     elif cfg.head.lower() in ['cmal', 'cmal_deterministic']:
-        head = CMAL(n_in=n_in, n_out=n_out, n_hidden=n_hidden)
+        head = CMAL(
+            n_in=n_in,
+            n_out=n_out,
+            n_hidden=n_hidden,
+            n_distributions=cfg.n_distributions,
+        )
     elif cfg.head.lower() == '':
         raise ValueError(
             f"No 'head' specified in the config but is required for {cfg.model}"
@@ -61,7 +66,35 @@ def get_head(
     return head
 
 
-class Regression(nn.Module):
+class BaseHead(nn.Module):
+    """Base class of all model heads."""
+
+    def point_prediction(
+        self, outputs: dict[str, torch.Tensor]
+    ) -> torch.Tensor:
+        """Deterministic prediction derived from the head outputs.
+
+        Returns a single value per time step and target, ``[B, T, n_targets]``,
+        derived from the head outputs; used by data assimilation and other
+        consumers that need a single value per step. For probabilistic heads
+        this is the mean of the predicted distribution. The result stays
+        differentiable w.r.t. the head outputs.
+
+        Parameters
+        ----------
+        outputs : dict[str, torch.Tensor]
+            Output dict of ``forward``.
+
+        Returns
+        -------
+        torch.Tensor
+            Point prediction of shape ``[B, T, n_targets]``.
+        """
+        msg = f'{type(self).__name__} does not implement point_prediction'
+        raise NotImplementedError(msg)
+
+
+class Regression(BaseHead):
     """Single-layer regression head with different output activations.
 
     Parameters
@@ -106,8 +139,14 @@ class Regression(nn.Module):
         """
         return {'y_hat': self.net(x)}
 
+    def point_prediction(
+        self, outputs: dict[str, torch.Tensor]
+    ) -> torch.Tensor:
+        """Return the regression output ``outputs['y_hat']``."""
+        return outputs['y_hat']
 
-class CMAL(nn.Module):
+
+class CMAL(BaseHead):
     """Countable Mixture of Asymmetric Laplacians.
 
     An mixture density network with Laplace distributions as components.
@@ -124,6 +163,10 @@ class CMAL(nn.Module):
         Number of output neurons. Corresponds to 4 times the number of components.
     n_hidden : int
         Size of the hidden layer.
+    n_distributions : int | None, optional
+        Number of mixture components per target. Only needed by
+        ``point_prediction`` to separate the targets; if None, all components
+        are assumed to belong to a single target.
 
     References
     ----------
@@ -131,10 +174,18 @@ class CMAL(nn.Module):
         Uncertainty Estimation with Deep Learning for Rainfall-Runoff Modelling. arXiv preprint arXiv:2012.14295, 2020.
     """
 
-    def __init__(self, n_in: int, n_out: int, n_hidden: int = 100):
+    def __init__(
+        self,
+        n_in: int,
+        n_out: int,
+        n_hidden: int = 100,
+        n_distributions: int | None = None,
+    ):
+        """Create the two-layer CMAL head; see the class docstring."""
         super(CMAL, self).__init__()
         self.fc1 = nn.Linear(n_in, n_hidden)
         self.fc2 = nn.Linear(n_hidden, n_out)
+        self.n_distributions = n_distributions
 
         self._softplus = torch.nn.Softplus(2)
         self._eps = 1e-5
@@ -169,3 +220,24 @@ class CMAL(nn.Module):
         ) + self._eps  # sum(pi) = 1 & pi > 0
 
         return {'mu': m, 'b': b, 'tau': t, 'pi': p}
+
+    def point_prediction(
+        self, outputs: dict[str, torch.Tensor]
+    ) -> torch.Tensor:
+        """Mean of the predicted mixture, ``[B, T, n_targets]``.
+
+        Uses the closed-form mean of each asymmetric Laplacian component (same
+        formula as the mean column of
+        ``cmal_deterministic.generate_predictions``) and is differentiable;
+        no quantile search is involved. The head outputs are laid out as
+        ``[B, T, n_targets * n_distributions]`` with the components of each
+        target contiguous.
+        """
+        mu, b, tau, pi = (outputs[k] for k in ('mu', 'b', 'tau', 'pi'))
+        n_distributions = self.n_distributions or mu.shape[-1]
+        shape = (*mu.shape[:-1], -1, n_distributions)
+        mu, b, tau, pi = (e.reshape(shape) for e in (mu, b, tau, pi))
+        pi = pi / pi.sum(dim=-1, keepdim=True)
+        tau = torch.clamp(tau, min=1e-6, max=1.0 - 1e-6)
+        means = mu + b * (1 - 2 * tau) / (tau * (1 - tau))
+        return torch.sum(pi * means, dim=-1)
