@@ -423,11 +423,22 @@ class BaseTester(object):
                                 sim = xarray.where(sim < 0, 0, sim)
 
                             if 'samples' in sim.dims:
+                                head = self.cfg.head.lower()
                                 match self.cfg.tester_sample_reduction:
                                     case TesterSamplesReduction.MEAN:
-                                        sim = sim.mean(dim='samples')
+                                        # Deterministic CMAL stores the mean,
+                                        # then nine deciles, not random draws.
+                                        sim = (
+                                            sim.isel(samples=0, drop=True)
+                                            if head == 'cmal_deterministic'
+                                            else sim.mean(dim='samples')
+                                        )
                                     case TesterSamplesReduction.MEDIAN:
-                                        sim = sim.median(dim='samples')
+                                        sim = (
+                                            sim.isel(samples=5, drop=True)
+                                            if head == 'cmal_deterministic'
+                                            else sim.median(dim='samples')
+                                        )
                                     case _:
                                         msg = f'Supported {self.cfg.tester_sample_reduction=}'
                                         raise KeyError(msg)
