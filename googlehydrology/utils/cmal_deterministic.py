@@ -47,12 +47,77 @@ def generate_predictions(
         # https://www.tandfonline.com/doi/abs/10.1080/03610920500199018 (modified)
         quantiles = _mixture_params_to_quantiles(mu, b, tau, pi)
 
-        tau = torch.clamp(tau, min=1e-6, max=1.0 - 1e-6)
-        means = mu + b * (1 - 2 * tau) / (tau * (1 - tau))
-        mean = torch.unsqueeze(torch.sum(pi * means, dim=-1), dim=-1)
+        mean = mixture_mean(mu, b, tau, pi)
         # Returned tensor, in last dimension, has the distribution mean followed by
         # the calculated quantiles.
         return torch.concat([mean, quantiles], dim=-1)
+
+
+class _SaturatingUpcast(torch.autograd.Function):
+    """Upcast to float32 whose backward saturates instead of overflowing.
+
+    The forward is ``x.float()``. The backward casts the float32 gradient back
+    to the input dtype, but first clamps it to ``±finfo(dtype).max`` so that
+    gradients beyond the half-precision range become finite, correctly-signed
+    values rather than ``±inf``.
+    """
+
+    @staticmethod
+    def forward(ctx, x: torch.Tensor) -> torch.Tensor:  # noqa: ANN001
+        ctx.in_dtype = x.dtype
+        return x.float()
+
+    @staticmethod
+    def backward(ctx, grad: torch.Tensor) -> torch.Tensor:  # noqa: ANN001
+        limit = torch.finfo(ctx.in_dtype).max
+        return grad.clamp(min=-limit, max=limit).to(ctx.in_dtype)
+
+
+def mixture_mean(
+    mu: torch.Tensor, b: torch.Tensor, tau: torch.Tensor, pi: torch.Tensor
+) -> torch.Tensor:
+    """Compute the exact mean of a CMAL mixture.
+
+    Unlike the quantiles in `generate_predictions`, the mean has a closed form,
+    so it is cheap and differentiable without the Newton-Raphson quantile
+    search (e.g. for gradient-based data assimilation).
+
+    Args:
+        mu: location parameter
+        b: scale parameter
+        tau: asymmetry parameter
+        pi: mixture weights
+
+    Returns:
+        Mixture mean with the last (mixture) dimension reduced to size 1.
+
+    Note:
+        Half precision inputs (float16/bfloat16, e.g. under autocast) are
+        upcast to float32 for the computation and the result is cast back: in
+        half precision the backward pass of ``1 / (tau * (1 - tau))``
+        overflows for ``tau`` well inside ``(0, 1)`` (e.g. 0.002), and the
+        resulting ``-inf + inf`` in the chain rule yields NaN gradients.
+        ``tau`` is clamped to ``[1e-6, 1 - 1e-6]`` *after* the upcast (the
+        epsilon is derived from the float32 computation dtype, not the input
+        dtype), so the forward value in half precision is exactly the float32
+        result cast down and small ``tau`` keep a real gradient. In float32
+        the computation is unchanged (no upcast), so it stays bitwise
+        identical to `generate_predictions`. The upcast is a custom autograd
+        function whose
+        backward saturates: gradients whose true magnitude (roughly
+        ``b / tau**2``) exceeds the half-precision range are clamped to
+        ``±finfo(dtype).max`` instead of overflowing to ``±inf``. This is a
+        deliberate bias: a finite, correctly-signed gradient is more useful to
+        a (clipped) optimizer than ``inf``.
+    """
+    out_dtype = tau.dtype
+    if out_dtype in (torch.float16, torch.bfloat16):
+        mu, b, tau, pi = (_SaturatingUpcast.apply(t) for t in (mu, b, tau, pi))
+    # Epsilon of the computation dtype (float32 after the upcast): 1e-6.
+    eps = max(1e-6, float(torch.finfo(tau.dtype).eps))
+    tau = torch.clamp(tau, min=eps, max=1.0 - eps)
+    means = mu + b * (1 - 2 * tau) / (tau * (1 - tau))
+    return torch.sum(pi * means, dim=-1, keepdim=True).to(out_dtype)
 
 
 def _cdf_and_pdf(
@@ -154,4 +219,6 @@ def _mixture_params_to_quantiles(
         device=mu.device,
         dtype=mu.dtype,
     )
-    return _search_quantile(quantiles.view(1, 1, 1, -1), mu_exp, b_exp, tau_exp, pi_exp)
+    return _search_quantile(
+        quantiles.view(1, 1, 1, -1), mu_exp, b_exp, tau_exp, pi_exp
+    )
