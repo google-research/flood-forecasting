@@ -18,7 +18,9 @@ from pathlib import Path
 import gc
 import logging
 import shutil
+import sys
 from typing import Any
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -29,6 +31,7 @@ from tensorboard.backend.event_processing.event_accumulator import (
     EventAccumulator,
 )
 
+from googlehydrology import run
 from googlehydrology.datasetzoo.caravan import load_caravan_timeseries_together
 from googlehydrology.evaluation.evaluate import start_evaluation
 from googlehydrology.run import continue_run
@@ -58,10 +61,12 @@ def integration_data_env(tmp_path_factory: pytest.TempPathFactory):
     ds = load_caravan_timeseries_together(
         nc_dir, basins=basins, target_features=raw_features, csv=False
     )
-    ds = ds.rename({
-        'total_precipitation_sum': 'era5land_total_precipitation',
-        'temperature_2m_mean': 'era5land_temperature_2m',
-    })
+    ds = ds.rename(
+        {
+            'total_precipitation_sum': 'era5land_total_precipitation',
+            'temperature_2m_mean': 'era5land_temperature_2m',
+        }
+    )
     lead_times = pd.to_timedelta(np.arange(8), unit='D')
     ds_forecast = ds.expand_dims(lead_time=lead_times).copy()
 
@@ -222,8 +227,12 @@ def test_mean_embedding_forecast_lstm_regression_pipeline(
     assert 'KGE' in df_metrics.columns
     assert 'RMSE' in df_metrics.columns
     assert not df_metrics['NSE'].isna().all(), 'NSE metrics are all NaN'
-    assert np.all(np.isfinite(df_metrics['NSE'].values)), 'NSE contains non-finite values'
-    assert np.all(df_metrics['RMSE'].values >= 0.0), 'RMSE contains negative values'
+    assert np.all(np.isfinite(df_metrics['NSE'].values)), (
+        'NSE contains non-finite values'
+    )
+    assert np.all(df_metrics['RMSE'].values >= 0.0), (
+        'RMSE contains negative values'
+    )
 
 
 @pytest.mark.slow
@@ -236,23 +245,25 @@ def test_handoff_forecast_lstm_cmal_pipeline(
     cfg_dict = _get_base_config_dict(
         integration_data_env, 'test_handoff_cmal', run_dir
     )
-    cfg_dict.update({
-        'model': 'handoff_forecast_lstm',
-        'head': 'cmal',
-        'loss': 'CMAL',
-        'n_distributions': 3,
-        'n_samples': 5,
-        'clip_gradient_norm': 1.0,
-        'log_tensorboard': True,
-        'log_loss_every_nth_update': 100,
-        'state_handoff_network': {
-            'type': 'fc',
-            'hiddens': [32, 16],
-            'activation': ['tanh', 'linear'],
-            'dropout': 0.0,
-        },
-        'epochs': 1,
-    })
+    cfg_dict.update(
+        {
+            'model': 'handoff_forecast_lstm',
+            'head': 'cmal',
+            'loss': 'CMAL',
+            'n_distributions': 3,
+            'n_samples': 5,
+            'clip_gradient_norm': 1.0,
+            'log_tensorboard': True,
+            'log_loss_every_nth_update': 100,
+            'state_handoff_network': {
+                'type': 'fc',
+                'hiddens': [32, 16],
+                'activation': ['tanh', 'linear'],
+                'dropout': 0.0,
+            },
+            'epochs': 1,
+        }
+    )
     cfg = Config(cfg_dict)
 
     # 1. Train CMAL model
@@ -296,7 +307,9 @@ def test_handoff_forecast_lstm_cmal_pipeline(
     ) as ds_pred:
         assert 'streamflow_sim' in ds_pred
         sim_vals = ds_pred['streamflow_sim'].values
-        assert np.all(np.isfinite(sim_vals)), 'CMAL predictions contain NaNs or Infs'
+        assert np.all(np.isfinite(sim_vals)), (
+            'CMAL predictions contain NaNs or Infs'
+        )
         assert sim_vals.shape[0] == 8  # 8 basins
 
 
@@ -329,14 +342,16 @@ def test_continue_training_and_finetuning_pipeline(
     continue_cfg_dict = _get_base_config_dict(
         integration_data_env, 'test_finetune_base', str(actual_run_dir.parent)
     )
-    continue_cfg_dict.update({
-        'base_run_dir': str(actual_run_dir),
-        'run_dir': str(actual_run_dir),
-        'is_continue_training': True,
-        'continue_from_epoch': 1,
-        'epochs': 1,
-        'clip_gradient_norm': 1.0,
-    })
+    continue_cfg_dict.update(
+        {
+            'base_run_dir': str(actual_run_dir),
+            'run_dir': str(actual_run_dir),
+            'is_continue_training': True,
+            'continue_from_epoch': 1,
+            'epochs': 1,
+            'clip_gradient_norm': 1.0,
+        }
+    )
     continue_cfg = Config(continue_cfg_dict)
     start_training(continue_cfg)
 
@@ -350,26 +365,33 @@ def test_continue_training_and_finetuning_pipeline(
 
     # Weights must remain finite and update from epoch 1 to epoch 2
     for k in weights_epoch2:
-        assert torch.all(torch.isfinite(weights_epoch2[k])), f'Weight {k} contains NaN/Inf'
+        assert torch.all(torch.isfinite(weights_epoch2[k])), (
+            f'Weight {k} contains NaN/Inf'
+        )
 
     lstm_weights_updated = any(
         not torch.equal(weights_epoch1[k], weights_epoch2[k])
-        for k in weights_epoch1 if 'lstm' in k
+        for k in weights_epoch1
+        if 'lstm' in k
     )
-    assert lstm_weights_updated, 'LSTM weights did not update during continue_run'
+    assert lstm_weights_updated, (
+        'LSTM weights did not update during continue_run'
+    )
 
     # 3. Test finetune with frozen feature embeddings (only train head)
     finetune_dir = str(tmp_path / 'runs_finetune_child')
     finetune_cfg_dict = _get_base_config_dict(
         integration_data_env, 'test_finetuned', finetune_dir
     )
-    finetune_cfg_dict.update({
-        'base_run_dir': str(actual_run_dir),
-        'is_finetuning': True,
-        'finetune_modules': ['head'],
-        'epochs': 1,
-        'clip_gradient_norm': 1.0,
-    })
+    finetune_cfg_dict.update(
+        {
+            'base_run_dir': str(actual_run_dir),
+            'is_finetuning': True,
+            'finetune_modules': ['head'],
+            'epochs': 1,
+            'clip_gradient_norm': 1.0,
+        }
+    )
     finetune_cfg = Config(finetune_cfg_dict)
     start_training(finetune_cfg)
 
@@ -394,7 +416,9 @@ def test_continue_training_and_finetuning_pipeline(
             )
             if not torch.equal(weights_finetuned[k], weights_epoch1[k]):
                 head_updated = True
-    assert head_updated, 'Unfrozen head parameters did not update during finetuning!'
+    assert head_updated, (
+        'Unfrozen head parameters did not update during finetuning!'
+    )
 
     # Resuming uses the restored epoch, whereas finetuning starts at epoch 1.
     # Frozen parameters have no gradients and must not prevent diagnostics.
@@ -445,9 +469,7 @@ def test_inference_mode_without_ground_truth(integration_data_env, tmp_path):
 
 @pytest.mark.slow
 @pytest.mark.integration
-def test_numerical_determinism_with_fixed_seed(
-    integration_data_env, tmp_path
-):
+def test_numerical_determinism_with_fixed_seed(integration_data_env, tmp_path):
     """Verifies that runs with fixed seeds produce exact numerical equality."""
     run_dir_1 = str(tmp_path / 'runs_determ_1')
     run_dir_2 = str(tmp_path / 'runs_determ_2')
@@ -495,13 +517,16 @@ def test_numerical_determinism_with_fixed_seed(
     start_evaluation(cfg=cfg_1, run_dir=actual_dir_1, epoch=1, period='test')
     start_evaluation(cfg=cfg_2, run_dir=actual_dir_2, epoch=1, period='test')
 
-    with xr.open_zarr(
-        actual_dir_1 / 'test' / 'model_epoch001' / 'test_results.zarr',
-        consolidated=False,
-    ) as ds_pred_1, xr.open_zarr(
-        actual_dir_2 / 'test' / 'model_epoch001' / 'test_results.zarr',
-        consolidated=False,
-    ) as ds_pred_2:
+    with (
+        xr.open_zarr(
+            actual_dir_1 / 'test' / 'model_epoch001' / 'test_results.zarr',
+            consolidated=False,
+        ) as ds_pred_1,
+        xr.open_zarr(
+            actual_dir_2 / 'test' / 'model_epoch001' / 'test_results.zarr',
+            consolidated=False,
+        ) as ds_pred_2,
+    ):
         np.testing.assert_allclose(
             ds_pred_1['streamflow_sim'].values,
             ds_pred_2['streamflow_sim'].values,
@@ -543,3 +568,197 @@ def test_run_cli_entrypoints(integration_data_env, tmp_path):
     continue_run(run_dir=actual_run_dir, gpu=-1)
     continue_dir = actual_run_dir / 'continue_training_from_epoch001'
     assert continue_dir.is_dir()
+
+
+def run_cli(argv: list[str]) -> None:
+    """Run the ``googlehydrology`` CLI in-process with the given arguments."""
+    with patch.object(sys, 'argv', ['googlehydrology', *argv]):
+        run._main()  # noqa: SLF001
+
+
+def _assimilation_config_dict() -> dict[str, Any]:
+    return {
+        'assimilation_components': {
+            'static_embedding': {'regularization_weight': 0.01},
+            'hindcast_embedding': {'regularization_weight': 0.01},
+        },
+        'assimilation_window': 10,
+        'epochs': 5,
+        'initial_learning_rate': 0.05,
+        'loss': 'MSE',
+    }
+
+
+def _train_run_with_da_config(
+    env_info: dict[str, str], root: Path, head: str
+) -> Path:
+    """Train one epoch with a DA block (DA off) and return the run directory."""
+    cfg_dict = _get_base_config_dict(env_info, f'test_da_{head}', str(root))
+    cfg_dict['epochs'] = 1
+    # Figures are only logged for up to `validate_n_random_basins` basins.
+    cfg_dict['log_n_figures'] = 1
+    cfg_dict['validate_n_random_basins'] = 8
+    cfg_dict['save_state'] = True
+    cfg_dict['assimilation_config'] = _assimilation_config_dict()
+    if head == 'cmal':
+        cfg_dict.update(
+            {
+                'head': 'cmal',
+                'loss': 'CMAL',
+                'n_distributions': 3,
+                'n_samples': 5,
+            }
+        )
+    start_training(Config(cfg_dict))
+    return next(root.glob('*'))
+
+
+def _update_run_config(run_dir: Path, **updates: object) -> Config:
+    """Update the run's config.yml (what the CLI reads) in place."""
+    cfg = Config(run_dir / 'config.yml')
+    cfg.update_config(updates)
+    (run_dir / 'config.yml').unlink()  # dump_config refuses to overwrite.
+    cfg.dump_config(run_dir)
+    return cfg
+
+
+def _evaluate_cli(run_dir: Path, *, assimilate: bool) -> Path:
+    """Evaluate epoch 1 of the run through the CLI; return the results dir."""
+    _update_run_config(run_dir, assimilate=assimilate)
+    run_cli(['evaluate', '--run-dir', str(run_dir), '--epoch', '1'])
+    return run_dir / 'test' / 'model_epoch001'
+
+
+def _snapshot(paths: list[Path]) -> dict[Path, bytes]:
+    return {p: p.read_bytes() for p in paths}
+
+
+@pytest.fixture(scope='module')
+def trained_regression_run(
+    integration_data_env: dict[str, str],
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Path:
+    """Train a regression run (one epoch) whose config carries a DA block."""
+    root = tmp_path_factory.mktemp('runs_da_regression')
+    return _train_run_with_da_config(integration_data_env, root, 'regression')
+
+
+@pytest.fixture(scope='module')
+def trained_cmal_run(
+    integration_data_env: dict[str, str],
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Path:
+    """Train a CMAL run (one epoch) whose config carries a DA block."""
+    root = tmp_path_factory.mktemp('runs_da_cmal')
+    return _train_run_with_da_config(integration_data_env, root, 'cmal')
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_evaluation_with_data_assimilation(
+    trained_regression_run: Path,
+) -> None:
+    """`evaluate` with `assimilate: true` writes separate, different results."""
+    run_dir = trained_regression_run
+    eval_dir = _evaluate_cli(run_dir, assimilate=False)
+    # `evaluate` (not `infer`) writes metrics only; DA results are persisted
+    # regardless of the mode because they are the point of running DA.
+    assert not (eval_dir / 'test_results.zarr').exists()
+    metrics_baseline = pd.read_csv(eval_dir / 'test_metrics.csv')
+    figures = sorted(
+        Path(Config(run_dir / 'config.yml').img_log_dir).rglob('*.png')
+    )
+    states = sorted((run_dir / 'hot_start_states').glob('state_*.npz'))
+    assert figures
+    assert states
+    side_effects = _snapshot(figures + states)
+
+    eval_dir = _evaluate_cli(run_dir, assimilate=True)
+
+    da_results = eval_dir / 'test_results_data_assimilation.zarr'
+    assert da_results.is_dir()
+    df_metrics = pd.read_csv(eval_dir / 'test_metrics_data_assimilation.csv')
+    assert len(df_metrics) == len(metrics_baseline) == 8
+    assert np.all(np.isfinite(df_metrics['NSE'].to_numpy()))
+    assert not np.allclose(
+        df_metrics['NSE'].to_numpy(), metrics_baseline['NSE'].to_numpy()
+    )
+    # Non-DA artefacts are untouched; DA side effects use the suffix.
+    pd.testing.assert_frame_equal(
+        pd.read_csv(eval_dir / 'test_metrics.csv'), metrics_baseline
+    )
+    assert _snapshot(figures + states) == side_effects
+    assert sorted(
+        (run_dir / 'hot_start_states').glob('*_data_assimilation.npz')
+    )
+    assert any(
+        'data_assimilation' in p.name
+        for p in Path(figures[0]).parent.rglob('*.png')
+    )
+
+    # The assimilated series are finite, aligned with the observations and
+    # differ from a baseline inference run.
+    _update_run_config(run_dir, assimilate=False)
+    run_cli(['infer', '--run-dir', str(run_dir), '--epoch', '1'])
+    with (
+        xr.open_zarr(eval_dir / 'test_results.zarr', consolidated=False) as ds,
+        xr.open_zarr(da_results, consolidated=False) as ds_da,
+    ):
+        sim = ds['streamflow_sim'].to_numpy()
+        sim_da = ds_da['streamflow_sim'].to_numpy()
+        assert sim_da.shape == sim.shape
+        assert np.all(np.isfinite(sim_da))
+        np.testing.assert_array_equal(
+            ds_da['streamflow_obs'].to_numpy(), ds['streamflow_obs'].to_numpy()
+        )
+        assert not np.allclose(sim_da, sim)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_data_assimilation_without_config_raises(
+    integration_data_env: dict[str, str], tmp_path: Path
+) -> None:
+    """Requesting DA on a run without an assimilation_config fails loudly."""
+    cfg_dict = _get_base_config_dict(
+        integration_data_env, 'test_da_no_config', str(tmp_path / 'runs')
+    )
+    cfg_dict['epochs'] = 1
+    start_training(Config(cfg_dict))
+    run_dir = next((tmp_path / 'runs').glob('*'))
+
+    with pytest.raises(ValueError, match='no assimilation_config'):
+        _evaluate_cli(run_dir, assimilate=True)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.parametrize('da_loss', ['MSE', 'NSE'])
+def test_cmal_evaluation_with_data_assimilation(
+    trained_cmal_run: Path, da_loss: str
+) -> None:
+    """DA on a CMAL model samples from the assimilated outputs (any loss)."""
+    run_dir = trained_cmal_run
+    eval_dir = _evaluate_cli(run_dir, assimilate=False)
+    metrics_baseline = pd.read_csv(eval_dir / 'test_metrics.csv')
+    # The NSE assimilation loss needs per-basin target stds although the
+    # training loss is CMAL (the shipped example config uses this combination).
+    _update_run_config(
+        run_dir,
+        assimilation_config={**_assimilation_config_dict(), 'loss': da_loss},
+    )
+
+    eval_dir = _evaluate_cli(run_dir, assimilate=True)
+
+    df_metrics = pd.read_csv(eval_dir / 'test_metrics_data_assimilation.csv')
+    assert len(df_metrics) == 8
+    assert np.all(np.isfinite(df_metrics['NSE'].to_numpy()))
+    assert not np.allclose(
+        df_metrics['NSE'].to_numpy(), metrics_baseline['NSE'].to_numpy()
+    )
+    with xr.open_zarr(
+        eval_dir / 'test_results_data_assimilation.zarr', consolidated=False
+    ) as ds:
+        sim = ds['streamflow_sim']
+        assert sim.sizes['samples'] == 5
+        assert np.all(np.isfinite(sim.to_numpy()))

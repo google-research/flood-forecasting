@@ -67,6 +67,17 @@ TENSOR_VARS = [
 ]
 MULTIMET_MINIMUM_LEAD_TIME = 1
 
+def _needs_per_basin_target_stds(cfg: Config) -> bool:
+    """Whether the training loss or the data assimilation loss is NSE."""
+    if cfg.loss.lower() == 'nse':
+        return True
+    assimilation_config = cfg.assimilation_config
+    return (
+        assimilation_config is not None
+        and assimilation_config.loss.lower() == 'nse'
+    )
+
+
 class MultimetDataLoader(torch.utils.data.DataLoader):
     """Custom DataLoader that handles lazy data loading.
 
@@ -365,7 +376,7 @@ class Multimet(Dataset):
         # TODO (future) :: Find a better way to decide whether to calculate these. At least keep a list of
         # losses that require them somewhere like `training.__init__.py`. Perhaps simply always calculate.
         self._per_basin_target_stds = None
-        if cfg.loss.lower() in ['nse']:
+        if _needs_per_basin_target_stds(cfg):
             LOGGER.debug('create per_basin_target_stds')
             self._per_basin_target_stds = self._dataset[
                 self._target_features

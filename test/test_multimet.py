@@ -563,6 +563,42 @@ def test_forecast_dataset_per_basin_target_stds(
     assert 'per_basin_target_stds' not in sample_mse
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ('da_loss', 'expected'), [('NSE', True), ('nse', True), ('MSE', False)]
+)
+@patch('googlehydrology.datasetzoo.multimet.load_basin_file')
+@patch.object(Multimet, '_load_data')
+def test_forecast_dataset_per_basin_target_stds_for_assimilation_loss(
+    mock_load_data,
+    mock_load_basin_file,
+    get_config,
+    sample_basins,
+    mock_load_data_return,
+    da_loss,
+    expected,
+):
+    """An NSE assimilation loss provides the stds like an NSE training loss."""
+    mock_load_basin_file.return_value = sample_basins
+    mock_load_data.return_value = mock_load_data_return
+    cfg = get_config('default')
+    cfg.loss = 'mse'
+    cfg.update_config(
+        {
+            'assimilation_config': {
+                'assimilation_components': ['static_embedding'],
+                'assimilation_window': 1,
+                'initial_learning_rate': 0.1,
+                'loss': da_loss,
+            }
+        }
+    )
+
+    sample = Multimet(cfg=cfg, is_train=True, period='train')[0]
+
+    assert ('per_basin_target_stds' in sample) is expected
+
+
 @patch('googlehydrology.datasetzoo.multimet.load_basin_file')
 @patch.object(Multimet, '_load_data')
 def test_forecast_dataset_timestep_counter(

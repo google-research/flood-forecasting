@@ -466,3 +466,29 @@ def test_cmal_loss_requires_n_distributions_from_run_config(
     assert acfg.loss == 'CMAL'
     with pytest.raises(ValueError, match='n_distributions'):
         get_loss_obj(acfg)
+
+
+@pytest.mark.unit
+def test_assimilation_example_config_parses() -> None:
+    """The example DA config parses; DA is off by default."""
+    path = (
+        Path(__file__).parent.parent
+        / 'example-configs'
+        / 'camels-multimet-mean-embedding-forecast-lstm-assimilation-config.yml'
+    )
+    cfg = Config(path)
+    assert not cfg.assimilate
+    acfg = cfg.assimilation_config
+    assert set(acfg.assimilation_components) == {
+        'static_embedding',
+        'hindcast_embedding',
+        'forecast_embedding',
+    }
+    assert acfg.lead_time == cfg.lead_time
+    assert acfg.seq_length == cfg.seq_length
+    assert acfg.assimilation_window <= cfg.seq_length - cfg.lead_time
+    assert acfg.early_stopping_tolerance == 0.05
+    # The DA loss is NSE while training uses CMAL: the datasets provide
+    # `per_basin_target_stds` for either (see test_multimet).
+    assert acfg.loss == 'NSE'
+    assert cfg.loss == 'CMALLoss'

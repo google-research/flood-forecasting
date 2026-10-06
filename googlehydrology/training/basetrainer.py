@@ -332,6 +332,9 @@ class BaseTrainer(object):
                     metrics=self.cfg.metrics,
                     model=self.model,
                     experiment_logger=self.experiment_logger.valid(),
+                    # Validation during training never assimilates, even if
+                    # the run config sets `assimilate: true` for evaluation.
+                    data_assimilation=False,
                 )
 
                 valid_metrics = {
