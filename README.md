@@ -73,6 +73,7 @@ The most direct way to explore this repository is through our interactive tutori
 
 * **Model Evaluation:** Load pre-trained Google Hydrology models and calculate performance metrics (NSE, KGE) on real-world basin data.  
 * **Fine-Tuning for Performance:** Learn how to fine-tune the `static_embedding_fc` layer. This is a powerful technique for improving predictions on "outlier" basins (e.g., basins with unusual sizes or geology) without retraining the entire model.
+* **Data Assimilation:** Correct a trained model with recent streamflow observations at forecast time (`run infer --assimilate`), using the template `tutorial/configs/assimilation-config.yml`, and compare assimilated against unassimilated forecasts.
 * **Visualizing Results:** Compare model hydrographs against observed discharge data.
 
 **Run it now:** 
