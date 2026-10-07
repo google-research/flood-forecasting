@@ -371,9 +371,34 @@ def load_data_and_metrics(
     model_data, _ = load_test_results(model_run_dir, suffix=suffix)
     print(" simulations loaded successfully.")
 
+    # `run infer` appends basins to the results zarr one at a time, so a results
+    # file that is still being written (or a run that crashed half-way) has
+    # fewer basins than expected. Flag it instead of failing later in a plot.
+    loaded_basins = set(map(str, model_data['basin'].values))
+    missing_basins = sorted(set(map(str, test_basin_ids)) - loaded_basins)
+    if missing_basins:
+        print(
+            f"WARNING: {len(missing_basins)} of {len(test_basin_ids)} test basins are "
+            f"missing from the results of {model_name}: {missing_basins}.\n"
+            "  If an inference run for this directory is still in progress, wait "
+            "for it to finish and re-run this cell."
+        )
+
     metrics_file_path = os.path.join(model_run_dir, 'test', f'precalculated_metrics{suffix}.csv')
 
-    if calculate_statistics or not os.path.exists(metrics_file_path):
+    model_metrics = None
+    if not calculate_statistics and os.path.exists(metrics_file_path):
+        model_metrics = pd.read_csv(metrics_file_path)
+        if {'basin_id', 'lead_time'}.issubset(model_metrics.columns):
+            model_metrics = model_metrics.set_index(['basin_id', 'lead_time'])
+        # A cached metrics file from an older run of the same directory must not
+        # be paired with newer simulations: recompute if the basins disagree.
+        cached_basins = set(map(str, model_metrics.index.get_level_values('basin_id').unique()))
+        if cached_basins != loaded_basins:
+            print(f"Cached metrics in {metrics_file_path} do not match the loaded results; recalculating.")
+            model_metrics = None
+
+    if model_metrics is None:
         print(f"Calculating metrics for: {model_name} ...", end='')
         model_metrics = calculate_metrics_for_run(
             model_data['streamflow_sim'], 
@@ -381,10 +406,6 @@ def load_data_and_metrics(
         )
         os.makedirs(os.path.dirname(metrics_file_path), exist_ok=True)
         model_metrics.to_csv(metrics_file_path)
-    else:
-        model_metrics = pd.read_csv(metrics_file_path)
-        if {'basin_id', 'lead_time'}.issubset(model_metrics.columns):
-            model_metrics = model_metrics.set_index(['basin_id', 'lead_time'])
 
     return model_data, model_metrics
 
@@ -528,6 +549,16 @@ def plot_hydrograph_comparison(
     """
     if isinstance(lead_times, int):
         lead_times = [lead_times]
+
+    # Fail with a readable message instead of xarray's generic KeyError.
+    for name, da in [('observed', observed)] + list(simulations.items()):
+        available = list(map(str, da['basin'].values))
+        if str(basin_id) not in available:
+            raise ValueError(
+                f"Basin '{basin_id}' is not in the '{name}' data. Available basins: "
+                f"{available}. If a results file was loaded while an inference run "
+                "was still writing to it, re-run the cell that loads the results."
+            )
 
     fig, axes = plt.subplots(len(lead_times), 1, figsize=(12, 4 * len(lead_times)), sharex=True, squeeze=False)
     colors = ['tab:blue', 'tab:red', 'tab:green', 'tab:purple', 'tab:orange']
