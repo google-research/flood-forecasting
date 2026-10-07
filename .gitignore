@@ -19,4 +19,6 @@ docs/build/*
 tutorial/configs/finetune-config-*.yml
 tutorial/configs/assimilation-config-*.yml
 tutorial/basin-lists/camels_*.txt
+!tutorial/basin-lists/camels_13235000.txt
+!tutorial/basin-lists/camels_12115000.txt
 tutorial/model-runs/**/output.log

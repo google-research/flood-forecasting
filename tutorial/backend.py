@@ -261,6 +261,12 @@ def plot_train_test_shapefile(
 DA_SUFFIX = '_data_assimilation'
 
 
+def has_test_results(run_dir: str, suffix: str = '') -> bool:
+    """Returns True if at least one epoch directory has results for `suffix`."""
+    search_pattern = os.path.join(run_dir, 'test', 'model_epoch*', f'test_results{suffix}.zarr')
+    return bool(glob.glob(search_pattern))
+
+
 def load_test_results(run_dir: str, suffix: str = '') -> Tuple[xr.Dataset, int]:
     """
     Finds and loads the test results from the latest available epoch.
@@ -651,8 +657,8 @@ def generate_basin_finetune_config(
     with open(template_path, 'r') as f:
         config_data = yaml.safe_load(f)
     
-    # Apply placeholders
-    config_data = replace_placeholders(config_data, basin_id)
+    # Apply placeholders and point any tutorial paths to the local tutorial folder
+    config_data = rebase_config_paths(replace_placeholders(config_data, basin_id))
     
     # Set paths
     config_data['base_run_dir'] = base_model_dir
