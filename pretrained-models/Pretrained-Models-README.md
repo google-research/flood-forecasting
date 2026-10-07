@@ -83,8 +83,42 @@ test\_end\_date: 31/12/2023
 
 **To run the fine-tuning process:**
 
-python googlehydrology/run.py train \--config-file finetune\_config.yml
+run finetune \--config-file finetune\_config.yml
 
 ### **Note on Data Scaling**
 
 When fine-tuning using `base_run_dir`, OpenHydroNet will automatically load the dataset Scaler from our pre-trained directory. It is strictly required that the new fine-tuning dataset uses the exact same input variables as the pre-trained model.
+
+## **5\. How to Use for Data Assimilation**
+
+The released model (`mean_embedding_forecast_lstm` with a CMAL head) is compatible with the gradient-based data assimilation (DA) of OpenHydroNet (see `googlehydrology/evaluation/assimilation.py` and the "Data assimilation settings" section of the configuration docs). DA does not train or change the weights: at every forecast issue date it adjusts the model's `hindcast_embedding` and `static_embedding` so that the output matches the streamflow observed in a window before the issue date, then rolls the forecast out from the corrected state. This is a valid use of the released weights for *future inference* and *spatially held-out basins*; the in-sample caveat above still applies to the training period.
+
+The shipped `config.yml` contains **no** `assimilation_config` block. Add one to a **copy** of the config (do not edit the file in the run directory) and pass the copy via `--config-file` together with `--run-dir`. For `evaluate` / `infer`, `--config-file` *replaces* the run's `config.yml` entirely, so the copy must keep all other settings. In that copy you must also set the paths and basin files for your data (`run_dir`, `test_basin_file`, `test_start_date` / `test_end_date`, `statics_data_dir`, `targets_data_dir`, `dynamics_data_dir`), as the released values are empty or point to the original training machine.
+
+### **Example Data Assimilation Block**
+
+Append this to the copied config (mirrors `example-configs/camels-multimet-mean-embedding-forecast-lstm-assimilation-config.yml`):
+
+```yaml
+assimilate: true  # or leave false and pass --assimilate on the command line
+assimilation_config:
+  assimilation_components:
+    - hindcast_embedding
+    - static_embedding
+  assimilation_window: 90       # observed days before the issue date; <= seq_length - lead_time = 358
+  regularization_weight: 0.5    # background term, dimensionless
+  initial_learning_rate: 0.001  # mandatory; not inherited from training
+  epochs: 50
+  optimizer: Adam
+  loss: NSE                     # or CMAL (this model has a CMAL head); default MSE
+  clip_gradient_norm: 1.0
+  early_stopping_tolerance: 0.05
+```
+
+**To run inference with data assimilation:**
+
+```
+run infer --run-dir /path/to/downloaded/google-floodhub-settings-110-epochs --config-file /path/to/config_with_da.yml --assimilate
+```
+
+Outputs are written next to the regular results with the suffix `_data_assimilation` (`test_metrics_data_assimilation.csv`, `test_results_data_assimilation.zarr`), so unassimilated results are never overwritten.

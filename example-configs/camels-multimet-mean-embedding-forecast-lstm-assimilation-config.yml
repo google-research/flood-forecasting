@@ -25,7 +25,7 @@
 # Basic identifiers and housekeeping for the experiment.
 
 # Unique name for this experiment. Output folders will use this name.
-experiment_name: camels-multimet-mean-embedding-forecast-lstm
+experiment_name: camels-multimet-mean-embedding-forecast-lstm-assimilation
 
 # Directory where model artifacts (weights, config copy, logs) will be saved.
 run_dir: 
@@ -269,7 +269,7 @@ cache:
 
 # Data assimilation is off by default so that a plain `evaluate` reproduces the
 # regular forecasts. Enable it either here (`assimilate: true`) or per run with
-# the CLI flag `googlehydrology evaluate --assimilate`.
+# the CLI flag `run evaluate --assimilate`.
 assimilate: false
 
 assimilation_config:
@@ -290,7 +290,8 @@ assimilation_config:
   assimilation_window: 90
   # Maximum number of optimization steps per batch
   epochs: 50
-  # Constant learning rate of the optimizer
+  # Constant learning rate of the optimizer. Mandatory: it is not inherited
+  # from the training learning rate.
   initial_learning_rate: 0.001
   optimizer: Adam
   # Loss between the model prediction and the observations in the window

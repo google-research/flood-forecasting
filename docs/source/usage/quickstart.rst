@@ -80,7 +80,7 @@ OpenHydroNet uses the `Caravan <https://www.nature.com/articles/s41597-023-01975
 Download Caravan (NetCDF Version)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-A small amount of data is provided in the ``~/tutorial/data/Caravan-nc`` folder. This data is sufficient for running the tutorial example. For more comprehensive model runs, it is necessary to download the Caravan dataset locally.
+A small amount of data is provided in the ``tutorial/Caravan-nc`` folder of the repository. This data is sufficient for running the tutorial example. For more comprehensive model runs, it is necessary to download the Caravan dataset locally.
 
 1. Navigate to the `Zenodo repository <https://doi.org/10.5281/zenodo.6522634>`_.
 2. Download the **NetCDF version** of the dataset (e.g., ``Caravan-nc.tar.gz``). 
@@ -110,7 +110,7 @@ If you want to run models on watersheds that are not part of the published Carav
 Training Configuration
 ----------------------
 
-To train a model, you must create or modify a YAML configuration file. An example is provided in the ``tutorial/`` directory (``training-config.yml``).
+To train a model, you must create or modify a YAML configuration file. An example is provided in the ``tutorial/configs/`` directory (``train-config.yml``).
 
 Understanding the Dataset Splits
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -131,7 +131,7 @@ It is normal practice to keep the Validation and Test periods distinct to avoid 
 Local Path Requirements
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-Update these arguments in your configuration file (``~/tutorial/configs/training-config.yml``) to match your data source:
+Update these arguments in your configuration file (``tutorial/configs/train-config.yml``) to match your data source:
 
 =====================  ============================================================================================================
 Argument               Description
@@ -140,9 +140,9 @@ Argument               Description
 
 **train_basin_file**   Path to plain text files containing lists of basin IDs.
 
-**targets_data_dir**   Use the tutorial sample (``~/tutorial/data/Caravan-nc/``) OR the unpacked full dataset, wherever you put it.
+**targets_data_dir**   Use the tutorial sample (``tutorial/Caravan-nc/``) OR the unpacked full dataset, wherever you put it.
 
-**statics_data_dir**   Use the tutorial sample (``~/tutorial/data/Caravan-nc/``) OR the unpacked full dataset, wherever you put it.
+**statics_data_dir**   Use the tutorial sample (``tutorial/Caravan-nc/``) OR the unpacked full dataset, wherever you put it.
 
 **dynamics_data_dir**   Path to the forcing data. For MultiMet, use the cloud bucket: ``gs://caravan-multimet/v1.1``.
 =====================  ============================================================================================================
@@ -156,7 +156,7 @@ Training a model
 
 .. code-block:: bash
 
-   run train --config-file ~/tutorial/training-config.yml
+   run train --config-file tutorial/configs/train-config.yml
 
 Evaluation
 ^^^^^^^^^^
@@ -175,3 +175,24 @@ To generate predictions without skipping NaN observations:
 .. code-block:: bash
 
    run infer --run-dir /path/to/your/model_run/
+
+Evaluation with data assimilation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Data assimilation corrects the forecasts of a trained ``mean_embedding_forecast_lstm``
+with recent streamflow observations (see :doc:`config` for the ``assimilation_config``
+block). It is enabled with the ``--assimilate`` flag in ``evaluate`` and ``infer`` mode:
+
+.. code-block:: bash
+
+   run evaluate --run-dir /path/to/your/model_run/ --assimilate
+
+If the run's ``config.yml`` has no ``assimilation_config`` block, add one to a copy of
+the config and pass it via ``--config-file`` (it replaces the run's ``config.yml``):
+
+.. code-block:: bash
+
+   run infer --run-dir /path/to/your/model_run/ --config-file /path/to/config_with_da.yml --assimilate
+
+Results are written with the suffix ``_data_assimilation`` (``test_metrics_data_assimilation.csv``,
+``test_results_data_assimilation.zarr``), so the regular results are not overwritten.

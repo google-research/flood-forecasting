@@ -45,7 +45,7 @@ dependencies:
   - numpy=2.4.*
   - pandas=2.3.*
   - parso=0.8.*
-  - pyarrow
+  - conda-forge::pyarrow
   - pydantic=2.12.*
   - pyogrio
   - pyproj

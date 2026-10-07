@@ -33,6 +33,7 @@ from tensorboard.backend.event_processing.event_accumulator import (
 
 from googlehydrology import run
 from googlehydrology.datasetzoo.caravan import load_caravan_timeseries_together
+from googlehydrology.evaluation import get_tester
 from googlehydrology.evaluation.evaluate import start_evaluation
 from googlehydrology.run import continue_run
 from googlehydrology.run import eval_run
@@ -780,3 +781,224 @@ def test_evaluation_assimilate_flag_overrides_config(
     assert (eval_dir / 'test_metrics_data_assimilation.csv').is_file()
     # The flag must not be written back into the run config.
     assert Config(run_dir / 'config.yml').assimilate is False
+
+
+# Basin counts of the tutorial basin lists used by the DA fixtures.
+N_TEST_BASINS = 8
+N_VALIDATION_BASINS = 5  # The validation basin file is the train file.
+
+
+def _da_zarr(eval_dir: Path) -> Path:
+    return eval_dir / 'test_results_data_assimilation.zarr'
+
+
+def _load_da_sim(eval_dir: Path) -> xr.DataArray:
+    """Load the assimilated simulation into memory (the store may change)."""
+    with xr.open_zarr(_da_zarr(eval_dir), consolidated=False) as ds:
+        return ds['streamflow_sim'].load()
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_evaluate_with_external_config_file_and_assimilate(
+    trained_regression_run: Path,
+    tmp_path: Path,
+    request: pytest.FixtureRequest,
+) -> None:
+    """`--config-file` supplies the DA block; the run config stays untouched.
+
+    The run config is stripped of its DA block first, so DA can only come
+    from the external file (`--config-file` replaces the run config in
+    evaluate/infer). The block is restored afterwards for the other tests
+    sharing the module fixture.
+    """
+    run_dir = trained_regression_run
+    run_config = run_dir / 'config.yml'
+    da_block = _assimilation_config_dict()
+    request.addfinalizer(
+        lambda: _update_run_config(run_dir, assimilation_config=da_block)
+    )
+    _update_run_config(run_dir, assimilate=False, assimilation_config=None)
+    assert Config(run_config).assimilation_config is None
+    before = run_config.read_bytes()
+
+    external = Config(run_config)
+    external.update_config(
+        {
+            'assimilate': True,
+            'assimilation_config': {**da_block, 'epochs': 2},
+        }
+    )
+    external.dump_config(tmp_path, 'external.yml')
+    eval_dir = run_dir / 'test' / 'model_epoch001'
+    shutil.rmtree(_da_zarr(eval_dir), ignore_errors=True)
+
+    run_cli(
+        [
+            'evaluate',
+            '--run-dir',
+            str(run_dir),
+            '--config-file',
+            str(tmp_path / 'external.yml'),
+            '--epoch',
+            '1',
+            '--assimilate',
+        ]
+    )
+    assert _da_zarr(eval_dir).is_dir()
+    assert (eval_dir / 'test_metrics_data_assimilation.csv').is_file()
+    assert run_config.read_bytes() == before
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_infer_with_data_assimilation(trained_regression_run: Path) -> None:
+    """`infer --assimilate` writes finite assimilated series for all basins."""
+    run_dir = trained_regression_run
+    _update_run_config(run_dir, assimilate=False)
+    basin_file = Path(Config(run_dir / 'config.yml').test_basin_file)
+    with basin_file.open() as f:
+        basins = sorted(line.strip() for line in f if line.strip())
+    assert len(basins) == N_TEST_BASINS
+
+    run_cli(
+        ['infer', '--run-dir', str(run_dir), '--epoch', '1', '--assimilate']
+    )
+
+    eval_dir = run_dir / 'test' / 'model_epoch001'
+    assert _da_zarr(eval_dir).is_dir()
+    with xr.open_zarr(_da_zarr(eval_dir), consolidated=False) as ds:
+        assert sorted(ds['basin'].to_numpy().tolist()) == basins
+        sim = ds['streamflow_sim'].to_numpy()
+        obs = ds['streamflow_obs'].to_numpy()
+    assert np.isfinite(obs).any()
+    assert np.all(np.isfinite(sim[np.isfinite(obs)]))
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_data_assimilation_is_deterministic(
+    trained_regression_run: Path,
+) -> None:
+    """Two DA evaluations of the same run give bit-identical simulations."""
+    run_dir = trained_regression_run
+    eval_dir = _evaluate_cli(run_dir, assimilate=True)
+    first = _load_da_sim(eval_dir)
+
+    eval_dir = _evaluate_cli(run_dir, assimilate=True)
+    second = _load_da_sim(eval_dir)
+
+    assert np.all(np.isfinite(first.to_numpy()))
+    xr.testing.assert_identical(first, second)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_assimilate_validation_period(trained_regression_run: Path) -> None:
+    """DA on the validation period writes metrics but no results store.
+
+    This pins the current behaviour of the tester: the results zarr is only
+    written for the test period, whatever the mode.
+    """
+    run_dir = trained_regression_run
+    _update_run_config(run_dir, assimilate=False)
+    run_cli(
+        [
+            'evaluate',
+            '--run-dir',
+            str(run_dir),
+            '--period',
+            'validation',
+            '--epoch',
+            '1',
+            '--assimilate',
+        ]
+    )
+
+    val_dir = run_dir / 'validation' / 'model_epoch001'
+    assert (val_dir / 'validation_metrics_data_assimilation.csv').is_file()
+    df_metrics = pd.read_csv(
+        val_dir / 'validation_metrics_data_assimilation.csv'
+    )
+    assert len(df_metrics) == N_VALIDATION_BASINS
+    assert not (val_dir / 'validation_results_data_assimilation.zarr').exists()
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_assimilate_without_epoch_uses_last_checkpoint(
+    trained_regression_run: Path,
+) -> None:
+    """Without `--epoch`, DA evaluates the last checkpoint of the run."""
+    run_dir = trained_regression_run
+    _update_run_config(run_dir, assimilate=False)
+    last = max(run_dir.glob('model_epoch*.pt'))
+
+    run_cli(['evaluate', '--run-dir', str(run_dir), '--assimilate'])
+
+    eval_dir = run_dir / 'test' / last.stem
+    assert eval_dir.name == 'model_epoch001'
+    assert _da_zarr(eval_dir).is_dir()
+    assert (eval_dir / 'test_metrics_data_assimilation.csv').is_file()
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_evaluate_flag_false_skips_engine_despite_config(
+    trained_regression_run: Path,
+) -> None:
+    """`evaluate(data_assimilation=False)` never calls the engine."""
+    run_dir = trained_regression_run
+    cfg = _update_run_config(run_dir, assimilate=True)
+    tester = get_tester(
+        cfg=cfg, run_dir=run_dir, period='test', init_model=True
+    )
+    assert tester.assimilation is not None
+
+    with patch.object(
+        tester.assimilation, 'assimilate', side_effect=AssertionError
+    ) as mocked:
+        tester.evaluate(epoch=1, data_assimilation=False)
+
+    mocked.assert_not_called()
+    eval_dir = run_dir / 'test' / 'model_epoch001'
+    assert (eval_dir / 'test_metrics.csv').is_file()
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_handoff_run_rejects_assimilation_before_loading_data(
+    integration_data_env: dict[str, str], tmp_path: Path
+) -> None:
+    """A HandoffForecastLSTM run with a DA block fails fast with the flag."""
+    cfg_dict = _get_base_config_dict(
+        integration_data_env, 'test_da_handoff', str(tmp_path / 'runs')
+    )
+    cfg_dict.update(
+        {
+            'model': 'handoff_forecast_lstm',
+            'epochs': 1,
+            'state_handoff_network': {
+                'type': 'fc',
+                'hiddens': [32, 16],
+                'activation': ['tanh', 'linear'],
+                'dropout': 0.0,
+            },
+            'assimilation_config': _assimilation_config_dict(),
+        }
+    )
+    start_training(Config(cfg_dict))
+    run_dir = next((tmp_path / 'runs').glob('*'))
+
+    with pytest.raises(ValueError, match='does not support data assimilation'):
+        run_cli(
+            [
+                'evaluate',
+                '--run-dir',
+                str(run_dir),
+                '--epoch',
+                '1',
+                '--assimilate',
+            ]
+        )
+    assert not (run_dir / 'test').exists()

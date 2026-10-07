@@ -7,6 +7,7 @@ Submodules
 .. toctree::
    :maxdepth: 4
 
+   googlehydrology.evaluation.assimilation
    googlehydrology.evaluation.evaluate
    googlehydrology.evaluation.metrics
    googlehydrology.evaluation.plots

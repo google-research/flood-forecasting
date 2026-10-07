@@ -196,6 +196,41 @@ def test_window_exceeding_observed_steps_rejected(
         AssimilationConfig(_da_dict(assimilation_window=window), parent)
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'parent',
+    [
+        pytest.param(
+            {**_PARENT, 'use_frequencies': ['1D', '1h']},
+            id='several_use_frequencies',
+        ),
+        pytest.param(
+            {**_PARENT, 'seq_length': {'1D': 30, '1h': 240}},
+            id='seq_length_dict',
+        ),
+        pytest.param(
+            {**_PARENT, 'predict_last_n': {'1D': 1, '1h': 24}},
+            id='predict_last_n_dict',
+        ),
+    ],
+)
+def test_multi_frequency_run_config_rejected(parent: dict) -> None:
+    """Multi-frequency run configs are rejected: DA is single-frequency."""
+    with pytest.raises(ValueError, match='single frequency'):
+        AssimilationConfig(_da_dict(), parent)
+
+
+@pytest.mark.unit
+def test_single_frequency_list_accepted() -> None:
+    """A one-element ``use_frequencies`` list is a single-frequency run."""
+    acfg = AssimilationConfig(
+        _da_dict(), {**_PARENT, 'use_frequencies': ['1D']}
+    )
+
+    assert acfg.use_frequencies == ['1D']
+    assert acfg.assimilation_window == 10
+
+
 _TOP_LEVEL_INVALID = [
     ({'assimilation_targets': ['x']}, r"'assimilation_targets'.*Allowed"),
     ({'regularization': ['bg_embedding']}, 'not recognized'),

@@ -7,6 +7,7 @@ Submodules
 .. toctree::
    :maxdepth: 4
 
+   googlehydrology.utils.assimilationconfig
    googlehydrology.utils.cmal_deterministic
    googlehydrology.utils.config
    googlehydrology.utils.configutils

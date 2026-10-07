@@ -22,14 +22,18 @@ error of the prior is ``SHIFT**2`` and assimilation must reduce it.
 import logging
 from collections.abc import Callable
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import torch
 import xarray as xr
 
+from googlehydrology.evaluation.assimilation import Assimilation
+from googlehydrology.modelzoo.handoff_forecast_lstm import HandoffForecastLSTM
 from googlehydrology.modelzoo.mean_embedding_forecast_lstm import (
     MeanEmbeddingForecastLSTM,
 )
+from googlehydrology.training.loss import MaskedMSELoss, MaskedNSELoss
 from googlehydrology.utils.config import Config
 from test.da_helpers import (
     ALL_COMPONENTS,
@@ -41,11 +45,15 @@ from test.da_helpers import (
     WINDOW,
     assimilate,
     build_model,
+    da_config,
     make_data,
     prior_output,
     select_rows,
     window_error,
     window_slice,
+)
+from test.test_handoff_forecast_lstm import (
+    _model_and_data as handoff_model_and_data,
 )
 
 ENGINE_LOGGER = 'googlehydrology.evaluation.assimilation'
@@ -405,3 +413,107 @@ def test_window_beyond_short_output_raises(
 
     with pytest.raises(ValueError, match='must fit within the model output'):
         assimilate(model, data)
+
+
+def _error_in_window(
+    model: MeanEmbeddingForecastLSTM,
+    output: dict[str, torch.Tensor],
+    data: dict,
+    window: int,
+) -> torch.Tensor:
+    """Per-sequence MSE inside a window of ``window`` steps, [B].
+
+    Like ``window_error`` but for an arbitrary window length; the window
+    ends ``LEAD_TIME`` steps before the end of both axes.
+    """
+    point = model.point_prediction(output)
+    end = point.shape[1] - LEAD_TIME
+    pred = point[:, end - window : end]
+    y = data['y']
+    obs = y[:, y.shape[1] - LEAD_TIME - window : y.shape[1] - LEAD_TIME]
+    return ((pred - obs) ** 2).flatten(1).nanmean(dim=1)
+
+
+@pytest.mark.unit
+def test_window_equals_full_observed_period(
+    tiny_mean_embedding_model: Callable, tiny_mean_embedding_data: Callable
+) -> None:
+    """The largest allowed window (``seq_length - lead_time``) assimilates."""
+    model = build_model(tiny_mean_embedding_model)
+    data = make_data(model, tiny_mean_embedding_data)
+    prior = prior_output(model, data)
+    window = SEQ_LENGTH - LEAD_TIME
+    assert _error_in_window(model, prior, data, window).mean() == (
+        pytest.approx(1.0)
+    )
+
+    output = assimilate(model, data, assimilation_window=window)
+
+    assert output['y_hat'].shape == prior['y_hat'].shape
+    assert torch.isfinite(output['y_hat']).all()
+    assert (_error_in_window(model, output, data, window) < 0.9).all()
+
+
+@pytest.mark.unit
+def test_window_of_one(
+    tiny_mean_embedding_model: Callable, tiny_mean_embedding_data: Callable
+) -> None:
+    """A single-step window runs and does not worsen the fit at that step."""
+    model = build_model(tiny_mean_embedding_model)
+    data = make_data(model, tiny_mean_embedding_data)
+    prior = prior_output(model, data)
+
+    output = assimilate(model, data, assimilation_window=1)
+
+    assert output['y_hat'].shape == prior['y_hat'].shape
+    assert torch.isfinite(output['y_hat']).all()
+    assert (
+        _error_in_window(model, output, data, 1)
+        <= _error_in_window(model, prior, data, 1)
+    ).all()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ('training_loss', 'da_loss', 'loss_cls'),
+    [
+        ('NSE', 'MSE', MaskedMSELoss),
+        ('MSE', 'NSE', MaskedNSELoss),
+    ],
+)
+def test_da_loss_is_independent_of_training_loss(
+    tiny_mean_embedding_model: Callable,
+    tiny_mean_embedding_data: Callable,
+    training_loss: str,
+    da_loss: str,
+    loss_cls: type,
+) -> None:
+    """The DA block's loss is used, whatever the training loss of the run."""
+    model = build_model(tiny_mean_embedding_model)
+    model.cfg.loss = training_loss
+    data = make_data(model, tiny_mean_embedding_data)
+    prior = prior_output(model, data)
+    engine = Assimilation(da_config(model, loss=da_loss))
+    assert isinstance(engine._loss_obj, loss_cls)  # noqa: SLF001
+    assert engine.cfg.loss == da_loss
+
+    output = engine.assimilate(model, data)
+
+    assert (
+        window_error(model, output, data) < window_error(model, prior, data)
+    ).all()
+
+
+@pytest.mark.unit
+def test_handoff_model_rejects_assimilation(tmp_path: Path) -> None:
+    """A model without assimilation components is rejected up front."""
+    with (
+        patch('googlehydrology.datautils.scaler.Scaler.load'),
+        patch('googlehydrology.datautils.scaler.Scaler.check_zero_scale'),
+    ):
+        model, data = handoff_model_and_data(tmp_path)
+    assert isinstance(model, HandoffForecastLSTM)
+    cfg = da_config(model, assimilation_components=['hindcast_embedding'])
+
+    with pytest.raises(ValueError, match='Unsupported assimilation components'):
+        Assimilation(cfg).assimilate(model, data)
