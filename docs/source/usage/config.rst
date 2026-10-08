@@ -2,7 +2,7 @@ Configuration Arguments
 =======================
 
 This page provides a list of possible configuration arguments. 
-Check out the file `tutorial/config.yml` for an example of how a config file could look like.
+Check out the file `tutorial/configs/train-config.yml` for an example of how a config file could look like.
 
 General experiment configurations
 ---------------------------------
@@ -36,6 +36,8 @@ Evaluation settings
 
 -  ``inference_mode``: True/False. If True, saves observed data and model output to disk and does not skip dates with missing observations.
 -  ``tester_sample_reduction``: ``mean`` or ``median``. How to reduce multiple samples (e.g., from MC-Dropout or CMAL) during evaluation.
+-  ``assimilate``: True/False (default False). If True, data assimilation is run before each forecast during ``evaluate`` / ``infer``. The command-line flag ``--assimilate`` sets this to True regardless of the config value. Requires ``assimilation_config``.
+-  ``assimilation_config``: Nested block with the data assimilation settings. See `Data assimilation settings`_ below.
 
 General model configuration
 ---------------------------
@@ -85,7 +87,7 @@ Training settings
 -  ``optimizer``: Optimizer to use (``Adam``, ``AdamW``, ``SGD``, etc.).
 -  ``loss``: Loss function (``MSE``, ``NSE``, ``RMSE``, ``CMALLoss``).
 -  ``target_loss_weights``: A list of float values specifying the per-target loss weight, when training on multiple targets at once. Can be combined with any loss. By default, the weight of each target is ``1/n`` with ``n`` being the number of target variables. The order of the weights corresponds to the order of the ``target_variables``.
--  ``regularization``: List of regularization terms (currently, only ``forecast_overlap`` is supported for the ``handoff_forecast_lstm``).
+-  ``regularization``: List of regularization terms. Supported are ``forecast_overlap`` (for the ``handoff_forecast_lstm``) and ``bg_embedding`` (the background term used by data assimilation; see :py:func:`googlehydrology.training.get_regularization_obj`).
 -  ``learning_rate_strategy``: ``ConstantLR``, ``StepLR``, or ``ReduceLROnPlateau``.
 -  ``initial_learning_rate``: Float. Starting learning rate.
 -  ``learning_rate_drop_factor``: Factor by which to reduce the learning rate.
@@ -160,6 +162,90 @@ Result files written by evaluation are indexed by the issue date ``D`` and by
    Before version 1.13.0, 2D hindcast inputs and targets were shifted one day
    later relative to forecast inputs, and ``time_step = k`` was valid on
    ``D + k``. Models trained with earlier versions should be retrained.
+
+Data assimilation settings
+--------------------------
+
+Data assimilation (DA) is only supported by the ``mean_embedding_forecast_lstm``.
+It is run during ``evaluate`` / ``infer`` when ``assimilate: True`` is set in
+the config or the command-line flag ``--assimilate`` is given
+(``run evaluate --run-dir <run> --assimilate``). For every forecast issue date,
+the selected latent model components are optimized by gradient descent so that
+the model output matches the observations in a window of
+``assimilation_window`` time steps ending at the issue date, while a background
+term keeps them close to their unassimilated (prior) values. The model weights
+are never changed. See :py:mod:`googlehydrology.evaluation.assimilation` and
+:py:class:`googlehydrology.utils.assimilationconfig.AssimilationConfig`.
+
+All DA settings live in the nested ``assimilation_config`` block. The block is
+validated strictly (unknown keys raise a ``ValueError``). The run config's keys
+(``seq_length``, ``lead_time``, ``target_variables``, ...) are inherited by the
+DA config, **except** the training keys ``epochs``, ``initial_learning_rate``,
+``optimizer``, ``loss`` and ``clip_gradient_norm``: these are never inherited
+and take the values of the DA block, or the DA defaults listed below.
+``predict_last_n`` is not inherited either; on the DA config it is forced to
+``assimilation_window`` so that the DA loss evaluates the assimilation window
+rather than the forecast horizon.
+
+-  ``assimilation_components``: Required. Either a list of component names, or a
+   dictionary mapping component names to per-component options. Each option
+   dict may set ``regularization_weight`` (float >= 0, defaults to the top-level
+   value) and ``initial_learning_rate`` (float > 0, defaults to the top-level
+   value); an empty value (``static_embedding:``) uses the defaults. Component
+   names must be in the model's ``supported_assimilation_components``; for the
+   ``mean_embedding_forecast_lstm`` these are ``static_embedding``,
+   ``hindcast_embedding`` and ``forecast_embedding``. The ``hindcast_embedding``
+   and ``forecast_embedding`` both include the shared-group contribution, so
+   select both to assimilate all dynamic information.
+-  ``assimilation_window``: Required, positive integer. Number of observed time
+   steps before the issue time that are assimilated. The window ends at the
+   issue time, so forecast steps are never assimilated. If ``seq_length`` is
+   defined, it must satisfy ``1 <= assimilation_window <= seq_length - lead_time``.
+-  ``initial_learning_rate``: **Required**, float > 0. Constant learning rate of
+   the DA optimizer for all components (unless overridden per component). Not
+   inherited from the training learning rate.
+-  ``regularization_weight``: Float >= 0, default ``0.0``. Default weight of the
+   background term for all components. The term is normalized by the scale of
+   each sequence's prior, so the weight is dimensionless.
+-  ``epochs``: Non-negative integer, default ``100``. Maximum number of
+   optimization steps per batch.
+-  ``optimizer``: String, default ``Adam``. Optimizer name, as in the training
+   settings.
+-  ``loss``: One of ``MSE``, ``NSE``, ``CMAL`` (case-insensitive), default
+   ``MSE``. Loss between the model prediction and the observations in the
+   window. ``CMAL`` requires a CMAL head (``n_distributions`` in the run config).
+-  ``clip_gradient_norm``: Float > 0 or empty, default ``None`` (no clipping).
+   Maximum gradient norm, applied to every sequence independently.
+-  ``early_stopping_tolerance``: Float > 0 or empty, default ``None``
+   (disabled). A sequence stops being optimized once the relative error of its
+   prediction at the last window step, ``|pred - obs| / max(obs - y_min, 0.05)``
+   in the scaled target space, is at most this value.
+
+Example::
+
+    assimilate: False  # or True; `--assimilate` also turns DA on
+    assimilation_config:
+      assimilation_components:
+        hindcast_embedding:
+          regularization_weight: 0.5
+          initial_learning_rate: 0.05
+        static_embedding:
+      assimilation_window: 30
+      initial_learning_rate: 0.01
+      regularization_weight: 0.1
+      epochs: 50
+      loss: MSE
+      clip_gradient_norm: 1.0
+      early_stopping_tolerance: 0.05
+
+DA outputs never overwrite the regular evaluation outputs: the file stems get
+the suffix ``_data_assimilation``, i.e. ``test_metrics_data_assimilation.csv``
+and ``test_results_data_assimilation.zarr`` (the Zarr store is always written
+when DA is on, also in ``evaluate`` mode). Figures and hot-start state files are
+suffixed in the same way. If the run's ``config.yml`` has no
+``assimilation_config``, add the block to a copy of the config and pass it via
+``--config-file`` together with ``--run-dir``; for ``evaluate`` / ``infer`` the
+file given by ``--config-file`` replaces the run's ``config.yml`` entirely.
 
 Finetune settings
 -----------------

@@ -126,6 +126,12 @@ class BaseTester(object):
             if assimilation_config is not None
             else None
         )
+        # Fail before the dataset is loaded if the model cannot assimilate the
+        # configured components (e.g. HandoffForecastLSTM supports none).
+        if self.assimilation is not None and cfg.assimilate and self.init_model:
+            self.model.validate_assimilation_components(
+                assimilation_config.assimilation_components
+            )
         self._load_run_data()  # Sets self.basins
 
         self.dataset = self._get_dataset_all()

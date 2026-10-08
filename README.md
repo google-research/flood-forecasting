@@ -34,6 +34,13 @@ The [State Handoff Forecast LSTM](https://github.com/google-research/flood-forec
 * **Status:** Former production model for [Google FloodHub](https://sites.research.google/floods/).  
 * **Reference:** Nearing, Grey, et al. "[Global prediction of extreme floods in ungauged watersheds](https://www.nature.com/articles/s41586-024-07145-1)." *Nature* (2024).
 
+### **Data Assimilation**
+
+[Data assimilation (DA)](https://github.com/google-research/flood-forecasting/blob/main/googlehydrology/evaluation/assimilation.py) is an optional step during `evaluate` / `infer` that corrects a trained model with recent streamflow observations. For every forecast issue date, selected latent components of the model (the static and dynamic embeddings) are treated as free variables and adjusted by gradient descent so that the model's output matches the observations in a window of recent time steps ending at the issue date. A background (regularization) term keeps the components close to their unassimilated values. The model weights are never changed, and no new model is created.
+
+* **Supported model:** `mean_embedding_forecast_lstm` only (components `static_embedding`, `hindcast_embedding`, `forecast_embedding`). The Handoff-Forecast-LSTM does not support DA.
+* **Configuration:** the `assimilation_config` block, validated by [`AssimilationConfig`](https://github.com/google-research/flood-forecasting/blob/main/googlehydrology/utils/assimilationconfig.py); see [Configuration](#configuration) below.
+
 ## **Installation**
 
 We recommend using **Conda** to manage dependencies like PyTorch and CUDA.
@@ -125,15 +132,47 @@ Generate predictions (without skipping NaN observations):
    run infer --run-dir /path/to/your/model_run/
    ```
 
+### **Evaluation / inference with data assimilation**
+
+Run `evaluate` or `infer` with the `--assimilate` flag. The run's config must contain an `assimilation_config` block (see [Configuration](#configuration)); the flag overrides `assimilate: false` in the config:
+
+   ```
+   run evaluate --run-dir /path/to/your/model_run/ --assimilate
+   run infer --run-dir /path/to/your/model_run/ --assimilate
+   ```
+
+If the run's `config.yml` has no `assimilation_config` block, add the block to a *copy* of the config and pass it together with `--run-dir`. For `evaluate` / `infer`, `--config-file` replaces the run's `config.yml` entirely (it is not merged), so the copy must keep all other settings:
+
+   ```
+   run infer --run-dir /path/to/your/model_run/ --config-file /path/to/config_with_da.yml --assimilate
+   ```
+
+DA outputs never overwrite the regular results: all output file stems get the suffix `_data_assimilation`, i.e. `test_metrics_data_assimilation.csv` and `test_results_data_assimilation.zarr` (the Zarr store is always written when DA is on, also in `evaluate` mode). Figures and hot-start state files are suffixed in the same way.
+
 ## **Configuration**
 
-Experiments are defined by YAML files. Update the following paths in your config (e.g., tutorial/training-config.yml):
+Experiments are defined by YAML files. Update the following paths in your config (e.g., `tutorial/configs/train-config.yml`):
 
 * run\_dir: Where weights and logs are saved.  
 * train\_basin\_file: Path to the list of basin IDs.  
-* data\_dir: Path to your root directory containing `attributes.zarr`, `streamflow.zarr`, and dynamic meteorological data (e.g., `~/data/Caravan-zarr`).
-* statics\_data\_path / targets\_data\_path: Optional paths to individual component Zarr stores.
-* dynamics\_data\_path: Path to forcing data (e.g., `gs://caravan-multimet/v1.1` or local directory).
+* data\_dir: Path to your root directory containing `attributes.zarr`, `streamflow.zarr`, and dynamic meteorological data (e.g., `~/data/Caravan-zarr`). Used as the default for the three keys below.
+* statics\_data\_dir / targets\_data\_dir: Optional paths to individual component Zarr stores (`statics_data_path` / `targets_data_path` are accepted as aliases).
+* dynamics\_data\_dir: Path to forcing data (e.g., `gs://caravan-multimet/v1.1` or local directory; alias `dynamics_data_path`).
+
+To enable data assimilation, add an `assimilation_config` block (only `mean_embedding_forecast_lstm`). A minimal block:
+
+```yaml
+assimilate: false  # or true; the CLI flag --assimilate also turns it on
+assimilation_config:
+  assimilation_components: [hindcast_embedding, static_embedding]
+  assimilation_window: 30        # observed steps before the issue date
+  initial_learning_rate: 0.01    # mandatory, not inherited from training
+  regularization_weight: 0.5     # background term weight, default 0.0
+  epochs: 50                     # default 100
+  loss: MSE                      # MSE, NSE or CMAL; default MSE
+```
+
+The window must satisfy `1 <= assimilation_window <= seq_length - lead_time`. The training keys `epochs`, `initial_learning_rate`, `optimizer`, `loss` and `clip_gradient_norm` are *not* inherited from the run config; the DA block sets them or the DA defaults apply. All keys are documented in [`googlehydrology/utils/assimilationconfig.py`](googlehydrology/utils/assimilationconfig.py) and in the [configuration docs](https://openhydronet.readthedocs.io/en/latest/usage/config.html).
 
 ### **Example Configurations**
 
@@ -155,6 +194,10 @@ The `~/flood-forecasting/example-configs` directory contains reference YAML file
   * **Model Architecture:** `handoff_forecast_lstm`  
   * **Dataset:** CAMELS-US (531 basins)  
   * **Description:** A benchmarking configuration for the State Handoff model tailored for the CAMELS-US dataset, used to compare the handoff approach against other architectures on US-based basin data.
+* **`camels-multimet-mean-embedding-forecast-lstm-assimilation-config.yml`**  
+  * **Model Architecture:** `mean_embedding_forecast_lstm`  
+  * **Dataset:** CAMELS-US (531 basins)  
+  * **Description:** The CAMELS-US Mean-Embedding benchmark configuration extended with a fully commented `assimilation_config` block (all three embeddings, 90-step window, NSE loss). DA stays off (`assimilate: false`) so that a plain `run evaluate` reproduces the regular forecasts; run `run evaluate --run-dir ... --assimilate` to assimilate.
 
 ## **Extracting Static Attributes for Your Own Watersheds**
 

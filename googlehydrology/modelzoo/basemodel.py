@@ -139,6 +139,8 @@ class BaseModel(nn.Module):
         )
         if unknown:
             msg = (
+                f'Model {self.cfg.model!r} does not support data assimilation '
+                f'with the configured assimilation_components: '
                 f'Unsupported assimilation components {unknown}; '
                 f'supported: {list(self.supported_assimilation_components)}'
             )

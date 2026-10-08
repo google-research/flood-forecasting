@@ -237,10 +237,23 @@ class AssimilationConfig(Config):
                 'assimilation_window must be a positive integer, got '
                 f'{window!r}.'
             )
-        # The bound can only be checked if the run config defines the sequence
-        # length (it is optional on a stand-alone DA block). Multi-frequency
-        # dict values are not supported by DA and are left to the engine.
+        # The engine reads a single `y` tensor and treats seq_length and
+        # lead_time as scalars; multi-frequency runs use per-frequency keys.
         seq_length = self._cfg.get('seq_length')
+        predict_last_n = self._cfg.get('predict_last_n')
+        if (
+            len(self.use_frequencies) > 1
+            or isinstance(seq_length, dict)
+            or isinstance(predict_last_n, dict)
+        ):
+            raise ValueError(
+                'Data assimilation supports a single frequency only; '
+                'multi-frequency run configs (several use_frequencies or '
+                'per-frequency seq_length / predict_last_n) are not '
+                'supported.'
+            )
+        # The bound can only be checked if the run config defines the sequence
+        # length (it is optional on a stand-alone DA block).
         lead_time = self.lead_time
         if not _is_int(seq_length) or not _is_int(lead_time):
             return
