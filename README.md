@@ -73,6 +73,7 @@ The most direct way to explore this repository is through our interactive tutori
 
 * **Model Evaluation:** Load pre-trained Google Hydrology models and calculate performance metrics (NSE, KGE) on real-world basin data.  
 * **Fine-Tuning for Performance:** Learn how to fine-tune the `static_embedding_fc` layer. This is a powerful technique for improving predictions on "outlier" basins (e.g., basins with unusual sizes or geology) without retraining the entire model.
+* **Data Assimilation:** Correct a trained model with recent streamflow observations at forecast time (`run infer --assimilate`), using the template `tutorial/configs/assimilation-config.yml`, and compare assimilated against unassimilated forecasts.
 * **Visualizing Results:** Compare model hydrographs against observed discharge data.
 
 **Run it now:** 
@@ -165,14 +166,14 @@ To enable data assimilation, add an `assimilation_config` block (only `mean_embe
 assimilate: false  # or true; the CLI flag --assimilate also turns it on
 assimilation_config:
   assimilation_components: [hindcast_embedding, static_embedding]
-  assimilation_window: 30        # observed steps before the issue date
+  assimilation_window: 7         # observed steps before the issue date
   initial_learning_rate: 0.01    # mandatory, not inherited from training
-  regularization_weight: 0.5     # background term weight, default 0.0
+  regularization_weight: 0.1     # background term weight, default 0.0
   epochs: 50                     # default 100
   loss: MSE                      # MSE, NSE or CMAL; default MSE
 ```
 
-The window must satisfy `1 <= assimilation_window <= seq_length - lead_time`. The training keys `epochs`, `initial_learning_rate`, `optimizer`, `loss` and `clip_gradient_norm` are *not* inherited from the run config; the DA block sets them or the DA defaults apply. All keys are documented in [`googlehydrology/utils/assimilationconfig.py`](googlehydrology/utils/assimilationconfig.py) and in the [configuration docs](https://openhydronet.readthedocs.io/en/latest/usage/config.html).
+These are the settings of the tutorial template [`tutorial/configs/assimilation-config.yml`](tutorial/configs/assimilation-config.yml), chosen for the small 5-basin model; the example configuration for the global model uses a 90-day window with `regularization_weight: 0.5`. The window must satisfy `1 <= assimilation_window <= seq_length - lead_time`. The training keys `epochs`, `initial_learning_rate`, `optimizer`, `loss` and `clip_gradient_norm` are *not* inherited from the run config; the DA block sets them or the DA defaults apply. All keys are documented in [`googlehydrology/utils/assimilationconfig.py`](googlehydrology/utils/assimilationconfig.py) and in the [configuration docs](https://openhydronet.readthedocs.io/en/latest/usage/config.html).
 
 ### **Example Configurations**
 
