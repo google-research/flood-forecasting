@@ -103,7 +103,7 @@ class _Problem:
     model: BaseModel
     data: dict[str, torch.Tensor]
     window: tuple[int, int]  # Window on the model's time axis.
-    y: torch.Tensor  # Full observed targets, [B, T_y, n_targets].
+    y: torch.Tensor  # Observed targets up to issue time, [B, end_y, n_targets].
     observed: torch.Tensor  # Observations inside the window.
     loss_data: dict[str, torch.Tensor]
     baselines: dict[str, torch.Tensor]  # Prior components inside the window.
@@ -225,7 +225,7 @@ class Assimilation:
             model=model,
             data=data,
             window=window,
-            y=y,
+            y=y[:, :end_y],
             observed=observed,
             loss_data=self._loss_data(data, observed),
             # Window-sliced so that they match the optimized tensors, and
@@ -567,12 +567,12 @@ def _converged(
 
     The criterion is the relative error at the last step of the window,
     ``|pred - obs| / max(obs - y_zero, 0.05)``, where ``y_zero`` is the minimum
-    of the full observed sequence (0 if it is all missing), so that the error
-    is relative to the flow above the sequence's base level. If the last step
-    has no valid observation or prediction, the maximum relative error over
-    the valid steps of the window is used instead; a sequence without any
-    valid step never converges. A sequence converged if the error of every
-    target is <= ``tolerance``.
+    of the observed sequence up to the forecast issue time (0 if it is all
+    missing), so that the error is relative to the flow above the sequence's
+    base level. If the last step has no valid observation or prediction, the
+    maximum relative error over the valid steps of the window is used instead;
+    a sequence without any valid step never converges. A sequence converged if
+    the error of every target is <= ``tolerance``.
 
     Parameters
     ----------
@@ -581,7 +581,8 @@ def _converged(
     obs : torch.Tensor
         Observations inside the window, [B, W, n_targets], NaN if missing.
     y_full : torch.Tensor
-        The full observed target sequences, [B, T, n_targets].
+        The observed target sequences up to the forecast issue time,
+        [B, T, n_targets].
     tolerance : float
         Relative error at or below which a sequence converged.
 
