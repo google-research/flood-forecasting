@@ -1,0 +1,18 @@
+{
+  "title": "OpenHydroNet: Riverine flood forecasting models of Google Flood Hub (googlehydrology)",
+  "upload_type": "software",
+  "license": "Apache-2.0",
+  "creators": [
+    {"name": "Nearing, Grey", "affiliation": "Google Research"},
+    {"name": "Kratzert, Frederik", "affiliation": "Google Research"},
+    {"name": "Gauch, Martin", "affiliation": "Google Research"},
+    {"name": "Markel, Amit", "affiliation": "Google Research"},
+    {"name": "Shefi, Omri", "affiliation": "Google Research"},
+    {"name": "Ruparell, Karan", "affiliation": "Google Research; ECMWF"}
+  ],
+  "description": "Open-source implementation of the global streamflow forecasting models used in Google Flood Hub (Mean-Embedding-Forecast-LSTM, Handoff-Forecast-LSTM) with latent-space variational data assimilation. Fork of NeuralHydrology.",
+  "keywords": ["hydrology", "flood forecasting", "streamflow", "LSTM", "data assimilation", "Google Flood Hub"],
+  "related_identifiers": [
+    {"identifier": "https://github.com/google-research/flood-forecasting", "relation": "isSupplementTo", "scheme": "url"}
+  ]
+}
