@@ -27,6 +27,7 @@ import torch
 from googlehydrology.evaluation.assimilation import _converged
 from test.da_helpers import (
     ALL_COMPONENTS,
+    LEAD_TIME,
     assimilate,
     build_model,
     make_data,
@@ -192,3 +193,24 @@ def test_early_stopping_freezes_converged_sequences(
         torch.testing.assert_close(output[key][0], prior[key][0], msg=key)
         assert not torch.equal(output[key][1:], prior[key][1:]), key
     assert (window_error(model, output, data)[1:] < 0.9).all()
+
+
+@pytest.mark.unit
+def test_early_stopping_ignores_future_targets(
+    tiny_mean_embedding_model: Callable, tiny_mean_embedding_data: Callable
+) -> None:
+    """Future targets after the forecast issue time must not affect stopping."""
+    model = build_model(tiny_mean_embedding_model)
+    data = make_data(model, tiny_mean_embedding_data)
+    prior = prior_output(model, data)
+
+    perturbed = dict(data)
+    perturbed['y'] = data['y'].clone()
+    perturbed['y'][:, -LEAD_TIME:] = -1000.0
+
+    expected = assimilate(model, data, early_stopping_tolerance=0.05)
+    actual = assimilate(model, perturbed, early_stopping_tolerance=0.05)
+
+    assert not torch.equal(expected['y_hat'], prior['y_hat'])
+    for key in ['y_hat', *ALL_COMPONENTS]:
+        torch.testing.assert_close(actual[key], expected[key], msg=key)
