@@ -17,6 +17,8 @@
 import numpy as np
 import pytest
 import torch
+from scipy.optimize import brentq
+from scipy.stats import laplace_asymmetric
 
 from googlehydrology.utils import cmal_deterministic
 
@@ -111,6 +113,99 @@ def test_search_quantile(sample_cmal_params):
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ('dtype', 'n_kernels'), [(torch.float32, 1), (torch.float64, 3)]
+)
+@pytest.mark.parametrize('shift', [-10.0, 10.0])
+def test_search_quantile_identical_components(
+    dtype: torch.dtype, n_kernels: int, shift: float
+) -> None:
+    """Single and identical components retain their analytic quantiles."""
+    mu = torch.full((2, 3, n_kernels, 1), shift, dtype=dtype)
+    b = torch.full_like(mu, 0.8)
+    tau = torch.full_like(mu, 0.3)
+    pi = torch.full_like(mu, 1.0 / n_kernels)
+    q = torch.tensor([0.1, 0.5, 0.9], dtype=dtype).view(1, 1, 1, -1)
+
+    actual = cmal_deterministic._search_quantile(q, mu, b, tau, pi)  # noqa: SLF001
+    # SciPy uses kappa and scale, with left/right decay rates kappa^-1/kappa.
+    reference = laplace_asymmetric(
+        np.sqrt(0.3 / 0.7), loc=shift, scale=0.8 / np.sqrt(0.3 * 0.7)
+    ).ppf(q.numpy().ravel())
+    expected = torch.tensor(reference, dtype=dtype).expand(2, 3, -1)
+    assert actual.shape == (2, 3, 3)
+    assert actual.dtype == dtype
+    torch.testing.assert_close(actual, expected, rtol=0, atol=2e-6)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('shift', [-10.0, 10.0])
+def test_search_quantile_mixture_translation(shift: float) -> None:
+    """Distinct components match an independent CDF inversion after shifting."""
+    mu, b, tau, pi = (
+        torch.tensor(values, dtype=torch.float64).view(1, 1, -1, 1)
+        for values in (
+            [-1.0, 0.2, 1.4],
+            [0.7, 1.2, 0.9],
+            [0.3, 0.55, 0.7],
+            [0.2, 0.5, 0.3],
+        )
+    )
+    q = torch.tensor([0.1, 0.3, 0.5, 0.7, 0.9], dtype=mu.dtype)
+    components = laplace_asymmetric(
+        np.sqrt(tau.numpy().ravel() / (1 - tau.numpy().ravel())),
+        loc=mu.numpy().ravel(),
+        scale=b.numpy().ravel()
+        / np.sqrt(tau.numpy().ravel() * (1 - tau.numpy().ravel())),
+    )
+
+    def cdf(x: float | np.ndarray) -> np.ndarray:
+        return np.sum(components.cdf(x) * pi.numpy().ravel(), axis=-1)
+
+    reference = torch.tensor(
+        [
+            brentq(lambda x, level=level: cdf(x) - level, -100, 100)
+            for level in q.numpy()
+        ],
+        dtype=mu.dtype,
+    ).view(1, 1, -1)
+    base = cmal_deterministic._search_quantile(  # noqa: SLF001
+        q.view(1, 1, 1, -1), mu, b, tau, pi
+    )
+    shifted = cmal_deterministic._search_quantile(  # noqa: SLF001
+        q.view(1, 1, 1, -1), mu + shift, b, tau, pi
+    )
+    torch.testing.assert_close(base, reference, rtol=0, atol=1e-6)
+    torch.testing.assert_close(shifted, reference + shift, rtol=0, atol=1e-6)
+    torch.testing.assert_close(shifted, base + shift, rtol=0, atol=1e-6)
+    np.testing.assert_allclose(
+        cdf((shifted.numpy().ravel() - shift)[:, None]),
+        q.numpy(),
+        rtol=0,
+        atol=1e-7,
+    )
+
+
+@pytest.mark.unit
+def test_search_quantile_frac_confine_compatibility() -> None:
+    """Legacy positional and keyword arguments cannot shrink the bracket."""
+    mu = torch.full((1, 1, 1, 1), 10.0)
+    b = torch.ones_like(mu)
+    tau = torch.full_like(mu, 0.5)
+    pi = torch.ones_like(mu)
+    q = torch.tensor([0.9]).view(1, 1, 1, 1)
+    expected = torch.distributions.Laplace(mu, 2 * b).icdf(q).squeeze(2)
+    keyword = cmal_deterministic._search_quantile(  # noqa: SLF001
+        q, mu, b, tau, pi, frac_confine=0.8
+    )
+    positional = cmal_deterministic._search_quantile(  # noqa: SLF001
+        q, mu, b, tau, pi, 10, 1e-6, 1.0
+    )
+    torch.testing.assert_close(keyword, expected)
+    torch.testing.assert_close(positional, expected)
+
+
+@pytest.mark.unit
 def test_mixture_params_to_quantiles(sample_cmal_params):
     mu, b, tau, pi = sample_cmal_params
     quantiles = cmal_deterministic._mixture_params_to_quantiles(mu, b, tau, pi)
@@ -122,7 +217,17 @@ def test_mixture_params_to_quantiles(sample_cmal_params):
 @pytest.mark.unit
 def test_generate_predictions(sample_cmal_params):
     mu, b, tau, pi = sample_cmal_params
-    preds = cmal_deterministic.generate_predictions(mu, b, tau, pi)
+    mu = mu + torch.tensor([-10.0, 10.0]).view(2, 1, 1)
+    # Exercise the real compiled entry point and fail on compiler errors.
+    with torch._dynamo.config.patch(suppress_errors=False):  # noqa: SLF001
+        preds = cmal_deterministic.generate_predictions(mu, b, tau, pi)
     # Shape should be [batch_size, seq_len, 10] (1 mean + 9 quantiles)
     assert preds.shape == (2, 5, 10)
+    assert preds.dtype == mu.dtype
     assert torch.all(torch.isfinite(preds))
+    torch.testing.assert_close(preds[..., :1], mu[..., :1])
+    # tau=0.5 is an ordinary Laplace distribution with scale 2*b.
+    distribution = torch.distributions.Laplace(mu[..., :1], 2 * b[..., :1])
+    q = torch.arange(1, 10, dtype=mu.dtype) / 10
+    expected = distribution.icdf(q)
+    torch.testing.assert_close(preds[..., 1:], expected, rtol=0, atol=2e-6)
