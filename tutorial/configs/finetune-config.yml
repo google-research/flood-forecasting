@@ -48,6 +48,9 @@ test_basin_file: ~/flood-forecasting/tutorial/basin-lists/8-basin-test.txt
 # Path to the observation data (streamflow targets).
 targets_data_dir: ~/flood-forecasting/tutorial/Caravan-nc
 
+# Path to the static catchment attributes.
+statics_data_dir: ~/flood-forecasting/tutorial/Caravan-nc
+
 
 # --- 3. Fine-Tuning Strategy --------------------------------------------------
 # This section defines WHICH parts of the neural network are allowed to update

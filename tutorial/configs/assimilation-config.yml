@@ -1,0 +1,99 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# ==============================================================================
+# GoogleHydrology Data Assimilation Configuration File
+# ==============================================================================
+# This file holds ONLY the data assimilation (DA) settings. Unlike training or
+# fine-tuning, DA does not create a new model: it re-uses the trained weights
+# of an existing run and, for every forecast issue date, nudges a few latent
+# model components so that the model's recent output matches the recently
+# observed streamflow. The forecast is then rolled out from the corrected
+# state.
+#
+# The notebook merges this block into a copy of the run's own `config.yml`
+# (see `backend.generate_assimilation_config`) and runs:
+#
+#     run infer --run-dir <run_dir> --config-file <merged config> --assimilate
+#
+# Results are written next to the regular forecasts, with the file-stem suffix
+# `_data_assimilation` (e.g. `test_results_data_assimilation.zarr`), so the
+# un-assimilated results are never overwritten.
+
+# --- 1. Switch -----------------------------------------------------------------
+# Turn DA on for `evaluate` / `infer`. The command-line flag `--assimilate`
+# has the same effect, so this can stay `false` in a config that is also used
+# for regular evaluation.
+assimilate: true
+
+# --- 2. Data Assimilation Settings --------------------------------------------
+# All keys below live inside the `assimilation_config` block. The block is
+# validated strictly: unknown keys raise an error.
+assimilation_config:
+
+  # -- What is adjusted --
+  # Latent components of the MeanEmbeddingForecastLSTM that are treated as free
+  # variables. The model weights are NEVER changed.
+  #
+  #   hindcast_embedding : the embedded meteorological inputs of the hindcast
+  #                        period, one vector per day. Adjusting it lets the
+  #                        model "re-interpret" the recent weather, e.g. to
+  #                        correct a missed or overestimated rain event.
+  #   static_embedding   : the embedded catchment attributes, one vector per
+  #                        forecast. Adjusting it compensates for a basin whose
+  #                        behaviour differs from what its attributes suggest.
+  #   forecast_embedding : the embedded weather forecast inputs. Rarely useful
+  #                        on its own, because no observations exist for the
+  #                        forecast period; left out here.
+  #
+  # Either a list of names or a dict `name: {regularization_weight, initial_learning_rate}`
+  # to set per-component options.
+  assimilation_components:
+    - hindcast_embedding
+    - static_embedding
+
+  # -- Where observations are used --
+  # Number of days of streamflow observations before the issue date that are
+  # fitted. The window ends at the issue date, so forecast days are never
+  # assimilated. Must satisfy 1 <= assimilation_window <= seq_length - lead_time
+  # (365 - 7 = 358 for the tutorial model). Longer windows give a smoother,
+  # more robust correction; shorter windows react faster to the latest
+  # observations but can over-fit noise. For the small tutorial model a short
+  # window worked best (see the "Explore the Assimilation Settings" section of
+  # the tutorial notebook); the global FloodHub model is usually run with 90.
+  assimilation_window: 7
+
+  # -- How far the components may move --
+  # Weight of the "background" term that penalises departures from the
+  # un-assimilated (prior) values. The penalty is normalised by the scale of
+  # each sequence's prior, so the weight is dimensionless: 0 means no pull
+  # back to the prior, large values (>> 1) effectively disable DA. 0.1 was the
+  # best of {0.1, 0.5, 2.0} for the tutorial model; the global FloodHub model
+  # is usually run with 0.5.
+  regularization_weight: 0.1
+
+  # -- Optimisation --
+  # The components are optimised with gradient descent, per forecast issue
+  # date. These keys are NOT inherited from the training settings.
+  initial_learning_rate: 0.01   # REQUIRED. Constant learning rate.
+  epochs: 50                    # Maximum optimisation steps per batch.
+  optimizer: Adam
+  # Loss between the model output and the observations inside the window.
+  # One of MSE, NSE, CMAL (CMAL only for models with a CMAL head).
+  loss: MSE
+  # Gradient-norm clipping, applied to every sequence independently.
+  clip_gradient_norm: 1.0
+  # Stop optimising a sequence once the relative error of its prediction at
+  # the end of the window is at most this value. Leave out to disable.
+  early_stopping_tolerance: 0.05
