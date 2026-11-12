@@ -241,7 +241,12 @@ negative_sample_handling: clip
 
 # Number of days of past data the model uses as input for a single prediction.
 seq_length: 0
+# Path to a saved hot-start state file (.npz or .csv) or directory of per-basin state files.
 hot_start_path:
+# Set save_state: True during evaluation/inference to save final LSTM states.
+# save_state_format accepts 'npz' (default) or 'csv'.
+save_state: False
+save_state_format: npz
 
 # Number of days into the future to predict.
 lead_time: 7

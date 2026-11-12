@@ -15,7 +15,6 @@
 from collections.abc import Iterable
 from pathlib import Path
 
-import numpy as np
 import torch
 import torch.nn as nn
 
@@ -462,7 +461,7 @@ class HandoffForecastLSTM(BaseModel):
         data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
             Dictionary containing input features as key-value pairs.
         path : str | Path
-            The file path where the state should be saved (.npz format).
+            The file path where the state should be saved (.npz or .csv format).
         """
         # Run the embedding layers.
         hindcast_features = _concat_dynamic_features(
@@ -542,20 +541,22 @@ class HandoffForecastLSTM(BaseModel):
         else:
             h_fore_final, c_fore_final = h_handoff, c_handoff
 
-        np.savez_compressed(
+        self._write_state_file(
+            {
+                'h_hindcast': h_hind_final.detach().cpu().numpy(),
+                'c_hindcast': c_hind_final.detach().cpu().numpy(),
+                'h_forecast': h_fore_final.detach().cpu().numpy(),
+                'c_forecast': c_fore_final.detach().cpu().numpy(),
+            },
             path,
-            h_hindcast=h_hind_final.detach().cpu().numpy(),
-            c_hindcast=c_hind_final.detach().cpu().numpy(),
-            h_forecast=h_fore_final.detach().cpu().numpy(),
-            c_forecast=c_fore_final.detach().cpu().numpy(),
         )
 
     def load_state_from_disk(self, path: str | Path) -> None:
-        """Pre-load a hot start state archive from disk into memory.
+        """Pre-load a hot start state file from disk into memory.
 
         Parameters
         ----------
         path : str | Path
-            Path to the .npz state file to load.
+            Path to the .npz or .csv state file to load.
         """
-        self._preloaded_state = dict(np.load(path, allow_pickle=False))
+        self._preloaded_state = self._read_state_file(path)

@@ -53,7 +53,11 @@ from googlehydrology.modelzoo import get_model
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.training import get_loss_obj, get_regularization_obj
 from googlehydrology.training.logger import Logger, do_log_figures
-from googlehydrology.utils.config import Config, TesterSamplesReduction
+from googlehydrology.utils.config import (
+    VALID_STATE_FORMATS,
+    Config,
+    TesterSamplesReduction,
+)
 from googlehydrology.utils.errors import AllNaNError
 from googlehydrology.utils.tqdm import AutoRefreshTqdm as tqdm
 
@@ -101,6 +105,9 @@ class BaseTester(object):
                     f'Hot-start inference requires batch_size=1 per basin. '
                     f'Got batch_size={self.cfg.batch_size}.'
                 )
+
+        if getattr(self.cfg, 'save_state', False):
+            _ = self.cfg.save_state_format
 
         # determine device
         self._set_device()
@@ -731,6 +738,26 @@ class BaseTester(object):
         parent_directory.mkdir(parents=True, exist_ok=True)
         return parent_directory
 
+    def _resolve_basin_state_path(
+        self, state_path: Path, basin: str
+    ) -> Path | None:
+        """Resolve the hot-start state file path for ``basin`` if present."""
+        if not state_path.is_dir():
+            return state_path if state_path.is_file() else None
+        preferred_ext = self.cfg.save_state_format
+        extensions = (
+            preferred_ext,
+            *(ext for ext in VALID_STATE_FORMATS if ext != preferred_ext),
+        )
+        for ext in extensions:
+            for candidate in (
+                state_path / f'state_{basin}.{ext}',
+                state_path / f'{basin}.{ext}',
+            ):
+                if candidate.is_file():
+                    return candidate
+        return None
+
     def _evaluate(
         self,
         model: BaseModel,
@@ -764,14 +791,10 @@ class BaseTester(object):
                 model.reset_state()
                 # Pre-load hot-start state for this basin if configured
                 if getattr(self.cfg, 'hot_start_path', None) is not None:
-                    state_path = self.cfg.hot_start_path
-                    if state_path.is_dir():
-                        basin_state = state_path / f'state_{basin}.npz'
-                        if not basin_state.exists():
-                            basin_state = state_path / f'{basin}.npz'
-                    else:
-                        basin_state = state_path
-                    if basin_state.exists():
+                    basin_state = self._resolve_basin_state_path(
+                        self.cfg.hot_start_path, basin
+                    )
+                    if basin_state is not None:
                         model.load_state_from_disk(basin_state)
 
                 preds = {}
@@ -839,7 +862,10 @@ class BaseTester(object):
                     save_dir.mkdir(parents=True, exist_ok=True)
                     # `save_state` runs an unassimilated forward pass; the
                     # suffix keeps a DA run from overwriting the regular state.
-                    state_save_path = save_dir / f'state_{basin}{suffix}.npz'
+                    state_ext = self.cfg.save_state_format
+                    state_save_path = (
+                        save_dir / f'state_{basin}{suffix}.{state_ext}'
+                    )
                     model.save_state(last_data, state_save_path)
 
                 # set to NaN explicitly if all losses are NaN to avoid RuntimeWarning

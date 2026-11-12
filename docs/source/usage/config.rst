@@ -247,6 +247,21 @@ suffixed in the same way. If the run's ``config.yml`` has no
 ``--config-file`` together with ``--run-dir``; for ``evaluate`` / ``infer`` the
 file given by ``--config-file`` replaces the run's ``config.yml`` entirely.
 
+Hot-start settings
+------------------
+
+These options save and load LSTM hidden and cell states between evaluation or
+inference runs so you can skip full hindcast spin-up.
+
+-  ``save_state``: ``True``/``False`` (default ``False``). When ``True``,
+   evaluation and inference write each basin's final LSTM states to
+   ``<run_dir>/hot_start_states/state_<basin>.<ext>``.
+-  ``save_state_format``: ``npz`` (default) or ``csv``. Controls the file format
+   written when ``save_state`` is ``True``. The ``csv`` format writes a plain
+   table with columns ``state,layer,batch,unit,value``.
+-  ``hot_start_path``: Path to a saved state file (``.npz`` or ``.csv``) or a
+   directory of per-basin state files. Hot-start runs require ``batch_size: 1``.
+
 Finetune settings
 -----------------
 

@@ -530,7 +530,7 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
             Dictionary containing input features as key-value pairs.
         path : str | Path
-            The file path where the state should be saved (.npz format).
+            The file path where the state should be saved (.npz or .csv format).
         """
         forward_data = ForwardData.from_forward_data(data, self.config_data)
 
@@ -556,23 +556,25 @@ class MeanEmbeddingForecastLSTM(BaseModel):
             return_state=True,
         )
 
-        np.savez_compressed(
+        self._write_state_file(
+            {
+                'h_hindcast': h_hind.detach().cpu().numpy(),
+                'c_hindcast': c_hind.detach().cpu().numpy(),
+                'h_forecast': h_fore.detach().cpu().numpy(),
+                'c_forecast': c_fore.detach().cpu().numpy(),
+            },
             path,
-            h_hindcast=h_hind.detach().cpu().numpy(),
-            c_hindcast=c_hind.detach().cpu().numpy(),
-            h_forecast=h_fore.detach().cpu().numpy(),
-            c_forecast=c_fore.detach().cpu().numpy(),
         )
 
     def load_state_from_disk(self, path: str | Path) -> None:
-        """Pre-load a hot start state archive from disk into memory.
+        """Pre-load a hot start state file from disk into memory.
 
         Parameters
         ----------
         path : str | Path
-            Path to the .npz state file to load.
+            Path to the .npz or .csv state file to load.
         """
-        self._preloaded_state = dict(np.load(path, allow_pickle=False))
+        self._preloaded_state = self._read_state_file(path)
 
     def _make_static_embedding_repeated(
         self, time_length: int, static_embedding: torch.Tensor
