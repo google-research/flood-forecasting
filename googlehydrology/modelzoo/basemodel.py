@@ -13,6 +13,9 @@
 # limitations under the License.
 
 
+import csv
+import math
+import re
 from collections.abc import Iterable
 from pathlib import Path
 from typing import ClassVar
@@ -24,6 +27,17 @@ import torch.nn as nn
 from googlehydrology.datautils.scaler import Scaler
 from googlehydrology.utils.config import Config
 from googlehydrology.utils.samplingutils import sample_pointpredictions
+
+_STATE_TENSOR_NDIM = 3
+_STATE_CSV_COLUMNS: tuple[str, ...] = (
+    'state',
+    'layer',
+    'batch',
+    'unit',
+    'value',
+)
+_NON_NEG_INT_RE = re.compile(r'^[0-9]+$')
+_FINITE_FLOAT_RE = re.compile(r'^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$')
 
 
 class BaseModel(nn.Module):
@@ -181,25 +195,192 @@ class BaseModel(nn.Module):
         data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
             Dictionary containing input features as key-value pairs.
         path : str | Path
-            The file path where the state should be saved (npz recommended).
+            The file path where the state should be saved (.npz or .csv format).
         """
         pass
 
     def load_state_from_disk(self, path: str | Path) -> None:
-        """Pre-load a hot start state archive from disk into memory.
+        """Pre-load a hot start state file from disk into memory.
 
         Default implementation is a no-op for models that do not support state persistence.
 
         Parameters
         ----------
         path : str | Path
-            Path to the state file to load.
+            Path to the state file to load (.npz or .csv format).
         """
         pass
 
     def reset_state(self) -> None:
         """Reset in-memory hot-start state between basins."""
         self._preloaded_state = None
+
+    @staticmethod
+    def _write_state_file(
+        state: dict[str, np.ndarray], path: str | Path
+    ) -> None:
+        """Write 3D LSTM state tensors to a ``.npz`` or ``.csv`` file."""
+        target = Path(path)
+        suffix = target.suffix.lower()
+        if suffix == '.npz':
+            np.savez_compressed(target, **state)
+            return
+        if suffix != '.csv':
+            raise ValueError(
+                f'Unsupported hot-start state file extension {target.suffix!r} '
+                f'for {target}. Expected ".npz" or ".csv".'
+            )
+
+        for state_name, arr in state.items():
+            if arr.ndim != _STATE_TENSOR_NDIM:
+                raise ValueError(
+                    f'Hot-start CSV state array {state_name!r} must be 3D '
+                    f'(layer, batch, unit), got shape {arr.shape}.'
+                )
+            if not np.isfinite(arr).all():
+                raise ValueError(
+                    f'Hot-start state array {state_name!r} contains non-finite '
+                    'values and cannot be written to CSV.'
+                )
+
+        with target.open('w', encoding='utf-8', newline='') as handle:
+            writer = csv.writer(handle)
+            writer.writerow(_STATE_CSV_COLUMNS)
+            for state_name, arr in state.items():
+                n_layers, n_batch, n_units = arr.shape
+                for layer_idx in range(n_layers):
+                    for batch_idx in range(n_batch):
+                        row_values = arr[layer_idx, batch_idx]
+                        for unit_idx in range(n_units):
+                            writer.writerow(
+                                [
+                                    state_name,
+                                    layer_idx,
+                                    batch_idx,
+                                    unit_idx,
+                                    repr(float(row_values[unit_idx])),
+                                ]
+                            )
+
+    @staticmethod
+    def _parse_csv_state_row(
+        row: list[str], *, line_no: int, source: Path
+    ) -> tuple[str, tuple[int, int, int], float]:
+        """Validate and parse a single CSV state row."""
+        if len(row) != len(_STATE_CSV_COLUMNS):
+            raise ValueError(
+                f'Invalid column count on line {line_no} of {source}: '
+                f'expected {len(_STATE_CSV_COLUMNS)}, got {len(row)}.'
+            )
+        state_name = row[0].strip()
+        if not state_name:
+            raise ValueError(f'Empty state name on line {line_no} of {source}.')
+
+        raw_indices = (
+            ('layer', row[1].strip()),
+            ('batch', row[2].strip()),
+            ('unit', row[3].strip()),
+        )
+        for col_name, raw_idx in raw_indices:
+            if not _NON_NEG_INT_RE.match(raw_idx):
+                raise ValueError(
+                    f'Invalid non-negative integer for {col_name!r} '
+                    f'on line {line_no} of {source}: {raw_idx!r}.'
+                )
+        coord = (
+            int(raw_indices[0][1]),
+            int(raw_indices[1][1]),
+            int(raw_indices[2][1]),
+        )
+
+        value_s = row[4].strip()
+        if not _FINITE_FLOAT_RE.match(value_s):
+            raise ValueError(
+                f'Invalid finite float value on line {line_no} of '
+                f'{source}: {value_s!r}.'
+            )
+        val = float(value_s)
+        if not math.isfinite(val):
+            raise ValueError(
+                f'Non-finite float value on line {line_no} of '
+                f'{source}: {value_s!r}.'
+            )
+        return state_name, coord, val
+
+    @classmethod
+    def _read_csv_state_file(cls, source: Path) -> dict[str, np.ndarray]:
+        """Read and validate a tidy CSV hot-start state file."""
+        entries: dict[str, dict[tuple[int, int, int], float]] = {}
+        max_dims: dict[str, list[int]] = {}
+        with source.open('r', encoding='utf-8', newline='') as handle:
+            reader = csv.reader(handle)
+            header = next(reader, None)
+            if header is None:
+                raise ValueError(f'Hot-start state CSV file is empty: {source}')
+            if tuple(col.strip() for col in header) != _STATE_CSV_COLUMNS:
+                raise ValueError(
+                    f'Invalid header {header!r} in hot-start state CSV '
+                    f'{source}. Expected {list(_STATE_CSV_COLUMNS)!r}.'
+                )
+            for line_no, row in enumerate(reader, start=2):
+                state_name, coord, val = cls._parse_csv_state_row(
+                    row, line_no=line_no, source=source
+                )
+                state_map = entries.setdefault(state_name, {})
+                if coord in state_map:
+                    raise ValueError(
+                        f'Duplicate coordinate {coord} for state '
+                        f'{state_name!r} on line {line_no} of {source}.'
+                    )
+                state_map[coord] = val
+                dims = max_dims.setdefault(state_name, [0, 0, 0])
+                dims[0] = max(dims[0], coord[0])
+                dims[1] = max(dims[1], coord[1])
+                dims[2] = max(dims[2], coord[2])
+
+        if not entries:
+            raise ValueError(
+                f'Hot-start state CSV file contains no data rows: {source}'
+            )
+
+        state: dict[str, np.ndarray] = {}
+        for state_name, state_map in entries.items():
+            shape = tuple(d + 1 for d in max_dims[state_name])
+            expected_count = shape[0] * shape[1] * shape[2]
+            if len(state_map) != expected_count:
+                raise ValueError(
+                    f'Incomplete 3D grid for state {state_name!r} in {source}: '
+                    f'expected {expected_count} entries for shape '
+                    f'{shape}, got {len(state_map)}.'
+                )
+            arr = np.empty(shape, dtype=np.float32)
+            for coord, val in state_map.items():
+                arr[coord] = val
+            if not np.isfinite(arr).all():
+                raise ValueError(
+                    f'Overflow to non-finite float32 for state {state_name!r} '
+                    f'in {source}.'
+                )
+            state[state_name] = arr
+        return state
+
+    @classmethod
+    def _read_state_file(cls, path: str | Path) -> dict[str, np.ndarray]:
+        """Load hot-start state arrays from a ``.npz`` or ``.csv`` file."""
+        source = Path(path)
+        if not source.is_file():
+            raise FileNotFoundError(f'Hot-start state file not found: {source}')
+
+        suffix = source.suffix.lower()
+        if suffix == '.npz':
+            with np.load(source, allow_pickle=False) as archive:
+                return {key: archive[key] for key in archive.files}
+        if suffix == '.csv':
+            return cls._read_csv_state_file(source)
+        raise ValueError(
+            f'Unsupported hot-start state file extension {source.suffix!r} '
+            f'for {source}. Expected ".npz" or ".csv".'
+        )
 
     def pre_model_hook(
         self, data: dict[str, torch.Tensor], is_train: bool

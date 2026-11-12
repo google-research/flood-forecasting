@@ -34,6 +34,23 @@ if TYPE_CHECKING:
 T = TypeVar('T')
 U = TypeVar('U')
 
+VALID_STATE_FORMATS: tuple[str, ...] = ('npz', 'csv')
+
+
+def _normalize_state_format(val: str) -> str:
+    if not isinstance(val, str):
+        raise TypeError(
+            f'save_state_format must be a string in {VALID_STATE_FORMATS}, '
+            f'got {type(val).__name__}.'
+        )
+    normalized = val.strip().lower()
+    if normalized not in VALID_STATE_FORMATS:
+        raise ValueError(
+            f'Unsupported save_state_format {val!r}. '
+            f'Must be one of {VALID_STATE_FORMATS}.'
+        )
+    return normalized
+
 
 @enum.unique
 class WeightInitOpt(str, enum.Enum):
@@ -104,6 +121,9 @@ class Config(object):
 
         if not (self._cfg.get('dev_mode', False) or dev_mode):
             Config._check_cfg_keys(self._cfg)
+
+        if self._cfg.get('save_state_format') is not None:
+            _ = self.save_state_format
 
         # Adjust experiment name
         if 'experiment_name' in self._cfg and self._cfg['experiment_name']:
@@ -874,6 +894,18 @@ class Config(object):
     @save_state.setter
     def save_state(self, val: bool) -> None:
         self._cfg['save_state'] = bool(val)
+
+    @property
+    def save_state_format(self) -> str:
+        """File format used when saving hot-start LSTM states."""
+        val = self._cfg.get('save_state_format', 'npz')
+        if val is None:
+            return 'npz'
+        return _normalize_state_format(val)
+
+    @save_state_format.setter
+    def save_state_format(self, val: str) -> None:
+        self._cfg['save_state_format'] = _normalize_state_format(val)
 
     @property
     def train_end_date(self) -> list[pd.Timestamp]:
