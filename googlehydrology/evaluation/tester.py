@@ -689,7 +689,12 @@ class BaseTester(object):
         if self.cfg.metrics and results:
             metrics_list = self.cfg.metrics
             if isinstance(metrics_list, dict):
-                metrics_list = list(set(metrics_list.values()))
+                # Values are per-target lists; take their union, in order.
+                metrics_list = list(
+                    dict.fromkeys(
+                        itertools.chain.from_iterable(metrics_list.values())
+                    )
+                )
             if 'all' in metrics_list:
                 metrics_list = get_available_metrics()
             df = metrics_to_dataframe(

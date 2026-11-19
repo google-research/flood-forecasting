@@ -13,11 +13,15 @@
 # limitations under the License.
 
 from math import ceil
+from pathlib import Path
+from unittest.mock import MagicMock
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from googlehydrology.datasetzoo.multimet import SampleIndexer
+from googlehydrology.evaluation.tester import RegressionTester
 from googlehydrology.evaluation.utils import BasinBatchSampler
 
 
@@ -249,3 +253,30 @@ def test_evaluate_synchronizes_configured_cuda_device():
     torch.testing.assert_close(
         results[0]['obs']['1D'], torch.full((2, 2, 1), 3.0)
     )
+
+
+def test_save_incremental_results_with_per_target_metrics(
+    tmp_path: Path,
+) -> None:
+    """`metrics` may map each target to its own list of metrics."""
+    tester = object.__new__(RegressionTester)
+    tester.period = 'test'
+    tester.cfg = MagicMock(
+        metrics={'q1': ['NSE', 'KGE'], 'q2': ['NSE']},
+        target_variables=['q1', 'q2'],
+        inference_mode=False,
+    )
+    tester._parent_directory_for_results = lambda _: tmp_path
+
+    tester._save_incremental_results(
+        'basin_A',
+        results={'1D': {'q1_NSE': 0.5, 'q1_KGE': 0.4, 'q2_NSE': 0.3}},
+        states={},
+        save_results=False,
+        epoch=1,
+    )
+
+    df = pd.read_csv(tmp_path / 'test_metrics.csv', index_col=0)
+    assert df.loc['basin_A', 'q1_NSE'] == 0.5
+    assert df.loc['basin_A', 'q1_KGE'] == 0.4
+    assert df.loc['basin_A', 'q2_NSE'] == 0.3
