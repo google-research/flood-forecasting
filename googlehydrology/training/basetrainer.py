@@ -39,6 +39,7 @@ from googlehydrology.training import (
     loss,
 )
 from googlehydrology.training.logger import Logger
+from googlehydrology.utils import safe_torch_load
 from googlehydrology.utils.config import Config
 from googlehydrology.utils.logging_utils import setup_logging
 from googlehydrology.utils.tqdm import AutoRefreshTqdm as tqdm
@@ -394,16 +395,12 @@ class BaseTrainer(object):
         LOGGER.info('Continue training from epoch %d', int(epoch))
         self._load_model_weights(weight_path)
         self.optimizer.load_state_dict(
-            torch.load(
-                str(optimizer_path), map_location=self.device, weights_only=True
-            )
+            safe_torch_load(optimizer_path, map_location=self.device)
         )
 
     def _load_model_weights(self, checkpoint_path: Path | str) -> None:
         """Loads model state_dict while handling torch.compile prefixes."""
-        state_dict = torch.load(
-            str(checkpoint_path), map_location=self.device, weights_only=True
-        )
+        state_dict = safe_torch_load(checkpoint_path, map_location=self.device)
         state_dict = {
             k.removeprefix('_orig_mod.'): v for k, v in state_dict.items()
         }
