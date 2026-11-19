@@ -17,15 +17,14 @@
 
 name: googlehydrology
 channels:
-  - pytorch
   - conda-forge
   - defaults
 dependencies:
   - python=3.12.*
-  - pytorch=2.5.*
-  - cpuonly
-  - torchaudio=2.5.*
-  - torchvision=0.20.*
+  - libtorch=*=cpu*
+  - pytorch>=2.10
+  - torchaudio>=2.10
+  - torchvision>=0.25
   - absl-py=2.3.*
   - bokeh=3.8.*
   - cachey=0.2.*
