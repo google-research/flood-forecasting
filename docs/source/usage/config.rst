@@ -132,6 +132,74 @@ Data settings
 -  ``nan_handling_pos_encoding_size``: Size of positional encoding for NaN handling methods.
 -  ``lazy_load``: Whether to access data lazily rather than load all in-memory. Each batch is loaded dynamically. Default: `False`.
 
+NetCDF input format
+-------------------
+
+In addition to Zarr stores (and legacy Caravan ``attributes/<subdataset>/*.csv``
+and ``timeseries/netcdf/<subdataset>/<basin_id>.nc`` directories), the training
+and inference pipeline can read local NetCDF (``.nc`` / ``.nc4``) files directly
+when ``statics_data_dir``, ``targets_data_dir``, or ``dynamics_data_dir`` (or
+``data_dir``) points to a directory containing NetCDF files. Zarr stores,
+legacy Caravan directory trees (``attributes/``, ``timeseries/``), and
+per-product subdirectories are checked first so existing workflows are
+unchanged.
+
+Supported directory layouts (non-recursive; hidden dotfiles such as ``._*.nc``
+are ignored):
+
+1. **Multi-basin files:** One or more ``.nc`` / ``.nc4`` files directly in the
+   configured directory where every file contains a ``basin`` dimension (for
+   example, one combined file, non-overlapping time-split files such as
+   ``2020.nc`` and ``2021.nc``, or disjoint basin-batch files). Supported for
+   **statics**, **targets**, and **dynamics**.
+2. **Per-basin files (``<basin_id>.nc`` or ``<basin_id>.nc4``):** One file per
+   basin directly in the configured directory, without a ``basin`` dimension
+   inside each file (an optional 0D scalar ``basin`` coordinate is ignored).
+   Only files matching the configured basin list are opened. Supported for
+   **targets** and **dynamics**.
+
+For ``dynamics_data_dir``, users may provide either a **flat directory**
+(``dynamics_data_dir/*.nc`` using Layout 1 or 2) or **product subdirectories**
+(``dynamics_data_dir/<PRODUCT>/*.nc``, mirroring the MultiMet Zarr layout, where
+each product subfolder uses Layout 1 or 2). Mixing multi-basin and per-basin
+files among the loaded files in the same directory raises a ``ValueError``.
+
+Required NetCDF schema:
+
+-  **Static attributes (``statics_data_dir``):** Multi-basin files with
+   dimension ``(basin)`` and variable names matching ``static_attributes``.
+-  **Targets (``targets_data_dir``):** Dimensions ``(basin, date)`` in
+   multi-basin files, or ``(date)`` in per-basin files, with variable names
+   matching ``target_variables``.
+-  **Hindcast inputs (``dynamics_data_dir``):** Dimensions ``(basin, date)``
+   (or ``(basin, date, lead_time)``) in multi-basin files, or ``(date)`` (or
+   ``(date, lead_time)``) in per-basin files, with variable names matching
+   ``hindcast_inputs`` (and any ``union_mapping`` fallback variables).
+-  **Forecast inputs (``dynamics_data_dir``):** Dimensions
+   ``(basin, date, lead_time)`` in multi-basin files, or ``(date, lead_time)``
+   in per-basin files, with variable names matching ``forecast_inputs``.
+-  **Coordinates & precision:** Coordinate names must be exact:
+
+   -  ``basin``: unique string basin IDs (not numeric IDs).
+   -  ``date``: unique, non-overlapping daily ``datetime64`` timestamps stamped
+      at midnight ``00:00:00`` UTC (no ``NaT``, duplicate, or non-midnight
+      values).
+   -  ``lead_time``: strictly increasing, contiguous whole-day durations
+      starting at ``>= 1 day`` (e.g. ``1, 2, ...`` days) encoded with CF
+      duration units (such as ``units="days"``). Only ``lead_time`` is decoded
+      as ``timedelta64``, so non-``lead_time`` variables carrying time units
+      (e.g., ``units="days"``) remain numeric.
+
+   Numeric and boolean data variables (e.g. ``float64``, ``int64``, ``bool``)
+   are lazily cast to ``float32`` on read. Missing variables, basins, or
+   invalid coordinates raise an error immediately.
+
+.. tip::
+   For large multi-basin datasets, prefer multi-basin NetCDF files over
+   thousands of per-basin files (especially when ``lazy_load: True`` is
+   enabled), and use separate ``statics_data_dir``, ``targets_data_dir``, and
+   ``dynamics_data_dir`` paths to avoid scanning unrelated files.
+
 Temporal alignment of forecasts
 -------------------------------
 

@@ -26,6 +26,12 @@ import numpy as np
 import pandas as pd
 import xarray
 
+from googlehydrology.datautils.netcdf import (
+    NETCDF_SUFFIXES,
+    has_netcdf_files,
+    load_netcdf_attributes,
+    load_netcdf_timeseries,
+)
 from googlehydrology.utils.tqdm import AutoRefreshTqdm as tqdm
 
 LOGGER = logging.getLogger(__name__)
@@ -71,7 +77,8 @@ def load_caravan_attributes(
 ) -> xarray.Dataset:
     """Load the attributes of the Caravan dataset.
 
-    Supports Zarr stores (preferred) and legacy Caravan CSV directories.
+    Supports Zarr stores (preferred), local NetCDF directories, and legacy
+    Caravan CSV directories.
 
     Parameters
     ----------
@@ -118,6 +125,24 @@ def load_caravan_attributes(
                     )
                 ds = ds.sel(basin=basins)
         return ds
+
+    data_path = Path(data_dir)
+    if data_path.is_file() and data_path.suffix.lower() in NETCDF_SUFFIXES:
+        raise ValueError(
+            f'Expected a directory containing NetCDF files, got file: '
+            f'{data_path}. Pass its parent directory instead.'
+        )
+
+    if (
+        not subdataset
+        and not (data_path / 'attributes').is_dir()
+        and has_netcdf_files(data_dir)
+    ):
+        return load_netcdf_attributes(
+            data_dir=data_dir,
+            basins=basins,
+            features=features,
+        )
 
     # Legacy CSV loader fallback
     data_dir = Path(data_dir)
@@ -180,7 +205,8 @@ def load_caravan_timeseries(
 ) -> xarray.Dataset:
     """Load the timeseries data of basins from the Caravan dataset.
 
-    Supports Zarr stores (preferred) and legacy multi-file NetCDF/CSV datasets.
+    Supports Zarr stores (preferred), local NetCDF directories, and legacy
+    multi-file NetCDF/CSV datasets.
 
     Parameters
     ----------
@@ -220,6 +246,25 @@ def load_caravan_timeseries(
         if basins:
             ds = ds.sel(basin=basins)
         return ds
+
+    data_path = Path(data_dir)
+    if data_path.is_file() and data_path.suffix.lower() in NETCDF_SUFFIXES:
+        raise ValueError(
+            f'Expected a directory containing NetCDF files, got file: '
+            f'{data_path}. Pass its parent directory instead.'
+        )
+
+    if (
+        not csv
+        and not (data_path / 'timeseries').is_dir()
+        and has_netcdf_files(data_dir)
+    ):
+        return load_netcdf_timeseries(
+            data_dir=data_dir,
+            basins=basins,
+            features=target_features,
+            batch_size=batch_size,
+        )
 
     return load_caravan_timeseries_together(
         data_dir=Path(data_dir),
