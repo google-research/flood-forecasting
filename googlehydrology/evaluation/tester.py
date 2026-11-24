@@ -689,21 +689,31 @@ class BaseTester(object):
         if self.cfg.metrics and results:
             metrics_list = self.cfg.metrics
             if isinstance(metrics_list, dict):
-                # Values are per-target lists; take their union, in order.
+                # Values are per-target metric lists (or a single string like
+                # 'all'); take their order-preserving union.
                 metrics_list = list(
                     dict.fromkeys(
-                        itertools.chain.from_iterable(metrics_list.values())
+                        metric
+                        for target_metrics in metrics_list.values()
+                        for metric in (
+                            [target_metrics]
+                            if isinstance(target_metrics, str)
+                            else target_metrics
+                        )
                     )
                 )
             if 'all' in metrics_list:
                 metrics_list = get_available_metrics()
-            df = metrics_to_dataframe(
-                {basin: results}, metrics_list, self.cfg.target_variables
-            )
-            metrics_file = (
-                parent_directory / f'{self.period}_metrics{suffix}.csv'
-            )
-            df.to_csv(metrics_file, mode='a', header=not metrics_file.exists())
+            if metrics_list:
+                df = metrics_to_dataframe(
+                    {basin: results}, metrics_list, self.cfg.target_variables
+                )
+                metrics_file = (
+                    parent_directory / f'{self.period}_metrics{suffix}.csv'
+                )
+                df.to_csv(
+                    metrics_file, mode='a', header=not metrics_file.exists()
+                )
 
         # store all results in a zarr store
         if (

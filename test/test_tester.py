@@ -21,6 +21,7 @@ import pandas as pd
 import pytest
 
 from googlehydrology.datasetzoo.multimet import SampleIndexer
+from googlehydrology.evaluation.metrics import get_available_metrics
 from googlehydrology.evaluation.tester import RegressionTester
 from googlehydrology.evaluation.utils import BasinBatchSampler
 
@@ -268,15 +269,104 @@ def test_save_incremental_results_with_per_target_metrics(
     )
     tester._parent_directory_for_results = lambda _: tmp_path
 
+    expected_a = {'q1_NSE': 0.5, 'q1_KGE': 0.4, 'q2_NSE': 0.3}
+    expected_b = {'q1_NSE': 0.7, 'q1_KGE': 0.6, 'q2_NSE': 0.8}
     tester._save_incremental_results(
         'basin_A',
-        results={'1D': {'q1_NSE': 0.5, 'q1_KGE': 0.4, 'q2_NSE': 0.3}},
+        results={'1D': expected_a},
+        states={},
+        save_results=False,
+        epoch=1,
+    )
+    tester._save_incremental_results(
+        'basin_B',
+        results={'1D': expected_b},
         states={},
         save_results=False,
         epoch=1,
     )
 
     df = pd.read_csv(tmp_path / 'test_metrics.csv', index_col=0)
-    assert df.loc['basin_A', 'q1_NSE'] == 0.5
-    assert df.loc['basin_A', 'q1_KGE'] == 0.4
-    assert df.loc['basin_A', 'q2_NSE'] == 0.3
+    assert list(df.columns) == ['q1_NSE', 'q1_KGE', 'q2_NSE', 'q2_KGE']
+    assert list(df.index) == ['basin_A', 'basin_B']
+    for col, val in expected_a.items():
+        assert df.loc['basin_A', col] == val
+    for col, val in expected_b.items():
+        assert df.loc['basin_B', col] == val
+    assert pd.isna(df.loc['basin_A', 'q2_KGE'])
+    assert pd.isna(df.loc['basin_B', 'q2_KGE'])
+
+
+@pytest.mark.parametrize('metric_spec', ['all', ['all']])
+def test_save_incremental_results_with_dict_all_metrics(
+    tmp_path: Path, metric_spec: str | list[str]
+) -> None:
+    """Dict values of `'all'` or `['all']` expand without splitting chars."""
+    tester = object.__new__(RegressionTester)
+    tester.period = 'test'
+    tester.cfg = MagicMock(
+        metrics={'streamflow': metric_spec},
+        target_variables=['streamflow'],
+        inference_mode=False,
+    )
+    tester._parent_directory_for_results = lambda _: tmp_path
+
+    expected_nse = 0.65
+    tester._save_incremental_results(
+        'basin_A',
+        results={'1D': {'NSE': expected_nse}},
+        states={},
+        save_results=False,
+        epoch=1,
+    )
+
+    df = pd.read_csv(tmp_path / 'test_metrics.csv', index_col=0)
+    assert list(df.columns) == get_available_metrics()
+    assert df.loc['basin_A', 'NSE'] == expected_nse
+
+
+def test_save_incremental_results_skips_empty_per_target_metrics(
+    tmp_path: Path,
+) -> None:
+    """A metrics dict with only empty lists writes no metrics CSV."""
+    tester = object.__new__(RegressionTester)
+    tester.period = 'test'
+    tester.cfg = MagicMock(
+        metrics={'q1': [], 'q2': []},
+        target_variables=['q1', 'q2'],
+        inference_mode=False,
+    )
+    tester._parent_directory_for_results = lambda _: tmp_path
+
+    tester._save_incremental_results(
+        'basin_A',
+        results={'1D': {}},
+        states={},
+        save_results=False,
+        epoch=1,
+    )
+
+    assert not (tmp_path / 'test_metrics.csv').exists()
+
+
+def test_save_incremental_results_rejects_non_iterable_metric_value(
+    tmp_path: Path,
+) -> None:
+    """Non-iterable dict values in `metrics` fail loudly with TypeError."""
+    tester = object.__new__(RegressionTester)
+    tester.period = 'test'
+    tester.cfg = MagicMock(
+        metrics={'q1': None},
+        target_variables=['q1'],
+        inference_mode=False,
+    )
+    tester._parent_directory_for_results = lambda _: tmp_path
+
+    with pytest.raises(TypeError):
+        tester._save_incremental_results(
+            'basin_A',
+            results={'1D': {'NSE': 0.5}},
+            states={},
+            save_results=False,
+            epoch=1,
+        )
