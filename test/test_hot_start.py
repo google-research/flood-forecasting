@@ -1,10 +1,20 @@
+import csv
+import logging
+import os
+import stat
+import warnings
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import numpy as np
+import pytest
 import torch
 
+from googlehydrology.evaluation.tester import BaseTester
 from googlehydrology.modelzoo.handoff_forecast_lstm import HandoffForecastLSTM
-from googlehydrology.modelzoo.mean_embedding_forecast_lstm import MeanEmbeddingForecastLSTM
+from googlehydrology.modelzoo.mean_embedding_forecast_lstm import (
+    MeanEmbeddingForecastLSTM,
+)
 from googlehydrology.utils.config import Config
 
 
@@ -72,9 +82,12 @@ def get_base_cfg(tmp_path: Path) -> dict:
     }
 
 
+@pytest.mark.parametrize('state_ext', ['npz', 'csv'])
 @patch('googlehydrology.datautils.scaler.Scaler.load')
 @patch('googlehydrology.datautils.scaler.Scaler.check_zero_scale')
-def test_handoff_forecast_lstm_hot_start(mock_check, mock_load, tmp_path):
+def test_handoff_forecast_lstm_hot_start(
+    mock_check, mock_load, tmp_path, state_ext
+):
     cfg_dict = get_base_cfg(tmp_path)
     cfg_dict['model'] = 'HandoffForecastLSTM'
     cfg = Config(cfg_dict, dev_mode=True)
@@ -105,7 +118,7 @@ def test_handoff_forecast_lstm_hot_start(mock_check, mock_load, tmp_path):
         batch_size, len(cfg.static_attributes), device=device
     )
 
-    state_path = tmp_path / 'state_handoff.npz'
+    state_path = tmp_path / f'state_handoff.{state_ext}'
     with torch.no_grad():
         model.seq_length = cfg.seq_length
         model.save_state(data, state_path)
@@ -132,9 +145,12 @@ def test_handoff_forecast_lstm_hot_start(mock_check, mock_load, tmp_path):
     assert (cold_last - hot_last).abs().max() < 1e-5
 
 
+@pytest.mark.parametrize('state_ext', ['npz', 'csv'])
 @patch('googlehydrology.datautils.scaler.Scaler.load')
 @patch('googlehydrology.datautils.scaler.Scaler.check_zero_scale')
-def test_mean_embedding_forecast_lstm_hot_start(mock_check, mock_load, tmp_path):
+def test_mean_embedding_forecast_lstm_hot_start(
+    mock_check, mock_load, tmp_path, state_ext
+):
     cfg_dict = get_base_cfg(tmp_path)
     cfg_dict['model'] = 'MeanEmbeddingForecastLSTM'
     cfg_dict['n_distributions'] = 1
@@ -168,7 +184,7 @@ def test_mean_embedding_forecast_lstm_hot_start(mock_check, mock_load, tmp_path)
         batch_size, len(cfg.static_attributes), device=device
     )
 
-    state_path = tmp_path / 'state_mean.npz'
+    state_path = tmp_path / f'state_mean.{state_ext}'
     with torch.no_grad():
         model.seq_length = cfg.seq_length
         model.save_state(data, state_path)
@@ -402,3 +418,440 @@ def test_forecast_overlap_variations(mock_check, mock_load, tmp_path):
     assert hot_preds['y_hat'].shape[1] == cfg.lead_time
 
 
+@patch('googlehydrology.datautils.scaler.Scaler.load')
+@patch('googlehydrology.datautils.scaler.Scaler.check_zero_scale')
+def test_csv_state_schema_and_mismatched_hidden_sizes(
+    _mock_check: MagicMock, _mock_load: MagicMock, tmp_path: Path
+) -> None:
+    """Verify CSV schema and bit-exact parity with NPZ for mismatched sizes."""
+    cfg_dict = get_base_cfg(tmp_path)
+    cfg_dict['model'] = 'HandoffForecastLSTM'
+    cfg_dict['hindcast_hidden_size'] = 12
+    cfg_dict['forecast_hidden_size'] = 20
+    cfg_dict['state_handoff_network']['hiddens'] = [12]
+    cfg = Config(cfg_dict, dev_mode=True)
+    model = HandoffForecastLSTM(cfg)
+    model.eval()
+
+    batch_size = 2
+    data = {
+        'x_d_hindcast': {
+            'pr_day_gridmet': torch.rand(batch_size, cfg.seq_length, 1),
+            'tmmn_day_gridmet': torch.rand(batch_size, cfg.seq_length, 1),
+        },
+        'x_d_forecast': {
+            'pr_day_gridmet': torch.rand(
+                batch_size, cfg.lead_time + cfg.forecast_overlap, 1
+            ),
+            'tmmn_day_gridmet': torch.rand(
+                batch_size, cfg.lead_time + cfg.forecast_overlap, 1
+            ),
+        },
+        'x_s': torch.rand(batch_size, len(cfg.static_attributes)),
+    }
+
+    npz_path = tmp_path / 'state.npz'
+    csv_path = tmp_path / 'state.csv'
+    with torch.no_grad():
+        model.save_state(data, npz_path)
+        model.save_state(data, csv_path)
+
+    with csv_path.open('r', encoding='utf-8', newline='') as handle:
+        rows = list(csv.reader(handle))
+    assert rows[0] == ['state', 'layer', 'batch', 'unit', 'value']
+    expected_rows = 2 * (1 * batch_size * 12) + 2 * (1 * batch_size * 20)
+    assert len(rows) - 1 == expected_rows
+
+    model.load_state_from_disk(npz_path)
+    npz_state = model._preloaded_state
+    model.load_state_from_disk(csv_path)
+    csv_state = model._preloaded_state
+
+    assert set(csv_state.keys()) == set(npz_state.keys())
+    for key in npz_state:
+        assert csv_state[key].shape == npz_state[key].shape
+        assert csv_state[key].dtype == np.float32
+        np.testing.assert_array_equal(csv_state[key], npz_state[key])
+
+
+def test_save_state_format_config_validation(tmp_path: Path) -> None:
+    """Validate normalization and error handling for save_state_format."""
+    cfg_dict = get_base_cfg(tmp_path)
+    cfg = Config(cfg_dict)
+    assert cfg.save_state_format == 'npz'
+
+    cfg_csv = Config(
+        {
+            **cfg_dict,
+            'save_state_format': ' CSV ',
+            'experiment_name': 'exp_{save_state_format}',
+        }
+    )
+    assert cfg_csv.save_state_format == 'csv'
+    assert cfg_csv.as_dict()['save_state_format'] == 'csv'
+    assert cfg_csv.experiment_name == 'exp_csv'
+
+    cfg_none = Config(
+        {
+            **cfg_dict,
+            'save_state_format': None,
+            'experiment_name': 'exp_{save_state_format}',
+        }
+    )
+    assert cfg_none.save_state_format == 'npz'
+    assert cfg_none.as_dict()['save_state_format'] == 'npz'
+    assert cfg_none.experiment_name == 'exp_npz'
+
+    cfg.save_state_format = 'csv'
+    assert cfg.save_state_format == 'csv'
+    cfg.save_state_format = None
+    assert cfg.save_state_format == 'npz'
+
+    with pytest.raises(ValueError, match='Unsupported save_state_format'):
+        Config({**cfg_dict, 'save_state_format': 'parquet'})
+
+    with pytest.raises(TypeError, match='save_state_format must be a string'):
+        cfg.save_state_format = 123  # type: ignore[assignment]
+
+
+@patch('googlehydrology.datautils.scaler.Scaler.load')
+@patch('googlehydrology.datautils.scaler.Scaler.check_zero_scale')
+def test_state_file_errors_fail_loudly(
+    _mock_check: MagicMock, _mock_load: MagicMock, tmp_path: Path
+) -> None:
+    """Ensure corrupt, missing, or unsupported state files raise loudly."""
+    cfg = Config(get_base_cfg(tmp_path), dev_mode=True)
+    model = HandoffForecastLSTM(cfg)
+
+    with pytest.raises(FileNotFoundError, match='state file not found'):
+        model.load_state_from_disk(tmp_path / 'missing.csv')
+
+    dir_csv = tmp_path / 'as_dir.csv'
+    dir_csv.mkdir()
+    with pytest.raises(IsADirectoryError, match='is a directory'):
+        model.load_state_from_disk(dir_csv)
+    with pytest.raises(IsADirectoryError, match='is a directory'):
+        model._write_state_file(
+            {'h_hindcast': np.zeros((1, 1, 2), dtype=np.float32)}, dir_csv
+        )
+
+    bad_ext = tmp_path / 'state.json'
+    bad_ext.write_text('{}', encoding='utf-8')
+    with pytest.raises(ValueError, match='Unsupported hot-start state file'):
+        model.load_state_from_disk(bad_ext)
+    with pytest.raises(ValueError, match='Unsupported hot-start state file'):
+        model._write_state_file(
+            {'h_hindcast': np.zeros((1, 1, 2), dtype=np.float32)}, bad_ext
+        )
+
+    header = 'state,layer,batch,unit,value\n'
+    bad_cases = [
+        ('', 'empty'),
+        ('bad,header,cols,here,now\n', 'Invalid header'),
+        (header, 'no data rows'),
+        (f'{header}h_hindcast,0,0,0\n', 'column count'),
+        (f'{header},0,0,0,1.0\n', 'Empty state name'),
+        (f'{header},,,,\n', 'Empty state name'),
+        (f'{header}h_hindcast,-1,0,0,1.0\n', 'non-negative'),
+        (f'{header}h_hindcast,0,0,0,nan\n', 'finite float'),
+        (f'{header}h_hindcast,0,0,0,inf\n', 'finite float'),
+        (f'{header}h_hindcast,0,0,0,\u0663.\u0665\n', 'finite float'),
+        (f'{header}h_hindcast,0,0,0,{"1" * 10000}x\n', 'finite float'),
+        (
+            f'{header}h_hindcast,0,0,0,1.0\nh_hindcast,0,0,0,2.0\n',
+            'Duplicate coordinate',
+        ),
+        (
+            f'{header}h_hindcast,0,0,0,1.0\nh_hindcast,0,0,2,2.0\n',
+            'Incomplete 3D grid',
+        ),
+        (f'{header}\n\nh_hindcast,0,0,0,bad\n', 'line 4'),
+    ]
+    for idx, (content, err_match) in enumerate(bad_cases):
+        bad_csv = tmp_path / f'bad_{idx}.csv'
+        bad_csv.write_text(content, encoding='utf-8')
+        with pytest.raises(ValueError, match=err_match):
+            model.load_state_from_disk(bad_csv)
+
+    overflow_csv = tmp_path / 'overflow.csv'
+    overflow_csv.write_text(
+        f'{header}h_hindcast,0,0,0,1e39\n', encoding='utf-8'
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        with pytest.raises(ValueError, match='Overflow to non-finite float32'):
+            model.load_state_from_disk(overflow_csv)
+    assert not any(issubclass(w.category, RuntimeWarning) for w in caught)
+
+
+@patch('googlehydrology.datautils.scaler.Scaler.load')
+@patch('googlehydrology.datautils.scaler.Scaler.check_zero_scale')
+def test_state_file_npz_and_write_validation_errors(
+    _mock_check: MagicMock, _mock_load: MagicMock, tmp_path: Path
+) -> None:
+    """Reject malformed NPZ archives and invalid CSV write inputs."""
+    cfg = Config(get_base_cfg(tmp_path), dev_mode=True)
+    model = HandoffForecastLSTM(cfg)
+
+    npy_as_npz = tmp_path / 'array_not_archive.npz'
+    with npy_as_npz.open('wb') as handle:
+        np.save(handle, np.zeros((1, 1, 2), dtype=np.float32))
+    with pytest.raises(ValueError, match='not a valid NPZ archive'):
+        model.load_state_from_disk(npy_as_npz)
+
+    empty_npz = tmp_path / 'empty_archive.npz'
+    with empty_npz.open('wb') as handle:
+        np.savez_compressed(handle)
+    with pytest.raises(ValueError, match='contains no arrays'):
+        model.load_state_from_disk(empty_npz)
+
+    corrupt_npz = tmp_path / 'corrupt.npz'
+    corrupt_npz.write_text('not a zip', encoding='utf-8')
+    with pytest.raises(ValueError, match='Invalid or corrupted hot-start NPZ'):
+        model.load_state_from_disk(corrupt_npz)
+
+    bad_crc_npz = tmp_path / 'bad_crc.npz'
+    arr = np.arange(32, dtype=np.float32).reshape(1, 1, 32)
+    model._write_state_file(
+        {
+            'h_hindcast': arr,
+            'c_hindcast': arr,
+            'h_forecast': arr,
+            'c_forecast': arr,
+        },
+        bad_crc_npz,
+    )
+    raw_bytes = bytearray(bad_crc_npz.read_bytes())
+    raw_bytes[90] ^= 0xFF
+    bad_crc_npz.write_bytes(bytes(raw_bytes))
+    with pytest.raises(ValueError, match='Invalid or corrupted hot-start NPZ'):
+        model.load_state_from_disk(bad_crc_npz)
+
+    bad_writes = [
+        (
+            {'h_hindcast': np.array([[[np.nan]]], dtype=np.float32)},
+            'non-finite',
+        ),
+        (
+            {'h_hindcast': np.array([[[1e100]]], dtype=np.float64)},
+            'float32-overflowing',
+        ),
+        (
+            {'h_hindcast': np.array([[[1 + 2j]]], dtype=np.complex64)},
+            'real numeric dtype',
+        ),
+        ({}, 'dictionary is empty'),
+        (
+            {' h_hindcast ': np.zeros((1, 1, 2), dtype=np.float32)},
+            'state name must be non-empty',
+        ),
+        (
+            {'h_hindcast': np.zeros((1, 0, 2), dtype=np.float32)},
+            'empty dimension',
+        ),
+    ]
+    for idx, (bad_state, err_match) in enumerate(bad_writes):
+        with pytest.raises(ValueError, match=err_match):
+            model._write_state_file(
+                bad_state, tmp_path / f'bad_write_{idx}.csv'
+            )
+
+
+@patch('googlehydrology.datautils.scaler.Scaler.load')
+@patch('googlehydrology.datautils.scaler.Scaler.check_zero_scale')
+def test_state_file_key_validation_and_atomic_write(
+    _mock_check: MagicMock, _mock_load: MagicMock, tmp_path: Path
+) -> None:
+    """Validate LSTM state keys and verify atomic, permission-safe writes."""
+    cfg = Config(get_base_cfg(tmp_path), dev_mode=True)
+    handoff = HandoffForecastLSTM(cfg)
+    mean_cfg = Config(
+        {**get_base_cfg(tmp_path), 'model': 'MeanEmbeddingForecastLSTM'},
+        dev_mode=True,
+    )
+    mean_model = MeanEmbeddingForecastLSTM(mean_cfg)
+
+    arr = np.array([[[0.25, -0.5, 1.5]]], dtype=np.float32)
+    full_state = {
+        'h_hindcast': arr,
+        'c_hindcast': arr,
+        'h_forecast': arr,
+        'c_forecast': arr,
+    }
+    legacy_state = {
+        'h_hind': arr,
+        'c_hind': arr,
+        'h_fore': arr,
+        'c_fore': arr,
+    }
+
+    # Legacy alias names still load cleanly on both models.
+    legacy_csv = tmp_path / 'legacy.csv'
+    handoff._write_state_file(legacy_state, legacy_csv)
+    handoff.load_state_from_disk(legacy_csv)
+    mean_model.load_state_from_disk(legacy_csv)
+
+    # Misspelled, missing, ambiguous, or shape-mismatched keys fail loudly.
+    bad_states = [
+        (
+            {
+                'h_hindcst': arr,
+                'c_hindcast': arr,
+                'h_forecast': arr,
+                'c_forecast': arr,
+            },
+            'Unrecognized hot-start state key',
+        ),
+        (
+            {'h_hindcast': arr, 'c_hindcast': arr},
+            'Missing required forecast hot-start state',
+        ),
+        (
+            {**full_state, 'h_hind': arr},
+            'Ambiguous hot-start state',
+        ),
+        (
+            {
+                **full_state,
+                'c_forecast': np.zeros((1, 1, 4), dtype=np.float32),
+            },
+            'Mismatched shapes for forecast',
+        ),
+    ]
+    for idx, (bad_state, err_match) in enumerate(bad_states):
+        bad_path = tmp_path / f'bad_keys_{idx}.csv'
+        handoff._write_state_file(bad_state, bad_path)
+        for model in (handoff, mean_model):
+            with pytest.raises(ValueError, match=err_match):
+                model.load_state_from_disk(bad_path)
+
+    # Mid-write error preserves the existing file and leaves no temp files.
+    target_csv = tmp_path / 'atomic.csv'
+    handoff._write_state_file(full_state, target_csv)
+    original_bytes = target_csv.read_bytes()
+    with (
+        patch.object(
+            HandoffForecastLSTM,
+            '_write_csv_rows',
+            side_effect=OSError('simulated disk full'),
+        ),
+        pytest.raises(OSError, match='simulated disk full'),
+    ):
+        handoff._write_state_file(full_state, target_csv)
+    assert target_csv.read_bytes() == original_bytes
+    assert not list(tmp_path.glob('*.tmp'))
+
+    # On POSIX, writes respect umask (not forced 0600) and follow symlinks.
+    if os.name == 'posix':
+        ref_file = tmp_path / 'umask_ref.txt'
+        ref_file.write_text('x', encoding='utf-8')
+        expected_mode = stat.S_IMODE(ref_file.stat().st_mode)
+        assert stat.S_IMODE(target_csv.stat().st_mode) == expected_mode
+
+        target_npz = tmp_path / 'atomic.npz'
+        handoff._write_state_file(full_state, target_npz)
+        assert stat.S_IMODE(target_npz.stat().st_mode) == expected_mode
+
+        real_target = tmp_path / 'real_state.csv'
+        link_path = tmp_path / 'current_state.csv'
+        link_path.symlink_to(real_target)
+        handoff._write_state_file(full_state, link_path)
+        assert link_path.is_symlink()
+        assert real_target.is_file()
+
+
+@patch('googlehydrology.datautils.scaler.Scaler.load')
+@patch('googlehydrology.datautils.scaler.Scaler.check_zero_scale')
+def test_state_file_uppercase_npz_and_bom_csv_roundtrip(
+    _mock_check: MagicMock, _mock_load: MagicMock, tmp_path: Path
+) -> None:
+    """Handle uppercase .NPZ filenames and BOM/blank lines in CSV files."""
+    cfg = Config(get_base_cfg(tmp_path), dev_mode=True)
+    model = HandoffForecastLSTM(cfg)
+    arr = np.array([[[0.25, -0.5, 1.5]]], dtype=np.float32)
+    full_state = {
+        'h_hindcast': arr,
+        'c_hindcast': arr,
+        'h_forecast': arr,
+        'c_forecast': arr,
+    }
+
+    upper_npz = tmp_path / 'state_upper.NPZ'
+    model._write_state_file(full_state, upper_npz)
+    assert upper_npz.is_file()
+    assert not (tmp_path / 'state_upper.NPZ.npz').exists()
+    model.load_state_from_disk(upper_npz)
+    np.testing.assert_array_equal(model._preloaded_state['h_hindcast'], arr)
+
+    bom_csv = tmp_path / 'state_excel_bom.CSV'
+    model._write_state_file(full_state, bom_csv)
+    raw_text = bom_csv.read_text(encoding='utf-8')
+    bom_csv.write_bytes(
+        b'\xef\xbb\xbf' + (raw_text + '\n   \n').encode('utf-8')
+    )
+    model.load_state_from_disk(bom_csv)
+    np.testing.assert_array_equal(model._preloaded_state['h_hindcast'], arr)
+
+
+def test_resolve_basin_state_path(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Resolve single-file and directory state paths across formats."""
+    tester = object.__new__(BaseTester)
+    cfg_dict = get_base_cfg(tmp_path)
+    tester.cfg = Config(cfg_dict)
+
+    single_csv = tmp_path / 'custom_state.csv'
+    single_csv.write_text('state,layer,batch,unit,value\n', encoding='utf-8')
+    assert tester._resolve_basin_state_path(single_csv, '0101') == single_csv
+    assert (
+        tester._resolve_basin_state_path(tmp_path / 'missing.csv', '0101')
+        is None
+    )
+
+    state_dir = tmp_path / 'states'
+    state_dir.mkdir()
+    assert tester._resolve_basin_state_path(state_dir, '0101') is None
+
+    # Uppercase extension in a directory resolves case-insensitively on Linux.
+    upper_dir = tmp_path / 'upper_states'
+    upper_dir.mkdir()
+    upper_csv = upper_dir / 'state_0101.CSV'
+    upper_csv.write_text('', encoding='utf-8')
+    with caplog.at_level(logging.WARNING):
+        assert tester._resolve_basin_state_path(upper_dir, '0101') == upper_csv
+    assert not caplog.records
+
+    bare_csv = state_dir / '0101.csv'
+    bare_csv.write_text('', encoding='utf-8')
+    with caplog.at_level(logging.WARNING):
+        assert tester._resolve_basin_state_path(state_dir, '0101') == bare_csv
+    assert not caplog.records
+
+    prefixed_csv = state_dir / 'state_0101.csv'
+    prefixed_csv.write_text('', encoding='utf-8')
+    with caplog.at_level(logging.WARNING):
+        assert (
+            tester._resolve_basin_state_path(state_dir, '0101') == prefixed_csv
+        )
+    assert any(
+        'Multiple hot-start state files found' in rec.message
+        for rec in caplog.records
+    )
+
+    caplog.clear()
+    prefixed_npz = state_dir / 'state_0101.npz'
+    prefixed_npz.write_bytes(b'')
+    with caplog.at_level(logging.WARNING):
+        assert (
+            tester._resolve_basin_state_path(state_dir, '0101') == prefixed_npz
+        )
+    assert any('preferred format: npz' in rec.message for rec in caplog.records)
+
+    caplog.clear()
+    tester.cfg.save_state_format = 'csv'
+    with caplog.at_level(logging.WARNING):
+        assert (
+            tester._resolve_basin_state_path(state_dir, '0101') == prefixed_csv
+        )
+    assert any('preferred format: csv' in rec.message for rec in caplog.records)
