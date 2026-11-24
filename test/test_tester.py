@@ -13,12 +13,20 @@
 # limitations under the License.
 
 from math import ceil
+from pathlib import Path
+from typing import get_type_hints
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from googlehydrology.datasetzoo.multimet import SampleIndexer
-from googlehydrology.evaluation.utils import BasinBatchSampler
+from googlehydrology.evaluation.tester import RegressionTester
+from googlehydrology.evaluation.utils import (
+    BasinBatchSampler,
+    metrics_to_dataframe,
+)
+from googlehydrology.utils.config import Config
 
 
 @pytest.fixture
@@ -249,3 +257,93 @@ def test_evaluate_synchronizes_configured_cuda_device():
     torch.testing.assert_close(
         results[0]['obs']['1D'], torch.full((2, 2, 1), 3.0)
     )
+
+
+def test_metrics_to_dataframe_canonicalizes_case_insensitive_names() -> None:
+    """Lowercase metric names must map to canonical keys instead of NaN."""
+    expected_nse = 0.82
+    expected_kge = 0.74
+    results = {'basin_A': {'1D': {'NSE': expected_nse, 'KGE': expected_kge}}}
+
+    df = metrics_to_dataframe(results, ['nse', 'kge', 'NSE'], ['streamflow'])
+
+    assert list(df.columns) == ['NSE', 'KGE']
+    assert df.loc['basin_A', 'NSE'] == expected_nse
+    assert df.loc['basin_A', 'KGE'] == expected_kge
+
+
+def test_save_incremental_results_canonicalizes_and_uses_metrics_arg(
+    tmp_path: Path,
+) -> None:
+    """Passing explicit `metrics` overrides `cfg.metrics` and avoids NaN CSV."""
+    tester = object.__new__(RegressionTester)
+    tester.period = 'test'
+    tester.run_dir = tmp_path
+    tester.cfg = Config(
+        {
+            'metrics': ['nse'],
+            'target_variables': ['streamflow'],
+            'inference_mode': False,
+        }
+    )
+
+    # Explicit metrics=[] must skip CSV writing even when cfg.metrics is set.
+    tester._save_incremental_results(
+        'basin_A',
+        results={'1D': {'NSE': 0.5}},
+        states={},
+        save_results=False,
+        epoch=1,
+        metrics=[],
+    )
+    csv_path = tmp_path / 'test' / 'model_epoch001' / 'test_metrics.csv'
+    assert not csv_path.exists()
+
+    # Passing lowercase 'kge' overrides cfg.metrics=['nse'] cleanly.
+    expected_kge = 0.61
+    tester._save_incremental_results(
+        'basin_A',
+        results={'1D': {'KGE': expected_kge}},
+        states={},
+        save_results=False,
+        epoch=1,
+        metrics=['kge'],
+    )
+    df = pd.read_csv(csv_path, index_col=0)
+    assert list(df.columns) == ['KGE']
+    assert df.loc['basin_A', 'KGE'] == expected_kge
+
+
+def test_save_incremental_results_defaults_to_cfg_metrics_case_insensitively(
+    tmp_path: Path,
+) -> None:
+    """Direct calls without `metrics` canonicalize `self.cfg.metrics`."""
+    tester = object.__new__(RegressionTester)
+    tester.period = 'test'
+    tester.run_dir = tmp_path
+    tester.cfg = Config(
+        {
+            'metrics': ['nse'],
+            'target_variables': ['streamflow'],
+            'inference_mode': False,
+        }
+    )
+
+    expected_nse = 0.91
+    tester._save_incremental_results(
+        'basin_A',
+        results={'1D': {'NSE': expected_nse}},
+        states={},
+        save_results=False,
+        epoch=1,
+    )
+    csv_path = tmp_path / 'test' / 'model_epoch001' / 'test_metrics.csv'
+    df = pd.read_csv(csv_path, index_col=0)
+    assert list(df.columns) == ['NSE']
+    assert df.loc['basin_A', 'NSE'] == expected_nse
+
+
+def test_config_metrics_setter_type_hints_are_valid() -> None:
+    """Config.metrics setter must carry valid runtime-introspectable hints."""
+    hints = get_type_hints(Config.metrics.fset)
+    assert hints['metrics'] == str | list[str] | dict[str, list[str]]

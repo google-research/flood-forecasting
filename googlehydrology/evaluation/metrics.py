@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 import numpy as np
 import pandas as pd
@@ -890,10 +890,65 @@ def calculate_all_metrics(
     )
 
 
+def resolve_metric_names(metrics: str | Iterable[str]) -> list[str]:
+    """Validate and canonicalize requested metric names in order.
+
+    Parameters
+    ----------
+    metrics : str | Iterable[str]
+        A single metric name (e.g. ``'NSE'`` or ``'all'``) or an iterable of
+        metric names. Registered metric names are matched case-insensitively
+        and returned in their canonical spelling; the ``'all'`` sentinel is
+        case-sensitive.
+
+    Returns
+    -------
+    list[str]
+        Ordered, deduplicated list of canonical metric names.
+
+    Raises
+    ------
+    TypeError
+        If ``metrics`` is not a string or iterable of strings.
+    RuntimeError
+        If any requested metric name is unknown.
+    """
+    if isinstance(metrics, str):
+        requested_list = [metrics]
+    elif isinstance(metrics, Iterable):
+        requested_list = list(metrics)
+    else:
+        raise TypeError(
+            'metrics must be a metric name string or an iterable of metric '
+            f'names, got {type(metrics).__name__}.'
+        )
+
+    for item in requested_list:
+        if not isinstance(item, str):
+            raise TypeError(
+                f'Metric names must be strings, got {type(item).__name__}.'
+            )
+
+    if 'all' in requested_list:
+        return get_available_metrics()
+
+    canonical_names = {name.lower(): name for name in _METRIC_FUNCTIONS}
+    resolved: list[str] = []
+    seen: set[str] = set()
+    for metric in requested_list:
+        canonical = canonical_names.get(metric.lower())
+        if canonical is None:
+            raise RuntimeError(f'Unknown metric {metric}')
+        if canonical not in seen:
+            seen.add(canonical)
+            resolved.append(canonical)
+    return resolved
+
+
 def calculate_metrics(
     obs: DataArray,
     sim: DataArray,
-    metrics: list[str],
+    metrics: str | Iterable[str],
     resolution: str = '1D',
     datetime_coord: str = None,
 ) -> dict[str, float]:
@@ -905,8 +960,8 @@ def calculate_metrics(
         Observed time series.
     sim : DataArray
         Simulated time series.
-    metrics : list[str]
-        List of metric names.
+    metrics : str | Iterable[str]
+        Metric name or iterable of metric names.
     resolution : str, optional
         Temporal resolution of the time series in pandas format, e.g. '1D' for daily and '1h' for hourly.
     datetime_coord : str, optional
@@ -922,17 +977,11 @@ def calculate_metrics(
     AllNaNError
         If all observations or all simulations are NaN.
     """
-    if 'all' in metrics:
-        metrics = get_available_metrics()
-
     _check_all_nan(obs, sim)
 
-    canonical_names = {name.lower(): name for name in _METRIC_FUNCTIONS}
+    resolved_metrics = resolve_metric_names(metrics)
     values = {}
-    for metric in metrics:
-        name = canonical_names.get(metric.lower())
-        if name is None:
-            raise RuntimeError(f'Unknown metric {metric}')
+    for name in resolved_metrics:
         function = _METRIC_FUNCTIONS[name]
         if function in (mean_peak_timing, missed_peaks):
             values[name] = function(

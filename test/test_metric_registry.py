@@ -190,3 +190,36 @@ def test_scalar_metrics_do_not_require_datetime_coordinates() -> None:
     sim = xr.DataArray([1.0, 3.0, 2.0])
     assert metrics.calculate_metrics(obs, sim, []) == {}
     assert metrics.calculate_metrics(obs, sim, ['mse']) == {'MSE': 2 / 3}
+
+
+@pytest.mark.unit
+def test_resolve_metric_names_canonicalizes_and_handles_bare_strings() -> None:
+    """Resolve case-insensitive names, bare strings, and the 'all' sentinel."""
+    assert metrics.resolve_metric_names(['nse', 'Kge', 'NSE']) == ['NSE', 'KGE']
+    assert metrics.resolve_metric_names('nse') == ['NSE']
+    assert metrics.resolve_metric_names('all') == list(NAMES)
+    assert metrics.resolve_metric_names(['all']) == list(NAMES)
+    assert metrics.resolve_metric_names([]) == []
+
+    obs, sim = _hydrographs()
+    assert set(metrics.calculate_metrics(obs, sim, 'nse')) == {'NSE'}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('bad_name', ['totally_bogus', 'fall', 'ALL'])
+def test_resolve_metric_names_rejects_all_substring_and_unknown(
+    bad_name: str,
+) -> None:
+    """A bare string containing 'all' as a substring must never match 'all'."""
+    with pytest.raises(RuntimeError, match=f'Unknown metric {bad_name}'):
+        metrics.resolve_metric_names(bad_name)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('bad_input', [None, 42, ['NSE', 123]])
+def test_resolve_metric_names_rejects_non_string_inputs(
+    bad_input: object,
+) -> None:
+    """Non-iterable inputs and non-string metric items fail with TypeError."""
+    with pytest.raises(TypeError):
+        metrics.resolve_metric_names(bad_input)  # type: ignore[arg-type]

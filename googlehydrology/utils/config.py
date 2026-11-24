@@ -662,7 +662,7 @@ class Config(object):
         return self._cfg.get('metrics', [])
 
     @metrics.setter
-    def metrics(self, metrics: str | list[str, dict[str, list[str]]]):
+    def metrics(self, metrics: str | list[str] | dict[str, list[str]]) -> None:
         self._cfg['metrics'] = metrics
 
     @property
