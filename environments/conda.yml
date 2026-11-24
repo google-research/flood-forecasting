@@ -17,16 +17,12 @@
 
 name: googlehydrology
 channels:  # Keep order
-  - pytorch
-  - nvidia
   - conda-forge
   - defaults
 dependencies:
   - absl-py=2.3.*
   - bokeh=3.8.1
   - cachey=0.2.1
-  - cuda-toolkit=12.4.*
-  - cuda-version=12.4
   - dask=2025.12.0
   - gcsfs=2025.12.*
   - geopandas=1.1.*
@@ -51,8 +47,7 @@ dependencies:
   - pytest-cov
   - pytest-xdist
   - python=3.12.*
-  - pytorch=2.5.1
-  - pytorch-cuda=12.4
+  - pytorch>=2.10
   - rasterio=1.5.*
   - ruamel.yaml=0.18.17
   - ruff
@@ -62,8 +57,8 @@ dependencies:
   - sphinx=8.2.3
   - sphinx-rtd-theme=3.0.2
   - tensorboard=2.20.*
-  - torchaudio=2.5.1
-  - torchvision=0.20.1
+  - torchaudio>=2.10
+  - torchvision>=0.25
   - tqdm=4.67.*
   - xarray=2025.12.0
   - zarr=3.1.5

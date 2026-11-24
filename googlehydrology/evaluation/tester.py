@@ -53,6 +53,7 @@ from googlehydrology.modelzoo import get_model
 from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.training import get_loss_obj, get_regularization_obj
 from googlehydrology.training.logger import Logger, do_log_figures
+from googlehydrology.utils import safe_torch_load
 from googlehydrology.utils.config import (
     VALID_STATE_FORMATS,
     Config,
@@ -193,9 +194,7 @@ class BaseTester(object):
         weight_file = self._get_weight_file(epoch)
 
         LOGGER.info('Using the model weights from %s', weight_file)
-        state_dict = torch.load(
-            weight_file, map_location=self.device, weights_only=True
-        )
+        state_dict = safe_torch_load(weight_file, map_location=self.device)
         # Drop `_orig_mod.` prefix introduced by torch.compile.
         state_dict = {
             k.removeprefix('_orig_mod.'): v for k, v in state_dict.items()
