@@ -352,17 +352,22 @@ These options save and load LSTM hidden and cell states between evaluation or
 inference runs so you can skip full hindcast spin-up.
 
 -  ``save_state``: ``True``/``False`` (default ``False``). When ``True``,
-   evaluation and inference write each basin's final LSTM states to
-   ``<run_dir>/hot_start_states/state_<basin>.<ext>``.
+   non-training evaluation and inference runs (``validation``, ``test``, and
+   ``infer``; skipped for ``period='train'``) write each basin's final LSTM
+   states to ``<run_dir>/hot_start_states/state_<basin>.<ext>``. Saving
+   reloadable states requires ``seq_length > 0`` and ``batch_size: 1``.
 -  ``save_state_format``: ``npz`` (default) or ``csv``. Controls the file format
    written when ``save_state`` is ``True``, and also sets the preferred format
    when ``hot_start_path`` points to a directory containing both ``.npz`` and
-   ``.csv`` files for the same basin. The ``csv`` format writes a plain table
-   with columns ``state,layer,batch,unit,value``.
--  ``hot_start_path``: Path to a saved state file (``.npz`` or ``.csv``) or a
-   directory of per-basin state files (``state_<basin>.<ext>`` or
-   ``<basin>.<ext>``, preferring ``save_state_format`` if multiple formats
-   exist). Hot-start runs require ``batch_size: 1``.
+   ``.csv`` files for the same basin. The ``csv`` format writes finite
+   ``float32`` values as a plain table with columns
+   ``state,layer,batch,unit,value``.
+-  ``hot_start_path``: Path to a saved state file (``.npz`` or ``.csv``,
+   applied to all basins) or a directory of per-basin state files
+   (``state_<basin>.<ext>`` or ``<basin>.<ext>``, matched case-insensitively on
+   extension and preferring ``save_state_format`` if multiple formats exist;
+   missing files fall back to a cold start). Hot-start runs require
+   ``batch_size: 1``.
 
 Finetune settings
 -----------------

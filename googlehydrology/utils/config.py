@@ -136,7 +136,7 @@ class Config(object):
         if not (self._cfg.get('dev_mode', False) or dev_mode):
             Config._check_cfg_keys(self._cfg)
 
-        if self._cfg.get('save_state_format') is not None:
+        if 'save_state_format' in self._cfg:
             self._cfg['save_state_format'] = self.save_state_format
 
         # Adjust experiment name
@@ -946,8 +946,10 @@ class Config(object):
         return _normalize_state_format(val)
 
     @save_state_format.setter
-    def save_state_format(self, val: str) -> None:
-        self._cfg['save_state_format'] = _normalize_state_format(val)
+    def save_state_format(self, val: str | None) -> None:
+        self._cfg['save_state_format'] = (
+            'npz' if val is None else _normalize_state_format(val)
+        )
 
     @property
     def train_end_date(self) -> list[pd.Timestamp]:

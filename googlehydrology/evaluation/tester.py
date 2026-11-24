@@ -107,7 +107,10 @@ class BaseTester(object):
                     f'Got batch_size={self.cfg.batch_size}.'
                 )
 
-        if getattr(self.cfg, 'save_state', False):
+        if (
+            getattr(self.cfg, 'save_state', False)
+            or getattr(self.cfg, 'hot_start_path', None) is not None
+        ):
             _ = self.cfg.save_state_format
 
         # determine device
@@ -737,8 +740,23 @@ class BaseTester(object):
         parent_directory.mkdir(parents=True, exist_ok=True)
         return parent_directory
 
+    @staticmethod
+    def _index_state_dir(state_dir: Path) -> dict[str, list[Path]]:
+        """Map file stems in ``state_dir`` to state files with valid formats."""
+        valid_exts = frozenset(VALID_STATE_FORMATS)
+        index: dict[str, list[Path]] = {}
+        for entry in state_dir.iterdir():
+            ext = entry.suffix.lstrip('.').lower()
+            if ext in valid_exts and entry.is_file():
+                index.setdefault(entry.stem, []).append(entry)
+        return index
+
     def _resolve_basin_state_path(
-        self, state_path: Path, basin: str
+        self,
+        state_path: Path,
+        basin: str,
+        *,
+        state_index: dict[str, list[Path]] | None = None,
     ) -> Path | None:
         """Resolve the hot-start state file path for ``basin`` if present."""
         if not state_path.is_dir():
@@ -748,17 +766,26 @@ class BaseTester(object):
             preferred_ext,
             *(ext for ext in VALID_STATE_FORMATS if ext != preferred_ext),
         )
+        ext_rank = {ext: idx for idx, ext in enumerate(extensions)}
+        dir_index = (
+            state_index
+            if state_index is not None
+            else self._index_state_dir(state_path)
+        )
+        prefixed_stem = f'state_{basin}'
         matches = [
-            candidate
-            for ext in extensions
-            for candidate in (
-                state_path / f'state_{basin}.{ext}',
-                state_path / f'{basin}.{ext}',
-            )
-            if candidate.is_file()
+            *dir_index.get(prefixed_stem, ()),
+            *dir_index.get(basin, ()),
         ]
         if not matches:
             return None
+        matches.sort(
+            key=lambda p: (
+                ext_rank[p.suffix.lstrip('.').lower()],
+                0 if p.stem == prefixed_stem else 1,
+                p.name,
+            )
+        )
         if len(matches) > 1:
             LOGGER.warning(
                 'Multiple hot-start state files found for basin %s in %s '
@@ -786,6 +813,13 @@ class BaseTester(object):
                 frequencies[0]: predict_last_n
             }  # if predict_last_n is int, there's only one frequency
 
+        hot_start_path = getattr(self.cfg, 'hot_start_path', None)
+        hot_start_index = (
+            self._index_state_dir(hot_start_path)
+            if hot_start_path is not None and hot_start_path.is_dir()
+            else None
+        )
+
         # Data assimilation optimizes model components with autograd and thus
         # cannot run in inference mode.
         with (
@@ -803,9 +837,9 @@ class BaseTester(object):
 
                 model.reset_state()
                 # Pre-load hot-start state for this basin if configured
-                if getattr(self.cfg, 'hot_start_path', None) is not None:
+                if hot_start_path is not None:
                     basin_state = self._resolve_basin_state_path(
-                        self.cfg.hot_start_path, basin
+                        hot_start_path, basin, state_index=hot_start_index
                     )
                     if basin_state is not None:
                         model.load_state_from_disk(basin_state)

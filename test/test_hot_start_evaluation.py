@@ -114,8 +114,20 @@ def test_evaluate_saves_reloadable_hot_start_states(
     assert {p.name for p in state_dir.glob(f'*.{save_state_format}')} == {
         f'state_{basin}.{save_state_format}' for basin in tester.basins
     }
+    _assert_saved_states_replay(
+        tester, save.call_args_list, cfg, save_state_format
+    )
+
+
+def _assert_saved_states_replay(
+    tester: RegressionTester,
+    save_calls: list,
+    cfg: Config,
+    save_state_format: str,
+) -> None:
+    """Check saved state contents and verify bit-close hot-start replay."""
     expected_keys = {'h_hindcast', 'c_hindcast', 'h_forecast', 'c_forecast'}
-    for call in save.call_args_list:
+    for call in save_calls:
         data, path = call.args
         if save_state_format == 'npz':
             with np.load(path, allow_pickle=False) as state:
@@ -147,28 +159,43 @@ def test_evaluate_saves_reloadable_hot_start_states(
             cfg.seq_length = original_length
         torch.testing.assert_close(hot, cold, rtol=1e-5, atol=1e-6)
 
-    if save_state_format == 'csv':
-        # Verify RegressionTester discovers and loads saved CSV states from a
-        # directory even when save_state_format stays at its default ('npz').
-        hot_cfg = Config(hot_start_run / 'config.yml')
-        hot_cfg.update_config(
-            {'batch_size': 1, 'hot_start_path': str(state_dir)}
-        )
-        hot_tester = RegressionTester(
-            hot_cfg, run_dir=hot_start_run, period=period
-        )
-        shutil.copy2(hot_start_run / 'model_epoch001.pt', tmp_path)
-        hot_tester.run_dir = tmp_path
-        with patch.object(
-            hot_tester.model,
-            'load_state_from_disk',
-            wraps=hot_tester.model.load_state_from_disk,
-        ) as load_state:
-            hot_tester.evaluate(epoch=1, save_results=False)
-        assert load_state.call_count == len(hot_tester.basins)
-        assert {c.args[0].name for c in load_state.call_args_list} == {
-            f'state_{basin}.csv' for basin in hot_tester.basins
-        }
+
+@pytest.mark.integration
+def test_evaluate_discovers_csv_states_from_directory(
+    hot_start_run: Path, tmp_path: Path
+) -> None:
+    """Discover and load saved CSV states even when default format is npz."""
+    save_dir = tmp_path / 'save_run'
+    save_dir.mkdir()
+    save_cfg = Config(hot_start_run / 'config.yml')
+    save_cfg.update_config(
+        {'batch_size': 1, 'save_state': True, 'save_state_format': 'csv'}
+    )
+    save_tester = RegressionTester(
+        save_cfg, run_dir=hot_start_run, period='test'
+    )
+    shutil.copy2(hot_start_run / 'model_epoch001.pt', save_dir)
+    save_tester.run_dir = save_dir
+    save_tester.evaluate(epoch=1, save_results=False)
+    state_dir = save_dir / 'hot_start_states'
+
+    hot_dir = tmp_path / 'hot_run'
+    hot_dir.mkdir()
+    hot_cfg = Config(hot_start_run / 'config.yml')
+    hot_cfg.update_config({'batch_size': 1, 'hot_start_path': str(state_dir)})
+    hot_tester = RegressionTester(hot_cfg, run_dir=hot_start_run, period='test')
+    shutil.copy2(hot_start_run / 'model_epoch001.pt', hot_dir)
+    hot_tester.run_dir = hot_dir
+    with patch.object(
+        hot_tester.model,
+        'load_state_from_disk',
+        wraps=hot_tester.model.load_state_from_disk,
+    ) as load_state:
+        hot_tester.evaluate(epoch=1, save_results=False)
+    assert load_state.call_count == len(hot_tester.basins)
+    assert {c.args[0].name for c in load_state.call_args_list} == {
+        f'state_{basin}.csv' for basin in hot_tester.basins
+    }
 
 
 def test_hot_start_template_uses_single_sample_batches() -> None:

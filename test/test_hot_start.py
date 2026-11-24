@@ -478,12 +478,32 @@ def test_save_state_format_config_validation(tmp_path: Path) -> None:
     cfg = Config(cfg_dict)
     assert cfg.save_state_format == 'npz'
 
-    cfg_csv = Config({**cfg_dict, 'save_state_format': ' CSV '})
+    cfg_csv = Config(
+        {
+            **cfg_dict,
+            'save_state_format': ' CSV ',
+            'experiment_name': 'exp_{save_state_format}',
+        }
+    )
     assert cfg_csv.save_state_format == 'csv'
     assert cfg_csv.as_dict()['save_state_format'] == 'csv'
+    assert cfg_csv.experiment_name == 'exp_csv'
+
+    cfg_none = Config(
+        {
+            **cfg_dict,
+            'save_state_format': None,
+            'experiment_name': 'exp_{save_state_format}',
+        }
+    )
+    assert cfg_none.save_state_format == 'npz'
+    assert cfg_none.as_dict()['save_state_format'] == 'npz'
+    assert cfg_none.experiment_name == 'exp_npz'
 
     cfg.save_state_format = 'csv'
     assert cfg.save_state_format == 'csv'
+    cfg.save_state_format = None
+    assert cfg.save_state_format == 'npz'
 
     with pytest.raises(ValueError, match='Unsupported save_state_format'):
         Config({**cfg_dict, 'save_state_format': 'parquet'})
@@ -504,6 +524,15 @@ def test_state_file_errors_fail_loudly(
     with pytest.raises(FileNotFoundError, match='state file not found'):
         model.load_state_from_disk(tmp_path / 'missing.csv')
 
+    dir_csv = tmp_path / 'as_dir.csv'
+    dir_csv.mkdir()
+    with pytest.raises(IsADirectoryError, match='is a directory'):
+        model.load_state_from_disk(dir_csv)
+    with pytest.raises(IsADirectoryError, match='is a directory'):
+        model._write_state_file(
+            {'h_hindcast': np.zeros((1, 1, 2), dtype=np.float32)}, dir_csv
+        )
+
     bad_ext = tmp_path / 'state.json'
     bad_ext.write_text('{}', encoding='utf-8')
     with pytest.raises(ValueError, match='Unsupported hot-start state file'):
@@ -512,6 +541,24 @@ def test_state_file_errors_fail_loudly(
         model._write_state_file(
             {'h_hindcast': np.zeros((1, 1, 2), dtype=np.float32)}, bad_ext
         )
+
+    # Malformed / empty / non-archive NPZ files fail with ValueError.
+    npy_as_npz = tmp_path / 'array_not_archive.npz'
+    with npy_as_npz.open('wb') as handle:
+        np.save(handle, np.zeros((1, 1, 2), dtype=np.float32))
+    with pytest.raises(ValueError, match='not a valid NPZ archive'):
+        model.load_state_from_disk(npy_as_npz)
+
+    empty_npz = tmp_path / 'empty_archive.npz'
+    with empty_npz.open('wb') as handle:
+        np.savez_compressed(handle)
+    with pytest.raises(ValueError, match='contains no arrays'):
+        model.load_state_from_disk(empty_npz)
+
+    corrupt_npz = tmp_path / 'corrupt.npz'
+    corrupt_npz.write_text('not a zip', encoding='utf-8')
+    with pytest.raises(ValueError, match='Invalid or corrupted hot-start NPZ'):
+        model.load_state_from_disk(corrupt_npz)
 
     header = 'state,layer,batch,unit,value\n'
     bad_cases = [
@@ -524,6 +571,8 @@ def test_state_file_errors_fail_loudly(
         (f'{header}h_hindcast,-1,0,0,1.0\n', 'non-negative'),
         (f'{header}h_hindcast,0,0,0,nan\n', 'finite float'),
         (f'{header}h_hindcast,0,0,0,inf\n', 'finite float'),
+        (f'{header}h_hindcast,0,0,0,٣.٥\n', 'finite float'),
+        (f'{header}h_hindcast,0,0,0,{"1" * 10000}x\n', 'finite float'),
         (
             f'{header}h_hindcast,0,0,0,1.0\nh_hindcast,0,0,0,2.0\n',
             'Duplicate coordinate',
@@ -532,6 +581,7 @@ def test_state_file_errors_fail_loudly(
             f'{header}h_hindcast,0,0,0,1.0\nh_hindcast,0,0,2,2.0\n',
             'Incomplete 3D grid',
         ),
+        (f'{header}\n\nh_hindcast,0,0,0,bad\n', 'line 4'),
     ]
     for idx, (content, err_match) in enumerate(bad_cases):
         bad_csv = tmp_path / f'bad_{idx}.csv'
@@ -554,18 +604,113 @@ def test_state_file_errors_fail_loudly(
         model._write_state_file(
             {'h_hindcast': np.array([[[np.nan]]], dtype=np.float32)}, nan_csv
         )
+    with pytest.raises(ValueError, match='float32-overflowing'):
+        model._write_state_file(
+            {'h_hindcast': np.array([[[1e100]]], dtype=np.float64)},
+            tmp_path / 'f64_overflow.csv',
+        )
+    with pytest.raises(ValueError, match='real numeric dtype'):
+        model._write_state_file(
+            {'h_hindcast': np.array([[[1 + 2j]]], dtype=np.complex64)},
+            tmp_path / 'complex.csv',
+        )
     with pytest.raises(ValueError, match='dictionary is empty'):
         model._write_state_file({}, tmp_path / 'empty_dict.csv')
     with pytest.raises(ValueError, match='state name must be non-empty'):
         model._write_state_file(
-            {' ': np.zeros((1, 1, 2), dtype=np.float32)},
-            tmp_path / 'blank_name.csv',
+            {' h_hindcast ': np.zeros((1, 1, 2), dtype=np.float32)},
+            tmp_path / 'padded_name.csv',
         )
     with pytest.raises(ValueError, match='empty dimension'):
         model._write_state_file(
             {'h_hindcast': np.zeros((1, 0, 2), dtype=np.float32)},
             tmp_path / 'empty_dim.csv',
         )
+
+
+@patch('googlehydrology.datautils.scaler.Scaler.load')
+@patch('googlehydrology.datautils.scaler.Scaler.check_zero_scale')
+def test_state_file_key_validation_and_atomic_write(
+    _mock_check: MagicMock, _mock_load: MagicMock, tmp_path: Path
+) -> None:
+    """Reject misspelled/incomplete LSTM states and write state files atomically."""
+    cfg = Config(get_base_cfg(tmp_path), dev_mode=True)
+    handoff = HandoffForecastLSTM(cfg)
+    mean_cfg = Config(
+        {**get_base_cfg(tmp_path), 'model': 'MeanEmbeddingForecastLSTM'},
+        dev_mode=True,
+    )
+    mean_model = MeanEmbeddingForecastLSTM(mean_cfg)
+
+    arr = np.array([[[0.25, -0.5, 1.5]]], dtype=np.float32)
+    full_state = {
+        'h_hindcast': arr,
+        'c_hindcast': arr,
+        'h_forecast': arr,
+        'c_forecast': arr,
+    }
+    legacy_state = {
+        'h_hind': arr,
+        'c_hind': arr,
+        'h_fore': arr,
+        'c_fore': arr,
+    }
+
+    # Legacy alias names still load cleanly on both models.
+    legacy_csv = tmp_path / 'legacy.csv'
+    handoff._write_state_file(legacy_state, legacy_csv)
+    handoff.load_state_from_disk(legacy_csv)
+    mean_model.load_state_from_disk(legacy_csv)
+
+    # Misspelled, missing, ambiguous, or shape-mismatched keys fail loudly.
+    bad_states = [
+        (
+            {
+                'h_hindcst': arr,
+                'c_hindcast': arr,
+                'h_forecast': arr,
+                'c_forecast': arr,
+            },
+            'Unrecognized hot-start state key',
+        ),
+        (
+            {'h_hindcast': arr, 'c_hindcast': arr},
+            'Missing required forecast hot-start state',
+        ),
+        (
+            {**full_state, 'h_hind': arr},
+            'Ambiguous hot-start state',
+        ),
+        (
+            {
+                **full_state,
+                'c_forecast': np.zeros((1, 1, 4), dtype=np.float32),
+            },
+            'Mismatched shapes for forecast',
+        ),
+    ]
+    for idx, (bad_state, err_match) in enumerate(bad_states):
+        bad_path = tmp_path / f'bad_keys_{idx}.csv'
+        handoff._write_state_file(bad_state, bad_path)
+        for model in (handoff, mean_model):
+            with pytest.raises(ValueError, match=err_match):
+                model.load_state_from_disk(bad_path)
+
+    # Mid-write failure leaves existing good state intact with no stray temp files.
+    target_csv = tmp_path / 'atomic.csv'
+    handoff._write_state_file(full_state, target_csv)
+    original_bytes = target_csv.read_bytes()
+    with (
+        patch.object(
+            HandoffForecastLSTM,
+            '_write_csv_rows',
+            side_effect=OSError('simulated disk full'),
+        ),
+        pytest.raises(OSError, match='simulated disk full'),
+    ):
+        handoff._write_state_file(full_state, target_csv)
+    assert target_csv.read_bytes() == original_bytes
+    assert not list(tmp_path.glob('*.tmp'))
 
 
 @patch('googlehydrology.datautils.scaler.Scaler.load')
@@ -577,16 +722,22 @@ def test_state_file_uppercase_npz_and_bom_csv_roundtrip(
     cfg = Config(get_base_cfg(tmp_path), dev_mode=True)
     model = HandoffForecastLSTM(cfg)
     arr = np.array([[[0.25, -0.5, 1.5]]], dtype=np.float32)
+    full_state = {
+        'h_hindcast': arr,
+        'c_hindcast': arr,
+        'h_forecast': arr,
+        'c_forecast': arr,
+    }
 
     upper_npz = tmp_path / 'state_upper.NPZ'
-    model._write_state_file({'h_hindcast': arr}, upper_npz)
+    model._write_state_file(full_state, upper_npz)
     assert upper_npz.is_file()
     assert not (tmp_path / 'state_upper.NPZ.npz').exists()
     model.load_state_from_disk(upper_npz)
     np.testing.assert_array_equal(model._preloaded_state['h_hindcast'], arr)
 
     bom_csv = tmp_path / 'state_excel_bom.CSV'
-    model._write_state_file({'h_hindcast': arr}, bom_csv)
+    model._write_state_file(full_state, bom_csv)
     raw_text = bom_csv.read_text(encoding='utf-8')
     bom_csv.write_bytes(
         b'\xef\xbb\xbf' + (raw_text + '\n   \n').encode('utf-8')
@@ -614,6 +765,15 @@ def test_resolve_basin_state_path(
     state_dir = tmp_path / 'states'
     state_dir.mkdir()
     assert tester._resolve_basin_state_path(state_dir, '0101') is None
+
+    # Uppercase extension in a directory resolves case-insensitively on Linux.
+    upper_dir = tmp_path / 'upper_states'
+    upper_dir.mkdir()
+    upper_csv = upper_dir / 'state_0101.CSV'
+    upper_csv.write_text('', encoding='utf-8')
+    with caplog.at_level(logging.WARNING):
+        assert tester._resolve_basin_state_path(upper_dir, '0101') == upper_csv
+    assert not caplog.records
 
     bare_csv = state_dir / '0101.csv'
     bare_csv.write_text('', encoding='utf-8')

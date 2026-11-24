@@ -576,7 +576,9 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         path : str | Path
             Path to the .npz or .csv state file to load.
         """
-        self._preloaded_state = self._read_state_file(path)
+        self._preloaded_state = self._validate_lstm_hot_start_state(
+            self._read_state_file(path), path
+        )
 
     def _make_static_embedding_repeated(
         self, time_length: int, static_embedding: torch.Tensor

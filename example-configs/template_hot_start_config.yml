@@ -243,7 +243,8 @@ negative_sample_handling: clip
 seq_length: 0
 # Path to a saved hot-start state file (.npz or .csv) or directory of per-basin state files.
 hot_start_path:
-# Set save_state: True during evaluation/inference to save final LSTM states.
+# Set save_state: True during evaluation/inference (with seq_length > 0 and
+# batch_size: 1) to save reloadable final LSTM states.
 # save_state_format accepts 'npz' (default) or 'csv'.
 save_state: False
 save_state_format: npz
