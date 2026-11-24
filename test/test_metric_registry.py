@@ -15,6 +15,7 @@
 """All metric entry points share names, defaults, and coordinate handling."""
 
 from collections.abc import Callable
+from types import MappingProxyType
 
 import numpy as np
 import pandas as pd
@@ -164,10 +165,12 @@ def test_unknown_metric_error_is_preserved(name: str) -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize('selection', [None, ['all'], ['NSE'], []])
+@pytest.mark.parametrize(
+    'selection', [None, 'all', ['all'], 'nse', ['NSE'], []]
+)
 @pytest.mark.parametrize('missing', ['observed', 'simulated'])
 def test_all_nan_rejection_is_preserved(
-    selection: list[str] | None,
+    selection: str | list[str] | None,
     missing: str,
 ) -> None:
     """Do not weaken missing-data checks for all, selected, or empty lists."""
@@ -194,32 +197,158 @@ def test_scalar_metrics_do_not_require_datetime_coordinates() -> None:
 
 @pytest.mark.unit
 def test_resolve_metric_names_canonicalizes_and_handles_bare_strings() -> None:
-    """Resolve case-insensitive names, bare strings, and the 'all' sentinel."""
+    """Resolve case-insensitive names, bare strings, generators, and 'all'."""
     assert metrics.resolve_metric_names(['nse', 'Kge', 'NSE']) == ['NSE', 'KGE']
     assert metrics.resolve_metric_names('nse') == ['NSE']
+    assert metrics.resolve_metric_names(np.str_('nse')) == ['NSE']
     assert metrics.resolve_metric_names('all') == list(NAMES)
     assert metrics.resolve_metric_names(['all']) == list(NAMES)
+    assert metrics.resolve_metric_names(['NSE', 'all']) == list(NAMES)
+    assert metrics.resolve_metric_names(name for name in ['nse', 'kge']) == [
+        'NSE',
+        'KGE',
+    ]
     assert metrics.resolve_metric_names([]) == []
 
-    obs, sim = _hydrographs()
-    assert set(metrics.calculate_metrics(obs, sim, 'nse')) == {'NSE'}
-
 
 @pytest.mark.unit
-@pytest.mark.parametrize('bad_name', ['totally_bogus', 'fall', 'ALL'])
+@pytest.mark.parametrize(
+    ('bad_metrics', 'bad_name'),
+    [
+        ('totally_bogus', 'totally_bogus'),
+        ('fall', 'fall'),
+        ('ALL', 'ALL'),
+        ('', ''),
+        (['all', 'bogus'], 'bogus'),
+        (['totally_bogus', 'all'], 'totally_bogus'),
+        (['ALL', 'all'], 'ALL'),
+        (['', 'all'], ''),
+    ],
+)
 def test_resolve_metric_names_rejects_all_substring_and_unknown(
+    bad_metrics: str | list[str],
     bad_name: str,
 ) -> None:
-    """A bare string containing 'all' as a substring must never match 'all'."""
+    """Unknown names and 'all' substrings must fail even alongside 'all'."""
     with pytest.raises(RuntimeError, match=f'Unknown metric {bad_name}'):
-        metrics.resolve_metric_names(bad_name)
+        metrics.resolve_metric_names(bad_metrics)
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize('bad_input', [None, 42, ['NSE', 123]])
+@pytest.mark.parametrize(
+    'bad_input',
+    [
+        None,
+        42,
+        False,
+        0,
+        ['NSE', 123],
+        ['all', 123],
+        {'NSE': ['KGE']},
+        {'all': ['NSE']},
+        {},
+        MappingProxyType({'NSE': 1}),
+        b'',
+        b'NSE',
+        bytearray(),
+        bytearray(b'NSE'),
+    ],
+)
 def test_resolve_metric_names_rejects_non_string_inputs(
     bad_input: object,
 ) -> None:
-    """Non-iterable inputs and non-string metric items fail with TypeError."""
+    """Non-iterables, mappings, bytes, and non-strings fail with TypeError."""
     with pytest.raises(TypeError):
         metrics.resolve_metric_names(bad_input)  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+def test_calculate_metrics_bare_strings_match_direct_formulas() -> None:
+    """Public calculate_metrics handles bare 'nse' and 'all' accurately."""
+    obs, sim = _hydrographs('1D')
+
+    single = metrics.calculate_metrics(obs, sim, 'nse')
+    assert list(single) == ['NSE']
+    np.testing.assert_equal(single['NSE'], metrics.nse(obs, sim))
+
+    all_actual = metrics.calculate_metrics(
+        obs, sim, 'all', resolution='1D', datetime_coord='observation_time'
+    )
+    expected = _direct_results(obs, sim, '1D')
+    assert list(all_actual) == list(NAMES)
+    np.testing.assert_array_equal(
+        list(all_actual.values()), list(expected.values())
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ('bad_metrics', 'bad_name'),
+    [
+        ('totally_bogus', 'totally_bogus'),
+        ('fall', 'fall'),
+        ('ALL', 'ALL'),
+        ('', ''),
+        (['all', 'bogus'], 'bogus'),
+    ],
+)
+def test_calculate_metrics_rejects_all_substring_and_unknown(
+    bad_metrics: str | list[str],
+    bad_name: str,
+) -> None:
+    """Public calculate_metrics rejects 'all' substrings and unknown names."""
+    obs, sim = _hydrographs()
+    with pytest.raises(RuntimeError, match=f'Unknown metric {bad_name}'):
+        metrics.calculate_metrics(obs, sim, bad_metrics)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'bad_input',
+    [
+        None,
+        42,
+        False,
+        0,
+        ['NSE', 123],
+        {'NSE': 1},
+        MappingProxyType({'NSE': 1}),
+        b'',
+        b'NSE',
+        bytearray(),
+    ],
+)
+def test_calculate_metrics_rejects_non_string_inputs(
+    bad_input: object,
+) -> None:
+    """Public calculate_metrics rejects invalid metric types with TypeError."""
+    obs, sim = _hydrographs()
+    with pytest.raises(TypeError):
+        metrics.calculate_metrics(obs, sim, bad_input)  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('missing', ['observed', 'simulated'])
+@pytest.mark.parametrize(
+    ('bad_input', 'expected_error'),
+    [
+        (None, TypeError),
+        (42, TypeError),
+        (['NSE', 123], TypeError),
+        ({'NSE': 1}, TypeError),
+        (b'', TypeError),
+        ('totally_bogus', RuntimeError),
+        (['bogus'], RuntimeError),
+        (['all', 'bogus'], RuntimeError),
+    ],
+)
+def test_calculate_metrics_validates_metrics_before_all_nan_check(
+    missing: str,
+    bad_input: object,
+    expected_error: type[Exception],
+) -> None:
+    """Invalid metric arguments must fail even when obs or sim is all-NaN."""
+    obs, sim = _hydrographs()
+    (obs if missing == 'observed' else sim).data[:] = np.nan
+    with pytest.raises(expected_error):
+        metrics.calculate_metrics(obs, sim, bad_input)  # type: ignore[arg-type]

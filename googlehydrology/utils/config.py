@@ -658,11 +658,14 @@ class Config(object):
         return self._cfg.get('mc_dropout', False)
 
     @property
-    def metrics(self) -> list[str] | dict[str, list[str]]:
+    def metrics(self) -> str | list[str] | dict[str, str | list[str]]:
+        """Metric specification used during validation and evaluation."""
         return self._cfg.get('metrics', [])
 
     @metrics.setter
-    def metrics(self, metrics: str | list[str] | dict[str, list[str]]) -> None:
+    def metrics(
+        self, metrics: str | list[str] | dict[str, str | list[str]]
+    ) -> None:
         self._cfg['metrics'] = metrics
 
     @property

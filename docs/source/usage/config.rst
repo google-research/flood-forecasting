@@ -28,7 +28,7 @@ Validation settings
 
 -  ``validate_every``: Integer that specifies in which interval a validation is performed. If empty, no validation is done during training.
 -  ``validate_n_random_basins``: Integer specifying how many random basins to use per validation.
--  ``metrics``: List of metrics to calculate. See :py:mod:`googlehydrology.evaluation.metrics`. Can also be a dictionary mapping target variables to lists of metrics.
+-  ``metrics``: List of metrics to calculate. See :py:mod:`googlehydrology.evaluation.metrics`. Can also be a dictionary mapping target variables to lists of metrics. You can also pass a single metric name (such as ``NSE`` or ``all`` for every metric) or ``[]`` to disable metrics; metric names are case-insensitive except ``all``.
 -  ``save_validation_results``: True/False. If True, stores validation results to disk in a Zarr store.
 
 Evaluation settings
