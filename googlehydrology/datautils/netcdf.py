@@ -43,7 +43,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 import xarray as xr
-from xarray.coding.times import CFTimedeltaCoder
+from xarray.coders import CFTimedeltaCoder
 
 from googlehydrology.utils.configutils import normalize_product_key
 from googlehydrology.utils.tqdm import AutoRefreshTqdm
@@ -61,7 +61,6 @@ LOGGER = logging.getLogger(__name__)
 
 NETCDF_SUFFIXES = ('.nc', '.nc4')
 _HDF5_MAGIC = b'\x89HDF\r\n\x1a\n'
-_NETCDF3_CLASSIC_MAGIC = (b'CDF\x01', b'CDF\x02')
 _ONE_DAY = pd.Timedelta(days=1)
 
 
@@ -81,15 +80,14 @@ def _netcdf_engine_for_path(path: Path) -> str:
     """Pick an xarray engine from the file magic header.
 
     Uses ``h5netcdf`` for HDF5 / NetCDF4 files (avoiding ``libnetcdf``
-    reopen/threading crashes under Dask), ``scipy`` for NetCDF3 classic files,
-    and falls back to ``netcdf4`` for CDF-5 or other variants.
+    reopen/threading crashes under Dask) and ``netcdf4`` for NetCDF3 classic
+    and CDF-5 files (lazy reads without ``scipy``'s eager ``mmap=False`` RAM
+    overhead or ``mmap=True`` cache-eviction warnings).
     """
     with path.open('rb') as handle:
         magic = handle.read(8)
     if magic.startswith(_HDF5_MAGIC):
         return 'h5netcdf'
-    if magic[:4] in _NETCDF3_CLASSIC_MAGIC:
-        return 'scipy'
     return 'netcdf4'
 
 
@@ -103,27 +101,33 @@ def _open_dataset_raw(
     ``timedelta64`` arrays. Only ``lead_time`` is decoded explicitly afterward.
     """
     engine = _netcdf_engine_for_path(path)
-    backend_kwargs = {'mmap': False} if engine == 'scipy' else None
     try:
         return xr.open_dataset(
             path,
             engine=engine,
             chunks=chunks,
             decode_timedelta=False,
-            backend_kwargs=backend_kwargs,
         )
-    except (OSError, ValueError, KeyError):
+    except (OSError, ValueError, KeyError) as primary_err:
         if engine != 'h5netcdf':
             raise
         LOGGER.debug(
-            'h5netcdf failed to open %s; falling back to netcdf4 engine.', path
-        )
-        return xr.open_dataset(
+            'h5netcdf failed to open %s (%s); falling back to netcdf4 engine.',
             path,
-            engine='netcdf4',
-            chunks=chunks,
-            decode_timedelta=False,
+            primary_err,
         )
+        try:
+            return xr.open_dataset(
+                path,
+                engine='netcdf4',
+                chunks=chunks,
+                decode_timedelta=False,
+            )
+        except (OSError, ValueError, KeyError, RuntimeError) as fallback_err:
+            raise OSError(
+                f'Failed to open {path} with h5netcdf ({primary_err}) and '
+                f'netcdf4 ({fallback_err}).'
+            ) from primary_err
 
 
 def _decode_lead_time_coord(ds: xr.Dataset) -> xr.Dataset:
@@ -293,6 +297,13 @@ def _detect_layout(
     try:
         if 'basin' in raw.dims:
             return 'multi_basin'
+        if 'basin' in raw.coords and raw.coords['basin'].ndim > 0:
+            raise ValueError(
+                f"Non-dimension 'basin' coordinate with dims "
+                f'{raw.coords["basin"].dims} in {probe}: multi-basin files '
+                "must use 'basin' as a dimension, and per-basin files may "
+                "only contain a scalar (0D) or absent 'basin' coordinate."
+            )
         return 'per_basin'
     finally:
         raw.close()
@@ -415,6 +426,11 @@ def _validate_lead_time_values(
             f"'lead_time' coordinate in {source} must be strictly increasing; "
             f'got {[int(td / _ONE_DAY) for td in lt]} days.'
         )
+    if len(lt) > 1 and not (np.diff(lt) == _ONE_DAY).all():
+        raise ValueError(
+            f"'lead_time' coordinate in {source} must be contiguous daily "
+            f'steps without gaps; got {[int(td / _ONE_DAY) for td in lt]} days.'
+        )
 
 
 def _validate_lead_time_coord(
@@ -452,42 +468,76 @@ def _validate_lead_time_coord(
             )
 
 
-def _check_no_overlapping_dates(
-    group: Sequence[tuple[Path, xr.Dataset]], directory: Path
+def _check_var_date_overlaps(
+    group: Sequence[tuple[Path, xr.Dataset]], var_name: str, directory: Path
 ) -> None:
-    """Reject time-split files that overlap on any date for shared variables."""
-    var_seen_dates: dict[str, dict[np.datetime64, Path]] = {}
+    """Vectorized interval check rejecting overlapping dates within a group."""
+    intervals: list[
+        tuple[pd.Timestamp, pd.Timestamp, pd.DatetimeIndex, Path]
+    ] = []
     for path, ds in group:
         if 'date' not in ds.dims:
             continue
-        dates = ds.coords['date'].to_numpy()
-        for var_name in ds.data_vars:
-            seen = var_seen_dates.setdefault(str(var_name), {})
-            for dt in dates:
-                prev = seen.get(dt)
-                if prev is not None:
-                    raise ValueError(
-                        f"Overlapping 'date' {pd.Timestamp(dt).isoformat()} "
-                        f"for variable '{var_name}' in {directory}: "
-                        f'{prev.name} and {path.name}.'
-                    )
-                seen[dt] = path
+        idx = pd.DatetimeIndex(ds.coords['date'].to_numpy())
+        intervals.append((idx.min(), idx.max(), idx, path))
+    intervals.sort(key=lambda item: (item[0], item[1]))
 
-
-def _check_no_overlapping_basins(
-    opened: Sequence[tuple[Path, xr.Dataset]], directory: Path
-) -> None:
-    """Reject non-timeseries files that repeat the same basin across files."""
-    seen_basins: dict[str, Path] = {}
-    for path, ds in opened:
-        for basin in ds.coords['basin'].to_numpy().tolist():
-            prev = seen_basins.get(basin)
-            if prev is not None:
+    active: list[tuple[pd.Timestamp, pd.DatetimeIndex, Path]] = []
+    for curr_min, curr_max, curr_idx, curr_path in intervals:
+        active = [item for item in active if item[0] >= curr_min]
+        for _, prev_idx, prev_path in active:
+            overlap = prev_idx.intersection(curr_idx)
+            if len(overlap) > 0:
                 raise ValueError(
-                    f"Overlapping 'basin' {basin!r} in {directory}: "
-                    f'{prev.name} and {path.name}.'
+                    f"Overlapping 'date' {overlap[0].isoformat()} for "
+                    f"variable '{var_name}' in {directory}: "
+                    f'{prev_path.name} and {curr_path.name}.'
                 )
-            seen_basins[basin] = path
+        active.append((curr_max, curr_idx, curr_path))
+
+
+def _check_var_partial_basin_overlaps(
+    var_parts: Sequence[tuple[Path, xr.Dataset]],
+    var_name: str,
+    directory: Path,
+) -> None:
+    """Reject pairs of files that overlap on both basin and date (if 2D/3D)."""
+    meta: list[
+        tuple[
+            Path,
+            set[str],
+            pd.DatetimeIndex | None,
+            pd.Timestamp | None,
+            pd.Timestamp | None,
+        ]
+    ] = []
+    for path, ds in var_parts:
+        basins_set = set(ds.coords['basin'].to_numpy().tolist())
+        if 'date' in ds.dims:
+            idx = pd.DatetimeIndex(ds.coords['date'].to_numpy())
+            meta.append((path, basins_set, idx, idx.min(), idx.max()))
+        else:
+            meta.append((path, basins_set, None, None, None))
+
+    for i, (p1, b1, d1, d1_min, d1_max) in enumerate(meta):
+        for p2, b2, d2, d2_min, d2_max in meta[i + 1 :]:
+            shared_basins = b1 & b2
+            if not shared_basins:
+                continue
+            shared_b = min(shared_basins)
+            if d1 is None or d2 is None:
+                raise ValueError(
+                    f"Overlapping 'basin' {shared_b!r} for variable "
+                    f"'{var_name}' in {directory}: {p1.name} and {p2.name}."
+                )
+            if d1_max >= d2_min and d2_max >= d1_min:
+                overlap = d1.intersection(d2)
+                if len(overlap) > 0:
+                    raise ValueError(
+                        f"Overlapping 'basin' {shared_b!r} and 'date' "
+                        f"{overlap[0].isoformat()} for variable '{var_name}' "
+                        f'in {directory}: {p1.name} and {p2.name}.'
+                    )
 
 
 def _validate_combined_indexes(ds: xr.Dataset, directory: Path) -> None:
@@ -507,13 +557,12 @@ def _validate_combined_indexes(ds: xr.Dataset, directory: Path) -> None:
         )
 
 
-def _combine_same_basin_group(
-    group: Sequence[tuple[Path, xr.Dataset]], directory: Path
+def _combine_var_same_basin_group(
+    group: Sequence[tuple[Path, xr.Dataset]], var_name: str, directory: Path
 ) -> xr.Dataset:
-    """Combine datasets sharing the same basin set along remaining coords."""
+    """Combine one variable's datasets sharing an identical basin set."""
     if len(group) == 1:
         return group[0][1]
-    _check_no_overlapping_dates(group, directory)
     ref_basins = group[0][1].coords['basin'].to_numpy()
     aligned = [
         ds
@@ -521,8 +570,57 @@ def _combine_same_basin_group(
         else ds.sel(basin=ref_basins)
         for _, ds in group
     ]
+    if all('date' not in ds.dims for ds in aligned):
+        # Static attribute repeated identically across time-split files.
+        return xr.merge(aligned, join='outer', compat='no_conflicts')
+    _check_var_date_overlaps(group, var_name, directory)
     return xr.combine_by_coords(
         aligned,
+        data_vars='minimal',
+        coords='minimal',
+        join='outer',
+        compat='no_conflicts',
+    )
+
+
+def _combine_single_variable(
+    var_name: str,
+    var_parts: Sequence[tuple[Path, xr.Dataset]],
+    directory: Path,
+) -> xr.Dataset:
+    """Combine all file fragments for one variable across time/basin splits."""
+    if len(var_parts) == 1:
+        return var_parts[0][1]
+
+    groups: dict[frozenset[str], list[tuple[Path, xr.Dataset]]] = {}
+    for item in var_parts:
+        key = frozenset(item[1].coords['basin'].to_numpy().tolist())
+        groups.setdefault(key, []).append(item)
+
+    if len(groups) == 1:
+        return _combine_var_same_basin_group(
+            next(iter(groups.values())), var_name, directory
+        )
+
+    total_basins = sum(len(key) for key in groups)
+    union_basins: set[str] = set().union(*groups)
+    if total_basins == len(union_basins):
+        combined_groups = [
+            _combine_var_same_basin_group(group, var_name, directory)
+            for group in groups.values()
+        ]
+        return xr.concat(
+            combined_groups,
+            dim='basin',
+            data_vars='minimal',
+            coords='minimal',
+            join='outer',
+            compat='no_conflicts',
+        )
+
+    _check_var_partial_basin_overlaps(var_parts, var_name, directory)
+    return xr.combine_by_coords(
+        [ds.sortby('basin') for _, ds in var_parts],
         data_vars='minimal',
         coords='minimal',
         join='outer',
@@ -533,49 +631,27 @@ def _combine_same_basin_group(
 def _combine_multi_basin_datasets(
     opened: Sequence[tuple[Path, xr.Dataset]], directory: Path
 ) -> xr.Dataset:
-    """Combine multi-basin datasets across time, basin, or 2D splits.
+    """Combine multi-basin datasets per variable across time, basin, or 2D.
 
-    Grouping by each file's basin set and concatenating mutually disjoint basin
-    groups via ``xr.concat`` allows arbitrary (unsorted or interleaved) basin ID
-    partitions that ``xr.combine_by_coords`` otherwise rejects as non-monotonic.
+    Combining each variable independently before merging allows distinct
+    variables to live in files with different basin partitions (e.g., separate
+    attribute tables or mixed basin-batch and global variable files) while
+    still rejecting true per-variable basin/date overlaps.
     """
-    groups: dict[frozenset[str], list[tuple[Path, xr.Dataset]]] = {}
-    for item in opened:
-        key = frozenset(item[1].coords['basin'].to_numpy().tolist())
-        groups.setdefault(key, []).append(item)
+    by_var: dict[str, list[tuple[Path, xr.Dataset]]] = {}
+    for path, ds in opened:
+        for var_name in ds.data_vars:
+            by_var.setdefault(str(var_name), []).append((path, ds[[var_name]]))
 
-    if len(groups) == 1:
-        combined = _combine_same_basin_group(
-            next(iter(groups.values())), directory
-        )
-    else:
-        total_basins = sum(len(key) for key in groups)
-        union_basins: set[str] = set().union(*groups)
-        if total_basins == len(union_basins):
-            combined_groups = [
-                _combine_same_basin_group(group, directory)
-                for group in groups.values()
-            ]
-            combined = xr.concat(
-                combined_groups,
-                dim='basin',
-                data_vars='minimal',
-                coords='minimal',
-                join='outer',
-                compat='no_conflicts',
-            )
-        else:
-            _check_no_overlapping_dates(opened, directory)
-            if any('date' not in ds.dims for _, ds in opened):
-                _check_no_overlapping_basins(opened, directory)
-            combined = xr.combine_by_coords(
-                [ds.sortby('basin') for _, ds in opened],
-                data_vars='minimal',
-                coords='minimal',
-                join='outer',
-                compat='no_conflicts',
-            )
-
+    per_var_dss = [
+        _combine_single_variable(var_name, var_parts, directory)
+        for var_name, var_parts in by_var.items()
+    ]
+    combined = (
+        per_var_dss[0]
+        if len(per_var_dss) == 1
+        else xr.merge(per_var_dss, join='outer', compat='no_conflicts')
+    )
     _validate_combined_indexes(combined, directory)
     return combined
 

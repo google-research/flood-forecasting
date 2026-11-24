@@ -184,10 +184,11 @@ Required NetCDF schema:
    -  ``date``: unique, non-overlapping daily ``datetime64`` timestamps stamped
       at midnight ``00:00:00`` UTC (no ``NaT``, duplicate, or non-midnight
       values).
-   -  ``lead_time``: strictly increasing, unique whole-day durations starting at
-      ``>= 1 day`` encoded with CF duration units (such as ``units="days"``).
-      Only ``lead_time`` is decoded as ``timedelta64``, so non-``lead_time``
-      variables carrying time units (e.g., ``units="days"``) remain numeric.
+   -  ``lead_time``: strictly increasing, contiguous whole-day durations
+      starting at ``>= 1 day`` (e.g. ``1, 2, ...`` days) encoded with CF
+      duration units (such as ``units="days"``). Only ``lead_time`` is decoded
+      as ``timedelta64``, so non-``lead_time`` variables carrying time units
+      (e.g., ``units="days"``) remain numeric.
 
    Numeric and boolean data variables (e.g. ``float64``, ``int64``, ``bool``)
    are lazily cast to ``float32`` on read. Missing variables, basins, or

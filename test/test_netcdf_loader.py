@@ -1352,7 +1352,7 @@ def test_close_hooks_cdf5_and_scipy_mmap_with_file_cache_maxsize(
         mmap_warns = [w for w in caught if 'mmap=True' in str(w.message)]
         assert not mmap_warns
 
-    # CDF-5 (NETCDF3_64BIT_DATA) exercises the netcdf4 fallback path.
+    # CDF-5 (NETCDF3_64BIT_DATA) exercises the netcdf4 engine path.
     cdf5_dir = tmp_path / 'cdf5'
     cdf5_dir.mkdir()
     xr.Dataset(
@@ -1370,3 +1370,149 @@ def test_close_hooks_cdf5_and_scipy_mmap_with_file_cache_maxsize(
         )
     finally:
         ds_cdf5.close()
+
+
+@pytest.mark.unit
+def test_per_variable_multibasin_combinations_and_repeated_statics(
+    tmp_path: Path,
+) -> None:
+    """Valid multi-file variable/basin partitions and repeated statics load."""
+    # (a) Different static variables covering overlapping basin subsets.
+    case_a = tmp_path / 'case_a'
+    case_a.mkdir()
+    xr.Dataset(
+        {'area': (('basin',), np.array([1.0, 2.0, 3.0], np.float32))},
+        coords={'basin': ['a', 'b', 'c']},
+    ).to_netcdf(case_a / 'hydroatlas.nc')
+    xr.Dataset(
+        {'p_mean': (('basin',), np.array([10.0, 20.0], np.float32))},
+        coords={'basin': ['a', 'b']},
+    ).to_netcdf(case_a / 'climate.nc')
+    ds_a = load_netcdf_attributes(
+        case_a, basins=['a', 'b'], features=['area', 'p_mean']
+    )
+    try:
+        np.testing.assert_array_equal(
+            ds_a['area'].to_numpy(), np.array([1.0, 2.0], np.float32)
+        )
+        np.testing.assert_array_equal(
+            ds_a['p_mean'].to_numpy(), np.array([10.0, 20.0], np.float32)
+        )
+    finally:
+        ds_a.close()
+
+    # (b) Global attribute file + subdataset-split attribute files.
+    case_b = tmp_path / 'case_b'
+    case_b.mkdir()
+    xr.Dataset(
+        {'area': (('basin',), np.array([1.0, 2.0, 3.0, 4.0], np.float32))},
+        coords={'basin': ['a', 'b', 'c', 'd']},
+    ).to_netcdf(case_b / 'hydroatlas_all.nc')
+    xr.Dataset(
+        {'p_mean': (('basin',), np.array([10.0, 20.0], np.float32))},
+        coords={'basin': ['a', 'b']},
+    ).to_netcdf(case_b / 'caravan_camels.nc')
+    xr.Dataset(
+        {'p_mean': (('basin',), np.array([30.0, 40.0], np.float32))},
+        coords={'basin': ['c', 'd']},
+    ).to_netcdf(case_b / 'caravan_hysets.nc')
+    ds_b = load_netcdf_attributes(
+        case_b, basins=['d', 'b', 'a', 'c'], features=['area', 'p_mean']
+    )
+    try:
+        np.testing.assert_array_equal(
+            ds_b['area'].to_numpy(), np.array([4.0, 2.0, 1.0, 3.0], np.float32)
+        )
+        np.testing.assert_array_equal(
+            ds_b['p_mean'].to_numpy(),
+            np.array([40.0, 20.0, 10.0, 30.0], np.float32),
+        )
+    finally:
+        ds_b.close()
+
+    # (c) Basin-batched variable q + all-basin variable p on the same dates.
+    case_c = tmp_path / 'case_c'
+    case_c.mkdir()
+    dates = pd.date_range('2020-01-01', periods=4, freq='D')
+    xr.Dataset(
+        {'q': (('basin', 'date'), np.ones((2, 4), np.float32))},
+        coords={'basin': ['a', 'b'], 'date': dates},
+    ).to_netcdf(case_c / 'q_batch1.nc')
+    xr.Dataset(
+        {'q': (('basin', 'date'), np.ones((2, 4), np.float32) * 2)},
+        coords={'basin': ['c', 'd'], 'date': dates},
+    ).to_netcdf(case_c / 'q_batch2.nc')
+    xr.Dataset(
+        {'p': (('basin', 'date'), np.ones((4, 4), np.float32) * 5)},
+        coords={'basin': ['a', 'b', 'c', 'd'], 'date': dates},
+    ).to_netcdf(case_c / 'p_all.nc')
+    ds_c = load_netcdf_timeseries(
+        case_c, basins=['a', 'b', 'c', 'd'], features=['q', 'p']
+    )
+    try:
+        assert ds_c['q'].shape == (4, 4)
+        assert ds_c['p'].shape == (4, 4)
+        np.testing.assert_array_equal(
+            ds_c['q'].sel(basin='c').to_numpy(), np.full(4, 2.0, np.float32)
+        )
+    finally:
+        ds_c.close()
+
+    # (d) Static attribute repeated identically in every time-split file.
+    case_d = tmp_path / 'case_d'
+    case_d.mkdir()
+    d2000 = pd.date_range('2000-01-01', periods=3, freq='D')
+    d2001 = pd.date_range('2001-01-01', periods=3, freq='D')
+    for fname, d_slice in [
+        ('streamflow_2000.nc', d2000),
+        ('streamflow_2001.nc', d2001),
+    ]:
+        xr.Dataset(
+            {
+                'streamflow': (('basin', 'date'), np.ones((2, 3), np.float32)),
+                'area': (('basin',), np.array([15.0, 25.0], np.float32)),
+            },
+            coords={'basin': ['b1', 'b2'], 'date': d_slice},
+        ).to_netcdf(case_d / fname)
+    for feat_arg in (['area'], None):
+        ds_d = caravan.load_caravan_attributes(
+            case_d, basins=['b1', 'b2'], features=feat_arg
+        )
+        try:
+            assert list(ds_d.data_vars) == ['area']
+            np.testing.assert_array_equal(
+                ds_d['area'].to_numpy(), np.array([15.0, 25.0], np.float32)
+            )
+        finally:
+            ds_d.close()
+
+
+@pytest.mark.unit
+def test_lead_time_gap_and_non_dim_basin_coord_rejected(
+    tmp_path: Path,
+) -> None:
+    """Reject non-contiguous lead_time gaps and auxiliary basin(station)."""
+    dates = pd.date_range('2020-01-01', periods=3, freq='D')
+    gap_dir = tmp_path / 'lt_gap'
+    gap_dir.mkdir()
+    xr.Dataset(
+        {'f': (('basin', 'date', 'lead_time'), np.ones((1, 3, 3), np.float32))},
+        coords={
+            'basin': ['b1'],
+            'date': dates,
+            'lead_time': ('lead_time', [1, 2, 4], {'units': 'days'}),
+        },
+    ).to_netcdf(gap_dir / 'f.nc')
+    with pytest.raises(ValueError, match=r'contiguous daily steps'):
+        load_netcdf_timeseries(
+            gap_dir, basins=['b1'], features=['f'], require_lead_time=True
+        )
+
+    aux_dir = tmp_path / 'aux_basin'
+    aux_dir.mkdir()
+    xr.Dataset(
+        {'q': (('station', 'date'), np.ones((2, 3), np.float32))},
+        coords={'basin': ('station', ['b1', 'b2']), 'date': dates},
+    ).to_netcdf(aux_dir / 'stations.nc')
+    with pytest.raises(ValueError, match=r"Non-dimension 'basin' coordinate"):
+        load_netcdf_timeseries(aux_dir, basins=['b1'], features=['q'])
