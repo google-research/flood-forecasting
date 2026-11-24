@@ -604,9 +604,14 @@ def test_evaluate_defaults_overrides_strings_generators_and_mappings(
         model=model,
         experiment_logger=logger_kge,
     )
+    kge_logs = [step for step in logger_kge.steps if 'KGE' in step]
+    assert len(kge_logs) == len(obs_by_basin)
+    assert all(list(step) == ['KGE'] for step in kge_logs)
+    assert all('NSE' not in step for step in logger_kge.steps)
     df = pd.read_csv(csv_path, index_col=0)
     assert list(df.columns) == ['KGE']
-    for basin in obs_by_basin:
+    for basin, step in zip(obs_by_basin, kge_logs, strict=True):
+        assert step['KGE'] == pytest.approx(expected[basin]['KGE'], rel=1e-6)
         assert df.loc[basin, 'KGE'] == pytest.approx(
             expected[basin]['KGE'], rel=1e-6
         )
@@ -712,21 +717,22 @@ def test_evaluate_all_nan_simulation_logs_and_saves_canonical_keys(
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
-    ('bad_metrics', 'expected_error'),
+    ('bad_metrics', 'expected_error', 'expected_match'),
     [
-        ('', RuntimeError),
-        ('totally_bogus', RuntimeError),
-        (['all', 'bogus'], RuntimeError),
-        (False, TypeError),
-        (0, TypeError),
-        (b'', TypeError),
-        (['NSE', 123], TypeError),
+        ('', RuntimeError, r'^Unknown metric $'),
+        ('totally_bogus', RuntimeError, r'^Unknown metric totally_bogus$'),
+        (['all', 'bogus'], RuntimeError, r'^Unknown metric bogus$'),
+        (False, TypeError, r'metrics must be'),
+        (0, TypeError, r'metrics must be'),
+        (b'', TypeError, r'metrics must be'),
+        (['NSE', 123], TypeError, r'Metric names must be strings'),
     ],
 )
 def test_evaluate_rejects_falsy_and_invalid_metrics_fast(
     tmp_path: Path,
     bad_metrics: object,
     expected_error: type[Exception],
+    expected_match: str,
 ) -> None:
     """Invalid/falsy metrics fail before model checks or deleting prior CSVs."""
     tester, _ = _make_regression_tester(tmp_path, cfg_metrics=['nse'])
@@ -735,7 +741,7 @@ def test_evaluate_rejects_falsy_and_invalid_metrics_fast(
     sentinel_csv = sentinel_dir / 'test_metrics.csv'
     sentinel_csv.write_text('basin,NSE\nbasin_A,0.5\n', encoding='utf-8')
 
-    with pytest.raises(expected_error):
+    with pytest.raises(expected_error, match=expected_match):
         tester.evaluate(
             epoch=1,
             save_results=False,
@@ -747,23 +753,28 @@ def test_evaluate_rejects_falsy_and_invalid_metrics_fast(
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
-    ('bad_mapping', 'expected_error'),
+    ('bad_mapping', 'expected_error', 'expected_match'),
     [
-        ({'streamflow': 'totally_bogus'}, RuntimeError),
-        ({'streamflow': 123}, TypeError),
+        (
+            {'streamflow': 'totally_bogus'},
+            RuntimeError,
+            r'^Unknown metric totally_bogus$',
+        ),
+        ({'streamflow': 123}, TypeError, r'Metric names must be strings'),
     ],
 )
 def test_evaluate_rejects_invalid_mapping_values_when_obs_all_nan(
     tmp_path: Path,
     bad_mapping: dict[str, object],
     expected_error: type[Exception],
+    expected_match: str,
 ) -> None:
     """Invalid mapping metric values fail loudly even when obs is all-NaN."""
     obs_all_nan = {'basin_A': np.full(4, np.nan, dtype=np.float32)}
     tester, _ = _make_regression_tester(
         tmp_path, cfg_metrics=['nse'], obs_by_basin=obs_all_nan
     )
-    with pytest.raises(expected_error):
+    with pytest.raises(expected_error, match=expected_match):
         tester.evaluate(
             epoch=1,
             save_results=False,
