@@ -48,6 +48,15 @@ class BaseModel(nn.Module):
     # Models that do not support DA leave this empty.
     supported_assimilation_components: ClassVar[tuple[str, ...]] = ()
 
+    # Whether the model can consume dynamic input tensors containing NaN values
+    # (e.g. via masked mean embeddings), enabling training-time input dropout.
+    # InputDropout guarantees that every timestep with at least one valid group
+    # before dropout retains at least one valid group afterward in each active
+    # pool (hindcast window, forecast overlap/horizon, and shared-only groups
+    # over the forecast horizon when forecast-only groups also exist). Timesteps
+    # that were already all-NaN in the source data remain NaN.
+    supports_missing_inputs: ClassVar[bool] = False
+
     def __init__(self, cfg: Config):
         super(BaseModel, self).__init__()
         self.cfg = cfg

@@ -15,11 +15,35 @@
 import torch
 import torch.nn as nn
 
+from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.modelzoo.handoff_forecast_lstm import HandoffForecastLSTM
 from googlehydrology.modelzoo.mean_embedding_forecast_lstm import (
     MeanEmbeddingForecastLSTM,
 )
 from googlehydrology.utils.config import Config
+
+
+def get_model_class(cfg: Config) -> type[BaseModel]:
+    """Return the model class specified by ``cfg.model`` without instantiating.
+
+    Parameters
+    ----------
+    cfg : Config
+        The run configuration.
+
+    Returns
+    -------
+    type[BaseModel]
+        The model class corresponding to ``cfg.model``.
+    """
+    model_name = cfg.model.lower()
+    if model_name == 'handoff_forecast_lstm':
+        return HandoffForecastLSTM
+    if model_name == 'mean_embedding_forecast_lstm':
+        return MeanEmbeddingForecastLSTM
+    raise NotImplementedError(
+        f'{cfg.model} not implemented or not linked in `get_model()`'
+    )
 
 
 def get_model(cfg: Config) -> nn.Module:
@@ -35,14 +59,7 @@ def get_model(cfg: Config) -> nn.Module:
     nn.Module
         A new model instance of the type specified in the config.
     """
-    if cfg.model.lower() == 'handoff_forecast_lstm':
-        model = HandoffForecastLSTM(cfg=cfg)
-    elif cfg.model.lower() == 'mean_embedding_forecast_lstm':
-        model = MeanEmbeddingForecastLSTM(cfg=cfg)
-    else:
-        raise NotImplementedError(
-            f'{cfg.model} not implemented or not linked in `get_model()`'
-        )
+    model = get_model_class(cfg)(cfg=cfg)
 
     if cfg.compile:
         return torch.compile(model, mode='max-autotune')

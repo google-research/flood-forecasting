@@ -107,6 +107,36 @@ Training settings
    ``finite_steps == 0``).
 -  ``target_noise_std``: Standard deviation of Gaussian noise added to labels during training. Set to zero or
    leave empty to *not* add noise.
+-  ``nan_sequence_probability``: Float in ``[0.0, 1.0]`` or mapping of feature
+   group name to float in ``[0.0, 1.0]`` (default ``0.0``; ``null`` also maps
+   to ``0.0``). Probability during training of setting an entire hindcast or
+   forecast sequence of a feature group to ``NaN``. When specified as a mapping,
+   unlisted groups default to ``0.0`` (useful for pinning specific products such
+   as ``hres``), and shared groups use the same probability in both hindcast and
+   forecast windows. Applied independently to the hindcast window and the
+   forecast horizon (keeping shared groups synchronized across the overlap
+   prefix of ``x_d_forecast``). Groups are processed in a random order per
+   sample while guaranteeing per active input pool (hindcast pool, forecast
+   pool, and shared groups in the forecast horizon when forecast-only groups
+   also exist) that every timestep with at least one valid group before dropout
+   retains at least one valid group afterward. Effective drop rates may be lower
+   than nominal in small pools where the survivor guarantee binds, and feature
+   sets across distinct groups in the same pool must be disjoint. Requires a
+   model with ``supports_missing_inputs = True`` (e.g.,
+   ``mean_embedding_forecast_lstm``). Finetuning runs inherit this setting from
+   the base run unless overridden (set to ``0.0`` or ``null`` to disable).
+-  ``nan_streak_probability``: Float in ``[0.0, 1.0]`` or mapping of feature
+   group name to float in ``[0.0, 1.0]`` (default ``0.0``). Probability during
+   training of dropping a contiguous sub-period of a feature group to ``NaN``,
+   inspired by Google's operational FloodHub training setup. Each streak draws
+   ``start ~ Uniform{0, ..., L - 1}`` and ``duration ~ Uniform{1, ..., L}``,
+   clamped at ``end = min(start + duration, L)``, so later timesteps in the
+   window have higher dropout probability. When both
+   ``nan_sequence_probability`` and ``nan_streak_probability`` are non-zero,
+   they are sampled independently per window and combined with logical OR. Uses
+   the same windowing, per-pool survivor guarantee (which can split streaks at
+   individual timesteps), and finetune inheritance as
+   ``nan_sequence_probability``.
 -  ``allow_subsequent_nan_losses``: Number of allowed consecutive NaN losses before stopping.
 -  ``save_weights_every``: Interval (in epochs) over which the weights of the model
    are stored to disk. ``1`` means to store the weights after each

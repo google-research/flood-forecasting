@@ -31,13 +31,14 @@ from googlehydrology.datasetzoo.multimet import MultimetDataLoader
 from googlehydrology.datautils.utils import load_basin_file
 from googlehydrology.evaluation import get_tester
 from googlehydrology.evaluation.tester import BaseTester
-from googlehydrology.modelzoo import get_model
+from googlehydrology.modelzoo import get_model, get_model_class
 from googlehydrology.training import (
     get_loss_obj,
     get_optimizer,
     get_regularization_obj,
     loss,
 )
+from googlehydrology.training.input_dropout import InputDropout
 from googlehydrology.training.logger import Logger
 from googlehydrology.utils import safe_torch_load
 from googlehydrology.utils.config import Config
@@ -56,6 +57,8 @@ class BaseTrainer(object):
         The run configuration.
     """
 
+    _input_dropout: InputDropout | None = None
+
     def __init__(self, cfg: Config):
         super(BaseTrainer, self).__init__()
         self.cfg = cfg
@@ -66,6 +69,7 @@ class BaseTrainer(object):
         self.loader = None
         self.validator = None
         self.noise_sampler_y = None
+        self._input_dropout = None
         self._target_mean = None
         self._target_std = None
         self._allow_subsequent_nan_losses = cfg.allow_subsequent_nan_losses
@@ -189,6 +193,17 @@ class BaseTrainer(object):
         tensorboard logging, and Tester class.
         If called in a ``continue_training`` context, this model will also restore the model and optimizer state.
         """
+        # Validate input dropout config & model support before loading datasets.
+        input_dropout = InputDropout.from_config(self.cfg)
+        if input_dropout.enabled:
+            model_cls = get_model_class(self.cfg)
+            if not getattr(model_cls, 'supports_missing_inputs', False):
+                raise ValueError(
+                    f"Model '{model_cls.__name__}' does not support "
+                    'missing inputs (NaNs) and cannot be trained with '
+                    'nan_sequence_probability or nan_streak_probability > 0.'
+                )
+
         # Initialize dataset before the model is loaded.
         ds = self._get_dataset(compute_scaler=(not self.cfg.is_finetuning))
         if len(ds) == 0:
@@ -197,6 +212,24 @@ class BaseTrainer(object):
 
         LOGGER.debug('init model')
         self.model = self._get_model().to(self.device)
+
+        if input_dropout.enabled:
+            target_model = getattr(self.model, '_orig_mod', self.model)
+            if not getattr(target_model, 'supports_missing_inputs', False):
+                raise ValueError(
+                    f"Model '{type(target_model).__name__}' does not support "
+                    'missing inputs (NaNs) and cannot be trained with '
+                    'nan_sequence_probability or nan_streak_probability > 0.'
+                )
+            LOGGER.info(
+                'Enabled training-time input dropout: '
+                'nan_sequence_probability=%s, nan_streak_probability=%s',
+                input_dropout.sequence_probabilities,
+                input_dropout.streak_probabilities,
+            )
+            self._input_dropout = input_dropout
+        else:
+            self._input_dropout = None
 
         if self.cfg.checkpoint_path is not None:
             LOGGER.info(
@@ -443,6 +476,9 @@ class BaseTrainer(object):
                     }
                 elif not key.startswith('date'):
                     data[key] = data[key].to(self.device)
+
+            if self._input_dropout is not None:
+                data = self._input_dropout(data)
 
             with autocast(
                 self.device.type, enabled=(self.device.type == 'cuda')
