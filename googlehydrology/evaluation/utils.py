@@ -15,26 +15,29 @@
 import itertools
 import math
 from collections import defaultdict
-from typing import Iterable
+from collections.abc import Iterable
 
 import numpy as np
 import pandas as pd
 from torch.utils.data import BatchSampler, SequentialSampler
 
 from googlehydrology.datasetzoo.multimet import SampleIndexer
+from googlehydrology.evaluation.metrics import resolve_metric_names
 
 
 def metrics_to_dataframe(
-    results: dict, metrics: Iterable[str], targets: Iterable[str]
+    results: dict, metrics: str | Iterable[str], targets: Iterable[str]
 ) -> pd.DataFrame:
-    """Extract all metric values from result dictionary and convert to pandas.DataFrame
+    """Extract metric values from results and convert to a pandas DataFrame.
 
     Parameters
     ----------
     results : dict
         Dictionary, containing the results of the model evaluation as returned by the `Tester.evaluate()`.
-    metrics : Iterable[str]
-        Iterable of metric names (without frequency suffix).
+    metrics : str | Iterable[str]
+        Metric name (e.g. ``'NSE'`` or ``'all'``) or iterable of metric names
+        (without frequency suffix). Metric names are validated, matched
+        case-insensitively, and normalized to their canonical names.
     targets : Iterable[str]
         Iterable of target variable names.
 
@@ -42,11 +45,19 @@ def metrics_to_dataframe(
     -------
     A basin indexed DataFrame with one column per metric. In case of multi-frequency runs, the metric names contain
     the corresponding frequency as a suffix.
+
+    Raises
+    ------
+    TypeError
+        If ``metrics`` is not a metric name string or iterable of metric names.
+    RuntimeError
+        If any requested metric name is unknown.
     """
+    canonical_metrics = resolve_metric_names(metrics)
     metrics_dict = defaultdict(dict)
     for basin, basin_data in results.items():
         for freq, freq_results in basin_data.items():
-            for target, metric in itertools.product(targets, metrics):
+            for target, metric in itertools.product(targets, canonical_metrics):
                 metric_key = metric
                 if len(targets) > 1:
                     metric_key = f'{target}_{metric}'

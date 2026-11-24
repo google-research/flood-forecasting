@@ -19,6 +19,7 @@ import random
 import re
 import shutil
 import sys
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Iterator
 
@@ -42,7 +43,7 @@ from googlehydrology.evaluation import plots
 from googlehydrology.evaluation.assimilation import Assimilation
 from googlehydrology.evaluation.metrics import (
     calculate_metrics,
-    get_available_metrics,
+    resolve_metric_names,
 )
 from googlehydrology.evaluation.utils import (
     BasinBatchSampler,
@@ -219,7 +220,10 @@ class BaseTester(object):
         self,
         epoch: int = None,
         save_results: bool = True,
-        metrics: list | dict = [],
+        metrics: str
+        | Sequence[str]
+        | Mapping[str, str | Sequence[str]]
+        | None = None,
         model: torch.nn.Module = None,
         experiment_logger: Logger = None,
         data_assimilation: bool | None = None,
@@ -232,8 +236,12 @@ class BaseTester(object):
             Define a specific epoch to evaluate. By default, the weights of the last epoch are used.
         save_results : bool, optional
             If True, stores the evaluation results in the run directory. By default, True.
-        metrics : list | dict, optional
-            List of metrics to compute during evaluation. Can also be a dict that specifies per-target metrics
+        metrics : str | Sequence[str] | Mapping[str, str | Sequence[str]]
+            Metrics to compute during evaluation. Can be a metric name (e.g.
+            ``'NSE'`` or ``'all'``), a sequence of metric names, or a mapping
+            from target variables to metric names or sequences. Optional; by
+            default, ``self.cfg.metrics`` is used. Pass an empty list to skip
+            metric computation.
         model : torch.nn.Module, optional
             If a model is passed, this is used for validation.
         experiment_logger : Logger, optional
@@ -244,6 +252,12 @@ class BaseTester(object):
             `_data_assimilation`. By default, the `assimilate` config value
             is used.
         """
+        if metrics is None:
+            metrics = self.cfg.metrics
+        if metrics is None:
+            metrics = []
+        if not isinstance(metrics, Mapping):
+            metrics = resolve_metric_names(metrics)
         if data_assimilation is None:
             data_assimilation = self.cfg.assimilate
         if data_assimilation and self.assimilation is None:
@@ -478,12 +492,10 @@ class BaseTester(object):
                                         raise KeyError(msg)
 
                             var_metrics = (
-                                metrics
-                                if isinstance(metrics, list)
-                                else metrics[target_variable]
+                                resolve_metric_names(metrics[target_variable])
+                                if isinstance(metrics, Mapping)
+                                else metrics
                             )
-                            if 'all' in var_metrics:
-                                var_metrics = get_available_metrics()
                             try:
                                 values = calculate_metrics(
                                     obs,
@@ -540,6 +552,7 @@ class BaseTester(object):
                 epoch=epoch,
                 suffix=suffix,
                 data_assimilation=data_assimilation,
+                metrics=metrics,
             )
 
             if metrics and not experiment_logger:
@@ -680,10 +693,17 @@ class BaseTester(object):
         epoch: int | None,
         suffix: str = '',
         data_assimilation: bool = False,
+        metrics: str
+        | Sequence[str]
+        | Mapping[str, str | Sequence[str]]
+        | None = None,
     ):
         """Store results in various formats to disk.
 
         `suffix` is appended to the file stems (e.g. `_data_assimilation`).
+        `metrics` overrides `self.cfg.metrics` when writing the metrics CSV;
+        pass `None` to fall back to `self.cfg.metrics` or an empty sequence to
+        skip writing the CSV.
         The results zarr store is written in inference mode and, whatever the
         mode, when `data_assimilation` is set: assimilation exists to produce
         updated forecasts, so its results are always persisted. The metrics
@@ -696,12 +716,16 @@ class BaseTester(object):
         parent_directory = self._parent_directory_for_results(epoch)
 
         # save metrics any time this function is called, as long as they exist
-        if self.cfg.metrics and results:
-            metrics_list = self.cfg.metrics
-            if isinstance(metrics_list, dict):
-                metrics_list = list(set(metrics_list.values()))
-            if 'all' in metrics_list:
-                metrics_list = get_available_metrics()
+        active_metrics = self.cfg.metrics if metrics is None else metrics
+        if active_metrics is None:
+            metrics_list: list[str] = []
+        elif isinstance(active_metrics, Mapping):
+            metrics_list = resolve_metric_names(
+                list(set(active_metrics.values()))
+            )
+        else:
+            metrics_list = resolve_metric_names(active_metrics)
+        if metrics_list and results:
             df = metrics_to_dataframe(
                 {basin: results}, metrics_list, self.cfg.target_variables
             )
