@@ -225,14 +225,47 @@ class BaseModel(nn.Module):
         self._preloaded_state = None
 
     @staticmethod
+    def _validate_csv_state(state: dict[str, np.ndarray], target: Path) -> None:
+        """Validate state arrays before serializing to CSV."""
+        if not state:
+            raise ValueError(
+                f'Hot-start CSV state dictionary is empty and cannot be '
+                f'written to {target}.'
+            )
+
+        for state_name, arr in state.items():
+            if not state_name or not state_name.strip():
+                raise ValueError(
+                    f'Hot-start CSV state name must be non-empty, '
+                    f'got {state_name!r}.'
+                )
+            if arr.ndim != _STATE_TENSOR_NDIM:
+                raise ValueError(
+                    f'Hot-start CSV state array {state_name!r} must be 3D '
+                    f'(layer, batch, unit), got shape {arr.shape}.'
+                )
+            if arr.size == 0:
+                raise ValueError(
+                    f'Hot-start CSV state array {state_name!r} has an empty '
+                    f'dimension (shape {arr.shape}) and cannot be written to '
+                    'CSV.'
+                )
+            if not np.isfinite(arr).all():
+                raise ValueError(
+                    f'Hot-start state array {state_name!r} contains non-finite '
+                    'values and cannot be written to CSV.'
+                )
+
+    @classmethod
     def _write_state_file(
-        state: dict[str, np.ndarray], path: str | Path
+        cls, state: dict[str, np.ndarray], path: str | Path
     ) -> None:
         """Write 3D LSTM state tensors to a ``.npz`` or ``.csv`` file."""
         target = Path(path)
         suffix = target.suffix.lower()
         if suffix == '.npz':
-            np.savez_compressed(target, **state)
+            with target.open('wb') as handle:
+                np.savez_compressed(handle, **state)
             return
         if suffix != '.csv':
             raise ValueError(
@@ -240,17 +273,7 @@ class BaseModel(nn.Module):
                 f'for {target}. Expected ".npz" or ".csv".'
             )
 
-        for state_name, arr in state.items():
-            if arr.ndim != _STATE_TENSOR_NDIM:
-                raise ValueError(
-                    f'Hot-start CSV state array {state_name!r} must be 3D '
-                    f'(layer, batch, unit), got shape {arr.shape}.'
-                )
-            if not np.isfinite(arr).all():
-                raise ValueError(
-                    f'Hot-start state array {state_name!r} contains non-finite '
-                    'values and cannot be written to CSV.'
-                )
+        cls._validate_csv_state(state, target)
 
         with target.open('w', encoding='utf-8', newline='') as handle:
             writer = csv.writer(handle)
@@ -316,12 +339,41 @@ class BaseModel(nn.Module):
             )
         return state_name, coord, val
 
+    @staticmethod
+    def _build_csv_state_arrays(
+        entries: dict[str, dict[tuple[int, int, int], float]],
+        max_dims: dict[str, list[int]],
+        source: Path,
+    ) -> dict[str, np.ndarray]:
+        """Convert validated coordinate maps into dense 3D float32 arrays."""
+        state: dict[str, np.ndarray] = {}
+        for state_name, state_map in entries.items():
+            shape = tuple(d + 1 for d in max_dims[state_name])
+            expected_count = shape[0] * shape[1] * shape[2]
+            if len(state_map) != expected_count:
+                raise ValueError(
+                    f'Incomplete 3D grid for state {state_name!r} in {source}: '
+                    f'expected {expected_count} entries for shape '
+                    f'{shape}, got {len(state_map)}.'
+                )
+            arr = np.empty(shape, dtype=np.float32)
+            with np.errstate(over='ignore'):
+                for coord, val in state_map.items():
+                    arr[coord] = val
+            if not np.isfinite(arr).all():
+                raise ValueError(
+                    f'Overflow to non-finite float32 for state {state_name!r} '
+                    f'in {source}.'
+                )
+            state[state_name] = arr
+        return state
+
     @classmethod
     def _read_csv_state_file(cls, source: Path) -> dict[str, np.ndarray]:
         """Read and validate a tidy CSV hot-start state file."""
         entries: dict[str, dict[tuple[int, int, int], float]] = {}
         max_dims: dict[str, list[int]] = {}
-        with source.open('r', encoding='utf-8', newline='') as handle:
+        with source.open('r', encoding='utf-8-sig', newline='') as handle:
             reader = csv.reader(handle)
             header = next(reader, None)
             if header is None:
@@ -332,6 +384,8 @@ class BaseModel(nn.Module):
                     f'{source}. Expected {list(_STATE_CSV_COLUMNS)!r}.'
                 )
             for line_no, row in enumerate(reader, start=2):
+                if not row or (len(row) == 1 and not row[0].strip()):
+                    continue
                 state_name, coord, val = cls._parse_csv_state_row(
                     row, line_no=line_no, source=source
                 )
@@ -352,26 +406,7 @@ class BaseModel(nn.Module):
                 f'Hot-start state CSV file contains no data rows: {source}'
             )
 
-        state: dict[str, np.ndarray] = {}
-        for state_name, state_map in entries.items():
-            shape = tuple(d + 1 for d in max_dims[state_name])
-            expected_count = shape[0] * shape[1] * shape[2]
-            if len(state_map) != expected_count:
-                raise ValueError(
-                    f'Incomplete 3D grid for state {state_name!r} in {source}: '
-                    f'expected {expected_count} entries for shape '
-                    f'{shape}, got {len(state_map)}.'
-                )
-            arr = np.empty(shape, dtype=np.float32)
-            for coord, val in state_map.items():
-                arr[coord] = val
-            if not np.isfinite(arr).all():
-                raise ValueError(
-                    f'Overflow to non-finite float32 for state {state_name!r} '
-                    f'in {source}.'
-                )
-            state[state_name] = arr
-        return state
+        return cls._build_csv_state_arrays(entries, max_dims, source)
 
     @classmethod
     def _read_state_file(cls, path: str | Path) -> dict[str, np.ndarray]:

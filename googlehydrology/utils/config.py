@@ -137,7 +137,7 @@ class Config(object):
             Config._check_cfg_keys(self._cfg)
 
         if self._cfg.get('save_state_format') is not None:
-            _ = self.save_state_format
+            self._cfg['save_state_format'] = self.save_state_format
 
         # Adjust experiment name
         if 'experiment_name' in self._cfg and self._cfg['experiment_name']:

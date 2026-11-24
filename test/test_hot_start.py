@@ -1,4 +1,6 @@
 import csv
+import logging
+import warnings
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -478,6 +480,7 @@ def test_save_state_format_config_validation(tmp_path: Path) -> None:
 
     cfg_csv = Config({**cfg_dict, 'save_state_format': ' CSV '})
     assert cfg_csv.save_state_format == 'csv'
+    assert cfg_csv.as_dict()['save_state_format'] == 'csv'
 
     cfg.save_state_format = 'csv'
     assert cfg.save_state_format == 'csv'
@@ -517,6 +520,7 @@ def test_state_file_errors_fail_loudly(
         (header, 'no data rows'),
         (f'{header}h_hindcast,0,0,0\n', 'column count'),
         (f'{header},0,0,0,1.0\n', 'Empty state name'),
+        (f'{header},,,,\n', 'Empty state name'),
         (f'{header}h_hindcast,-1,0,0,1.0\n', 'non-negative'),
         (f'{header}h_hindcast,0,0,0,nan\n', 'finite float'),
         (f'{header}h_hindcast,0,0,0,inf\n', 'finite float'),
@@ -535,14 +539,65 @@ def test_state_file_errors_fail_loudly(
         with pytest.raises(ValueError, match=err_match):
             model.load_state_from_disk(bad_csv)
 
+    overflow_csv = tmp_path / 'overflow.csv'
+    overflow_csv.write_text(
+        f'{header}h_hindcast,0,0,0,1e39\n', encoding='utf-8'
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        with pytest.raises(ValueError, match='Overflow to non-finite float32'):
+            model.load_state_from_disk(overflow_csv)
+    assert not any(issubclass(w.category, RuntimeWarning) for w in caught)
+
     nan_csv = tmp_path / 'nan_state.csv'
     with pytest.raises(ValueError, match='non-finite'):
         model._write_state_file(
             {'h_hindcast': np.array([[[np.nan]]], dtype=np.float32)}, nan_csv
         )
+    with pytest.raises(ValueError, match='dictionary is empty'):
+        model._write_state_file({}, tmp_path / 'empty_dict.csv')
+    with pytest.raises(ValueError, match='state name must be non-empty'):
+        model._write_state_file(
+            {' ': np.zeros((1, 1, 2), dtype=np.float32)},
+            tmp_path / 'blank_name.csv',
+        )
+    with pytest.raises(ValueError, match='empty dimension'):
+        model._write_state_file(
+            {'h_hindcast': np.zeros((1, 0, 2), dtype=np.float32)},
+            tmp_path / 'empty_dim.csv',
+        )
 
 
-def test_resolve_basin_state_path(tmp_path: Path) -> None:
+@patch('googlehydrology.datautils.scaler.Scaler.load')
+@patch('googlehydrology.datautils.scaler.Scaler.check_zero_scale')
+def test_state_file_uppercase_npz_and_bom_csv_roundtrip(
+    _mock_check: MagicMock, _mock_load: MagicMock, tmp_path: Path
+) -> None:
+    """Handle uppercase .NPZ filenames and BOM/blank lines in CSV files."""
+    cfg = Config(get_base_cfg(tmp_path), dev_mode=True)
+    model = HandoffForecastLSTM(cfg)
+    arr = np.array([[[0.25, -0.5, 1.5]]], dtype=np.float32)
+
+    upper_npz = tmp_path / 'state_upper.NPZ'
+    model._write_state_file({'h_hindcast': arr}, upper_npz)
+    assert upper_npz.is_file()
+    assert not (tmp_path / 'state_upper.NPZ.npz').exists()
+    model.load_state_from_disk(upper_npz)
+    np.testing.assert_array_equal(model._preloaded_state['h_hindcast'], arr)
+
+    bom_csv = tmp_path / 'state_excel_bom.CSV'
+    model._write_state_file({'h_hindcast': arr}, bom_csv)
+    raw_text = bom_csv.read_text(encoding='utf-8')
+    bom_csv.write_bytes(
+        b'\xef\xbb\xbf' + (raw_text + '\n   \n').encode('utf-8')
+    )
+    model.load_state_from_disk(bom_csv)
+    np.testing.assert_array_equal(model._preloaded_state['h_hindcast'], arr)
+
+
+def test_resolve_basin_state_path(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """Resolve single-file and directory state paths across formats."""
     tester = object.__new__(BaseTester)
     cfg_dict = get_base_cfg(tmp_path)
@@ -562,18 +617,34 @@ def test_resolve_basin_state_path(tmp_path: Path) -> None:
 
     bare_csv = state_dir / '0101.csv'
     bare_csv.write_text('', encoding='utf-8')
-    assert tester._resolve_basin_state_path(state_dir, '0101') == bare_csv
+    with caplog.at_level(logging.WARNING):
+        assert tester._resolve_basin_state_path(state_dir, '0101') == bare_csv
+    assert not caplog.records
 
     prefixed_csv = state_dir / 'state_0101.csv'
     prefixed_csv.write_text('', encoding='utf-8')
-    assert tester._resolve_basin_state_path(state_dir, '0101') == prefixed_csv
+    with caplog.at_level(logging.WARNING):
+        assert (
+            tester._resolve_basin_state_path(state_dir, '0101') == prefixed_csv
+        )
+    assert any(
+        'Multiple hot-start state files found' in rec.message
+        for rec in caplog.records
+    )
 
+    caplog.clear()
     prefixed_npz = state_dir / 'state_0101.npz'
     prefixed_npz.write_bytes(b'')
-    assert tester._resolve_basin_state_path(state_dir, '0101') == prefixed_npz
+    with caplog.at_level(logging.WARNING):
+        assert (
+            tester._resolve_basin_state_path(state_dir, '0101') == prefixed_npz
+        )
+    assert any('preferred format: npz' in rec.message for rec in caplog.records)
 
+    caplog.clear()
     tester.cfg.save_state_format = 'csv'
-    assert tester._resolve_basin_state_path(state_dir, '0101') == prefixed_csv
-
-
-
+    with caplog.at_level(logging.WARNING):
+        assert (
+            tester._resolve_basin_state_path(state_dir, '0101') == prefixed_csv
+        )
+    assert any('preferred format: csv' in rec.message for rec in caplog.records)

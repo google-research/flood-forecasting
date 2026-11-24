@@ -748,14 +748,28 @@ class BaseTester(object):
             preferred_ext,
             *(ext for ext in VALID_STATE_FORMATS if ext != preferred_ext),
         )
-        for ext in extensions:
+        matches = [
+            candidate
+            for ext in extensions
             for candidate in (
                 state_path / f'state_{basin}.{ext}',
                 state_path / f'{basin}.{ext}',
-            ):
-                if candidate.is_file():
-                    return candidate
-        return None
+            )
+            if candidate.is_file()
+        ]
+        if not matches:
+            return None
+        if len(matches) > 1:
+            LOGGER.warning(
+                'Multiple hot-start state files found for basin %s in %s '
+                '(%s); loading %s (preferred format: %s).',
+                basin,
+                state_path,
+                ', '.join(p.name for p in matches),
+                matches[0].name,
+                preferred_ext,
+            )
+        return matches[0]
 
     def _evaluate(
         self,
