@@ -100,7 +100,7 @@ The MultiMet meteorological forcing data extension is accessed directly from **G
 
 ### **3. Local NetCDF Inputs (Training & Inference)**
 
-In addition to Zarr stores, `statics_data_dir`, `targets_data_dir`, and `dynamics_data_dir` (or `data_dir`) can point directly to local directories containing `.nc` / `.nc4` files—either **multi-basin files** (with a `basin` dimension, optionally split across multiple files by date or basin) or **per-basin files** (`<basin_id>.nc`, for targets and dynamics). Dynamics directories also accept `<PRODUCT>/*.nc` subdirectories mirroring Zarr. Floating-point values are lazily cast to `float32` on read. See the [NetCDF input format section in the configuration docs](docs/source/usage/config.rst) for the exact schema and coordinate requirements.
+In addition to Zarr stores, `statics_data_dir`, `targets_data_dir`, and `dynamics_data_dir` (or `data_dir`) can point directly to local directories containing `.nc` / `.nc4` files—either **multi-basin files** (with a `basin` dimension, optionally split across multiple files by date or basin) or **per-basin files** (`<basin_id>.nc`, for targets and dynamics). Dynamics directories also accept `<PRODUCT>/*.nc` subdirectories mirroring Zarr. Numeric and boolean data variables are lazily cast to `float32` on read. See the [NetCDF input format section in the configuration docs](docs/source/usage/config.rst) for the exact schema and coordinate requirements.
 
 ### **4\. Catchment Delineation (Creating Polygons for New Gauges)**
 
@@ -160,7 +160,7 @@ Experiments are defined by YAML files. Update the following paths in your config
 * run\_dir: Where weights and logs are saved.  
 * train\_basin\_file: Path to the list of basin IDs.  
 * data\_dir: Path to your root directory containing `attributes.zarr`, `streamflow.zarr`, and dynamic meteorological data (e.g., `~/data/Caravan-zarr`). Used as the default for the three keys below.
-* statics\_data\_dir / targets\_data\_dir: Optional paths to individual component Zarr stores (`statics_data_path` / `targets_data_path` are accepted as aliases).
+* statics\_data\_dir / targets\_data\_dir: Optional paths to individual component Zarr stores or local NetCDF directories (`statics_data_path` / `targets_data_path` are accepted as aliases).
 * dynamics\_data\_dir: Path to forcing data (e.g., `gs://caravan-multimet/v1.1` or local directory; alias `dynamics_data_path`).
 
 To enable data assimilation, add an `assimilation_config` block (only `mean_embedding_forecast_lstm`). A minimal block:

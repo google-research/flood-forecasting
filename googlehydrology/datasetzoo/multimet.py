@@ -37,6 +37,7 @@ from googlehydrology.datasetzoo.caravan import (
     load_caravan_timeseries_together,
 )
 from googlehydrology.datautils.netcdf import (
+    NETCDF_SUFFIXES,
     find_product_netcdf_dir,
     has_netcdf_files,
     load_netcdf_timeseries,
@@ -725,6 +726,38 @@ class Multimet(Dataset):
 
         return ds
 
+    def _load_netcdf_dynamics(
+        self,
+        data_dir: Path | str,
+        features: list[str],
+        *,
+        require_lead_time: bool = False,
+    ) -> xr.Dataset:
+        ds = load_netcdf_timeseries(
+            data_dir=data_dir,
+            basins=self._basins,
+            features=features,
+            require_lead_time=require_lead_time,
+        )
+        if require_lead_time or 'lead_time' in ds.dims:
+            ds = ds.sel(lead_time=self._lead_time_slice())
+        return ds
+
+    def _hindcast_product_bands(self) -> dict[str, list[str]]:
+        product_bands = _get_products_and_bands_from_features(
+            self._hindcast_inputs
+        )
+        if self._union_mapping:
+            union_product_bands = _get_products_and_bands_from_feature_strings(
+                self._union_mapping.values()
+            )
+            for product, bands in union_product_bands.items():
+                existing_bands = product_bands.setdefault(product, [])
+                for band in bands:
+                    if band not in existing_bands:
+                        existing_bands.append(band)
+        return product_bands
+
     def _load_hindcast_features(self) -> list[xr.Dataset]:
         """Load Caravan-Multimet data for hindcast features.
 
@@ -733,8 +766,18 @@ class Multimet(Dataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, basin).
         """
+        dyn_path = Path(self._dynamics_data_path)
+        if dyn_path.is_file() and dyn_path.suffix.lower() in NETCDF_SUFFIXES:
+            raise ValueError(
+                f'Expected a directory containing NetCDF files, got file: '
+                f'{dyn_path}. Pass its parent directory instead.'
+            )
+        product_bands = self._hindcast_product_bands()
         if (
             _find_single_dynamics_zarr_path(self._dynamics_data_path) is None
+            and not _has_any_product_dynamics(
+                self._dynamics_data_path, product_bands
+            )
             and has_netcdf_files(self._dynamics_data_path)
         ):
             features = list(
@@ -745,14 +788,9 @@ class Multimet(Dataset):
                     ]
                 )
             )
-            ds = load_netcdf_timeseries(
-                data_dir=self._dynamics_data_path,
-                basins=self._basins,
-                features=features,
-            )
-            if 'lead_time' in ds.dims:
-                ds = ds.sel(lead_time=self._lead_time_slice())
-            return [ds]
+            return [
+                self._load_netcdf_dynamics(self._dynamics_data_path, features)
+            ]
         return self._load_hindcast_as_zarr()
 
     def _load_hindcast_as_zarr(self) -> list[xr.Dataset]:
@@ -794,21 +832,8 @@ class Multimet(Dataset):
                 return [ds[features]]
 
         # Separate products and bands for each product from the configured
-        # hindcast inputs.
-        product_bands = _get_products_and_bands_from_features(
-            self._hindcast_inputs
-        )
-
-        # Also load fallback variables used by union_mapping.
-        if self._union_mapping:
-            union_product_bands = _get_products_and_bands_from_feature_strings(
-                self._union_mapping.values()
-            )
-            for product, bands in union_product_bands.items():
-                existing_bands = product_bands.setdefault(product, [])
-                for band in bands:
-                    if band not in existing_bands:
-                        existing_bands.append(band)
+        # hindcast inputs (plus fallback variables used by union_mapping).
+        product_bands = self._hindcast_product_bands()
 
         # Initialize storage for product/band datasets to concatenate.
         product_dss = []
@@ -828,16 +853,9 @@ class Multimet(Dataset):
                         product,
                         bands,
                     )
-                    product_ds = load_netcdf_timeseries(
-                        data_dir=product_nc_dir,
-                        basins=self._basins,
-                        features=bands,
+                    product_dss.append(
+                        self._load_netcdf_dynamics(product_nc_dir, bands)
                     )
-                    if 'lead_time' in product_ds.dims:
-                        product_ds = product_ds.sel(
-                            lead_time=self._lead_time_slice()
-                        )
-                    product_dss.append(product_ds)
                     continue
             LOGGER.info(
                 "Loading hindcast product '%s' with bands %s", product, bands
@@ -875,20 +893,31 @@ class Multimet(Dataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, lead_time, basin).
         """
+        if not self._forecast_features:
+            return []
+        dyn_path = Path(self._dynamics_data_path)
+        if dyn_path.is_file() and dyn_path.suffix.lower() in NETCDF_SUFFIXES:
+            raise ValueError(
+                f'Expected a directory containing NetCDF files, got file: '
+                f'{dyn_path}. Pass its parent directory instead.'
+            )
+        product_bands = _get_products_and_bands_from_features(
+            self._forecast_inputs
+        )
         if (
             _find_single_dynamics_zarr_path(self._dynamics_data_path) is None
+            and not _has_any_product_dynamics(
+                self._dynamics_data_path, product_bands
+            )
             and has_netcdf_files(self._dynamics_data_path)
         ):
-            if not self._forecast_features:
-                return []
-            ds = load_netcdf_timeseries(
-                data_dir=self._dynamics_data_path,
-                basins=self._basins,
-                features=self._forecast_features,
-                require_lead_time=True,
-            )
-            ds = ds.sel(lead_time=self._lead_time_slice())
-            return [ds]
+            return [
+                self._load_netcdf_dynamics(
+                    self._dynamics_data_path,
+                    self._forecast_features,
+                    require_lead_time=True,
+                )
+            ]
         return self._load_forecast_as_zarr()
 
     def _load_forecast_as_zarr(self) -> list[xr.Dataset]:
@@ -948,16 +977,13 @@ class Multimet(Dataset):
                         product,
                         bands,
                     )
-                    product_ds = load_netcdf_timeseries(
-                        data_dir=product_nc_dir,
-                        basins=self._basins,
-                        features=bands,
-                        require_lead_time=True,
+                    product_dss.append(
+                        self._load_netcdf_dynamics(
+                            product_nc_dir,
+                            bands,
+                            require_lead_time=True,
+                        )
                     )
-                    product_ds = product_ds.sel(
-                        lead_time=self._lead_time_slice()
-                    )
-                    product_dss.append(product_ds)
                     continue
             LOGGER.info(
                 "Loading forecast product '%s' with bands %s", product, bands
@@ -1094,9 +1120,11 @@ def _convert_to_tensor(
 
 
 def _is_zarr_store(path: Path) -> bool:
-    str_path = str(path)
-    if str_path.startswith(('gs:', 'gs/')):
+    normalized = str(path).replace('\\', '/')
+    if normalized.startswith(('gs://', 'gs:/')):
         return True
+    if not path.exists():
+        return False
     return (
         path.suffix == '.zarr'
         or (path / '.zgroup').exists()
@@ -1105,9 +1133,21 @@ def _is_zarr_store(path: Path) -> bool:
     )
 
 
+def _has_any_product_dynamics(
+    dynamics_path: Path | str, products: Iterable[str]
+) -> bool:
+    """Return True if any configured product has a Zarr or NetCDF subdir."""
+    for product in products:
+        if _is_zarr_store(_find_product_zarr_path(dynamics_path, product)):
+            return True
+        if find_product_netcdf_dir(dynamics_path, product) is not None:
+            return True
+    return False
+
+
 def _find_single_dynamics_zarr_path(dynamics_path: Path | str) -> Path | None:
-    path_str = str(dynamics_path)
-    if path_str.startswith('gs://') or path_str.startswith('gs:/'):
+    path_str = str(dynamics_path).replace('\\', '/')
+    if path_str.startswith(('gs://', 'gs:/')):
         if path_str.endswith('.zarr'):
             return Path(path_str)
         return None
@@ -1131,8 +1171,8 @@ def _find_single_dynamics_zarr_path(dynamics_path: Path | str) -> Path | None:
 
 
 def _find_product_zarr_path(dynamics_path: Path | str, product: str) -> Path:
-    path_str = str(dynamics_path)
-    if path_str.startswith('gs://') or path_str.startswith('gs:/'):
+    path_str = str(dynamics_path).replace('\\', '/')
+    if path_str.startswith(('gs://', 'gs:/')):
         return Path(f"{path_str.rstrip('/')}/{product}/timeseries.zarr")
 
     p = Path(dynamics_path)
@@ -1146,11 +1186,14 @@ def _find_product_zarr_path(dynamics_path: Path | str, product: str) -> Path:
         or (p / product / '.zmetadata').exists()
     ):
         return p / product
-    # Try case-insensitive matching
+    # Try case- and separator-insensitive matching
     if p.is_dir():
-        product_norm = product.lower().replace('_', '')
-        for sub in p.glob('*'):
-            if sub.is_dir() and sub.name.lower().replace('_', '') == product_norm:
+        product_norm = _normalize_product_key(product)
+        for sub in sorted(p.glob('*')):
+            if (
+                sub.is_dir()
+                and _normalize_product_key(sub.name) == product_norm
+            ):
                 if (sub / 'timeseries.zarr').exists():
                     return sub / 'timeseries.zarr'
                 return sub

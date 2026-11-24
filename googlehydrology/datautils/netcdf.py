@@ -16,41 +16,65 @@
 
 Supports two explicit, non-recursive NetCDF directory layouts:
 
-1. **Multi-basin files:** One or more ``.nc`` / ``.nc4`` files in the given
-   directory that each contain a ``basin`` dimension (e.g., a single combined
-   file, time-split files, or basin-batch files). Combined by coordinates via
-   ``xarray.open_mfdataset``.
+1. **Multi-basin files:** One or more ``.nc`` / ``.nc4`` files directly in the
+   given directory that each contain a ``basin`` dimension (e.g., a single
+   combined file, non-overlapping time-split files, or basin-batch files).
+   Files are lazily opened and combined across time and/or disjoint basin
+   groups.
 2. **Per-basin files (``<basin_id>.nc`` / ``<basin_id>.nc4``):** One file per
    basin directly in the given directory, without a ``basin`` dimension inside
-   each file. Only files for the requested basins are opened.
+   each file (an optional scalar ``basin`` coordinate is ignored). Only files
+   matching the requested basins are opened.
 
-Floating-point variables and coordinates (e.g. ``float64``) are lazily cast to
-``float32`` on read to satisfy ``Multimet``'s ``float32`` invariant.
+Numeric and boolean data variables (e.g., ``float64``, ``int64``, ``bool``) are
+lazily cast to ``float32`` on read to satisfy ``Multimet``'s ``float32``
+invariant and avoid integer overflow or dtype promotion in ``Scaler``.
 """
 
 import itertools
 import logging
 import math
-from collections.abc import Iterable, Iterator, Sequence
+import os
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
 import pandas as pd
 import xarray as xr
+from xarray.coding.times import CFTimedeltaCoder
 
+from googlehydrology.utils.configutils import normalize_product_key
 from googlehydrology.utils.tqdm import AutoRefreshTqdm
+
+__all__ = [
+    'NETCDF_SUFFIXES',
+    'find_product_netcdf_dir',
+    'has_netcdf_files',
+    'list_netcdf_files',
+    'load_netcdf_attributes',
+    'load_netcdf_timeseries',
+]
 
 LOGGER = logging.getLogger(__name__)
 
 NETCDF_SUFFIXES = ('.nc', '.nc4')
 _HDF5_MAGIC = b'\x89HDF\r\n\x1a\n'
 _NETCDF3_CLASSIC_MAGIC = (b'CDF\x01', b'CDF\x02')
+_ONE_DAY = pd.Timedelta(days=1)
 
 
 def _is_cloud_path(path: Path | str) -> bool:
-    path_str = str(path)
-    return path_str.startswith(('gs://', 'gs:/', 'gs/'))
+    normalized = str(path).replace('\\', '/')
+    return normalized.startswith(('gs://', 'gs:/'))
+
+
+def _is_netcdf_filename(name: str) -> bool:
+    if name.startswith('.'):
+        return False
+    lower = name.lower()
+    return any(lower.endswith(suffix) for suffix in NETCDF_SUFFIXES)
 
 
 def _netcdf_engine_for_path(path: Path) -> str:
@@ -69,23 +93,98 @@ def _netcdf_engine_for_path(path: Path) -> str:
     return 'netcdf4'
 
 
+def _open_dataset_raw(
+    path: Path, chunks: str | dict[str, str | int]
+) -> xr.Dataset:
+    """Open one NetCDF file lazily without global timedelta auto-decoding.
+
+    Using ``decode_timedelta=False`` prevents non-``lead_time`` variables that
+    happen to carry CF time units (e.g. ``units='days'``) from turning into
+    ``timedelta64`` arrays. Only ``lead_time`` is decoded explicitly afterward.
+    """
+    engine = _netcdf_engine_for_path(path)
+    backend_kwargs = {'mmap': False} if engine == 'scipy' else None
+    try:
+        return xr.open_dataset(
+            path,
+            engine=engine,
+            chunks=chunks,
+            decode_timedelta=False,
+            backend_kwargs=backend_kwargs,
+        )
+    except (OSError, ValueError, KeyError):
+        if engine != 'h5netcdf':
+            raise
+        LOGGER.debug(
+            'h5netcdf failed to open %s; falling back to netcdf4 engine.', path
+        )
+        return xr.open_dataset(
+            path,
+            engine='netcdf4',
+            chunks=chunks,
+            decode_timedelta=False,
+        )
+
+
+def _decode_lead_time_coord(ds: xr.Dataset) -> xr.Dataset:
+    """Decode only the ``lead_time`` coordinate using CF duration units."""
+    if 'lead_time' not in ds.coords:
+        return ds
+    coord = ds.coords['lead_time']
+    if np.issubdtype(coord.dtype, np.timedelta64):
+        return ds
+    decoded = CFTimedeltaCoder().decode(
+        ds.variables['lead_time'], name='lead_time'
+    )
+    if np.issubdtype(decoded.dtype, np.timedelta64):
+        ds = ds.assign_coords(
+            lead_time=(decoded.dims, np.asarray(decoded.data))
+        )
+    return ds
+
+
+def _make_closer(handles: Sequence[xr.Dataset]) -> Callable[[], None]:
+    """Return a close callback that closes every underlying raw handle."""
+    raw_handles = list(handles)
+
+    def _close() -> None:
+        for handle in raw_handles:
+            handle.close()
+
+    return _close
+
+
+def _close_all(handles: Sequence[xr.Dataset]) -> None:
+    for handle in handles:
+        handle.close()
+
+
 def list_netcdf_files(directory: Path | str) -> list[Path]:
-    """Return sorted ``.nc`` / ``.nc4`` files directly inside ``directory``."""
+    """Return sorted visible ``.nc`` / ``.nc4`` files directly in dir."""
     if _is_cloud_path(directory):
         return []
     p = Path(directory)
     if not p.is_dir():
         return []
     return sorted(
-        entry
-        for entry in p.iterdir()
-        if entry.is_file() and entry.suffix.lower() in NETCDF_SUFFIXES
+        Path(entry.path)
+        for entry in os.scandir(p)
+        if entry.is_file() and _is_netcdf_filename(entry.name)
     )
 
 
 def has_netcdf_files(directory: Path | str) -> bool:
-    """Return True if ``directory`` directly holds ``.nc`` / ``.nc4`` files."""
-    return bool(list_netcdf_files(directory))
+    """Return True if ``directory`` directly holds visible NetCDF files."""
+    if _is_cloud_path(directory):
+        return False
+    p = Path(directory)
+    if not p.is_dir():
+        return False
+    with os.scandir(p) as entries:
+        return any(
+            entry.is_file() and _is_netcdf_filename(entry.name)
+            for entry in entries
+        )
 
 
 def find_product_netcdf_dir(
@@ -102,23 +201,27 @@ def find_product_netcdf_dir(
     if has_netcdf_files(direct):
         return direct
 
-    product_norm = product.lower().replace('_', '')
+    product_norm = normalize_product_key(product)
     for sub in sorted(p.iterdir()):
         if (
             sub.is_dir()
-            and sub.name.lower().replace('_', '') == product_norm
+            and normalize_product_key(sub.name) == product_norm
             and has_netcdf_files(sub)
         ):
             return sub
     return None
 
 
-def _cast_floats_to_float32(ds: xr.Dataset) -> xr.Dataset:
-    """Lazily cast non-float32 floating-point vars and coords to float32."""
+def _cast_numeric_to_float32(ds: xr.Dataset) -> xr.Dataset:
+    """Lazily cast numeric/bool data_vars and floating coords to float32."""
     cast_vars = {
         name: da.astype(np.float32)
         for name, da in ds.data_vars.items()
-        if np.issubdtype(da.dtype, np.floating) and da.dtype != np.float32
+        if (
+            np.issubdtype(da.dtype, np.number)
+            or np.issubdtype(da.dtype, np.bool_)
+        )
+        and da.dtype != np.float32
     }
     if cast_vars:
         ds = ds.assign(cast_vars)
@@ -133,31 +236,66 @@ def _cast_floats_to_float32(ds: xr.Dataset) -> xr.Dataset:
     return ds
 
 
-def _normalize_basin_coord(ds: xr.Dataset) -> xr.Dataset:
-    """Decode byte-string ``basin`` coordinates into Python strings."""
-    if 'basin' in ds.coords and np.issubdtype(
-        ds.coords['basin'].dtype, np.bytes_
+def _normalize_basin_coord(ds: xr.Dataset, source: Path | str) -> xr.Dataset:
+    """Decode byte-string ``basin`` coordinates and reject numeric IDs."""
+    if 'basin' not in ds.coords:
+        return ds
+    coord = ds.coords['basin']
+    if np.issubdtype(coord.dtype, np.number) or np.issubdtype(
+        coord.dtype, np.bool_
+    ):
+        raise ValueError(
+            f"'basin' coordinate in {source} must contain string basin IDs, "
+            f'got numeric dtype {coord.dtype}.'
+        )
+    vals = coord.to_numpy()
+    if np.issubdtype(coord.dtype, np.bytes_) or (
+        coord.dtype == object
+        and any(isinstance(b, (bytes, np.bytes_)) for b in vals)
     ):
         decoded = [
             b.decode('utf-8') if isinstance(b, (bytes, np.bytes_)) else str(b)
-            for b in ds.coords['basin'].to_numpy()
+            for b in vals
         ]
         ds = ds.assign_coords(basin=decoded)
     return ds
 
 
+def _build_per_basin_path_map(
+    nc_files: Sequence[Path],
+) -> dict[str, list[Path]]:
+    stem_map: dict[str, list[Path]] = {}
+    for path in nc_files:
+        stem_map.setdefault(path.stem, []).append(path)
+    return stem_map
+
+
 def _detect_layout(
     nc_files: Sequence[Path],
+    basins: Sequence[str] | None = None,
 ) -> Literal['multi_basin', 'per_basin']:
-    """Inspect the first file to distinguish multi-basin vs per-basin layout."""
-    first = nc_files[0]
-    engine = _netcdf_engine_for_path(first)
-    with xr.open_dataset(
-        first, engine=engine, chunks={}, decode_timedelta=True
-    ) as ds0:
-        if 'basin' in ds0.dims or 'basin' in ds0.coords:
+    """Inspect a representative file to classify multi-basin vs per-basin.
+
+    When ``basins`` is supplied, prefers probing a file matching a requested
+    basin stem so unrelated/corrupt files sorting earlier are never opened in
+    per-basin directories.
+    """
+    probe = nc_files[0]
+    if basins:
+        stem_map = _build_per_basin_path_map(nc_files)
+        for basin in basins:
+            matches = stem_map.get(basin)
+            if matches:
+                probe = matches[0]
+                break
+
+    raw = _open_dataset_raw(probe, chunks={})
+    try:
+        if 'basin' in raw.dims:
             return 'multi_basin'
-    return 'per_basin'
+        return 'per_basin'
+    finally:
+        raw.close()
 
 
 def _validate_required_features(
@@ -172,9 +310,11 @@ def _validate_required_features(
         available |= set(ds.coords)
     missing = sorted(set(features) - available)
     if missing:
+        available_list = sorted(available)
+        label = 'variables/coordinates' if include_coords else 'variables'
         raise ValueError(
             f'Requested features {missing} not found in {source}. '
-            f'Available variables: {sorted(ds.data_vars)}'
+            f'Available {label}: {available_list}'
         )
 
 
@@ -186,8 +326,16 @@ def _validate_basin_coord(
             f"Required 'basin' dimension/coordinate not found in {source}. "
             f'Found dims: {list(ds.dims)}.'
         )
-    if basins:
-        present = set(ds.coords['basin'].to_numpy().tolist())
+    basin_index = pd.Index(ds.coords['basin'].to_numpy())
+    if not basin_index.is_unique:
+        dup = basin_index[basin_index.duplicated()][0]
+        raise ValueError(
+            f"Duplicate 'basin' coordinate value {dup!r} in {source}."
+        )
+    if basins is not None:
+        if len(basins) == 0:
+            raise ValueError('Basin list must be non-empty.')
+        present = set(basin_index.tolist())
         missing = sorted(set(basins) - present)
         if missing:
             raise ValueError(
@@ -205,10 +353,68 @@ def _validate_date_coord(ds: xr.Dataset, source: Path | str) -> None:
     if not np.issubdtype(ds['date'].dtype, np.datetime64):
         raise ValueError(
             f"'date' coordinate in {source} must decode as datetime64, "
-            f"got dtype {ds['date'].dtype}."
+            f'got dtype {ds["date"].dtype}.'
         )
     if ds.sizes['date'] == 0:
         raise ValueError(f"'date' coordinate in {source} is empty.")
+
+    idx = pd.DatetimeIndex(ds['date'].to_numpy())
+    if idx.isna().any():
+        raise ValueError(
+            f"'date' coordinate in {source} contains missing (NaT) values."
+        )
+    if not idx.is_unique:
+        dup = idx[idx.duplicated()][0]
+        raise ValueError(
+            f"'date' coordinate in {source} contains duplicate timestamp "
+            f'{dup.isoformat()}.'
+        )
+    non_midnight = idx != idx.normalize()
+    if non_midnight.any():
+        bad_ts = idx[non_midnight][0]
+        raise ValueError(
+            f"'date' coordinate in {source} must contain daily midnight "
+            f'(00:00:00) timestamps; found {bad_ts.isoformat()}.'
+        )
+
+
+@dataclass(frozen=True)
+class _MultiBasinReadOpts:
+    features: Sequence[str] | None = None
+    include_coords: bool = False
+    only_1d_basin_vars: bool = False
+    validate_dates: bool = False
+
+
+def _validate_lead_time_values(
+    lt: pd.TimedeltaIndex, source: Path | str
+) -> None:
+    if lt.isna().any():
+        raise ValueError(
+            f"'lead_time' coordinate in {source} contains missing (NaT) values."
+        )
+    if not lt.is_unique:
+        dup = lt[lt.duplicated()][0]
+        raise ValueError(
+            f"'lead_time' coordinate in {source} contains duplicate value "
+            f'{dup}.'
+        )
+    if ((lt % _ONE_DAY) != pd.Timedelta(0)).any():
+        bad_lt = lt[(lt % _ONE_DAY) != pd.Timedelta(0)][0]
+        raise ValueError(
+            f"'lead_time' coordinate in {source} must use whole-day multiples; "
+            f'found {bad_lt}.'
+        )
+    if lt.min() < _ONE_DAY:
+        raise ValueError(
+            f"'lead_time' coordinate in {source} must start at >= 1 day; "
+            f'found minimum {lt.min()}.'
+        )
+    if not lt.is_monotonic_increasing:
+        raise ValueError(
+            f"'lead_time' coordinate in {source} must be strictly increasing; "
+            f'got {[int(td / _ONE_DAY) for td in lt]} days.'
+        )
 
 
 def _validate_lead_time_coord(
@@ -219,14 +425,20 @@ def _validate_lead_time_coord(
 ) -> None:
     if 'lead_time' not in ds.dims or 'lead_time' not in ds.coords:
         raise ValueError(
-            f"Lead times ('lead_time') do not exist in forecast dataset at "
-            f'{source}.'
+            f"Lead times ('lead_time') do not exist in dataset at {source}."
         )
     if not np.issubdtype(ds['lead_time'].dtype, np.timedelta64):
         raise ValueError(
             f"'lead_time' coordinate in {source} must decode as timedelta64 "
             f"(e.g. CF units='days'), got dtype {ds['lead_time'].dtype}."
         )
+    if ds.sizes['lead_time'] == 0:
+        raise ValueError(f"'lead_time' coordinate in {source} is empty.")
+
+    _validate_lead_time_values(
+        pd.TimedeltaIndex(ds['lead_time'].to_numpy()), source
+    )
+
     if require_on_all_vars:
         missing_lt_vars = sorted(
             name
@@ -240,16 +452,74 @@ def _validate_lead_time_coord(
             )
 
 
-def _combine_same_basin_group(group: Sequence[xr.Dataset]) -> xr.Dataset:
+def _check_no_overlapping_dates(
+    group: Sequence[tuple[Path, xr.Dataset]], directory: Path
+) -> None:
+    """Reject time-split files that overlap on any date for shared variables."""
+    var_seen_dates: dict[str, dict[np.datetime64, Path]] = {}
+    for path, ds in group:
+        if 'date' not in ds.dims:
+            continue
+        dates = ds.coords['date'].to_numpy()
+        for var_name in ds.data_vars:
+            seen = var_seen_dates.setdefault(str(var_name), {})
+            for dt in dates:
+                prev = seen.get(dt)
+                if prev is not None:
+                    raise ValueError(
+                        f"Overlapping 'date' {pd.Timestamp(dt).isoformat()} "
+                        f"for variable '{var_name}' in {directory}: "
+                        f'{prev.name} and {path.name}.'
+                    )
+                seen[dt] = path
+
+
+def _check_no_overlapping_basins(
+    opened: Sequence[tuple[Path, xr.Dataset]], directory: Path
+) -> None:
+    """Reject non-timeseries files that repeat the same basin across files."""
+    seen_basins: dict[str, Path] = {}
+    for path, ds in opened:
+        for basin in ds.coords['basin'].to_numpy().tolist():
+            prev = seen_basins.get(basin)
+            if prev is not None:
+                raise ValueError(
+                    f"Overlapping 'basin' {basin!r} in {directory}: "
+                    f'{prev.name} and {path.name}.'
+                )
+            seen_basins[basin] = path
+
+
+def _validate_combined_indexes(ds: xr.Dataset, directory: Path) -> None:
+    if 'date' in ds.dims:
+        date_idx = pd.DatetimeIndex(ds.coords['date'].to_numpy())
+        if not date_idx.is_unique:
+            dup = date_idx[date_idx.duplicated()][0]
+            raise ValueError(
+                f"Duplicate 'date' {dup.isoformat()} after combining files in "
+                f'{directory}.'
+            )
+    basin_idx = pd.Index(ds.coords['basin'].to_numpy())
+    if not basin_idx.is_unique:
+        dup_b = basin_idx[basin_idx.duplicated()][0]
+        raise ValueError(
+            f"Duplicate 'basin' {dup_b!r} after combining files in {directory}."
+        )
+
+
+def _combine_same_basin_group(
+    group: Sequence[tuple[Path, xr.Dataset]], directory: Path
+) -> xr.Dataset:
     """Combine datasets sharing the same basin set along remaining coords."""
     if len(group) == 1:
-        return group[0]
-    ref_basins = group[0].coords['basin'].to_numpy()
+        return group[0][1]
+    _check_no_overlapping_dates(group, directory)
+    ref_basins = group[0][1].coords['basin'].to_numpy()
     aligned = [
         ds
         if np.array_equal(ds.coords['basin'].to_numpy(), ref_basins)
         else ds.sel(basin=ref_basins)
-        for ds in group
+        for _, ds in group
     ]
     return xr.combine_by_coords(
         aligned,
@@ -260,96 +530,195 @@ def _combine_same_basin_group(group: Sequence[xr.Dataset]) -> xr.Dataset:
     )
 
 
-def _combine_multi_basin_datasets(opened: Sequence[xr.Dataset]) -> xr.Dataset:
+def _combine_multi_basin_datasets(
+    opened: Sequence[tuple[Path, xr.Dataset]], directory: Path
+) -> xr.Dataset:
     """Combine multi-basin datasets across time, basin, or 2D splits.
 
     Grouping by each file's basin set and concatenating mutually disjoint basin
     groups via ``xr.concat`` allows arbitrary (unsorted or interleaved) basin ID
     partitions that ``xr.combine_by_coords`` otherwise rejects as non-monotonic.
     """
-    groups: dict[frozenset[str], list[xr.Dataset]] = {}
-    for ds in opened:
-        key = frozenset(ds.coords['basin'].to_numpy().tolist())
-        groups.setdefault(key, []).append(ds)
+    groups: dict[frozenset[str], list[tuple[Path, xr.Dataset]]] = {}
+    for item in opened:
+        key = frozenset(item[1].coords['basin'].to_numpy().tolist())
+        groups.setdefault(key, []).append(item)
 
     if len(groups) == 1:
-        return _combine_same_basin_group(next(iter(groups.values())))
+        combined = _combine_same_basin_group(
+            next(iter(groups.values())), directory
+        )
+    else:
+        total_basins = sum(len(key) for key in groups)
+        union_basins: set[str] = set().union(*groups)
+        if total_basins == len(union_basins):
+            combined_groups = [
+                _combine_same_basin_group(group, directory)
+                for group in groups.values()
+            ]
+            combined = xr.concat(
+                combined_groups,
+                dim='basin',
+                data_vars='minimal',
+                coords='minimal',
+                join='outer',
+                compat='no_conflicts',
+            )
+        else:
+            _check_no_overlapping_dates(opened, directory)
+            if any('date' not in ds.dims for _, ds in opened):
+                _check_no_overlapping_basins(opened, directory)
+            combined = xr.combine_by_coords(
+                [ds.sortby('basin') for _, ds in opened],
+                data_vars='minimal',
+                coords='minimal',
+                join='outer',
+                compat='no_conflicts',
+            )
 
-    total_basins = sum(len(key) for key in groups)
-    union_basins: set[str] = set().union(*groups)
-    if total_basins == len(union_basins):
-        combined_groups = [
-            _combine_same_basin_group(group) for group in groups.values()
+    _validate_combined_indexes(combined, directory)
+    return combined
+
+
+def _subset_multi_basin_vars(
+    ds: xr.Dataset, opts: _MultiBasinReadOpts
+) -> xr.Dataset | None:
+    """Select requested (or 1D static) variables and drop unused coords."""
+    if opts.features is not None:
+        present_vars = [f for f in opts.features if f in ds.data_vars]
+        present_coords = (
+            [
+                f
+                for f in opts.features
+                if f not in ds.data_vars and f in ds.coords and f not in ds.dims
+            ]
+            if opts.include_coords
+            else []
+        )
+        if not present_vars and not present_coords:
+            return None
+        if present_coords:
+            ds = ds.reset_coords(present_coords)
+        ds = ds[present_vars + present_coords]
+    elif opts.only_1d_basin_vars:
+        one_d_vars = [
+            name for name, da in ds.data_vars.items() if da.dims == ('basin',)
         ]
-        return xr.concat(
-            combined_groups,
-            dim='basin',
-            data_vars='minimal',
-            coords='minimal',
-            join='outer',
-            compat='no_conflicts',
+        if not one_d_vars:
+            return None
+        ds = ds[one_d_vars]
+
+    non_index_coords = [c for c in ds.coords if c not in ds.dims]
+    if non_index_coords:
+        ds = ds.drop_vars(non_index_coords)
+    return ds
+
+
+def _preprocess_multi_basin_part(
+    ds: xr.Dataset,
+    path: Path,
+    directory: Path,
+    *,
+    is_multi_file: bool,
+    opts: _MultiBasinReadOpts,
+) -> xr.Dataset | None:
+    """Validate and subset a single multi-basin file prior to combining."""
+    if 'basin' not in ds.dims:
+        if is_multi_file:
+            raise ValueError(
+                f'Cannot mix multi-basin and per-basin NetCDF files in '
+                f"{directory}: {path.name} is missing a 'basin' dimension."
+            )
+        raise ValueError(
+            f"Required 'basin' dimension not found in {path}. "
+            f'Found dims: {list(ds.dims)}.'
+        )
+    if 'basin' not in ds.coords:
+        raise ValueError(
+            f"Required 'basin' coordinate variable not found in {path}."
         )
 
-    return xr.combine_by_coords(
-        [ds.sortby('basin') for ds in opened],
-        data_vars='minimal',
-        coords='minimal',
-        join='outer',
-        compat='no_conflicts',
+    ds = _decode_lead_time_coord(ds)
+    ds = _normalize_basin_coord(ds, path)
+    basin_idx = pd.Index(ds.coords['basin'].to_numpy())
+    if not basin_idx.is_unique:
+        dup = basin_idx[basin_idx.duplicated()][0]
+        raise ValueError(
+            f"Duplicate 'basin' coordinate value {dup!r} in {path}."
+        )
+
+    subset = _subset_multi_basin_vars(ds, opts)
+    if subset is None:
+        return None
+    if opts.validate_dates:
+        _validate_date_coord(subset, path)
+    if 'lead_time' in subset.dims:
+        _validate_lead_time_coord(subset, path)
+    return subset
+
+
+def _raise_no_matching_vars(
+    directory: Path, features: Sequence[str] | None, seen_vars: set[str]
+) -> None:
+    if features:
+        raise ValueError(
+            f'Requested features {sorted(features)} not found in '
+            f'{directory}. Available variables: {sorted(seen_vars)}'
+        )
+    raise ValueError(
+        f'No matching variables found in NetCDF files at {directory}.'
     )
 
 
 def _open_multi_basin_netcdf(
-    directory: Path, nc_files: Sequence[Path]
-) -> xr.Dataset:
+    directory: Path,
+    nc_files: Sequence[Path],
+    opts: _MultiBasinReadOpts,
+) -> tuple[xr.Dataset, list[xr.Dataset]]:
     """Open one or more multi-basin NetCDF files lazily as one Dataset."""
-
-    def _preprocess(ds: xr.Dataset) -> xr.Dataset:
-        source = ds.encoding.get('source', str(directory))
-        if 'basin' not in ds.dims or 'basin' not in ds.coords:
-            raise ValueError(
-                f'Cannot mix multi-basin and per-basin NetCDF files in '
-                f"{directory}: {source} is missing a 'basin' dimension."
-            )
-        return _normalize_basin_coord(ds)
-
-    if len(nc_files) == 1:
-        engine = _netcdf_engine_for_path(nc_files[0])
-        ds = xr.open_dataset(
-            nc_files[0],
-            engine=engine,
-            chunks='auto',
-            decode_timedelta=True,
-        )
-        try:
-            return _preprocess(ds)
-        except Exception:
-            ds.close()
-            raise
-
-    opened: list[xr.Dataset] = []
+    is_multi_file = len(nc_files) > 1
+    raw_handles: list[xr.Dataset] = []
+    opened: list[tuple[Path, xr.Dataset]] = []
+    seen_vars: set[str] = set()
     try:
         for path in nc_files:
-            ds_part = xr.open_dataset(
+            raw = _open_dataset_raw(path, chunks='auto')
+            raw_handles.append(raw)
+            seen_vars.update(str(v) for v in raw.data_vars)
+            if opts.include_coords:
+                seen_vars.update(str(c) for c in raw.coords)
+            ds_part = _preprocess_multi_basin_part(
+                raw,
                 path,
-                engine=_netcdf_engine_for_path(path),
-                chunks='auto',
-                decode_timedelta=True,
+                directory,
+                is_multi_file=is_multi_file,
+                opts=opts,
             )
-            opened.append(_preprocess(ds_part))
-        return _combine_multi_basin_datasets(opened)
+            if ds_part is None:
+                raw.close()
+                raw_handles.pop()
+                continue
+            opened.append((path, ds_part))
+
+        if not opened:
+            _raise_no_matching_vars(directory, opts.features, seen_vars)
+
+        combined = (
+            opened[0][1]
+            if len(opened) == 1
+            else _combine_multi_basin_datasets(opened, directory)
+        )
     except Exception:
-        for ds_part in opened:
-            ds_part.close()
+        _close_all(raw_handles)
         raise
+    else:
+        return combined, raw_handles
 
 
-def _resolve_basin_netcdf_path(directory: Path, basin: str) -> Path:
-    matches = [
-        directory / f'{basin}{ext}'
-        for ext in NETCDF_SUFFIXES
-        if (directory / f'{basin}{ext}').is_file()
-    ]
+def _resolve_basin_netcdf_path(
+    directory: Path, basin: str, stem_map: dict[str, list[Path]]
+) -> Path:
+    matches = stem_map.get(basin, [])
     if len(matches) > 1:
         raise ValueError(
             f"Ambiguous per-basin NetCDF files for basin '{basin}' in "
@@ -380,32 +749,32 @@ def _open_single_basin_netcdf(
     features: Sequence[str] | None,
     *,
     require_lead_time: bool,
-) -> tuple[xr.Dataset, np.datetime64, np.datetime64]:
-    engine = _netcdf_engine_for_path(ds_path)
-    ds = xr.open_dataset(
-        ds_path,
-        engine=engine,
-        chunks={'date': 'auto'},
-        decode_timedelta=True,
-    )
+) -> tuple[xr.Dataset, xr.Dataset, np.datetime64, np.datetime64]:
+    raw = _open_dataset_raw(ds_path, chunks={'date': 'auto'})
     try:
+        ds = _decode_lead_time_coord(raw)
         _validate_no_basin_dim(ds, directory, ds_path)
         if features:
             _validate_required_features(ds, features, ds_path)
             ds = ds[list(features)]
+        # Drop scalar/non-index coords (e.g. 0D 'basin' or per-basin 'lat') so
+        # xr.concat does not misclassify or broadcast basin #1's scalars.
+        non_index_coords = [c for c in ds.coords if c not in ds.dims]
+        if non_index_coords:
+            ds = ds.drop_vars(non_index_coords)
         _validate_date_coord(ds, ds_path)
         if require_lead_time or 'lead_time' in ds.dims:
             _validate_lead_time_coord(
                 ds, ds_path, require_on_all_vars=require_lead_time
             )
-        ds = _cast_floats_to_float32(ds)
+        ds = _cast_numeric_to_float32(ds)
         date_values = ds['date'].to_numpy()
         first_date = date_values.min()
         last_date = date_values.max()
     except Exception:
-        ds.close()
+        raw.close()
         raise
-    return ds, first_date, last_date
+    return raw, ds, first_date, last_date
 
 
 def _open_per_basin_netcdf(
@@ -422,29 +791,33 @@ def _open_per_basin_netcdf(
     if not basin_list:
         raise ValueError('Basin list must be non-empty for per-basin NetCDF.')
 
+    stem_map = _build_per_basin_path_map(list_netcdf_files(directory))
     paths = tuple(
-        _resolve_basin_netcdf_path(directory, basin) for basin in basin_list
+        _resolve_basin_netcdf_path(directory, basin, stem_map)
+        for basin in basin_list
     )
+
+    raw_handles: list[xr.Dataset] = []
 
     def open_batch(
         batch_paths: tuple[Path, ...],
     ) -> Iterator[tuple[xr.Dataset, np.datetime64, np.datetime64]]:
-        yield from AutoRefreshTqdm(
-            (
-                _open_single_basin_netcdf(
-                    directory,
-                    ds_path,
-                    features,
-                    require_lead_time=require_lead_time,
-                )
-                for ds_path in batch_paths
-            ),
+        for ds_path in AutoRefreshTqdm(
+            batch_paths,
             desc='Read',
             unit='file',
             leave=False,
             disable=bar_off,
             total=len(batch_paths),
-        )
+        ):
+            raw, ds, first_date, last_date = _open_single_basin_netcdf(
+                directory,
+                ds_path,
+                features,
+                require_lead_time=require_lead_time,
+            )
+            raw_handles.append(raw)
+            yield ds, first_date, last_date
 
     def process_batch(
         batch_items: tuple[tuple[str, Path], ...],
@@ -453,7 +826,9 @@ def _open_per_basin_netcdf(
         datasets, starts, ends = zip(*open_batch(batch_paths), strict=True)
         start, end = min(starts), max(ends)
         date = pd.date_range(start=start, end=end, freq='D', name='date')
-        reindexed = [ds.reindex(date=date) for ds in datasets]
+        reindexed = [
+            _cast_numeric_to_float32(ds.reindex(date=date)) for ds in datasets
+        ]
         return xr.concat(
             reindexed,
             dim=pd.Index(batch_basins, name='basin'),
@@ -478,18 +853,27 @@ def _open_per_basin_netcdf(
             disable=bar_off,
         )
 
-    batch_datasets = tuple(batchify())
-    if len(batch_datasets) == 1:
-        return batch_datasets[0]
-    return xr.concat(
-        batch_datasets,
-        dim='basin',
-        data_vars='all',
-        coords='minimal',
-        compat='override',
-        combine_attrs='override',
-        join='outer',
-    )
+    try:
+        batch_datasets = tuple(batchify())
+        if len(batch_datasets) == 1:
+            result = batch_datasets[0]
+        else:
+            result = xr.concat(
+                batch_datasets,
+                dim='basin',
+                data_vars='all',
+                coords='minimal',
+                compat='override',
+                combine_attrs='override',
+                join='outer',
+            )
+        result = _cast_numeric_to_float32(result)
+        result.set_close(_make_closer(raw_handles))
+    except Exception:
+        _close_all(raw_handles)
+        raise
+    else:
+        return result
 
 
 def load_netcdf_attributes(
@@ -512,10 +896,19 @@ def load_netcdf_attributes(
     Returns
     -------
     xr.Dataset
-        Dataset indexed by ``basin`` with floating-point arrays cast to
-        ``float32``.
+        Dataset indexed by ``basin`` with numeric/boolean data variables cast
+        to ``float32``.
     """
+    if basins is not None and len(basins) == 0:
+        raise ValueError('Basin list must be non-empty.')
+
     directory = Path(data_dir)
+    if directory.is_file() and _is_netcdf_filename(directory.name):
+        raise ValueError(
+            f'Expected a directory containing NetCDF files, got file: '
+            f'{directory}. Pass its parent directory instead.'
+        )
+
     nc_files = list_netcdf_files(directory)
     if not nc_files:
         raise FileNotFoundError(
@@ -531,7 +924,13 @@ def load_netcdf_attributes(
     LOGGER.debug(
         'Loading static attributes from NetCDF directory: %s', directory
     )
-    ds = _open_multi_basin_netcdf(directory, nc_files)
+    opts = _MultiBasinReadOpts(
+        features=features,
+        include_coords=True,
+        only_1d_basin_vars=(features is None),
+        validate_dates=False,
+    )
+    ds, raw_handles = _open_multi_basin_netcdf(directory, nc_files, opts)
     try:
         if features:
             _validate_required_features(
@@ -539,12 +938,15 @@ def load_netcdf_attributes(
             )
             ds = ds[list(features)]
         _validate_basin_coord(ds, basins, directory)
-        if basins:
+        if basins is not None:
             ds = ds.sel(basin=list(basins))
-        return _cast_floats_to_float32(ds)
+        ds = _cast_numeric_to_float32(ds)
+        ds.set_close(_make_closer(raw_handles))
     except Exception:
-        ds.close()
+        _close_all(raw_handles)
         raise
+    else:
+        return ds
 
 
 def load_netcdf_timeseries(
@@ -570,8 +972,8 @@ def load_netcdf_timeseries(
     features : Sequence[str], optional
         Data variable names to select and validate.
     require_lead_time : bool, optional
-        If True, validates that ``lead_time`` exists as a ``timedelta64``
-        dimension/coordinate (used for forecast datasets).
+        If True, validates that ``lead_time`` exists as a whole-day
+        ``timedelta64`` dimension/coordinate (used for forecast datasets).
     batch_size : int, optional
         Number of basin files combined per batch in per-basin mode.
 
@@ -579,17 +981,28 @@ def load_netcdf_timeseries(
     -------
     xr.Dataset
         Dataset with dimensions ``(basin, date)`` or
-        ``(basin, date, lead_time)`` and floating-point arrays cast to
+        ``(basin, date, lead_time)`` and numeric/boolean data variables cast to
         ``float32``.
     """
+    if len(basins) == 0:
+        raise ValueError('Basin list must be non-empty.')
+    if batch_size <= 0:
+        raise ValueError(f'batch_size must be positive, got {batch_size}.')
+
     directory = Path(data_dir)
+    if directory.is_file() and _is_netcdf_filename(directory.name):
+        raise ValueError(
+            f'Expected a directory containing NetCDF files, got file: '
+            f'{directory}. Pass its parent directory instead.'
+        )
+
     nc_files = list_netcdf_files(directory)
     if not nc_files:
         raise FileNotFoundError(
             f'No NetCDF (.nc/.nc4) files found in {directory}.'
         )
 
-    layout = _detect_layout(nc_files)
+    layout = _detect_layout(nc_files, basins=basins)
     LOGGER.debug(
         'Loading timeseries from NetCDF directory (%s layout): %s',
         layout,
@@ -604,7 +1017,13 @@ def load_netcdf_timeseries(
             batch_size=batch_size,
         )
 
-    ds = _open_multi_basin_netcdf(directory, nc_files)
+    opts = _MultiBasinReadOpts(
+        features=features,
+        include_coords=False,
+        only_1d_basin_vars=False,
+        validate_dates=True,
+    )
+    ds, raw_handles = _open_multi_basin_netcdf(directory, nc_files, opts)
     try:
         if features:
             _validate_required_features(ds, features, directory)
@@ -615,9 +1034,11 @@ def load_netcdf_timeseries(
             _validate_lead_time_coord(
                 ds, directory, require_on_all_vars=require_lead_time
             )
-        if basins:
-            ds = ds.sel(basin=list(basins))
-        return _cast_floats_to_float32(ds)
+        ds = ds.sel(basin=list(basins))
+        ds = _cast_numeric_to_float32(ds)
+        ds.set_close(_make_closer(raw_handles))
     except Exception:
-        ds.close()
+        _close_all(raw_handles)
         raise
+    else:
+        return ds

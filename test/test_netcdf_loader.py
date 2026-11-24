@@ -14,18 +14,25 @@
 
 """Unit and end-to-end tests for NetCDF input loading."""
 
-from pathlib import Path
+import warnings
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 import dask
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 import xarray as xr
 
 from googlehydrology.datasetzoo import caravan
-from googlehydrology.datasetzoo.multimet import Multimet, MultimetDataLoader
+from googlehydrology.datasetzoo.multimet import (
+    Multimet,
+    MultimetDataLoader,
+    _is_zarr_store,
+)
 from googlehydrology.datautils.netcdf import (
+    _is_cloud_path,
     find_product_netcdf_dir,
     has_netcdf_files,
     load_netcdf_attributes,
@@ -36,6 +43,7 @@ from googlehydrology.utils.config import Config
 
 _EXPECTED_UNION_DATES = 7
 _EXPECTED_LEADS = 2
+_EXPECTED_COMBINED_META_DATES = 6
 
 
 def _make_synthetic_dataset(
@@ -310,25 +318,27 @@ def test_load_netcdf_attributes_multibasin_and_float64_cast(
 def test_load_netcdf_unsorted_and_interleaved_basin_splits(
     tmp_path: Path,
 ) -> None:
-    """Combine unsorted/interleaved basin-split statics and 2D basin x time."""
+    """Combine non-monotonic/interleaved basin-split statics and 2D splits."""
     attr_dir = tmp_path / 'attrs_interleaved'
     attr_dir.mkdir()
     xr.Dataset(
-        {'area': (('basin',), np.array([4.0, 2.0], dtype=np.float32))},
-        coords={'basin': ['d', 'b']},
+        {'area': (('basin',), np.array([5.0, 1.0, 4.0], dtype=np.float32))},
+        coords={'basin': ['e', 'a', 'd']},
     ).to_netcdf(attr_dir / 'part_0.nc')
     xr.Dataset(
-        {'area': (('basin',), np.array([3.0, 1.0], dtype=np.float32))},
-        coords={'basin': ['c', 'a']},
+        {'area': (('basin',), np.array([6.0, 2.0, 3.0], dtype=np.float32))},
+        coords={'basin': ['f', 'b', 'c']},
     ).to_netcdf(attr_dir / 'part_1.nc')
 
     ds_attr = caravan.load_caravan_attributes(
-        data_dir=attr_dir, basins=['a', 'b', 'c', 'd'], features=['area']
+        data_dir=attr_dir,
+        basins=['a', 'b', 'c', 'd', 'e', 'f'],
+        features=['area'],
     )
     try:
         np.testing.assert_array_equal(
             ds_attr['area'].to_numpy(),
-            np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32),
+            np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], dtype=np.float32),
         )
     finally:
         ds_attr.close()
@@ -341,19 +351,19 @@ def test_load_netcdf_unsorted_and_interleaved_basin_splits(
         {
             'streamflow': (
                 ('basin', 'date'),
-                np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
+                np.array([[1.0, 2.0], [3.0, 4.0], [17.0, 18.0]], np.float32),
             )
         },
-        coords={'basin': ['d', 'b'], 'date': d1},
+        coords={'basin': ['d', 'b', 'e'], 'date': d1},
     ).to_netcdf(ts_dir / 'west_2020_a.nc')
     xr.Dataset(
         {
             'streamflow': (
                 ('basin', 'date'),
-                np.array([[5.0, 6.0], [7.0, 8.0]], dtype=np.float32),
+                np.array([[5.0, 6.0], [7.0, 8.0], [19.0, 20.0]], np.float32),
             )
         },
-        coords={'basin': ['b', 'd'], 'date': d2},
+        coords={'basin': ['b', 'd', 'e'], 'date': d2},
     ).to_netcdf(ts_dir / 'west_2020_b.nc')
     xr.Dataset(
         {
@@ -376,7 +386,7 @@ def test_load_netcdf_unsorted_and_interleaved_basin_splits(
 
     ds_ts = load_netcdf_timeseries(
         data_dir=ts_dir,
-        basins=['a', 'b', 'c', 'd'],
+        basins=['a', 'b', 'c', 'd', 'e'],
         features=['streamflow'],
     )
     try:
@@ -386,6 +396,7 @@ def test_load_netcdf_unsorted_and_interleaved_basin_splits(
                 [3.0, 4.0, 5.0, 6.0],
                 [9.0, 10.0, 13.0, 14.0],
                 [1.0, 2.0, 7.0, 8.0],
+                [17.0, 18.0, 19.0, 20.0],
             ],
             dtype=np.float32,
         )
@@ -426,6 +437,8 @@ def test_load_netcdf_timeseries_per_basin_varying_dates_and_batching(
     d2 = pd.date_range('2020-01-03', periods=5, freq='D')
     leads = pd.to_timedelta([1, 2], unit='D')
 
+    # Save with 0D scalar 'basin' and per-basin scalar 'lat' coords (default
+    # xarray `.sel(basin=b).to_netcdf(...)` without `drop=True`).
     xr.Dataset(
         {
             'hres_p': (
@@ -433,7 +446,7 @@ def test_load_netcdf_timeseries_per_basin_varying_dates_and_batching(
                 np.ones((5, 2), dtype=np.float64) * 1.5,
             )
         },
-        coords={'date': d1, 'lead_time': leads},
+        coords={'date': d1, 'lead_time': leads, 'basin': 'b1', 'lat': 10.0},
     ).to_netcdf(ts_dir / 'b1.nc')
     xr.Dataset(
         {
@@ -442,10 +455,12 @@ def test_load_netcdf_timeseries_per_basin_varying_dates_and_batching(
                 np.ones((5, 2), dtype=np.float64) * 2.5,
             )
         },
-        coords={'date': d2, 'lead_time': leads},
-    ).to_netcdf(ts_dir / 'b2.nc4')
-    # Unused corrupt file in the same directory must not be opened.
-    (ts_dir / 'unused_corrupt.nc').write_bytes(b'not a valid netcdf file')
+        coords={'date': d2, 'lead_time': leads, 'basin': 'b2', 'lat': 20.0},
+    ).to_netcdf(ts_dir / 'b2.NC4')
+    # Alphabetically earlier corrupt file and macOS AppleDouble dotfile must
+    # not be opened or break per-basin loading.
+    (ts_dir / 'a_corrupt.nc').write_bytes(b'not a valid netcdf file')
+    (ts_dir / '._b1.nc').write_bytes(b'macos appledouble sidecar')
 
     ds = load_netcdf_timeseries(
         ts_dir,
@@ -457,11 +472,12 @@ def test_load_netcdf_timeseries_per_basin_varying_dates_and_batching(
     try:
         assert ds['hres_p'].dtype == np.float32
         assert ds.coords['basin'].to_numpy().tolist() == ['b1', 'b2']
+        assert 'lat' not in ds.coords
         assert ds.sizes['date'] == _EXPECTED_UNION_DATES
         assert ds.sizes['lead_time'] == _EXPECTED_LEADS
         assert np.isnan(ds['hres_p'].sel(basin='b2', date='2020-01-01')).all()
         assert np.isnan(ds['hres_p'].sel(basin='b1', date='2020-01-07')).all()
-        np.testing.assert_allclose(
+        np.testing.assert_array_equal(
             ds['hres_p'].sel(basin='b1', date='2020-01-03').to_numpy(),
             np.array([1.5, 1.5], dtype=np.float32),
         )
@@ -686,15 +702,22 @@ def test_multimet_netcdf_matches_zarr_bit_for_bit(
         assert len(nc_batches) == len(zarr_batches)
         for zb, nb in zip(zarr_batches, nc_batches, strict=True):
             np.testing.assert_array_equal(nb['date'], zb['date'])
-            np.testing.assert_allclose(nb['x_s'].numpy(), zb['x_s'].numpy())
-            np.testing.assert_allclose(nb['y'].numpy(), zb['y'].numpy())
+            np.testing.assert_array_equal(
+                nb['basin_index'].numpy(), zb['basin_index'].numpy()
+            )
+            assert nb['x_s'].dtype == torch.float32
+            assert nb['y'].dtype == torch.float32
+            np.testing.assert_array_equal(nb['x_s'].numpy(), zb['x_s'].numpy())
+            np.testing.assert_array_equal(nb['y'].numpy(), zb['y'].numpy())
             for k in zb['x_d_hindcast']:
-                np.testing.assert_allclose(
+                assert nb['x_d_hindcast'][k].dtype == torch.float32
+                np.testing.assert_array_equal(
                     nb['x_d_hindcast'][k].numpy(),
                     zb['x_d_hindcast'][k].numpy(),
                 )
             for k in zb['x_d_forecast']:
-                np.testing.assert_allclose(
+                assert nb['x_d_forecast'][k].dtype == torch.float32
+                np.testing.assert_array_equal(
                     nb['x_d_forecast'][k].numpy(),
                     zb['x_d_forecast'][k].numpy(),
                 )
@@ -836,9 +859,13 @@ def test_end_to_end_train_evaluate_infer_with_netcdf(
         eval_run(
             eval_cfg, run_dir=actual_run_dir, period='test', epoch=1, gpu=-1
         )
-        assert (
+        metrics_csv = (
             actual_run_dir / 'test' / 'model_epoch001' / 'test_metrics.csv'
-        ).is_file()
+        )
+        assert metrics_csv.is_file()
+        metrics_df = pd.read_csv(metrics_csv, index_col=0)
+        assert sorted(metrics_df.index.tolist()) == sorted(basins)
+        assert np.isfinite(metrics_df['NSE'].to_numpy()).all()
 
         infer_cfg = Config(actual_run_dir / 'config.yml')
         infer_cfg.inference_mode = True
@@ -846,6 +873,500 @@ def test_end_to_end_train_evaluate_infer_with_netcdf(
         eval_run(
             infer_cfg, run_dir=actual_run_dir, period='test', epoch=1, gpu=-1
         )
-        assert (
+        results_zarr = (
             actual_run_dir / 'test' / 'model_epoch001' / 'test_results.zarr'
-        ).exists()
+        )
+        assert results_zarr.exists()
+        with xr.open_zarr(results_zarr) as res_ds:
+            assert sorted(res_ds.coords['basin'].to_numpy().tolist()) == sorted(
+                basins
+            )
+            assert np.isfinite(res_ds['streamflow_sim'].to_numpy()).all()
+
+
+@pytest.mark.unit
+def test_stray_nc_does_not_regress_zarr_or_legacy_caravan(
+    tmp_path: Path,
+) -> None:
+    """Stray root .nc files must not override Zarr stores or legacy Caravan."""
+    basins = ['camels_01', 'camels_02']
+    dates = pd.date_range('2000-01-01', periods=30, freq='D')
+    ds = _make_synthetic_dataset(basins, dates, lead_days=[1, 2])
+
+    # 1. Zarr layout with stray .nc at dynamics root -> Zarr must still win.
+    zarr_paths = _write_zarr_layout(tmp_path / 'zarr_with_stray', ds)
+    xr.Dataset(
+        {'stray': (('date',), np.ones(5))}, coords={'date': dates[:5]}
+    ).to_netcdf(zarr_paths['dynamics'] / 'stray.nc')
+    cfg = _make_multimet_config(tmp_path, 'zarr_stray', zarr_paths, basins)
+    dataset = Multimet(cfg=cfg, is_train=True, period='train')
+    assert len(dataset) > 0
+
+    # 2. Legacy Caravan root with stray root .nc -> legacy Caravan wins.
+    legacy_root = tmp_path / 'legacy_caravan'
+    attr_sub = legacy_root / 'attributes' / 'camels'
+    ts_sub = legacy_root / 'timeseries' / 'netcdf' / 'camels'
+    attr_sub.mkdir(parents=True)
+    ts_sub.mkdir(parents=True)
+    pd.DataFrame({'gauge_id': basins, 'area': [10.0, 20.0]}).to_csv(
+        attr_sub / 'attributes_caravan_camels.csv', index=False
+    )
+    for idx, basin in enumerate(basins):
+        xr.Dataset(
+            {'streamflow': (('date',), np.ones(10, np.float32) * (idx + 1))},
+            coords={'date': dates[:10]},
+        ).to_netcdf(ts_sub / f'{basin}.nc')
+    xr.Dataset(
+        {'noise': (('date',), np.zeros(5))}, coords={'date': dates[:5]}
+    ).to_netcdf(legacy_root / 'stray_sample.nc')
+
+    loaded_attr = caravan.load_caravan_attributes(
+        legacy_root, basins=basins, features=['area']
+    )
+    np.testing.assert_array_equal(
+        loaded_attr['area'].to_numpy(), np.array([10.0, 20.0], dtype=np.float32)
+    )
+    loaded_ts = caravan.load_caravan_timeseries(
+        legacy_root, basins=basins, target_features=['streamflow']
+    )
+    assert loaded_ts.sizes['basin'] == len(basins)
+
+
+@pytest.mark.unit
+def test_shared_data_dir_with_product_subdirs_and_no_2d_attr_leak(
+    tmp_path: Path,
+) -> None:
+    """Shared data_dir with root statics/targets + product subdirs works."""
+    basins = ['basin_01', 'basin_02']
+    dates = pd.date_range('2000-01-01', periods=30, freq='D')
+    ds = _make_synthetic_dataset(basins, dates, lead_days=[1, 2])
+
+    shared = tmp_path / 'shared_root'
+    (shared / 'era5-land').mkdir(parents=True)
+    (shared / 'HRES').mkdir(parents=True)
+    ds[['area', 'p_mean']].to_netcdf(shared / 'attributes.nc')
+    ds[['streamflow']].to_netcdf(shared / 'streamflow.nc')
+    ds[['era5land_precip', 'era5land_temp']].to_netcdf(
+        shared / 'era5-land' / 'era5.nc'
+    )
+    ds[['hres_precip']].to_netcdf(shared / 'HRES' / 'hres.nc')
+
+    # Hyphenated product dir resolves cleanly.
+    assert find_product_netcdf_dir(shared, 'ERA5_LAND') == shared / 'era5-land'
+
+    # load_caravan_attributes(features=None) returns only 1D static attributes.
+    attrs_all = caravan.load_caravan_attributes(shared, basins=basins)
+    try:
+        assert sorted(attrs_all.data_vars) == ['area', 'p_mean']
+        assert 'date' not in attrs_all.dims
+    finally:
+        attrs_all.close()
+
+    # Multimet loads root statics/targets + product-subdir hindcast & forecast,
+    # including 3D hres_precip used as both hindcast and forecast input.
+    paths = {'statics': shared, 'targets': shared, 'dynamics': shared}
+    cfg = _make_multimet_config(
+        tmp_path,
+        'shared_subdirs',
+        paths,
+        basins,
+        overrides={
+            'hindcast_inputs': [
+                'era5land_precip',
+                'era5land_temp',
+                'hres_precip',
+            ],
+            'forecast_inputs': ['hres_precip'],
+        },
+    )
+    dataset = Multimet(cfg=cfg, is_train=True, period='train')
+    assert len(dataset) > 0
+    assert 'hres_precip' in dataset[0]['x_d_hindcast']
+    assert 'hres_precip' in dataset[0]['x_d_forecast']
+
+
+@pytest.mark.unit
+def test_non_midnight_subdaily_nat_and_duplicate_dates_rejected(
+    tmp_path: Path,
+) -> None:
+    """Reject 12:00 timestamps, sub-daily steps, NaT, and duplicate dates."""
+    noon_dates = pd.date_range('2020-01-01 12:00:00', periods=4, freq='D')
+    noon_dir = tmp_path / 'noon'
+    noon_dir.mkdir()
+    xr.Dataset(
+        {'q': (('basin', 'date'), np.ones((1, 4), dtype=np.float32))},
+        coords={'basin': ['b1'], 'date': noon_dates},
+    ).to_netcdf(noon_dir / 'daymet.nc')
+    with pytest.raises(ValueError, match=r'daymet\.nc.*midnight'):
+        load_netcdf_timeseries(noon_dir, basins=['b1'], features=['q'])
+
+    subdaily_dir = tmp_path / 'subdaily'
+    subdaily_dir.mkdir()
+    xr.Dataset(
+        {'q': (('date',), np.ones(8, dtype=np.float32))},
+        coords={'date': pd.date_range('2020-01-01', periods=8, freq='6h')},
+    ).to_netcdf(subdaily_dir / 'b1.nc')
+    with pytest.raises(ValueError, match=r'b1\.nc.*midnight'):
+        load_netcdf_timeseries(subdaily_dir, basins=['b1'], features=['q'])
+
+    dup_dir = tmp_path / 'dup_date'
+    dup_dir.mkdir()
+    dup_dates = pd.DatetimeIndex(['2020-01-01', '2020-01-01', '2020-01-02'])
+    xr.Dataset(
+        {'q': (('date',), np.ones(3, dtype=np.float32))},
+        coords={'date': dup_dates},
+    ).to_netcdf(dup_dir / 'b1.nc')
+    with pytest.raises(ValueError, match=r'b1\.nc.*duplicate'):
+        load_netcdf_timeseries(dup_dir, basins=['b1'], features=['q'])
+
+    nat_dir = tmp_path / 'nat_date'
+    nat_dir.mkdir()
+    nat_dates = pd.DatetimeIndex(['2020-01-01', pd.NaT, '2020-01-03'])
+    xr.Dataset(
+        {'q': (('date',), np.ones(3, dtype=np.float32))},
+        coords={'date': nat_dates},
+    ).to_netcdf(nat_dir / 'b1.nc')
+    with pytest.raises(ValueError, match=r'b1\.nc.*NaT'):
+        load_netcdf_timeseries(nat_dir, basins=['b1'], features=['q'])
+
+
+@pytest.mark.unit
+def test_integer_and_bool_vars_cast_to_float32_without_overflow(
+    tmp_path: Path,
+) -> None:
+    """Integer/bool static and ragged per-basin target vars cast to float32."""
+    basins = ['basin_01', 'basin_02']
+    dates = pd.date_range('2000-01-01', periods=30, freq='D')
+    base = _make_synthetic_dataset(basins, dates, lead_days=[1, 2])
+
+    statics_dir = tmp_path / 'statics_int'
+    targets_dir = tmp_path / 'targets_int'
+    dynamics_dir = tmp_path / 'dynamics_int'
+    statics_dir.mkdir()
+    targets_dir.mkdir()
+    dynamics_dir.mkdir()
+
+    # uint8 / int16 values whose squares would overflow without float32 cast,
+    # plus int64 and bool attributes.
+    xr.Dataset(
+        {
+            'area': (('basin',), np.array([100, 250], dtype=np.int16)),
+            'p_mean': (('basin',), np.array([20, 200], dtype=np.uint8)),
+            'land_class': (('basin',), np.array([1, 5], dtype=np.int64)),
+            'is_snow': (('basin',), np.array([True, False], dtype=np.bool_)),
+        },
+        coords={'basin': basins},
+    ).to_netcdf(statics_dir / 'attrs.nc')
+
+    # Ragged int32 per-basin targets (reindex introduces NaNs -> would become
+    # float64 if cast happened only before reindex).
+    xr.Dataset(
+        {'streamflow': (('date',), np.arange(1, 31, dtype=np.int32))},
+        coords={'date': dates},
+    ).to_netcdf(targets_dir / 'basin_01.nc')
+    xr.Dataset(
+        {'streamflow': (('date',), np.arange(5, 30, dtype=np.int32))},
+        coords={'date': dates[5:]},
+    ).to_netcdf(targets_dir / 'basin_02.nc')
+
+    base[['era5land_precip', 'era5land_temp', 'hres_precip']].to_netcdf(
+        dynamics_dir / 'all.nc'
+    )
+
+    cfg = _make_multimet_config(
+        tmp_path,
+        'int_bool_cast',
+        {
+            'statics': statics_dir,
+            'targets': targets_dir,
+            'dynamics': dynamics_dir,
+        },
+        basins,
+        overrides={
+            'static_attributes': ['area', 'p_mean', 'land_class', 'is_snow']
+        },
+    )
+    dataset = Multimet(cfg=cfg, is_train=True, period='train')
+    assert len(dataset) > 0
+    loader = MultimetDataLoader(
+        dataset,
+        batch_size=4,
+        shuffle=False,
+        lazy_load=False,
+        logging_level=30,
+        collate_fn=Multimet.collate_fn,
+    )
+    batch = next(iter(loader))
+    assert batch['x_s'].dtype == torch.float32
+    assert batch['y'].dtype == torch.float32
+
+
+@pytest.mark.unit
+def test_decode_timedelta_only_affects_lead_time(tmp_path: Path) -> None:
+    """Non-lead_time vars with CF time units stay numeric float32."""
+    basins = ['basin_01', 'basin_02']
+    dates = pd.date_range('2000-01-01', periods=30, freq='D')
+    base = _make_synthetic_dataset(basins, dates, lead_days=[1, 2])
+
+    statics_dir = tmp_path / 'statics_td'
+    targets_dir = tmp_path / 'targets_td'
+    dynamics_dir = tmp_path / 'dynamics_td'
+    statics_dir.mkdir()
+    targets_dir.mkdir()
+    dynamics_dir.mkdir()
+
+    attr_ds = base[['area', 'p_mean']].copy()
+    attr_ds['p_mean'].attrs['units'] = 'days'
+    attr_ds.to_netcdf(statics_dir / 'attrs.nc')
+
+    base[['streamflow']].to_netcdf(targets_dir / 'targets.nc')
+
+    dyn_ds = xr.Dataset(
+        {
+            'era5land_precip': (
+                ('basin', 'date'),
+                base['era5land_precip'].to_numpy(),
+                {'units': 'hours'},
+            ),
+            'era5land_temp': base['era5land_temp'],
+            'hres_precip': (
+                ('basin', 'date', 'lead_time'),
+                base['hres_precip'].to_numpy(),
+            ),
+        },
+        coords={
+            'basin': basins,
+            'date': dates,
+            'lead_time': ('lead_time', [24, 48], {'units': 'hours'}),
+        },
+    )
+    dyn_ds.to_netcdf(dynamics_dir / 'dyn.nc')
+
+    cfg = _make_multimet_config(
+        tmp_path,
+        'selective_td',
+        {
+            'statics': statics_dir,
+            'targets': targets_dir,
+            'dynamics': dynamics_dir,
+        },
+        basins,
+    )
+    dataset = Multimet(cfg=cfg, is_train=True, period='train')
+    assert len(dataset) > 0
+    assert dataset._dataset['p_mean'].dtype == np.float32  # noqa: SLF001
+    assert dataset._dataset['era5land_precip'].dtype == np.float32  # noqa: SLF001
+
+
+@pytest.mark.unit
+def test_overlapping_files_rejected_and_unrequested_metadata_ignored(
+    tmp_path: Path,
+) -> None:
+    """Reject overlapping time/basin splits; ignore conflicting unused vars."""
+    # Overlapping boundary day in time-split files.
+    overlap_dir = tmp_path / 'overlap_time'
+    overlap_dir.mkdir()
+    xr.Dataset(
+        {'q': (('basin', 'date'), np.ones((1, 5), dtype=np.float32))},
+        coords={
+            'basin': ['b1'],
+            'date': pd.date_range('2020-01-01', periods=5, freq='D'),
+        },
+    ).to_netcdf(overlap_dir / 'part1.nc')
+    xr.Dataset(
+        {'q': (('basin', 'date'), np.ones((1, 5), dtype=np.float32))},
+        coords={
+            'basin': ['b1'],
+            'date': pd.date_range('2020-01-05', periods=5, freq='D'),
+        },
+    ).to_netcdf(overlap_dir / 'part2.nc')
+    with pytest.raises(ValueError, match=r'Overlapping.*part1\.nc.*part2\.nc'):
+        load_netcdf_timeseries(overlap_dir, basins=['b1'], features=['q'])
+
+    # Overlapping basin batches in static files.
+    overlap_b = tmp_path / 'overlap_basin'
+    overlap_b.mkdir()
+    xr.Dataset(
+        {'area': (('basin',), np.array([1.0, 2.0], np.float32))},
+        coords={'basin': ['b1', 'b2']},
+    ).to_netcdf(overlap_b / 'a.nc')
+    xr.Dataset(
+        {'area': (('basin',), np.array([2.0, 3.0], np.float32))},
+        coords={'basin': ['b2', 'b3']},
+    ).to_netcdf(overlap_b / 'b.nc')
+    with pytest.raises(ValueError, match=r'Overlapping.*a\.nc.*b\.nc'):
+        load_netcdf_attributes(overlap_b, basins=['b1', 'b2', 'b3'])
+
+    # Conflicting unrequested per-file variable must NOT trigger MergeError.
+    meta_dir = tmp_path / 'unrequested_meta'
+    meta_dir.mkdir()
+    xr.Dataset(
+        {
+            'q': (('basin', 'date'), np.ones((1, 3), dtype=np.float32)),
+            'processing_version': ((), 1),
+        },
+        coords={
+            'basin': ['b1'],
+            'date': pd.date_range('2020-01-01', periods=3, freq='D'),
+        },
+    ).to_netcdf(meta_dir / 'y1.nc')
+    xr.Dataset(
+        {
+            'q': (('basin', 'date'), np.ones((1, 3), dtype=np.float32) * 2),
+            'processing_version': ((), 2),
+        },
+        coords={
+            'basin': ['b1'],
+            'date': pd.date_range('2020-01-04', periods=3, freq='D'),
+        },
+    ).to_netcdf(meta_dir / 'y2.nc')
+    ds_meta = load_netcdf_timeseries(meta_dir, basins=['b1'], features=['q'])
+    try:
+        assert ds_meta.sizes['date'] == _EXPECTED_COMBINED_META_DATES
+    finally:
+        ds_meta.close()
+
+
+@pytest.mark.unit
+def test_lead_time_validation_errors(tmp_path: Path) -> None:
+    """Reject empty, 0-based, sub-daily, and unsorted lead_time coords."""
+    dates = pd.date_range('2020-01-01', periods=3, freq='D')
+
+    # 0-based lead_time (must start at >= 1 day).
+    zero_dir = tmp_path / 'lt_zero'
+    zero_dir.mkdir()
+    xr.Dataset(
+        {'f': (('basin', 'date', 'lead_time'), np.ones((1, 3, 3), np.float32))},
+        coords={
+            'basin': ['b1'],
+            'date': dates,
+            'lead_time': ('lead_time', [0, 1, 2], {'units': 'days'}),
+        },
+    ).to_netcdf(zero_dir / 'f.nc')
+    with pytest.raises(ValueError, match=r'>= 1 day'):
+        load_netcdf_timeseries(
+            zero_dir, basins=['b1'], features=['f'], require_lead_time=True
+        )
+
+    # Sub-daily lead_time.
+    sub_dir = tmp_path / 'lt_subdaily'
+    sub_dir.mkdir()
+    xr.Dataset(
+        {'f': (('basin', 'date', 'lead_time'), np.ones((1, 3, 2), np.float32))},
+        coords={
+            'basin': ['b1'],
+            'date': dates,
+            'lead_time': ('lead_time', [24, 36], {'units': 'hours'}),
+        },
+    ).to_netcdf(sub_dir / 'f.nc')
+    with pytest.raises(ValueError, match=r'whole-day'):
+        load_netcdf_timeseries(
+            sub_dir, basins=['b1'], features=['f'], require_lead_time=True
+        )
+
+    # Unsorted lead_time.
+    unsorted_dir = tmp_path / 'lt_unsorted'
+    unsorted_dir.mkdir()
+    xr.Dataset(
+        {'f': (('basin', 'date', 'lead_time'), np.ones((1, 3, 3), np.float32))},
+        coords={
+            'basin': ['b1'],
+            'date': dates,
+            'lead_time': ('lead_time', [2, 1, 3], {'units': 'days'}),
+        },
+    ).to_netcdf(unsorted_dir / 'f.nc')
+    with pytest.raises(ValueError, match=r'strictly increasing'):
+        load_netcdf_timeseries(
+            unsorted_dir, basins=['b1'], features=['f'], require_lead_time=True
+        )
+
+
+@pytest.mark.unit
+def test_cloud_path_windows_and_validation_edge_cases(tmp_path: Path) -> None:
+    """Verify Windows gs:// paths, local gs/ dirs, empty basins, file paths."""
+    assert _is_cloud_path('gs://caravan-multimet/v1.1')
+    assert _is_cloud_path(PureWindowsPath('gs://caravan-multimet/v1.1'))
+    assert _is_cloud_path('gs:\\caravan-multimet\\v1.1')
+    assert not _is_cloud_path('gs/local_data')
+    assert _is_zarr_store(Path('gs://caravan-multimet/v1.1/HRES'))
+    assert not _is_zarr_store(tmp_path / 'missing.zarr')
+
+    # Single .nc file passed directly raises clear error.
+    nc_file = tmp_path / 'single.nc'
+    xr.Dataset(
+        {'area': (('basin',), np.array([1.0], np.float32))},
+        coords={'basin': ['b1']},
+    ).to_netcdf(nc_file)
+    with pytest.raises(ValueError, match=r'Expected a directory'):
+        caravan.load_caravan_attributes(nc_file, basins=['b1'])
+
+    # Empty basin list raises ValueError in multi-basin mode too.
+    with pytest.raises(ValueError, match=r'non-empty'):
+        load_netcdf_attributes(tmp_path, basins=[])
+    with pytest.raises(ValueError, match=r'non-empty'):
+        load_netcdf_timeseries(tmp_path, basins=[])
+    with pytest.raises(ValueError, match=r'batch_size'):
+        load_netcdf_timeseries(tmp_path, basins=['b1'], batch_size=0)
+
+    # Numeric basin IDs fail with clear dtype hint.
+    num_dir = tmp_path / 'num_basin'
+    num_dir.mkdir()
+    xr.Dataset(
+        {'area': (('basin',), np.array([1.0], np.float32))},
+        coords={'basin': np.array([101], dtype=np.int64)},
+    ).to_netcdf(num_dir / 'a.nc')
+    with pytest.raises(ValueError, match=r'string basin IDs'):
+        load_netcdf_attributes(num_dir, basins=['101'])
+
+
+@pytest.mark.unit
+def test_close_hooks_cdf5_and_scipy_mmap_with_file_cache_maxsize(
+    tmp_path: Path,
+) -> None:
+    """Verify ds.close() attaches closers, CDF-5 fallback, and scipy mmap."""
+    # Single-file, multi-file, and per-basin datasets all expose a close hook.
+    nc3_dir = tmp_path / 'nc3_scipy'
+    nc3_dir.mkdir()
+    dates = pd.date_range('2020-01-01', periods=6, freq='D')
+    xr.Dataset(
+        {'q': (('date',), np.arange(6, dtype=np.float32))},
+        coords={'date': dates},
+    ).to_netcdf(nc3_dir / 'b1.nc', engine='scipy')
+    xr.Dataset(
+        {'q': (('date',), np.arange(6, dtype=np.float32) * 2)},
+        coords={'date': dates},
+    ).to_netcdf(nc3_dir / 'b2.nc', engine='scipy')
+
+    with (
+        xr.set_options(file_cache_maxsize=1),
+        warnings.catch_warnings(record=True) as caught,
+    ):
+        warnings.simplefilter('always', RuntimeWarning)
+        ds = load_netcdf_timeseries(
+            nc3_dir, basins=['b1', 'b2'], features=['q']
+        )
+        assert ds._close is not None  # noqa: SLF001
+        vals = ds['q'].compute()
+        assert vals.shape == (2, 6)
+        ds.close()
+        mmap_warns = [w for w in caught if 'mmap=True' in str(w.message)]
+        assert not mmap_warns
+
+    # CDF-5 (NETCDF3_64BIT_DATA) exercises the netcdf4 fallback path.
+    cdf5_dir = tmp_path / 'cdf5'
+    cdf5_dir.mkdir()
+    xr.Dataset(
+        {'area': (('basin',), np.array([12.5], dtype=np.float64))},
+        coords={'basin': ['b1']},
+    ).to_netcdf(
+        cdf5_dir / 'a.nc', engine='netcdf4', format='NETCDF3_64BIT_DATA'
+    )
+    ds_cdf5 = load_netcdf_attributes(cdf5_dir, basins=['b1'], features=['area'])
+    try:
+        assert ds_cdf5._close is not None  # noqa: SLF001
+        assert ds_cdf5['area'].dtype == np.float32
+        np.testing.assert_array_equal(
+            ds_cdf5['area'].to_numpy(), np.array([12.5], dtype=np.float32)
+        )
+    finally:
+        ds_cdf5.close()

@@ -7,7 +7,6 @@ Submodules
 .. toctree::
    :maxdepth: 4
 
-   googlehydrology.datautils.convert
    googlehydrology.datautils.netcdf
    googlehydrology.datautils.scaler
    googlehydrology.datautils.union_features
