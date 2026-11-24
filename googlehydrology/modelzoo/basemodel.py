@@ -48,6 +48,10 @@ class BaseModel(nn.Module):
     # Models that do not support DA leave this empty.
     supported_assimilation_components: ClassVar[tuple[str, ...]] = ()
 
+    # Whether the model can consume dynamic input tensors containing NaN values
+    # (e.g. via masked mean embeddings), enabling training-time input dropout.
+    supports_missing_inputs: ClassVar[bool] = False
+
     def __init__(self, cfg: Config):
         super(BaseModel, self).__init__()
         self.cfg = cfg

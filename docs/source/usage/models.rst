@@ -67,7 +67,8 @@ The listing below shows the skeleton of a template model you can use to start im
 1.  **Inherit from BaseModel:** Your class must inherit from :py:class:`googlehydrology.modelzoo.basemodel.BaseModel`.
 2.  **Define module_parts:** You must define a list called ``module_parts`` containing the names of the sub-modules (e.g., LSTMs, Linear layers) in your class. This is required for the fine-tuning logic to know which parts of the model to freeze or unfreeze.
 3.  **Register the Model:** Once implemented, you must modify :py:func:`googlehydrology.modelzoo.__init__.get_model` to instantiate your class when its name is found in the config.
-4.  **(Optional) Data assimilation hooks:** A model only supports data assimilation if it implements the
+4.  **(Optional) Missing-input support:** If your model can consume dynamic input tensors containing ``NaN`` values (for example via masked mean embeddings), set ``supports_missing_inputs = True`` on the class so :py:class:`~googlehydrology.training.basetrainer.BaseTrainer` allows training with ``nan_sequence_probability`` / ``nan_streak_probability`` (see :py:mod:`googlehydrology.training.input_dropout`).
+5.  **(Optional) Data assimilation hooks:** A model only supports data assimilation if it implements the
     hooks the engine in :py:mod:`googlehydrology.evaluation.assimilation` relies on (see
     :py:class:`googlehydrology.modelzoo.basemodel.BaseModel` and
     :py:class:`~googlehydrology.modelzoo.mean_embedding_forecast_lstm.MeanEmbeddingForecastLSTM` for a reference):

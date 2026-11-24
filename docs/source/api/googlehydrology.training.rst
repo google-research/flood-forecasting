@@ -8,6 +8,7 @@ Submodules
    :maxdepth: 4
 
    googlehydrology.training.basetrainer
+   googlehydrology.training.input_dropout
    googlehydrology.training.logger
    googlehydrology.training.loss
    googlehydrology.training.regularization

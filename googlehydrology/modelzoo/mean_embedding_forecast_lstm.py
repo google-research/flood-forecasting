@@ -106,6 +106,8 @@ class MeanEmbeddingForecastLSTM(BaseModel):
         'forecast_embedding',
     )
 
+    supports_missing_inputs: ClassVar[bool] = True
+
     def __init__(self, cfg: Config):
         super(MeanEmbeddingForecastLSTM, self).__init__(cfg=cfg)
 

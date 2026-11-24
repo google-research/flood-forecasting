@@ -14,6 +14,7 @@
 
 import enum
 import logging
+import math
 import random
 import re
 from collections import OrderedDict
@@ -673,6 +674,49 @@ class Config(object):
     @property
     def nan_handling_pos_encoding_size(self) -> int:
         return self._cfg.get('nan_handling_pos_encoding_size', 0)
+
+    @property
+    def nan_sequence_probability(self) -> float | dict[str, float]:
+        """Probability of dropping an entire feature group sequence during training."""
+        return self._parse_dropout_probability('nan_sequence_probability')
+
+    @property
+    def nan_streak_probability(self) -> float | dict[str, float]:
+        """Probability of dropping a random contiguous sub-period of a feature group during training."""
+        return self._parse_dropout_probability('nan_streak_probability')
+
+    def _parse_dropout_probability(
+        self, key: str
+    ) -> float | dict[str, float]:
+        value = self._cfg.get(key, 0.0)
+        if value is None:
+            return 0.0
+        if isinstance(value, dict):
+            parsed: dict[str, float] = {}
+            for group, prob in value.items():
+                if not isinstance(group, str) or not group:
+                    raise ValueError(
+                        f'{key} keys must be non-empty feature group names, '
+                        f'got {group!r}.'
+                    )
+                parsed[group] = self._validate_probability(
+                    prob, f'{key}[{group!r}]'
+                )
+            return parsed
+        return self._validate_probability(value, key)
+
+    @staticmethod
+    def _validate_probability(value: object, name: str) -> float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(
+                f'{name} must be a number in [0.0, 1.0], got {value!r}.'
+            )
+        prob = float(value)
+        if math.isnan(prob) or not 0.0 <= prob <= 1.0:
+            raise ValueError(
+                f'{name} must be in [0.0, 1.0], got {value!r}.'
+            )
+        return prob
 
     @property
     def negative_sample_handling(self) -> str:

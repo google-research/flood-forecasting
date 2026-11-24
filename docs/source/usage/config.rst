@@ -107,6 +107,23 @@ Training settings
    ``finite_steps == 0``).
 -  ``target_noise_std``: Standard deviation of Gaussian noise added to labels during training. Set to zero or
    leave empty to *not* add noise.
+-  ``nan_sequence_probability``: Float in ``[0.0, 1.0]`` or mapping of feature
+   group name to float in ``[0.0, 1.0]`` (default ``0.0``). Probability during
+   training of setting an entire hindcast or forecast sequence of a feature
+   group to ``NaN``. Applied independently to the hindcast window and the
+   forecast horizon (keeping shared groups synchronized across the overlap
+   prefix of ``x_d_forecast``). Groups are processed in a random order per
+   sample while guaranteeing that every timestep with at least one valid input
+   group before dropout retains at least one valid group afterward. Requires a
+   model with ``supports_missing_inputs = True`` (e.g.,
+   ``mean_embedding_forecast_lstm``).
+-  ``nan_streak_probability``: Float in ``[0.0, 1.0]`` or mapping of feature
+   group name to float in ``[0.0, 1.0]`` (default ``0.0``). Probability during
+   training of dropping a random contiguous sub-period (random start step and
+   duration) of a feature group to ``NaN``, matching Google's operational
+   FloodHub v2 training setup. Uses the same independent hindcast/forecast
+   windowing and per-timestep survivor guarantee as
+   ``nan_sequence_probability``.
 -  ``allow_subsequent_nan_losses``: Number of allowed consecutive NaN losses before stopping.
 -  ``save_weights_every``: Interval (in epochs) over which the weights of the model
    are stored to disk. ``1`` means to store the weights after each

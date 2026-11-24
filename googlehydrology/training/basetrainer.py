@@ -38,6 +38,7 @@ from googlehydrology.training import (
     get_regularization_obj,
     loss,
 )
+from googlehydrology.training.input_dropout import InputDropout
 from googlehydrology.training.logger import Logger
 from googlehydrology.utils import safe_torch_load
 from googlehydrology.utils.config import Config
@@ -66,6 +67,7 @@ class BaseTrainer(object):
         self.loader = None
         self.validator = None
         self.noise_sampler_y = None
+        self._input_dropout = None
         self._target_mean = None
         self._target_std = None
         self._allow_subsequent_nan_losses = cfg.allow_subsequent_nan_losses
@@ -189,6 +191,9 @@ class BaseTrainer(object):
         tensorboard logging, and Tester class.
         If called in a ``continue_training`` context, this model will also restore the model and optimizer state.
         """
+        # Validate input dropout config before loading potentially large datasets.
+        input_dropout = InputDropout.from_config(self.cfg)
+
         # Initialize dataset before the model is loaded.
         ds = self._get_dataset(compute_scaler=(not self.cfg.is_finetuning))
         if len(ds) == 0:
@@ -197,6 +202,16 @@ class BaseTrainer(object):
 
         LOGGER.debug('init model')
         self.model = self._get_model().to(self.device)
+
+        if input_dropout.enabled:
+            target_model = getattr(self.model, '_orig_mod', self.model)
+            if not getattr(target_model, 'supports_missing_inputs', False):
+                raise ValueError(
+                    f"Model '{type(target_model).__name__}' does not support "
+                    'missing inputs (NaNs) and cannot be trained with '
+                    'nan_sequence_probability or nan_streak_probability > 0.'
+                )
+            self._input_dropout = input_dropout
 
         if self.cfg.checkpoint_path is not None:
             LOGGER.info(
@@ -443,6 +458,10 @@ class BaseTrainer(object):
                     }
                 elif not key.startswith('date'):
                     data[key] = data[key].to(self.device)
+
+            input_dropout = getattr(self, '_input_dropout', None)
+            if input_dropout is not None:
+                data = input_dropout(data)
 
             with autocast(
                 self.device.type, enabled=(self.device.type == 'cuda')
