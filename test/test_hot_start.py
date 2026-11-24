@@ -1,5 +1,7 @@
 import csv
 import logging
+import os
+import stat
 import warnings
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -542,24 +544,6 @@ def test_state_file_errors_fail_loudly(
             {'h_hindcast': np.zeros((1, 1, 2), dtype=np.float32)}, bad_ext
         )
 
-    # Malformed / empty / non-archive NPZ files fail with ValueError.
-    npy_as_npz = tmp_path / 'array_not_archive.npz'
-    with npy_as_npz.open('wb') as handle:
-        np.save(handle, np.zeros((1, 1, 2), dtype=np.float32))
-    with pytest.raises(ValueError, match='not a valid NPZ archive'):
-        model.load_state_from_disk(npy_as_npz)
-
-    empty_npz = tmp_path / 'empty_archive.npz'
-    with empty_npz.open('wb') as handle:
-        np.savez_compressed(handle)
-    with pytest.raises(ValueError, match='contains no arrays'):
-        model.load_state_from_disk(empty_npz)
-
-    corrupt_npz = tmp_path / 'corrupt.npz'
-    corrupt_npz.write_text('not a zip', encoding='utf-8')
-    with pytest.raises(ValueError, match='Invalid or corrupted hot-start NPZ'):
-        model.load_state_from_disk(corrupt_npz)
-
     header = 'state,layer,batch,unit,value\n'
     bad_cases = [
         ('', 'empty'),
@@ -571,7 +555,7 @@ def test_state_file_errors_fail_loudly(
         (f'{header}h_hindcast,-1,0,0,1.0\n', 'non-negative'),
         (f'{header}h_hindcast,0,0,0,nan\n', 'finite float'),
         (f'{header}h_hindcast,0,0,0,inf\n', 'finite float'),
-        (f'{header}h_hindcast,0,0,0,٣.٥\n', 'finite float'),
+        (f'{header}h_hindcast,0,0,0,\u0663.\u0665\n', 'finite float'),
         (f'{header}h_hindcast,0,0,0,{"1" * 10000}x\n', 'finite float'),
         (
             f'{header}h_hindcast,0,0,0,1.0\nh_hindcast,0,0,0,2.0\n',
@@ -599,33 +583,78 @@ def test_state_file_errors_fail_loudly(
             model.load_state_from_disk(overflow_csv)
     assert not any(issubclass(w.category, RuntimeWarning) for w in caught)
 
-    nan_csv = tmp_path / 'nan_state.csv'
-    with pytest.raises(ValueError, match='non-finite'):
-        model._write_state_file(
-            {'h_hindcast': np.array([[[np.nan]]], dtype=np.float32)}, nan_csv
-        )
-    with pytest.raises(ValueError, match='float32-overflowing'):
-        model._write_state_file(
+
+@patch('googlehydrology.datautils.scaler.Scaler.load')
+@patch('googlehydrology.datautils.scaler.Scaler.check_zero_scale')
+def test_state_file_npz_and_write_validation_errors(
+    _mock_check: MagicMock, _mock_load: MagicMock, tmp_path: Path
+) -> None:
+    """Reject malformed NPZ archives and invalid CSV write inputs."""
+    cfg = Config(get_base_cfg(tmp_path), dev_mode=True)
+    model = HandoffForecastLSTM(cfg)
+
+    npy_as_npz = tmp_path / 'array_not_archive.npz'
+    with npy_as_npz.open('wb') as handle:
+        np.save(handle, np.zeros((1, 1, 2), dtype=np.float32))
+    with pytest.raises(ValueError, match='not a valid NPZ archive'):
+        model.load_state_from_disk(npy_as_npz)
+
+    empty_npz = tmp_path / 'empty_archive.npz'
+    with empty_npz.open('wb') as handle:
+        np.savez_compressed(handle)
+    with pytest.raises(ValueError, match='contains no arrays'):
+        model.load_state_from_disk(empty_npz)
+
+    corrupt_npz = tmp_path / 'corrupt.npz'
+    corrupt_npz.write_text('not a zip', encoding='utf-8')
+    with pytest.raises(ValueError, match='Invalid or corrupted hot-start NPZ'):
+        model.load_state_from_disk(corrupt_npz)
+
+    bad_crc_npz = tmp_path / 'bad_crc.npz'
+    arr = np.arange(32, dtype=np.float32).reshape(1, 1, 32)
+    model._write_state_file(
+        {
+            'h_hindcast': arr,
+            'c_hindcast': arr,
+            'h_forecast': arr,
+            'c_forecast': arr,
+        },
+        bad_crc_npz,
+    )
+    raw_bytes = bytearray(bad_crc_npz.read_bytes())
+    raw_bytes[90] ^= 0xFF
+    bad_crc_npz.write_bytes(bytes(raw_bytes))
+    with pytest.raises(ValueError, match='Invalid or corrupted hot-start NPZ'):
+        model.load_state_from_disk(bad_crc_npz)
+
+    bad_writes = [
+        (
+            {'h_hindcast': np.array([[[np.nan]]], dtype=np.float32)},
+            'non-finite',
+        ),
+        (
             {'h_hindcast': np.array([[[1e100]]], dtype=np.float64)},
-            tmp_path / 'f64_overflow.csv',
-        )
-    with pytest.raises(ValueError, match='real numeric dtype'):
-        model._write_state_file(
+            'float32-overflowing',
+        ),
+        (
             {'h_hindcast': np.array([[[1 + 2j]]], dtype=np.complex64)},
-            tmp_path / 'complex.csv',
-        )
-    with pytest.raises(ValueError, match='dictionary is empty'):
-        model._write_state_file({}, tmp_path / 'empty_dict.csv')
-    with pytest.raises(ValueError, match='state name must be non-empty'):
-        model._write_state_file(
+            'real numeric dtype',
+        ),
+        ({}, 'dictionary is empty'),
+        (
             {' h_hindcast ': np.zeros((1, 1, 2), dtype=np.float32)},
-            tmp_path / 'padded_name.csv',
-        )
-    with pytest.raises(ValueError, match='empty dimension'):
-        model._write_state_file(
+            'state name must be non-empty',
+        ),
+        (
             {'h_hindcast': np.zeros((1, 0, 2), dtype=np.float32)},
-            tmp_path / 'empty_dim.csv',
-        )
+            'empty dimension',
+        ),
+    ]
+    for idx, (bad_state, err_match) in enumerate(bad_writes):
+        with pytest.raises(ValueError, match=err_match):
+            model._write_state_file(
+                bad_state, tmp_path / f'bad_write_{idx}.csv'
+            )
 
 
 @patch('googlehydrology.datautils.scaler.Scaler.load')
@@ -633,7 +662,7 @@ def test_state_file_errors_fail_loudly(
 def test_state_file_key_validation_and_atomic_write(
     _mock_check: MagicMock, _mock_load: MagicMock, tmp_path: Path
 ) -> None:
-    """Reject misspelled/incomplete LSTM states and write state files atomically."""
+    """Validate LSTM state keys and verify atomic, permission-safe writes."""
     cfg = Config(get_base_cfg(tmp_path), dev_mode=True)
     handoff = HandoffForecastLSTM(cfg)
     mean_cfg = Config(
@@ -696,7 +725,7 @@ def test_state_file_key_validation_and_atomic_write(
             with pytest.raises(ValueError, match=err_match):
                 model.load_state_from_disk(bad_path)
 
-    # Mid-write failure leaves existing good state intact with no stray temp files.
+    # Mid-write error preserves the existing file and leaves no temp files.
     target_csv = tmp_path / 'atomic.csv'
     handoff._write_state_file(full_state, target_csv)
     original_bytes = target_csv.read_bytes()
@@ -711,6 +740,24 @@ def test_state_file_key_validation_and_atomic_write(
         handoff._write_state_file(full_state, target_csv)
     assert target_csv.read_bytes() == original_bytes
     assert not list(tmp_path.glob('*.tmp'))
+
+    # On POSIX, writes respect umask (not forced 0600) and follow symlinks.
+    if os.name == 'posix':
+        ref_file = tmp_path / 'umask_ref.txt'
+        ref_file.write_text('x', encoding='utf-8')
+        expected_mode = stat.S_IMODE(ref_file.stat().st_mode)
+        assert stat.S_IMODE(target_csv.stat().st_mode) == expected_mode
+
+        target_npz = tmp_path / 'atomic.npz'
+        handoff._write_state_file(full_state, target_npz)
+        assert stat.S_IMODE(target_npz.stat().st_mode) == expected_mode
+
+        real_target = tmp_path / 'real_state.csv'
+        link_path = tmp_path / 'current_state.csv'
+        link_path.symlink_to(real_target)
+        handoff._write_state_file(full_state, link_path)
+        assert link_path.is_symlink()
+        assert real_target.is_file()
 
 
 @patch('googlehydrology.datautils.scaler.Scaler.load')

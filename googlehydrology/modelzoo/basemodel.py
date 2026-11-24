@@ -15,9 +15,12 @@
 
 import csv
 import math
+import os
 import re
-import tempfile
+import stat
+import uuid
 import zipfile
+import zlib
 from collections.abc import Iterable
 from pathlib import Path
 from typing import ClassVar, TextIO
@@ -319,41 +322,34 @@ class BaseModel(nn.Module):
                 f'Unsupported hot-start state file extension {target.suffix!r} '
                 f'for {target}. Expected ".npz" or ".csv".'
             )
-        if target.is_dir():
+        write_target = target.resolve()
+        if write_target.is_dir():
             raise IsADirectoryError(
                 f'Hot-start state path is a directory: {target}'
             )
         if suffix == '.csv':
             cls._validate_csv_state(state, target)
 
-        tmp_path: Path | None = None
+        existing_mode = (
+            stat.S_IMODE(write_target.stat().st_mode)
+            if os.name == 'posix' and write_target.is_file()
+            else None
+        )
+        tmp_path = write_target.with_name(
+            f'.{write_target.name}.{uuid.uuid4().hex}.tmp'
+        )
         try:
             if suffix == '.npz':
-                with tempfile.NamedTemporaryFile(
-                    mode='wb',
-                    dir=target.parent,
-                    prefix=f'.{target.name}.',
-                    suffix='.tmp',
-                    delete=False,
-                ) as handle:
-                    tmp_path = Path(handle.name)
+                with tmp_path.open('xb') as handle:
                     np.savez_compressed(handle, **state)
             else:
-                with tempfile.NamedTemporaryFile(
-                    mode='w',
-                    encoding='utf-8',
-                    newline='',
-                    dir=target.parent,
-                    prefix=f'.{target.name}.',
-                    suffix='.tmp',
-                    delete=False,
-                ) as handle:
-                    tmp_path = Path(handle.name)
+                with tmp_path.open('x', encoding='utf-8', newline='') as handle:
                     cls._write_csv_rows(handle, state)
-            tmp_path.replace(target)
+            if existing_mode is not None:
+                tmp_path.chmod(existing_mode)
+            tmp_path.replace(write_target)
         except BaseException:
-            if tmp_path is not None:
-                tmp_path.unlink(missing_ok=True)
+            tmp_path.unlink(missing_ok=True)
             raise
 
     @staticmethod
@@ -499,12 +495,24 @@ class BaseModel(nn.Module):
                 f'Hot-start state file {source} is not a valid NPZ archive '
                 f'(loaded {type(loaded).__name__}).'
             )
-        with loaded as archive:
-            if not archive.files:
-                raise ValueError(
-                    f'Hot-start state NPZ file contains no arrays: {source}'
-                )
-            return {key: archive[key] for key in archive.files}
+        try:
+            with loaded as archive:
+                arrays = {key: archive[key] for key in archive.files}
+        except (
+            zipfile.BadZipFile,
+            zlib.error,
+            EOFError,
+            OSError,
+            ValueError,
+        ) as exc:
+            raise ValueError(
+                f'Invalid or corrupted hot-start NPZ file {source}: {exc}'
+            ) from exc
+        if not arrays:
+            raise ValueError(
+                f'Hot-start state NPZ file contains no arrays: {source}'
+            )
+        return arrays
 
     @classmethod
     def _read_state_file(cls, path: str | Path) -> dict[str, np.ndarray]:
