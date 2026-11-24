@@ -333,15 +333,6 @@ clip_gradient_norm: 1
 # Adds small random noise to targets during training to improve robustness.
 target_noise_std: 0.005
 
-# Input feature-group dropout during training (matching operational FloodHub v2).
-# Randomly masks entire sequences or random contiguous sub-periods of each input
-# feature group with NaNs (separately for hindcast and forecast windows) so the
-# model does not over-rely on any single weather product. At least one valid
-# feature group is always preserved at every timestep. Also accepts a per-group
-# dict (e.g., {graphcast: 0.1, imerg: 0.1, cpc: 0.1}).
-nan_sequence_probability: 0.1
-nan_streak_probability: 0.1
-
 # --- 5. Validation & Evaluation -----------------------------------------------
 # Settings for checking model performance during and after training.
 

@@ -36,7 +36,7 @@ new LSTM that rolls out over the forecast period.
 This is a former production model that was previously used for the `Google FloodHub <https://sites.research.google/floods/>`__. 
 It is described in detail in [Nearing2024]_.
 
-This model does not support data assimilation (its ``supported_assimilation_components`` is empty).
+This model does not support missing-input feature dropout (``supports_missing_inputs = False``) or data assimilation (its ``supported_assimilation_components`` is empty).
 
 .. _mean-embedding-forecast-lstm:
 
@@ -48,6 +48,8 @@ using masked means before passing them into respective LSTMs for the hindcast an
 
 This is the current production model, as of December 2025, for the `Google FloodHub <https://sites.research.google/floods/>`__. 
 It is described in detail in [Gauch2025]_.
+
+**Missing-input dropout.** Because dynamic inputs are aggregated through masked mean embeddings, this model sets ``supports_missing_inputs = True`` and can be trained with ``nan_sequence_probability`` and ``nan_streak_probability`` (:py:mod:`googlehydrology.training.input_dropout`).
 
 **Data assimilation.** This is the only model that supports gradient-based data assimilation
 (:py:mod:`googlehydrology.evaluation.assimilation`). At evaluation/inference time with
@@ -67,7 +69,7 @@ The listing below shows the skeleton of a template model you can use to start im
 1.  **Inherit from BaseModel:** Your class must inherit from :py:class:`googlehydrology.modelzoo.basemodel.BaseModel`.
 2.  **Define module_parts:** You must define a list called ``module_parts`` containing the names of the sub-modules (e.g., LSTMs, Linear layers) in your class. This is required for the fine-tuning logic to know which parts of the model to freeze or unfreeze.
 3.  **Register the Model:** Once implemented, you must modify :py:func:`googlehydrology.modelzoo.__init__.get_model` to instantiate your class when its name is found in the config.
-4.  **(Optional) Missing-input support:** If your model can consume dynamic input tensors containing ``NaN`` values (for example via masked mean embeddings), set ``supports_missing_inputs = True`` on the class so :py:class:`~googlehydrology.training.basetrainer.BaseTrainer` allows training with ``nan_sequence_probability`` / ``nan_streak_probability`` (see :py:mod:`googlehydrology.training.input_dropout`).
+4.  **(Optional) Missing-input support:** If your model can consume dynamic input tensors containing ``NaN`` values (for example via masked mean embeddings), set ``supports_missing_inputs = True`` on the class so :py:class:`~googlehydrology.training.basetrainer.BaseTrainer` allows training with ``nan_sequence_probability`` / ``nan_streak_probability`` (see :py:mod:`googlehydrology.training.input_dropout`). :py:class:`~googlehydrology.training.input_dropout.InputDropout` guarantees that every timestep with at least one valid group before dropout retains at least one valid group afterward in each active pool (hindcast, forecast overlap/horizon, and shared groups in the horizon when forecast-only groups exist); timesteps already all-``NaN`` in the source data remain ``NaN``.
 5.  **(Optional) Data assimilation hooks:** A model only supports data assimilation if it implements the
     hooks the engine in :py:mod:`googlehydrology.evaluation.assimilation` relies on (see
     :py:class:`googlehydrology.modelzoo.basemodel.BaseModel` and
