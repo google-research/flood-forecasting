@@ -26,6 +26,11 @@ import numpy as np
 import pandas as pd
 import xarray
 
+from googlehydrology.datautils.netcdf import (
+    has_netcdf_files,
+    load_netcdf_attributes,
+    load_netcdf_timeseries,
+)
 from googlehydrology.utils.tqdm import AutoRefreshTqdm as tqdm
 
 LOGGER = logging.getLogger(__name__)
@@ -118,6 +123,13 @@ def load_caravan_attributes(
                     )
                 ds = ds.sel(basin=basins)
         return ds
+
+    if not subdataset and has_netcdf_files(data_dir):
+        return load_netcdf_attributes(
+            data_dir=data_dir,
+            basins=basins,
+            features=features,
+        )
 
     # Legacy CSV loader fallback
     data_dir = Path(data_dir)
@@ -220,6 +232,14 @@ def load_caravan_timeseries(
         if basins:
             ds = ds.sel(basin=basins)
         return ds
+
+    if not csv and has_netcdf_files(data_dir):
+        return load_netcdf_timeseries(
+            data_dir=data_dir,
+            basins=basins,
+            features=target_features,
+            batch_size=batch_size,
+        )
 
     return load_caravan_timeseries_together(
         data_dir=Path(data_dir),

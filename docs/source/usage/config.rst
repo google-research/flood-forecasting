@@ -132,6 +132,60 @@ Data settings
 -  ``nan_handling_pos_encoding_size``: Size of positional encoding for NaN handling methods.
 -  ``lazy_load``: Whether to access data lazily rather than load all in-memory. Each batch is loaded dynamically. Default: `False`.
 
+NetCDF input format
+-------------------
+
+In addition to Zarr stores (and legacy Caravan ``attributes/<subdataset>/*.csv``
+and ``timeseries/netcdf/<subdataset>/<basin_id>.nc`` directories), the training
+and inference pipeline can read local NetCDF (``.nc`` / ``.nc4``) files directly
+when ``statics_data_dir``, ``targets_data_dir``, or ``dynamics_data_dir`` (or
+``data_dir``) points to a directory containing NetCDF files. Zarr paths are
+checked first so existing Zarr workflows are unchanged.
+
+Supported directory layouts (non-recursive):
+
+1. **Multi-basin files:** One or more ``.nc`` / ``.nc4`` files directly in the
+   configured directory where every file contains a ``basin`` dimension (for
+   example, one combined file, time-split files such as ``2020.nc``,
+   ``2021.nc``, or basin-batch files). All files in the directory are combined
+   by coordinates. Supported for **statics**, **targets**, and **dynamics**.
+2. **Per-basin files (``<basin_id>.nc`` or ``<basin_id>.nc4``):** One file per
+   basin directly in the configured directory, without a ``basin`` dimension
+   inside each file. Only files matching the configured basin list are opened.
+   Supported for **targets** and **dynamics**.
+
+For ``dynamics_data_dir``, users may provide either a **flat directory**
+(``dynamics_data_dir/*.nc`` using Layout 1 or 2) or **product subdirectories**
+(``dynamics_data_dir/<PRODUCT>/*.nc``, mirroring the MultiMet Zarr layout, where
+each product subfolder uses Layout 1 or 2). Mixing multi-basin and per-basin
+files inside the same directory raises a ``ValueError``.
+
+Required NetCDF schema:
+
+-  **Static attributes (``statics_data_dir``):** Multi-basin files with
+   dimension ``(basin)`` and variable names matching ``static_attributes``.
+-  **Targets (``targets_data_dir``):** Dimensions ``(basin, date)`` in
+   multi-basin files, or ``(date)`` in per-basin files, with variable names
+   matching ``target_variables``.
+-  **Hindcast inputs (``dynamics_data_dir``):** Dimensions ``(basin, date)``
+   (or ``(basin, date, lead_time)``) in multi-basin files, or ``(date)`` (or
+   ``(date, lead_time)``) in per-basin files, with variable names matching
+   ``hindcast_inputs`` (and any ``union_mapping`` fallback variables).
+-  **Forecast inputs (``dynamics_data_dir``):** Dimensions
+   ``(basin, date, lead_time)`` in multi-basin files, or ``(date, lead_time)``
+   in per-basin files, with variable names matching ``forecast_inputs``.
+-  **Coordinates & precision:** Coordinate names must be exact (``basin``,
+   ``date`` as daily ``datetime64``, and ``lead_time`` using CF duration units
+   such as ``units="days"`` starting at 1 day so ``xarray`` decodes it as
+   ``timedelta64``). Floating-point arrays (e.g. ``float64``) are lazily cast to
+   ``float32`` on read. Missing variables, basins, or required coordinates raise
+   an error immediately.
+
+.. tip::
+   For large multi-basin datasets, prefer multi-basin NetCDF files (which load
+   within a few percent of Zarr speeds) over thousands of per-basin files,
+   especially when ``lazy_load: True`` is enabled.
+
 Temporal alignment of forecasts
 -------------------------------
 

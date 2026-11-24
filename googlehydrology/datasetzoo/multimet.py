@@ -36,6 +36,11 @@ from googlehydrology.datasetzoo.caravan import (
     load_caravan_timeseries,
     load_caravan_timeseries_together,
 )
+from googlehydrology.datautils.netcdf import (
+    find_product_netcdf_dir,
+    has_netcdf_files,
+    load_netcdf_timeseries,
+)
 from googlehydrology.datautils.scaler import Scaler
 from googlehydrology.datautils.union_features import union_features
 from googlehydrology.datautils.utils import load_basin_file
@@ -728,6 +733,26 @@ class Multimet(Dataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, basin).
         """
+        if (
+            _find_single_dynamics_zarr_path(self._dynamics_data_path) is None
+            and has_netcdf_files(self._dynamics_data_path)
+        ):
+            features = list(
+                dict.fromkeys(
+                    [
+                        *self._hindcast_features,
+                        *(self._union_mapping or {}).values(),
+                    ]
+                )
+            )
+            ds = load_netcdf_timeseries(
+                data_dir=self._dynamics_data_path,
+                basins=self._basins,
+                features=features,
+            )
+            if 'lead_time' in ds.dims:
+                ds = ds.sel(lead_time=self._lead_time_slice())
+            return [ds]
         return self._load_hindcast_as_zarr()
 
     def _load_hindcast_as_zarr(self) -> list[xr.Dataset]:
@@ -793,6 +818,27 @@ class Multimet(Dataset):
             product_path = _find_product_zarr_path(
                 self._dynamics_data_path, product
             )
+            if not _is_zarr_store(product_path):
+                product_nc_dir = find_product_netcdf_dir(
+                    self._dynamics_data_path, product
+                )
+                if product_nc_dir is not None:
+                    LOGGER.info(
+                        "Loading hindcast product '%s' from NetCDF: %s",
+                        product,
+                        bands,
+                    )
+                    product_ds = load_netcdf_timeseries(
+                        data_dir=product_nc_dir,
+                        basins=self._basins,
+                        features=bands,
+                    )
+                    if 'lead_time' in product_ds.dims:
+                        product_ds = product_ds.sel(
+                            lead_time=self._lead_time_slice()
+                        )
+                    product_dss.append(product_ds)
+                    continue
             LOGGER.info(
                 "Loading hindcast product '%s' with bands %s", product, bands
             )
@@ -829,6 +875,20 @@ class Multimet(Dataset):
         xr.Dataset
             Dataset containing the loaded features with dimensions (date, lead_time, basin).
         """
+        if (
+            _find_single_dynamics_zarr_path(self._dynamics_data_path) is None
+            and has_netcdf_files(self._dynamics_data_path)
+        ):
+            if not self._forecast_features:
+                return []
+            ds = load_netcdf_timeseries(
+                data_dir=self._dynamics_data_path,
+                basins=self._basins,
+                features=self._forecast_features,
+                require_lead_time=True,
+            )
+            ds = ds.sel(lead_time=self._lead_time_slice())
+            return [ds]
         return self._load_forecast_as_zarr()
 
     def _load_forecast_as_zarr(self) -> list[xr.Dataset]:
@@ -878,6 +938,27 @@ class Multimet(Dataset):
             product_path = _find_product_zarr_path(
                 self._dynamics_data_path, product
             )
+            if not _is_zarr_store(product_path):
+                product_nc_dir = find_product_netcdf_dir(
+                    self._dynamics_data_path, product
+                )
+                if product_nc_dir is not None:
+                    LOGGER.info(
+                        "Loading forecast product '%s' from NetCDF: %s",
+                        product,
+                        bands,
+                    )
+                    product_ds = load_netcdf_timeseries(
+                        data_dir=product_nc_dir,
+                        basins=self._basins,
+                        features=bands,
+                        require_lead_time=True,
+                    )
+                    product_ds = product_ds.sel(
+                        lead_time=self._lead_time_slice()
+                    )
+                    product_dss.append(product_ds)
+                    continue
             LOGGER.info(
                 "Loading forecast product '%s' with bands %s", product, bands
             )
@@ -1010,6 +1091,18 @@ def _convert_to_tensor(
     if isinstance(value, np.ndarray):
         return torch.from_numpy(value)
     raise ValueError(f'Unrecognized data type: {type(value)}')
+
+
+def _is_zarr_store(path: Path) -> bool:
+    str_path = str(path)
+    if str_path.startswith(('gs:', 'gs/')):
+        return True
+    return (
+        path.suffix == '.zarr'
+        or (path / '.zgroup').exists()
+        or (path / 'zarr.json').exists()
+        or (path / '.zmetadata').exists()
+    )
 
 
 def _find_single_dynamics_zarr_path(dynamics_path: Path | str) -> Path | None:
