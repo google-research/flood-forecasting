@@ -717,22 +717,18 @@ class BaseTester(object):
 
         # save metrics any time this function is called, as long as they exist
         active_metrics = self.cfg.metrics if metrics is None else metrics
-        if active_metrics is None:
-            metrics_list: list[str] = []
-        elif isinstance(active_metrics, Mapping):
-            metrics_list = resolve_metric_names(
-                list(set(active_metrics.values()))
-            )
-        else:
-            metrics_list = resolve_metric_names(active_metrics)
-        if metrics_list and results:
+        if active_metrics is not None:
             df = metrics_to_dataframe(
-                {basin: results}, metrics_list, self.cfg.target_variables
+                {basin: results}, active_metrics, self.cfg.target_variables
             )
-            metrics_file = (
-                parent_directory / f'{self.period}_metrics{suffix}.csv'
-            )
-            df.to_csv(metrics_file, mode='a', header=not metrics_file.exists())
+            # empty when there are no results or no (target, metric) pairs
+            if not df.empty:
+                metrics_file = (
+                    parent_directory / f'{self.period}_metrics{suffix}.csv'
+                )
+                df.to_csv(
+                    metrics_file, mode='a', header=not metrics_file.exists()
+                )
 
         # store all results in a zarr store
         if (
