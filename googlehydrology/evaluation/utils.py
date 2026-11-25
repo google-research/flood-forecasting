@@ -15,7 +15,7 @@
 import itertools
 import math
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 import numpy as np
 import pandas as pd
@@ -26,7 +26,9 @@ from googlehydrology.evaluation.metrics import resolve_metric_names
 
 
 def metrics_to_dataframe(
-    results: dict, metrics: str | Iterable[str], targets: Iterable[str]
+    results: dict,
+    metrics: str | Iterable[str] | Mapping[str, str | Iterable[str]],
+    targets: Iterable[str],
 ) -> pd.DataFrame:
     """Extract metric values from results and convert to a pandas DataFrame.
 
@@ -34,10 +36,12 @@ def metrics_to_dataframe(
     ----------
     results : dict
         Dictionary, containing the results of the model evaluation as returned by the `Tester.evaluate()`.
-    metrics : str | Iterable[str]
+    metrics : str | Iterable[str] | Mapping[str, str | Iterable[str]]
         Metric name (e.g. ``'NSE'`` or ``'all'``) or iterable of metric names
-        (without frequency suffix). Metric names are validated, matched
-        case-insensitively, and normalized to their canonical names.
+        (without frequency suffix), applied to every target, or a mapping from
+        target to such a spec, in which case each target only gets the metrics
+        listed for it. Metric names are validated, matched case-insensitively,
+        and normalized to their canonical names.
     targets : Iterable[str]
         Iterable of target variable names.
 
@@ -49,15 +53,25 @@ def metrics_to_dataframe(
     Raises
     ------
     TypeError
-        If ``metrics`` is not a metric name string or iterable of metric names.
+        If ``metrics``, or a value in a mapping, is not a metric name string
+        or iterable of metric names.
     RuntimeError
         If any requested metric name is unknown.
+    KeyError
+        If ``metrics`` is a mapping without an entry for one of ``targets``.
     """
-    canonical_metrics = resolve_metric_names(metrics)
+    if isinstance(metrics, Mapping):
+        pairs = [
+            (target, metric)
+            for target in targets
+            for metric in resolve_metric_names(metrics[target])
+        ]
+    else:
+        pairs = list(itertools.product(targets, resolve_metric_names(metrics)))
     metrics_dict = defaultdict(dict)
     for basin, basin_data in results.items():
         for freq, freq_results in basin_data.items():
-            for target, metric in itertools.product(targets, canonical_metrics):
+            for target, metric in pairs:
                 metric_key = metric
                 if len(targets) > 1:
                     metric_key = f'{target}_{metric}'

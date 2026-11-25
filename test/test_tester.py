@@ -529,8 +529,6 @@ def test_metrics_to_dataframe_multi_target_and_multi_frequency() -> None:
 @pytest.mark.parametrize(
     ('bad_metrics', 'expected_error'),
     [
-        ({'streamflow': ['NSE']}, TypeError),
-        (MappingProxyType({'streamflow': ['NSE']}), TypeError),
         (b'NSE', TypeError),
         (b'', TypeError),
         (bytearray(), TypeError),
@@ -550,6 +548,32 @@ def test_metrics_to_dataframe_rejects_invalid_inputs(
     results = {'basin_A': {'1D': {'NSE': 0.8}}}
     with pytest.raises(expected_error):
         metrics_to_dataframe(results, bad_metrics, ['q'])  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+def test_metrics_to_dataframe_mapping_selects_metrics_per_target() -> None:
+    """A mapping yields only the requested (target, metric) columns."""
+    q1_nse, q1_kge, q2_rmse = 0.81, 0.72, 1.5
+    results = {
+        'basin_A': {
+            '1D': {
+                'q1_NSE': q1_nse,
+                'q1_KGE': q1_kge,
+                'q2_NSE': 0.6,
+                'q2_KGE': 0.5,
+                'q2_RMSE': q2_rmse,
+            }
+        }
+    }
+    for spec in (
+        {'q1': ['nse', 'KGE', 'NSE'], 'q2': 'rmse'},
+        MappingProxyType({'q1': ['nse', 'KGE', 'NSE'], 'q2': 'rmse'}),
+    ):
+        df = metrics_to_dataframe(results, spec, ['q1', 'q2'])
+        assert list(df.columns) == ['q1_NSE', 'q1_KGE', 'q2_RMSE']
+        assert df.loc['basin_A', 'q1_NSE'] == q1_nse
+        assert df.loc['basin_A', 'q1_KGE'] == q1_kge
+        assert df.loc['basin_A', 'q2_RMSE'] == q2_rmse
 
 
 @pytest.mark.unit
@@ -760,7 +784,11 @@ def test_evaluate_rejects_falsy_and_invalid_metrics_fast(
             RuntimeError,
             r'^Unknown metric totally_bogus$',
         ),
-        ({'streamflow': 123}, TypeError, r'Metric names must be strings'),
+        (
+            {'streamflow': 123},
+            TypeError,
+            r'metrics must be a metric name string or an iterable',
+        ),
     ],
 )
 def test_evaluate_rejects_invalid_mapping_values_when_obs_all_nan(
@@ -800,3 +828,125 @@ def test_config_metrics_type_hints_are_valid_and_consistent() -> None:
         str | Sequence[str] | Mapping[str, str | Sequence[str]] | None
     )
     assert eval_hints['metrics'] == expected_eval
+
+
+def _make_csv_tester(
+    tmp_path: Path, *, metrics: object, target_variables: list[str]
+) -> RegressionTester:
+    """Build a tester with the state `_save_incremental_results` reads."""
+    tester = object.__new__(RegressionTester)
+    tester.cfg = Config(
+        {
+            'metrics': metrics,
+            'target_variables': target_variables,
+            'inference_mode': False,
+        }
+    )
+    tester.run_dir = tmp_path
+    tester.period = 'test'
+    return tester
+
+
+def _save_metrics(tester: RegressionTester, basin: str, results: dict) -> None:
+    tester._save_incremental_results(
+        basin, results=results, states={}, save_results=False, epoch=1
+    )
+
+
+@pytest.mark.unit
+def test_save_incremental_results_with_per_target_metrics(
+    tmp_path: Path,
+) -> None:
+    """Each target gets only its own metrics, in the order listed."""
+    tester = _make_csv_tester(
+        tmp_path,
+        metrics={'q1': ['NSE', 'KGE'], 'q2': ['NSE', 'RMSE']},
+        target_variables=['q1', 'q2'],
+    )
+    expected_a = {'q1_NSE': 0.5, 'q1_KGE': 0.4, 'q2_NSE': 0.3, 'q2_RMSE': 1.1}
+    expected_b = {'q1_NSE': 0.7, 'q1_KGE': 0.6, 'q2_NSE': 0.8, 'q2_RMSE': 0.9}
+    _save_metrics(tester, 'basin_A', {'1D': expected_a})
+    _save_metrics(tester, 'basin_B', {'1D': expected_b})
+
+    csv_path = tmp_path / 'test' / 'model_epoch001' / 'test_metrics.csv'
+    df = pd.read_csv(csv_path, index_col=0)
+    assert list(df.columns) == ['q1_NSE', 'q1_KGE', 'q2_NSE', 'q2_RMSE']
+    assert list(df.index) == ['basin_A', 'basin_B']
+    for col, val in expected_a.items():
+        assert df.loc['basin_A', col] == val
+    for col, val in expected_b.items():
+        assert df.loc['basin_B', col] == val
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ('metrics', 'target_variables', 'expected_columns'),
+    [
+        (
+            {'q1': ['all'], 'q2': ['NSE']},
+            ['q1', 'q2'],
+            [f'q1_{m}' for m in eval_metrics.get_available_metrics()]
+            + ['q2_NSE'],
+        ),
+        ({'q1': ['NSE'], 'other': ['KGE']}, ['q1'], ['NSE']),
+        (
+            {'streamflow': 'all'},
+            ['streamflow'],
+            eval_metrics.get_available_metrics(),
+        ),
+        (
+            {'streamflow': ['all']},
+            ['streamflow'],
+            eval_metrics.get_available_metrics(),
+        ),
+    ],
+)
+def test_save_incremental_results_omits_unrequested_columns(
+    tmp_path: Path,
+    metrics: dict,
+    target_variables: list[str],
+    expected_columns: list[str],
+) -> None:
+    """'all' expands per target; keys that are not targets add no columns."""
+    tester = _make_csv_tester(
+        tmp_path, metrics=metrics, target_variables=target_variables
+    )
+    _save_metrics(tester, 'basin_A', {'1D': {'NSE': 0.65}})
+
+    csv_path = tmp_path / 'test' / 'model_epoch001' / 'test_metrics.csv'
+    df = pd.read_csv(csv_path, index_col=0)
+    assert list(df.columns) == expected_columns
+
+
+@pytest.mark.unit
+def test_save_incremental_results_skips_empty_per_target_metrics(
+    tmp_path: Path,
+) -> None:
+    """A metrics dict with only empty lists writes no metrics CSV."""
+    tester = _make_csv_tester(
+        tmp_path, metrics={'q1': [], 'q2': []}, target_variables=['q1', 'q2']
+    )
+    _save_metrics(tester, 'basin_A', {'1D': {}})
+
+    assert not (
+        tmp_path / 'test' / 'model_epoch001' / 'test_metrics.csv'
+    ).exists()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ('metrics', 'expected_error'),
+    [
+        ({'q1': None}, TypeError),
+        ({'q1': ['NSE']}, KeyError),
+    ],
+)
+def test_save_incremental_results_rejects_invalid_per_target_metrics(
+    tmp_path: Path, metrics: dict, expected_error: type[Exception]
+) -> None:
+    """A non-iterable value or a missing target fails instead of writing NaN."""
+    tester = _make_csv_tester(
+        tmp_path, metrics=metrics, target_variables=['q1', 'q2']
+    )
+    with pytest.raises(expected_error):
+        _save_metrics(tester, 'basin_A', {'1D': {'q1_NSE': 0.5}})
