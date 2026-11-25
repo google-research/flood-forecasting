@@ -180,7 +180,7 @@ def _search_quantile(
     pi: torch.Tensor,
     iterations: int = 10,
     epsilon: float = 1e-6,  # to avoid zero values
-    frac_confine: float = 0.8,  # to avoid overshooting
+    frac_confine: float = 0.8,  # noqa: ARG001 - retained for call compatibility
 ) -> torch.Tensor:
     """Search for the quantile of a mixture dist via newton-raphson (NR).
 
@@ -188,10 +188,15 @@ def _search_quantile(
     Need to find a root x for mixture_cdf(x) - quantile = 0
     So f(x)  = mixture_cdf(x) - quantile
        f'(x) = CDF(x) dx = PDF(x)
+
+    The component quantiles bracket the mixture quantile for nonnegative,
+    normalized weights. ``frac_confine`` is ignored for compatibility:
+    scaling these bounds can exclude the mixture quantile. The fixed iteration
+    count does not guarantee convergence for all mixtures.
     """
     ppfs = _ppf(quantile, mu, b, tau)
-    low = frac_confine * torch.min(ppfs, dim=2, keepdim=True).values
-    high = frac_confine * torch.max(ppfs, dim=2, keepdim=True).values
+    low = torch.min(ppfs, dim=2, keepdim=True).values
+    high = torch.max(ppfs, dim=2, keepdim=True).values
 
     k = torch.mean(ppfs, dim=2, keepdim=True)
     for _ in range(iterations):
