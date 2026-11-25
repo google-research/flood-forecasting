@@ -28,7 +28,7 @@ Validation settings
 
 -  ``validate_every``: Integer that specifies in which interval a validation is performed. If empty, no validation is done during training.
 -  ``validate_n_random_basins``: Integer specifying how many random basins to use per validation.
--  ``metrics``: List of metrics to calculate. See :py:mod:`googlehydrology.evaluation.metrics`. Can also be a dictionary mapping target variables to lists of metrics.
+-  ``metrics``: List of metrics to calculate. See :py:mod:`googlehydrology.evaluation.metrics`. Can also be a dictionary mapping target variables to lists of metrics. You can also pass a single metric name (such as ``NSE`` or ``all`` for every metric) or ``[]`` to disable metrics; metric names are case-insensitive except ``all``.
 -  ``save_validation_results``: True/False. If True, stores validation results to disk in a Zarr store.
 
 Evaluation settings
@@ -107,6 +107,36 @@ Training settings
    ``finite_steps == 0``).
 -  ``target_noise_std``: Standard deviation of Gaussian noise added to labels during training. Set to zero or
    leave empty to *not* add noise.
+-  ``nan_sequence_probability``: Float in ``[0.0, 1.0]`` or mapping of feature
+   group name to float in ``[0.0, 1.0]`` (default ``0.0``; ``null`` also maps
+   to ``0.0``). Probability during training of setting an entire hindcast or
+   forecast sequence of a feature group to ``NaN``. When specified as a mapping,
+   unlisted groups default to ``0.0`` (useful for pinning specific products such
+   as ``hres``), and shared groups use the same probability in both hindcast and
+   forecast windows. Applied independently to the hindcast window and the
+   forecast horizon (keeping shared groups synchronized across the overlap
+   prefix of ``x_d_forecast``). Groups are processed in a random order per
+   sample while guaranteeing per active input pool (hindcast pool, forecast
+   pool, and shared groups in the forecast horizon when forecast-only groups
+   also exist) that every timestep with at least one valid group before dropout
+   retains at least one valid group afterward. Effective drop rates may be lower
+   than nominal in small pools where the survivor guarantee binds, and feature
+   sets across distinct groups in the same pool must be disjoint. Requires a
+   model with ``supports_missing_inputs = True`` (e.g.,
+   ``mean_embedding_forecast_lstm``). Finetuning runs inherit this setting from
+   the base run unless overridden (set to ``0.0`` or ``null`` to disable).
+-  ``nan_streak_probability``: Float in ``[0.0, 1.0]`` or mapping of feature
+   group name to float in ``[0.0, 1.0]`` (default ``0.0``). Probability during
+   training of dropping a contiguous sub-period of a feature group to ``NaN``,
+   inspired by Google's operational FloodHub training setup. Each streak draws
+   ``start ~ Uniform{0, ..., L - 1}`` and ``duration ~ Uniform{1, ..., L}``,
+   clamped at ``end = min(start + duration, L)``, so later timesteps in the
+   window have higher dropout probability. When both
+   ``nan_sequence_probability`` and ``nan_streak_probability`` are non-zero,
+   they are sampled independently per window and combined with logical OR. Uses
+   the same windowing, per-pool survivor guarantee (which can split streaks at
+   individual timesteps), and finetune inheritance as
+   ``nan_sequence_probability``.
 -  ``allow_subsequent_nan_losses``: Number of allowed consecutive NaN losses before stopping.
 -  ``save_weights_every``: Interval (in epochs) over which the weights of the model
    are stored to disk. ``1`` means to store the weights after each
@@ -131,6 +161,74 @@ Data settings
 -  ``nan_handling_method``: ``masked_mean``, ``input_replacing``, or ``attention``. Strategy for handling missing input data.
 -  ``nan_handling_pos_encoding_size``: Size of positional encoding for NaN handling methods.
 -  ``lazy_load``: Whether to access data lazily rather than load all in-memory. Each batch is loaded dynamically. Default: `False`.
+
+NetCDF input format
+-------------------
+
+In addition to Zarr stores (and legacy Caravan ``attributes/<subdataset>/*.csv``
+and ``timeseries/netcdf/<subdataset>/<basin_id>.nc`` directories), the training
+and inference pipeline can read local NetCDF (``.nc`` / ``.nc4``) files directly
+when ``statics_data_dir``, ``targets_data_dir``, or ``dynamics_data_dir`` (or
+``data_dir``) points to a directory containing NetCDF files. Zarr stores,
+legacy Caravan directory trees (``attributes/``, ``timeseries/``), and
+per-product subdirectories are checked first so existing workflows are
+unchanged.
+
+Supported directory layouts (non-recursive; hidden dotfiles such as ``._*.nc``
+are ignored):
+
+1. **Multi-basin files:** One or more ``.nc`` / ``.nc4`` files directly in the
+   configured directory where every file contains a ``basin`` dimension (for
+   example, one combined file, non-overlapping time-split files such as
+   ``2020.nc`` and ``2021.nc``, or disjoint basin-batch files). Supported for
+   **statics**, **targets**, and **dynamics**.
+2. **Per-basin files (``<basin_id>.nc`` or ``<basin_id>.nc4``):** One file per
+   basin directly in the configured directory, without a ``basin`` dimension
+   inside each file (an optional 0D scalar ``basin`` coordinate is ignored).
+   Only files matching the configured basin list are opened. Supported for
+   **targets** and **dynamics**.
+
+For ``dynamics_data_dir``, users may provide either a **flat directory**
+(``dynamics_data_dir/*.nc`` using Layout 1 or 2) or **product subdirectories**
+(``dynamics_data_dir/<PRODUCT>/*.nc``, mirroring the MultiMet Zarr layout, where
+each product subfolder uses Layout 1 or 2). Mixing multi-basin and per-basin
+files among the loaded files in the same directory raises a ``ValueError``.
+
+Required NetCDF schema:
+
+-  **Static attributes (``statics_data_dir``):** Multi-basin files with
+   dimension ``(basin)`` and variable names matching ``static_attributes``.
+-  **Targets (``targets_data_dir``):** Dimensions ``(basin, date)`` in
+   multi-basin files, or ``(date)`` in per-basin files, with variable names
+   matching ``target_variables``.
+-  **Hindcast inputs (``dynamics_data_dir``):** Dimensions ``(basin, date)``
+   (or ``(basin, date, lead_time)``) in multi-basin files, or ``(date)`` (or
+   ``(date, lead_time)``) in per-basin files, with variable names matching
+   ``hindcast_inputs`` (and any ``union_mapping`` fallback variables).
+-  **Forecast inputs (``dynamics_data_dir``):** Dimensions
+   ``(basin, date, lead_time)`` in multi-basin files, or ``(date, lead_time)``
+   in per-basin files, with variable names matching ``forecast_inputs``.
+-  **Coordinates & precision:** Coordinate names must be exact:
+
+   -  ``basin``: unique string basin IDs (not numeric IDs).
+   -  ``date``: unique, non-overlapping daily ``datetime64`` timestamps stamped
+      at midnight ``00:00:00`` UTC (no ``NaT``, duplicate, or non-midnight
+      values).
+   -  ``lead_time``: strictly increasing, contiguous whole-day durations
+      starting at ``>= 1 day`` (e.g. ``1, 2, ...`` days) encoded with CF
+      duration units (such as ``units="days"``). Only ``lead_time`` is decoded
+      as ``timedelta64``, so non-``lead_time`` variables carrying time units
+      (e.g., ``units="days"``) remain numeric.
+
+   Numeric and boolean data variables (e.g. ``float64``, ``int64``, ``bool``)
+   are lazily cast to ``float32`` on read. Missing variables, basins, or
+   invalid coordinates raise an error immediately.
+
+.. tip::
+   For large multi-basin datasets, prefer multi-basin NetCDF files over
+   thousands of per-basin files (especially when ``lazy_load: True`` is
+   enabled), and use separate ``statics_data_dir``, ``targets_data_dir``, and
+   ``dynamics_data_dir`` paths to avoid scanning unrelated files.
 
 Temporal alignment of forecasts
 -------------------------------
@@ -246,6 +344,30 @@ suffixed in the same way. If the run's ``config.yml`` has no
 ``assimilation_config``, add the block to a copy of the config and pass it via
 ``--config-file`` together with ``--run-dir``; for ``evaluate`` / ``infer`` the
 file given by ``--config-file`` replaces the run's ``config.yml`` entirely.
+
+Hot-start settings
+------------------
+
+These options save and load LSTM hidden and cell states between evaluation or
+inference runs so you can skip full hindcast spin-up.
+
+-  ``save_state``: ``True``/``False`` (default ``False``). When ``True``,
+   non-training evaluation and inference runs (``validation``, ``test``, and
+   ``infer``; skipped for ``period='train'``) write each basin's final LSTM
+   states to ``<run_dir>/hot_start_states/state_<basin>.<ext>``. Saving
+   reloadable states requires ``seq_length > 0`` and ``batch_size: 1``.
+-  ``save_state_format``: ``npz`` (default) or ``csv``. Controls the file format
+   written when ``save_state`` is ``True``, and also sets the preferred format
+   when ``hot_start_path`` points to a directory containing both ``.npz`` and
+   ``.csv`` files for the same basin. The ``csv`` format writes finite
+   ``float32`` values as a plain table with columns
+   ``state,layer,batch,unit,value``.
+-  ``hot_start_path``: Path to a saved state file (``.npz`` or ``.csv``,
+   applied to all basins) or a directory of per-basin state files
+   (``state_<basin>.<ext>`` or ``<basin>.<ext>``, matched case-insensitively on
+   extension and preferring ``save_state_format`` if multiple formats exist;
+   missing files fall back to a cold start). Hot-start runs require
+   ``batch_size: 1``.
 
 Finetune settings
 -----------------

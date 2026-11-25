@@ -14,6 +14,8 @@
 
 import enum
 import logging
+import math
+import numbers
 import random
 import re
 from collections import OrderedDict
@@ -33,6 +35,35 @@ if TYPE_CHECKING:
 
 T = TypeVar('T')
 U = TypeVar('U')
+
+VALID_STATE_FORMATS: tuple[str, ...] = ('npz', 'csv')
+
+
+def _normalize_state_format(val: str) -> str:
+    if not isinstance(val, str):
+        raise TypeError(
+            f'save_state_format must be a string in {VALID_STATE_FORMATS}, '
+            f'got {type(val).__name__}.'
+        )
+    normalized = val.strip().lower()
+    if normalized not in VALID_STATE_FORMATS:
+        raise ValueError(
+            f'Unsupported save_state_format {val!r}. '
+            f'Must be one of {VALID_STATE_FORMATS}.'
+        )
+    return normalized
+
+
+def validate_dropout_probability(value: object, name: str) -> float:
+    """Validate that a dropout probability is a finite number in ``[0, 1]``."""
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+        raise ValueError(
+            f'{name} must be a number in [0.0, 1.0], got {value!r}.'
+        )
+    prob = float(value)
+    if not math.isfinite(prob) or not 0.0 <= prob <= 1.0:
+        raise ValueError(f'{name} must be in [0.0, 1.0], got {value!r}.')
+    return prob
 
 
 @enum.unique
@@ -104,6 +135,9 @@ class Config(object):
 
         if not (self._cfg.get('dev_mode', False) or dev_mode):
             Config._check_cfg_keys(self._cfg)
+
+        if 'save_state_format' in self._cfg:
+            self._cfg['save_state_format'] = self.save_state_format
 
         # Adjust experiment name
         if 'experiment_name' in self._cfg and self._cfg['experiment_name']:
@@ -644,11 +678,14 @@ class Config(object):
         return self._cfg.get('mc_dropout', False)
 
     @property
-    def metrics(self) -> list[str] | dict[str, list[str]]:
+    def metrics(self) -> str | list[str] | dict[str, str | list[str]]:
+        """Metric specification used during validation and evaluation."""
         return self._cfg.get('metrics', [])
 
     @metrics.setter
-    def metrics(self, metrics: str | list[str, dict[str, list[str]]]):
+    def metrics(
+        self, metrics: str | list[str] | dict[str, str | list[str]]
+    ) -> None:
         self._cfg['metrics'] = metrics
 
     @property
@@ -673,6 +710,34 @@ class Config(object):
     @property
     def nan_handling_pos_encoding_size(self) -> int:
         return self._cfg.get('nan_handling_pos_encoding_size', 0)
+
+    @property
+    def nan_sequence_probability(self) -> float | dict[str, float]:
+        """Probability of dropping a full feature group sequence in training."""
+        return self._parse_dropout_probability('nan_sequence_probability')
+
+    @property
+    def nan_streak_probability(self) -> float | dict[str, float]:
+        """Probability of dropping a contiguous feature streak in training."""
+        return self._parse_dropout_probability('nan_streak_probability')
+
+    def _parse_dropout_probability(self, key: str) -> float | dict[str, float]:
+        value = self._cfg.get(key, 0.0)
+        if value is None:
+            return 0.0
+        if isinstance(value, dict):
+            parsed: dict[str, float] = {}
+            for group, prob in value.items():
+                if not isinstance(group, str) or not group:
+                    raise ValueError(
+                        f'{key} keys must be non-empty feature group names, '
+                        f'got {group!r}.'
+                    )
+                parsed[group] = validate_dropout_probability(
+                    prob, f'{key}[{group!r}]'
+                )
+            return parsed
+        return validate_dropout_probability(value, key)
 
     @property
     def negative_sample_handling(self) -> str:
@@ -874,6 +939,20 @@ class Config(object):
     @save_state.setter
     def save_state(self, val: bool) -> None:
         self._cfg['save_state'] = bool(val)
+
+    @property
+    def save_state_format(self) -> str:
+        """File format used when saving hot-start LSTM states."""
+        val = self._cfg.get('save_state_format', 'npz')
+        if val is None:
+            return 'npz'
+        return _normalize_state_format(val)
+
+    @save_state_format.setter
+    def save_state_format(self, val: str | None) -> None:
+        self._cfg['save_state_format'] = (
+            'npz' if val is None else _normalize_state_format(val)
+        )
 
     @property
     def train_end_date(self) -> list[pd.Timestamp]:

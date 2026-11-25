@@ -19,6 +19,7 @@ import random
 import re
 import shutil
 import sys
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Iterator
 
@@ -42,7 +43,7 @@ from googlehydrology.evaluation import plots
 from googlehydrology.evaluation.assimilation import Assimilation
 from googlehydrology.evaluation.metrics import (
     calculate_metrics,
-    get_available_metrics,
+    resolve_metric_names,
 )
 from googlehydrology.evaluation.utils import (
     BasinBatchSampler,
@@ -54,7 +55,11 @@ from googlehydrology.modelzoo.basemodel import BaseModel
 from googlehydrology.training import get_loss_obj, get_regularization_obj
 from googlehydrology.training.logger import Logger, do_log_figures
 from googlehydrology.utils import safe_torch_load
-from googlehydrology.utils.config import Config, TesterSamplesReduction
+from googlehydrology.utils.config import (
+    VALID_STATE_FORMATS,
+    Config,
+    TesterSamplesReduction,
+)
 from googlehydrology.utils.errors import AllNaNError
 from googlehydrology.utils.tqdm import AutoRefreshTqdm as tqdm
 
@@ -102,6 +107,12 @@ class BaseTester(object):
                     f'Hot-start inference requires batch_size=1 per basin. '
                     f'Got batch_size={self.cfg.batch_size}.'
                 )
+
+        if (
+            getattr(self.cfg, 'save_state', False)
+            or getattr(self.cfg, 'hot_start_path', None) is not None
+        ):
+            _ = self.cfg.save_state_format
 
         # determine device
         self._set_device()
@@ -209,7 +220,10 @@ class BaseTester(object):
         self,
         epoch: int = None,
         save_results: bool = True,
-        metrics: list | dict = [],
+        metrics: str
+        | Sequence[str]
+        | Mapping[str, str | Sequence[str]]
+        | None = None,
         model: torch.nn.Module = None,
         experiment_logger: Logger = None,
         data_assimilation: bool | None = None,
@@ -222,8 +236,12 @@ class BaseTester(object):
             Define a specific epoch to evaluate. By default, the weights of the last epoch are used.
         save_results : bool, optional
             If True, stores the evaluation results in the run directory. By default, True.
-        metrics : list | dict, optional
-            List of metrics to compute during evaluation. Can also be a dict that specifies per-target metrics
+        metrics : str | Sequence[str] | Mapping[str, str | Sequence[str]]
+            Metrics to compute during evaluation. Can be a metric name (e.g.
+            ``'NSE'`` or ``'all'``), a sequence of metric names, or a mapping
+            from target variables to metric names or sequences. Optional; by
+            default, ``self.cfg.metrics`` is used. Pass an empty list to skip
+            metric computation.
         model : torch.nn.Module, optional
             If a model is passed, this is used for validation.
         experiment_logger : Logger, optional
@@ -234,6 +252,12 @@ class BaseTester(object):
             `_data_assimilation`. By default, the `assimilate` config value
             is used.
         """
+        if metrics is None:
+            metrics = self.cfg.metrics
+        if metrics is None:
+            metrics = []
+        if not isinstance(metrics, Mapping):
+            metrics = resolve_metric_names(metrics)
         if data_assimilation is None:
             data_assimilation = self.cfg.assimilate
         if data_assimilation and self.assimilation is None:
@@ -468,12 +492,10 @@ class BaseTester(object):
                                         raise KeyError(msg)
 
                             var_metrics = (
-                                metrics
-                                if isinstance(metrics, list)
-                                else metrics[target_variable]
+                                resolve_metric_names(metrics[target_variable])
+                                if isinstance(metrics, Mapping)
+                                else metrics
                             )
-                            if 'all' in var_metrics:
-                                var_metrics = get_available_metrics()
                             try:
                                 values = calculate_metrics(
                                     obs,
@@ -530,6 +552,7 @@ class BaseTester(object):
                 epoch=epoch,
                 suffix=suffix,
                 data_assimilation=data_assimilation,
+                metrics=metrics,
             )
 
             if metrics and not experiment_logger:
@@ -670,10 +693,17 @@ class BaseTester(object):
         epoch: int | None,
         suffix: str = '',
         data_assimilation: bool = False,
+        metrics: str
+        | Sequence[str]
+        | Mapping[str, str | Sequence[str]]
+        | None = None,
     ):
         """Store results in various formats to disk.
 
         `suffix` is appended to the file stems (e.g. `_data_assimilation`).
+        `metrics` overrides `self.cfg.metrics` when writing the metrics CSV;
+        pass `None` to fall back to `self.cfg.metrics` or an empty sequence to
+        skip writing the CSV.
         The results zarr store is written in inference mode and, whatever the
         mode, when `data_assimilation` is set: assimilation exists to produce
         updated forecasts, so its results are always persisted. The metrics
@@ -686,34 +716,23 @@ class BaseTester(object):
         parent_directory = self._parent_directory_for_results(epoch)
 
         # save metrics any time this function is called, as long as they exist
-        if self.cfg.metrics and results:
-            metrics_list = self.cfg.metrics
-            if isinstance(metrics_list, dict):
-                # Values are per-target metric lists (or a single string like
-                # 'all'); take their order-preserving union.
-                metrics_list = list(
-                    dict.fromkeys(
-                        metric
-                        for target_metrics in metrics_list.values()
-                        for metric in (
-                            [target_metrics]
-                            if isinstance(target_metrics, str)
-                            else target_metrics
-                        )
-                    )
-                )
-            if 'all' in metrics_list:
-                metrics_list = get_available_metrics()
-            if metrics_list:
-                df = metrics_to_dataframe(
-                    {basin: results}, metrics_list, self.cfg.target_variables
-                )
-                metrics_file = (
-                    parent_directory / f'{self.period}_metrics{suffix}.csv'
-                )
-                df.to_csv(
-                    metrics_file, mode='a', header=not metrics_file.exists()
-                )
+        active_metrics = self.cfg.metrics if metrics is None else metrics
+        if active_metrics is None:
+            metrics_list: list[str] = []
+        elif isinstance(active_metrics, Mapping):
+            metrics_list = resolve_metric_names(
+                list(set(active_metrics.values()))
+            )
+        else:
+            metrics_list = resolve_metric_names(active_metrics)
+        if metrics_list and results:
+            df = metrics_to_dataframe(
+                {basin: results}, metrics_list, self.cfg.target_variables
+            )
+            metrics_file = (
+                parent_directory / f'{self.period}_metrics{suffix}.csv'
+            )
+            df.to_csv(metrics_file, mode='a', header=not metrics_file.exists())
 
         # store all results in a zarr store
         if (
@@ -745,6 +764,64 @@ class BaseTester(object):
         parent_directory.mkdir(parents=True, exist_ok=True)
         return parent_directory
 
+    @staticmethod
+    def _index_state_dir(state_dir: Path) -> dict[str, list[Path]]:
+        """Map file stems in ``state_dir`` to state files with valid formats."""
+        valid_exts = frozenset(VALID_STATE_FORMATS)
+        index: dict[str, list[Path]] = {}
+        for entry in state_dir.iterdir():
+            ext = entry.suffix.lstrip('.').lower()
+            if ext in valid_exts and entry.is_file():
+                index.setdefault(entry.stem, []).append(entry)
+        return index
+
+    def _resolve_basin_state_path(
+        self,
+        state_path: Path,
+        basin: str,
+        *,
+        state_index: dict[str, list[Path]] | None = None,
+    ) -> Path | None:
+        """Resolve the hot-start state file path for ``basin`` if present."""
+        if not state_path.is_dir():
+            return state_path if state_path.is_file() else None
+        preferred_ext = self.cfg.save_state_format
+        extensions = (
+            preferred_ext,
+            *(ext for ext in VALID_STATE_FORMATS if ext != preferred_ext),
+        )
+        ext_rank = {ext: idx for idx, ext in enumerate(extensions)}
+        dir_index = (
+            state_index
+            if state_index is not None
+            else self._index_state_dir(state_path)
+        )
+        prefixed_stem = f'state_{basin}'
+        matches = [
+            *dir_index.get(prefixed_stem, ()),
+            *dir_index.get(basin, ()),
+        ]
+        if not matches:
+            return None
+        matches.sort(
+            key=lambda p: (
+                ext_rank[p.suffix.lstrip('.').lower()],
+                0 if p.stem == prefixed_stem else 1,
+                p.name,
+            )
+        )
+        if len(matches) > 1:
+            LOGGER.warning(
+                'Multiple hot-start state files found for basin %s in %s '
+                '(%s); loading %s (preferred format: %s).',
+                basin,
+                state_path,
+                ', '.join(p.name for p in matches),
+                matches[0].name,
+                preferred_ext,
+            )
+        return matches[0]
+
     def _evaluate(
         self,
         model: BaseModel,
@@ -759,6 +836,13 @@ class BaseTester(object):
             predict_last_n = {
                 frequencies[0]: predict_last_n
             }  # if predict_last_n is int, there's only one frequency
+
+        hot_start_path = getattr(self.cfg, 'hot_start_path', None)
+        hot_start_index = (
+            self._index_state_dir(hot_start_path)
+            if hot_start_path is not None and hot_start_path.is_dir()
+            else None
+        )
 
         # Data assimilation optimizes model components with autograd and thus
         # cannot run in inference mode.
@@ -777,15 +861,11 @@ class BaseTester(object):
 
                 model.reset_state()
                 # Pre-load hot-start state for this basin if configured
-                if getattr(self.cfg, 'hot_start_path', None) is not None:
-                    state_path = self.cfg.hot_start_path
-                    if state_path.is_dir():
-                        basin_state = state_path / f'state_{basin}.npz'
-                        if not basin_state.exists():
-                            basin_state = state_path / f'{basin}.npz'
-                    else:
-                        basin_state = state_path
-                    if basin_state.exists():
+                if hot_start_path is not None:
+                    basin_state = self._resolve_basin_state_path(
+                        hot_start_path, basin, state_index=hot_start_index
+                    )
+                    if basin_state is not None:
                         model.load_state_from_disk(basin_state)
 
                 preds = {}
@@ -853,7 +933,10 @@ class BaseTester(object):
                     save_dir.mkdir(parents=True, exist_ok=True)
                     # `save_state` runs an unassimilated forward pass; the
                     # suffix keeps a DA run from overwriting the regular state.
-                    state_save_path = save_dir / f'state_{basin}{suffix}.npz'
+                    state_ext = self.cfg.save_state_format
+                    state_save_path = (
+                        save_dir / f'state_{basin}{suffix}.{state_ext}'
+                    )
                     model.save_state(last_data, state_save_path)
 
                 # set to NaN explicitly if all losses are NaN to avoid RuntimeWarning
